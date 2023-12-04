@@ -1,8 +1,8 @@
 import { FastifyReply } from 'fastify';
 import { sql } from 'kysely';
 import { db } from '../kysely';
-import { Int8 } from '../tables/base.table';
-import { TableType } from '../tables/db.table';
+import { Int8 } from '../kyselySchema/base.schema';
+import { TableType } from '../kyselySchema/db.schema';
 
 export class BaseController {
   protected table: TableType;

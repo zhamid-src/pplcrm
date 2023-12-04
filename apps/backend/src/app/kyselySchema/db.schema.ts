@@ -1,9 +1,9 @@
-import { MapCampaignsUsers, MapHouseholdsTags, MapPeoplesTags, Tags } from './base.table';
-import { Campaigns } from './campaigns.table';
-import { Households } from './households.table';
-import { Persons } from './persons.table';
-import { Tenants } from './tenants.table';
-import { Users } from './users.table';
+import { MapCampaignsUsers, MapHouseholdsTags, MapPeoplesTags, Tags } from './base.schema';
+import { Campaigns } from './campaigns.schema';
+import { Households } from './households.schema';
+import { Persons } from './persons.schema';
+import { Tenants } from './tenants.schema';
+import { Users } from './users.schema';
 
 export interface Database {
   campaigns: Campaigns;

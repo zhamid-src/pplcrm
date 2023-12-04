@@ -1,5 +1,5 @@
 import { Generated } from 'kysely';
-import { Int8, Json, Timestamp } from './base.table';
+import { Int8, Json, Timestamp } from './base.schema';
 
 export interface Persons {
   id: Generated<Int8>;
