@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { trpc } from '../../trpc';
-import { UsersOperator } from '../db.operators/users.operator';
+import { HouseholdOperator } from '../db.operators/households.operator';
 
-const operator = new UsersOperator();
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
+const operator = new HouseholdOperator();
 
 /*
 export interface ITodoBody {
@@ -18,7 +18,7 @@ export interface ITodo extends Partial<ITodoBody> {
 
 */
 
-export const usersRouter = router({
+export const householdsRouter = router({
   getById: publicProcedure.input(z.number()).query((input) => {
     const id: any = input;
     return operator.getById(id);
@@ -62,4 +62,4 @@ export const usersRouter = router({
   */
 });
 
-export type UsersRouter = typeof usersRouter;
+export type HouseholdsRouter = typeof householdsRouter;

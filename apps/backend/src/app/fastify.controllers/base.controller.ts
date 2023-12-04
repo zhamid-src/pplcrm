@@ -1,17 +1,12 @@
 import { FastifyReply } from 'fastify';
-import { sql } from 'kysely';
-import { db } from '../kysely';
+import { BaseOperator } from '../db.operators/base.operator';
 import { GetOperandType, Models, OperationDataType } from '../kysely.models';
 
 export class BaseController<T extends keyof Models> {
-  protected readonly table: T;
+  protected readonly operator: BaseOperator<T>;
 
-  constructor(tableIn: T) {
-    this.table = tableIn;
-  }
-
-  static get tableName(): keyof Models {
-    return this.tableName;
+  constructor(dbOperator: BaseOperator<T>) {
+    this.operator = dbOperator;
   }
 
   /**
@@ -21,7 +16,7 @@ export class BaseController<T extends keyof Models> {
    * @returns
    */
   public async getAll(reply: FastifyReply) {
-    const result = await db.selectFrom(this.table).selectAll().execute();
+    const result = await this.operator.getAll();
     return result ? reply.code(200).send(result) : reply.send(404);
   }
 
@@ -35,11 +30,7 @@ export class BaseController<T extends keyof Models> {
     id: GetOperandType<T, 'select', 'id'>,
     reply: FastifyReply
   ) {
-    const row = await db
-      .selectFrom(this.table)
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst();
+    const row = await this.operator.getById(id);
     return row ? reply.code(200).send(row) : reply.send(404);
   }
 
@@ -49,10 +40,9 @@ export class BaseController<T extends keyof Models> {
    * @returns
    */
   public async getCount(reply: FastifyReply) {
-    const { count } = (await db
-      .selectFrom(this.table)
-      .select(sql<string>`count(*)`.as('count'))
-      .executeTakeFirst()) as unknown as { count: number };
+    const { count } = (await this.operator.getCount()) as unknown as {
+      count: number;
+    };
     return reply.code(200).send(count);
   }
 
@@ -63,10 +53,7 @@ export class BaseController<T extends keyof Models> {
    * @returns
    */
   public async add(row: OperationDataType<T, 'insert'>, reply: FastifyReply) {
-    const result = await db
-      .insertInto(this.table)
-      .values(row)
-      .executeTakeFirst();
+    const result = await this.operator.add(row);
     return reply.code(201).send(result);
   }
 
@@ -81,11 +68,7 @@ export class BaseController<T extends keyof Models> {
     row: OperationDataType<T, 'update'>,
     reply: FastifyReply
   ) {
-    const result = await db
-      .updateTable(this.table)
-      .set(row)
-      .where('id', '=', id)
-      .executeTakeFirst();
+    const result = await this.operator.update(id, row);
     return reply.code(200).send(result);
   }
 
@@ -99,10 +82,7 @@ export class BaseController<T extends keyof Models> {
     id: GetOperandType<T, 'select', 'id'>,
     reply: FastifyReply
   ) {
-    const result = await db
-      .deleteFrom(this.table)
-      .where('id', '=', id)
-      .executeTakeFirst();
+    const result = await this.operator.delete(id);
     return reply.code(204).send(result);
   }
 }
