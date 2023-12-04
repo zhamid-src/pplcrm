@@ -1,5 +1,5 @@
 import { trpc } from '../trpc';
-import { usersRouter } from './routers/user.router';
+import { usersRouter } from './trpc.routers/user.router';
 
 const router = trpc.router;
 

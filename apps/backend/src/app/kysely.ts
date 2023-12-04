@@ -19,7 +19,7 @@ export const db = new Kysely<Models>({
   dialect,
 });
 
-const migrationFolder = path.join(__dirname, './_migrations');
+const migrationFolder = path.join(__dirname, './kysely.migrations');
 
 export const migrator = new Migrator({
   db,

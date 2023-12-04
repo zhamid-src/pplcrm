@@ -98,10 +98,10 @@ type DiscriminatedUnionOfRecord<
   B = {
     [Key in keyof A as '_']: {
       [K in Key]: [
-        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] }
+        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
       ];
     };
-  }['_']
+  }['_'],
 > = Keys<A> extends Keys<B>
   ? B[Keys<A>] extends Array<any>
     ? B[Keys<A>][number]
@@ -111,17 +111,17 @@ type DiscriminatedUnionOfRecord<
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 export type OperationDataType<
   T extends keyof Models,
-  Op extends 'select' | 'update' | 'insert'
+  Op extends 'select' | 'update' | 'insert',
 > = T extends keyof TableOpsUnion ? TableOpsUnion[T][Op] : never;
 export type GetOperandType<
   T extends keyof TablesOperationMap,
   Op extends keyof TablesOperationMap[T],
-  Key extends keyof TablesOperationMap[T][Op]
+  Key extends keyof TablesOperationMap[T][Op],
 > = unknown extends TablesOperationMap[T][Op][Key]
   ? never
   : TablesOperationMap[T][Op][Key] extends never
-  ? never
-  : TablesOperationMap[T][Op][Key];
+    ? never
+    : TablesOperationMap[T][Op][Key];
 
 // ====================================================================
 // =====================  GENERATED TYPES BELOW  =====================
@@ -194,7 +194,7 @@ interface Campaigns {
   created_at: Generated<Timestamp>;
 }
 
-interface Persons {
+export interface Persons {
   id: Generated<Int8>;
   tenant_id: Int8;
   campaign_id: Int8;
