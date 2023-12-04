@@ -1,14 +1,17 @@
 import { FastifyReply } from 'fastify';
 import { sql } from 'kysely';
 import { db } from '../kysely';
-import { Int8 } from '../schema/base.schema';
-import { TableType } from '../schema/db.schema';
+import { GetOperandType, Models, OperationDataType } from '../kysely.models';
 
-export class BaseController {
-  protected table: TableType;
+export class BaseController<T extends keyof Models> {
+  protected readonly table: T;
 
-  constructor(tableIn: TableType) {
+  constructor(tableIn: T) {
     this.table = tableIn;
+  }
+
+  static get tableName(): keyof Models {
+    return this.tableName;
   }
 
   /**
@@ -28,8 +31,15 @@ export class BaseController {
    * @param reply FastifyReply
    * @returns
    */
-  public async getById(id: string, reply: FastifyReply) {
-    const row = await db.selectFrom(this.table).selectAll().where('id', '=', id).executeTakeFirst();
+  public async getById(
+    id: GetOperandType<T, 'select', 'id'>,
+    reply: FastifyReply
+  ) {
+    const row = await db
+      .selectFrom(this.table)
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst();
     return row ? reply.code(200).send(row) : reply.send(404);
   }
 
@@ -52,8 +62,11 @@ export class BaseController {
    * @param reply FastifyReply
    * @returns
    */
-  public async add(row: never, reply: FastifyReply) {
-    const result = await db.insertInto(this.table).values(row).executeTakeFirst();
+  public async add(row: OperationDataType<T, 'insert'>, reply: FastifyReply) {
+    const result = await db
+      .insertInto(this.table)
+      .values(row)
+      .executeTakeFirst();
     return reply.code(201).send(result);
   }
 
@@ -63,8 +76,16 @@ export class BaseController {
    * @param reply FastifyReply
    *
    */
-  public async update(id: Int8, row: never, reply: FastifyReply) {
-    const result = await db.updateTable(this.table).set(row).where('id', '=', id).executeTakeFirst();
+  public async update(
+    id: GetOperandType<T, 'update', 'id'>,
+    row: OperationDataType<T, 'update'>,
+    reply: FastifyReply
+  ) {
+    const result = await db
+      .updateTable(this.table)
+      .set(row)
+      .where('id', '=', id)
+      .executeTakeFirst();
     return reply.code(200).send(result);
   }
 
@@ -74,8 +95,14 @@ export class BaseController {
    * @param reply FastifyReply
    *
    */
-  public async delete(id: Int8, reply: FastifyReply) {
-    const result = await db.deleteFrom(this.table).where('id', '=', id).executeTakeFirst();
+  public async delete(
+    id: GetOperandType<T, 'select', 'id'>,
+    reply: FastifyReply
+  ) {
+    const result = await db
+      .deleteFrom(this.table)
+      .where('id', '=', id)
+      .executeTakeFirst();
     return reply.code(204).send(result);
   }
 }

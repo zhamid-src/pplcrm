@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { trpc } from '../../trpc';
 import { db } from '../kysely';
-import { Int8 } from '../schema/base.schema';
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
 
@@ -19,8 +18,11 @@ export interface ITodo extends Partial<ITodoBody> {
 
 export const usersRouter = router({
   getById: publicProcedure.input(z.number()).query((input) => {
-    const id: Int8 = input as unknown as Int8;
-    return db.selectFrom('users').where('id', '=', id).executeTakeFirstOrThrow();
+    const id: any = input;
+    return db
+      .selectFrom('users')
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
   }),
   getAll: publicProcedure.query(() => {
     return db.selectFrom('users').selectAll().execute();

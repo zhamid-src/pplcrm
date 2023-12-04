@@ -1,6 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ITodo, ITodoBody } from 'APPS/backend/src/app/models/todo.model';
-import { Observable, from } from 'rxjs';
+import { from } from 'rxjs';
 import { TRPCService } from './trpc.service';
 
 @Injectable({
@@ -15,6 +14,7 @@ export class TodoService extends TRPCService {
     return from(this.api.users.getById.query(id));
   }
 
+  /*
   public addTodo(todo: ITodoBody): Observable<ITodo> {
     return from(this.api.todo.add.mutate(todo));
   }
@@ -22,4 +22,5 @@ export class TodoService extends TRPCService {
   public updateTodo(todo: ITodo): Observable<ITodo> {
     return from(this.api.todo.update.mutate(todo));
   }
+  */
 }

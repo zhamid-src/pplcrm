@@ -1,24 +1,25 @@
 // import { CockroachDialect } from '@cubos/kysely-cockroach';
 import { promises as fs } from 'fs';
-import { FileMigrationProvider, Kysely, Migrator, PostgresDialect } from 'kysely';
+import {
+  FileMigrationProvider,
+  Kysely,
+  Migrator,
+  PostgresDialect,
+} from 'kysely';
 import * as path from 'path';
 import { Pool } from 'pg';
 import { postgres } from '../env';
-import { Database } from './schema/db.schema';
+import { Models } from './kysely.models';
 
 const dialect = new PostgresDialect({
   pool: new Pool(postgres),
 });
 
-// Database interface is passed to Kysely's constructor, and from now on, Kysely
-// knows your database structure.
-// Dialect is passed to Kysely's constructor, and from now on, Kysely knows how
-// to communicate with your database.
-export const db = new Kysely<Database>({
+export const db = new Kysely<Models>({
   dialect,
 });
 
-const migrationFolder = path.join(__dirname, './migrations');
+const migrationFolder = path.join(__dirname, './_migrations');
 
 export const migrator = new Migrator({
   db,
@@ -34,7 +35,9 @@ async function migrateToLatest() {
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`migration up:"${it.migrationName}" was executed successfully`);
+      console.log(
+        `migration up:"${it.migrationName}" was executed successfully`
+      );
     } else if (it.status === 'Error') {
       console.error(`failed to execute migration up"${it.migrationName}"`);
     }
@@ -54,7 +57,9 @@ export async function migrateDown() {
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`migration down"${it.migrationName}" was executed successfully`);
+      console.log(
+        `migration down"${it.migrationName}" was executed successfully`
+      );
     } else if (it.status === 'Error') {
       console.error(`failed to execute migration down"${it.migrationName}"`);
     }
@@ -68,5 +73,4 @@ export async function migrateDown() {
 
   // await dbLocal.destroy()
 }
-
 migrateToLatest();
