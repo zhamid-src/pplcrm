@@ -5,6 +5,18 @@ import { Int8 } from '../schema/base.schema';
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
 
+/*
+export interface ITodoBody {
+  todo: string;
+  done: boolean;
+}
+
+export interface ITodo extends Partial<ITodoBody> {
+  id: number;
+}
+
+*/
+
 export const usersRouter = router({
   getById: publicProcedure.input(z.number()).query((input) => {
     const id: Int8 = input as unknown as Int8;
