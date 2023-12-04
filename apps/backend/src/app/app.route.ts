@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const personsRoute = require('./routes/persons.route');
-const householdsRoute = require('./routes/households.route');
+const personsRoute = require('./fastify.routes/persons.route');
+const householdsRoute = require('./fastify.routes/households.route');
 
 export function routes(
   fastify: FastifyInstance,
