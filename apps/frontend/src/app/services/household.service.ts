@@ -5,13 +5,13 @@ import { TRPCService } from './trpc.service';
 @Injectable({
   providedIn: 'root',
 })
-export class TodoService extends TRPCService {
-  public getAllTodos() {
-    return from(this.api.users.getAll.query());
+export class UserService extends TRPCService {
+  public getAll() {
+    return from(this.api.households.getAll.query());
   }
 
   public getById(id: number) {
-    return from(this.api.users.getById.query(id));
+    return from(this.api.households.getById.query(id));
   }
 
   /*

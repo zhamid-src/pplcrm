@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { PersonsController } from '../fastify.controllers/persons.controller';
 import { IdParam } from '../fastify.schema/fastify.types';
-import * as schema from '../fastify.schema/persons.schema';
+import * as schema from '../fastify.schema/households.schema';
 
 const controller = new PersonsController();
 
