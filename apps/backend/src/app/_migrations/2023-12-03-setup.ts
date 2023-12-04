@@ -3,7 +3,7 @@ import { Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
   console.log('======= Migrating up ========');
-
+  
   await db.schema
     .createTable('users')
     .addColumn('id', 'bigint', (col) => col.primaryKey().generatedByDefaultAsIdentity().unique())
