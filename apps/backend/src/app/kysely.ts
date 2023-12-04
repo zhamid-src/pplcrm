@@ -4,7 +4,7 @@ import { FileMigrationProvider, Kysely, Migrator, PostgresDialect } from 'kysely
 import * as path from 'path';
 import { Pool } from 'pg';
 import { postgres } from '../env';
-import { Database } from './kyselySchema/db.schema';
+import { Database } from './schema/db.schema';
 
 const dialect = new PostgresDialect({
   pool: new Pool(postgres),
