@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@backend/*": [
+        "./apps/backend/src/*"
+      ],
+      "@frontend/*": [
+        "./apps/frontend/src/*"
+      ]
+    }
+  },
+  "extends": "../../../apps/backend/tsconfig.app.json"
+}

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { trpc } from '../../trpc';
 import { db } from '../kysely';
-import { Int8 } from '../tables/base.table';
+import { Int8 } from '../kyselySchema/base.schema';
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
 

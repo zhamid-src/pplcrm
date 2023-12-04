@@ -1,6 +1,6 @@
 import { trpc } from '../trpc';
-import { todosRouter } from './routers/todo.router';
-import { usersRouter } from './routers/user.router';
+import { todosRouter } from './trpcRouters/todo.router';
+import { usersRouter } from './trpcRouters/user.router';
 
 const router = trpc.router;
 

@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { FastifyInstance } from 'fastify';
-import { HouseholdsController } from '../controllers/households.controller';
+import { PersonsController } from '../fastifyControllers/persons.controller';
 
-const controller = new HouseholdsController();
+const controller = new PersonsController();
 
 async function routes(fastify: FastifyInstance, opts: never, done: () => void) {
   fastify.get('', opts, (req, reply) => controller.getAll(reply));

@@ -1,25 +1,21 @@
 import { Generated } from 'kysely';
-import { Int8, Json, Timestamp } from './base.table';
+import { Int8, Json, Timestamp } from './base.schema';
 
-export interface Users {
+export interface Households {
+  campaign_id: Int8;
   city: string | null;
   country: string | null;
   created_at: Generated<Timestamp>;
-  email: string | null;
-  email2: string | null;
-  first_name: string | null;
+  createdby_id: Int8;
+  file_id: Int8 | null;
   home_phone: string | null;
   id: Generated<Int8>;
   json: Json | null;
-  last_name: string | null;
-  middle_names: string | null;
-  mobile: string | null;
-  role: string | null;
+  notes: string | null;
   state: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: Int8 | null;
+  tenant_id: Int8;
   updated_at: Generated<Timestamp>;
-  username: string | null;
   zip: string | null;
 }

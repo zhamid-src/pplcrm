@@ -1,4 +1,4 @@
-import { TableType } from '../tables/db.table';
+import { TableType } from '../kyselySchema/db.schema';
 import { BaseController } from './base.controller';
 
 export class HouseholdsController extends BaseController {
