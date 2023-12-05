@@ -1,6 +1,6 @@
-import { FastifyReply } from 'fastify';
-import { BaseOperator } from '../db.operators/base.operator';
-import { GetOperandType, Models, OperationDataType } from '../kysely.models';
+import { FastifyReply } from "fastify";
+import { BaseOperator } from "../db.operators/base.operator";
+import { GetOperandType, Models, OperationDataType } from "../kysely.models";
 
 export class BaseController<T extends keyof Models> {
   protected readonly operator: BaseOperator<T>;
@@ -26,11 +26,11 @@ export class BaseController<T extends keyof Models> {
    * @param reply FastifyReply
    * @returns
    */
-  public async getById(
-    id: GetOperandType<T, 'select', 'id'>,
-    reply: FastifyReply
+  public async getOneById(
+    id: GetOperandType<T, "select", "id">,
+    reply: FastifyReply,
   ) {
-    const row = await this.operator.getById(id);
+    const row = await this.operator.getOneById(id);
     return row ? reply.code(200).send(row) : reply.send(404);
   }
 
@@ -52,7 +52,7 @@ export class BaseController<T extends keyof Models> {
    * @param reply FastifyReply
    * @returns
    */
-  public async add(row: OperationDataType<T, 'insert'>, reply: FastifyReply) {
+  public async add(row: OperationDataType<T, "insert">, reply: FastifyReply) {
     const result = await this.operator.add(row);
     return reply.code(201).send(result);
   }
@@ -64,9 +64,9 @@ export class BaseController<T extends keyof Models> {
    *
    */
   public async update(
-    id: GetOperandType<T, 'update', 'id'>,
-    row: OperationDataType<T, 'update'>,
-    reply: FastifyReply
+    id: GetOperandType<T, "update", "id">,
+    row: OperationDataType<T, "update">,
+    reply: FastifyReply,
   ) {
     const result = await this.operator.update(id, row);
     return reply.code(200).send(result);
@@ -79,8 +79,8 @@ export class BaseController<T extends keyof Models> {
    *
    */
   public async delete(
-    id: GetOperandType<T, 'select', 'id'>,
-    reply: FastifyReply
+    id: GetOperandType<T, "select", "id">,
+    reply: FastifyReply,
   ) {
     const result = await this.operator.delete(id);
     return reply.code(204).send(result);

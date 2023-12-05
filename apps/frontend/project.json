@@ -15,9 +15,12 @@
         "browser": "apps/frontend/src/main.ts",
         "polyfills": ["zone.js"],
         "tsConfig": "apps/frontend/tsconfig.app.json",
-        "inlineStyleLanguage": "sass",
+        "inlineStyleLanguage": "scss",
         "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
-        "styles": ["apps/frontend/src/styles.sass"],
+        "styles": [
+          "apps/frontend/src/custom-theme.scss",
+          "apps/frontend/src/styles.scss"
+        ],
         "scripts": [],
         "server": "apps/frontend/src/main.server.ts",
         "prerender": true,

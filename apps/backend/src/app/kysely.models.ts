@@ -9,7 +9,16 @@
 // 2. Add the enum in TableType
 // 3. Add the type in the TablesOperationMap
 // ====================================================================
-import type { ColumnType, Insertable, Selectable, Updateable } from 'kysely';
+import { AuthUser } from "@supabase/supabase-js";
+import type {
+  ColumnType,
+  Insertable,
+  SelectExpression,
+  Selectable,
+  Updateable,
+} from "kysely";
+import { UndirectedOrderByExpression } from "kysely/dist/cjs/parser/order-by-parser";
+import { ExtractTableAlias } from "kysely/dist/cjs/parser/table-parser";
 
 export interface Models {
   campaigns: Campaigns;
@@ -21,19 +30,21 @@ export interface Models {
   tags: Tags;
   tenants: Tenants;
   users: Users;
+  "auth.users": AuthUsers;
 }
 
 // The above interface and the below tables should match
 export enum TableType {
-  campaigns = 'campaigns',
-  households = 'households',
-  map_campaigns_users = 'map_campaigns_users',
-  map_households_tags = 'map_households_tags',
-  map_peoples_tags = 'map_peoples_tags',
-  persons = 'persons',
-  tags = 'tags',
-  tenants = 'tenants',
-  users = 'users',
+  campaigns = "campaigns",
+  households = "households",
+  map_campaigns_users = "map_campaigns_users",
+  map_households_tags = "map_households_tags",
+  map_peoples_tags = "map_peoples_tags",
+  persons = "persons",
+  tags = "tags",
+  tenants = "tenants",
+  users = "users",
+  AuthUsers = "auth.users",
 }
 
 // ====================================================================
@@ -89,19 +100,25 @@ type TablesOperationMap = {
     insert: Insertable<Users>;
     update: Updateable<Users>;
   };
+  "auth.users": {
+    select: Selectable<AuthUser>;
+    insert: Insertable<AuthUser>;
+    update: Updateable<AuthUser>;
+  };
 };
 
 type Keys<T> = keyof T;
+type ValuesOf<T> = T[Keys<T>];
 
 type DiscriminatedUnionOfRecord<
   A,
   B = {
-    [Key in keyof A as '_']: {
+    [Key in keyof A as "_"]: {
       [K in Key]: [
         { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
       ];
     };
-  }['_'],
+  }["_"],
 > = Keys<A> extends Keys<B>
   ? B[Keys<A>] extends Array<any>
     ? B[Keys<A>][number]
@@ -109,9 +126,18 @@ type DiscriminatedUnionOfRecord<
   : never;
 
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
+// export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
+
+export type TableColumnsType<T extends keyof Models> = T extends keyof Models
+  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
+  : never;
+
+export type GroupDataType<T extends keyof Models> = T extends keyof Models
+  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, {}>
+  : never;
 export type OperationDataType<
   T extends keyof Models,
-  Op extends 'select' | 'update' | 'insert',
+  Op extends "select" | "update" | "insert",
 > = T extends keyof TableOpsUnion ? TableOpsUnion[T][Op] : never;
 export type GetOperandType<
   T extends keyof TablesOperationMap,
@@ -194,7 +220,7 @@ interface Campaigns {
   created_at: Generated<Timestamp>;
 }
 
-export interface Persons {
+interface Persons {
   id: Generated<Int8>;
   tenant_id: Int8;
   campaign_id: Int8;
@@ -280,4 +306,9 @@ interface Users {
   updated_at: Generated<Timestamp>;
   username: string | null;
   zip: string | null;
+}
+
+interface AuthUsers {
+  id: string;
+  raw_user_meta_data: Json;
 }

@@ -1,6 +1,6 @@
-import { z } from 'zod';
-import { trpc } from '../../trpc';
-import { UsersOperator } from '../db.operators/users.operator';
+import { z } from "zod";
+import { trpc } from "../../trpc";
+import { UsersOperator } from "../db.operators/users.operator";
 
 const operator = new UsersOperator();
 const publicProcedure = trpc.procedure;
@@ -16,12 +16,22 @@ export interface ITodo extends Partial<ITodoBody> {
   id: number;
 }
 
-*/
+I have to do this :-
+type Dog = {
+  name: string
+  neutered: boolean
+}
 
+const dogSchema = z.object<Dog>({
+  name: z.string().min(3),
+  neutered: z.boolean(),
+});
+
+*/
 export const usersRouter = router({
-  getById: publicProcedure.input(z.number()).query((input) => {
+  getOneById: publicProcedure.input(z.number()).query((input) => {
     const id: any = input;
-    return operator.getById(id);
+    return operator.getOneById(id);
   }),
   getAll: publicProcedure.query(() => {
     return operator.getAll();

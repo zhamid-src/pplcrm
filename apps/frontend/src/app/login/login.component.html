@@ -1,0 +1,58 @@
+<form class="padding-top-sm padding-left padding-right" fxLayout="column" fxLayoutGap="16px">
+    <div fxFlex="auto" fxLayout="column">
+        <mat-form-field fxFlex="grow">
+            <mat-label>E-Mail</mat-label>
+            <input matInput type="email" formControlName="email" />
+            <!--
+            <mat-error *ngIf="email.touched && email.dirty && email.invalid">
+                {{ emailErrorMessage }}
+            </mat-error>
+            -->
+        </mat-form-field>
+
+        <mat-form-field fxFlex="grow">
+            <mat-label>Password</mat-label>
+            <input matInput formControlName="password" />
+            <button type="button" class="square" mat-icon-button matSuffix (click)="toggleVisibility()"
+                matTooltip="Toggle Visibility">
+                @if (visibility) {
+                <mat-icon>visibility</mat-icon>
+                } @else {
+                <mat-icon>visibility_off</mat-icon>
+                }
+            </button>
+            <mat-hint align="end">Pick a good password</mat-hint>
+            <!--
+            <mat-error *ngIf="password.touched && password.dirty && password.invalid">
+                {{ passwordErrorMessage }}
+            </mat-error>
+            -->
+        </mat-form-field>
+
+        <div class="padding-bottom">
+            <div fxLayout="row" fxLayoutAlign="space-between center">
+                <mat-checkbox matTooltip="Keeps you logged in" color="primary" class="caption"
+                    (change)="toggleLoggedIn($event)">
+                    Remember Me
+                </mat-checkbox>
+                <a class="caption">Forgot Password?</a>
+            </div>
+        </div>
+
+        <button (click)="signIn()" mat-raised-button color="primary" [disabled]="processing()">
+            Sign In
+        </button>
+        @if (processing()) {
+        <mat-progress-bar mode="indeterminate" color="primary"></mat-progress-bar>
+        }
+
+
+        <p class="secondary-text text-center">
+            Already have an account?
+            <a routerLink="/signup">Sign Up!</a>
+            <span class="learnmore">
+                <a href="/learnmore" target="_blank">Learn More</a>
+            </span>
+        </p>
+    </div>
+</form>

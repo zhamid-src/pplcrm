@@ -1,6 +1,6 @@
-import { z } from 'zod';
-import { trpc } from '../../trpc';
-import { PersonsOperator } from '../db.operators/persons.operator';
+import { z } from "zod";
+import { trpc } from "../../trpc";
+import { PersonsOperator } from "../db.operators/persons.operator";
 
 const operator = new PersonsOperator();
 const publicProcedure = trpc.procedure;
@@ -19,9 +19,9 @@ export interface ITodo extends Partial<ITodoBody> {
 */
 
 export const personsRouter = router({
-  getById: publicProcedure.input(z.number()).query((input) => {
+  getOneById: publicProcedure.input(z.number()).query((input) => {
     const id: any = input;
-    return operator.getById(id);
+    return operator.getOneById(id);
   }),
   getAll: publicProcedure.query(() => {
     return operator.getAll();
