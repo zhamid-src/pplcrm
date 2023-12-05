@@ -1,9 +1,10 @@
-import { CommonModule } from '@angular/common';
-import { Component, ViewEncapsulation } from '@angular/core';
-import { UserService } from './services/user.service';
+import { CommonModule } from "@angular/common";
+import { Component, ViewEncapsulation } from "@angular/core";
+import { AuthService } from "./services/auth.service";
+import { UserService } from "./services/user.service";
 
 @Component({
-  selector: 'pplcrm-nx-welcome',
+  selector: "pplcrm-nx-welcome",
   standalone: true,
   imports: [CommonModule],
   template: `
@@ -22,16 +23,16 @@ import { UserService } from './services/user.service';
           system-ui,
           -apple-system,
           BlinkMacSystemFont,
-          'Segoe UI',
+          "Segoe UI",
           Roboto,
-          'Helvetica Neue',
+          "Helvetica Neue",
           Arial,
-          'Noto Sans',
+          "Noto Sans",
           sans-serif,
-          'Apple Color Emoji',
-          'Segoe UI Emoji',
-          'Segoe UI Symbol',
-          'Noto Color Emoji';
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Segoe UI Symbol",
+          "Noto Color Emoji";
         line-height: 1.5;
         tab-size: 4;
         scroll-behavior: smooth;
@@ -66,7 +67,7 @@ import { UserService } from './services/user.service';
       }
       pre {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-          'Liberation Mono', 'Courier New', monospace;
+          "Liberation Mono", "Courier New", monospace;
       }
       svg {
         display: block;
@@ -81,7 +82,7 @@ import { UserService } from './services/user.service';
         border-radius: 0.25rem;
         color: rgba(229, 231, 235, 1);
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-          'Liberation Mono', 'Courier New', monospace;
+          "Liberation Mono", "Courier New", monospace;
         overflow: scroll;
         padding: 0.5rem 0.75rem;
       }
@@ -741,7 +742,7 @@ import { UserService } from './services/user.service';
           </div>
           <div id="other-links">
             <a
-              class="button-pill rounded shadow nx-console"
+              class="button-pill nx-console rounded shadow"
               href="https://marketplace.visualstudio.com/items?itemName=nrwl.angular-console&utm_source=nx-project"
               target="_blank"
               rel="noreferrer"
@@ -763,7 +764,7 @@ import { UserService } from './services/user.service';
               </span>
             </a>
             <a
-              class="button-pill rounded shadow nx-console-jetbrains"
+              class="button-pill nx-console-jetbrains rounded shadow"
               href="https://plugins.jetbrains.com/plugin/21060-nx-console"
               target="_blank"
               rel="noreferrer"
@@ -964,21 +965,37 @@ nx affected:e2e</pre>
   encapsulation: ViewEncapsulation.None,
 })
 export class NxWelcomeComponent {
-  private todoService: UserService;
+  private user: UserService;
+  private auth: AuthService;
 
   constructor() {
-    this.todoService = new UserService();
+    this.user = new UserService();
+    this.auth = new AuthService();
 
     this.test();
   }
 
   test() {
-    this.todoService.getAll().subscribe((todos) => {
+    this.auth
+      .signIn({
+        email: "zhamid@gmail.com",
+        password: "Eternity#1pplcrm!",
+      })
+      .subscribe({
+        next: (data: any) =>
+          console.log(">>>> next:", data.data.user.user_metadata),
+        error: (err) => console.error(">>>> error: ", err),
+        complete: () => console.log(">>>> complete"),
+      });
+
+    /*
+    this.user.getAll().subscribe((todos) => {
       console.log(todos);
     });
 
-    this.todoService.getById(1).subscribe((todo) => {
+    this.user.getOneById(1).subscribe((todo) => {
       console.log(todo);
     });
+    */
   }
 }

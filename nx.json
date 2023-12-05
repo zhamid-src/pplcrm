@@ -50,7 +50,7 @@
   "nxCloudAccessToken": "M2Q4ZDAwNjItNDdiOC00Y2YwLTg5MzEtNzAxZWYyOGUzYjBifHJlYWQtd3JpdGU=",
   "generators": {
     "@nx/angular:application": {
-      "style": "sass",
+      "style": "scss",
       "linter": "eslint",
       "unitTestRunner": "jest",
       "e2eTestRunner": "playwright"
@@ -60,7 +60,7 @@
       "unitTestRunner": "jest"
     },
     "@nx/angular:component": {
-      "style": "sass"
+      "style": "scss"
     }
   }
 }

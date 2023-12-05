@@ -1,17 +1,17 @@
-import { Injectable } from '@angular/core';
-import { from } from 'rxjs';
-import { TRPCService } from './trpc.service';
+import { Injectable } from "@angular/core";
+import { from } from "rxjs";
+import { TRPCService } from "./trpc.service";
 
 @Injectable({
-  providedIn: 'root',
+  providedIn: "root",
 })
 export class UserService extends TRPCService {
   public getAll() {
     return from(this.api.users.getAll.query());
   }
 
-  public getById(id: number) {
-    return from(this.api.users.getById.query(id));
+  public getOneById(id: number) {
+    return from(this.api.users.getOneById.query(id));
   }
 
   /*
