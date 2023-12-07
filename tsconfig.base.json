@@ -4,20 +4,20 @@
     "rootDir": ".",
     "sourceMap": true,
     "declaration": false,
-    "moduleResolution": "node",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "es2015",
-    "module": "esnext",
-    "lib": ["es2020", "dom"],
+    "lib": ["es2015", "dom"],
     "strict": true,
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
+    "moduleResolution": "node",
     "baseUrl": "./",
     "paths": {
       "@backend/*": ["./apps/backend/src/*"],
-      "@frontend/*": ["./apps/frontend/src/*"]
+      "@frontend/*": ["./apps/frontend/src/*"],
+      "@common/*": ["./apps/common/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]

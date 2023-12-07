@@ -1,58 +1,90 @@
-<form class="padding-top-sm padding-left padding-right" fxLayout="column" fxLayoutGap="16px">
-    <div fxFlex="auto" fxLayout="column">
-        <mat-form-field fxFlex="grow">
-            <mat-label>E-Mail</mat-label>
-            <input matInput type="email" formControlName="email" />
-            <!--
-            <mat-error *ngIf="email.touched && email.dirty && email.invalid">
-                {{ emailErrorMessage }}
-            </mat-error>
-            -->
-        </mat-form-field>
-
-        <mat-form-field fxFlex="grow">
-            <mat-label>Password</mat-label>
-            <input matInput formControlName="password" />
-            <button type="button" class="square" mat-icon-button matSuffix (click)="toggleVisibility()"
-                matTooltip="Toggle Visibility">
-                @if (visibility) {
-                <mat-icon>visibility</mat-icon>
-                } @else {
-                <mat-icon>visibility_off</mat-icon>
-                }
-            </button>
-            <mat-hint align="end">Pick a good password</mat-hint>
-            <!--
-            <mat-error *ngIf="password.touched && password.dirty && password.invalid">
-                {{ passwordErrorMessage }}
-            </mat-error>
-            -->
-        </mat-form-field>
-
-        <div class="padding-bottom">
-            <div fxLayout="row" fxLayoutAlign="space-between center">
-                <mat-checkbox matTooltip="Keeps you logged in" color="primary" class="caption"
-                    (change)="toggleLoggedIn($event)">
-                    Remember Me
-                </mat-checkbox>
-                <a class="caption">Forgot Password?</a>
-            </div>
-        </div>
-
-        <button (click)="signIn()" mat-raised-button color="primary" [disabled]="processing()">
-            Sign In
-        </button>
-        @if (processing()) {
-        <mat-progress-bar mode="indeterminate" color="primary"></mat-progress-bar>
-        }
-
-
-        <p class="secondary-text text-center">
-            Already have an account?
-            <a routerLink="/signup">Sign Up!</a>
-            <span class="learnmore">
-                <a href="/learnmore" target="_blank">Learn More</a>
-            </span>
-        </p>
+<div class="bg-image flex min-h-full">
+  <div class="card card-compact bg-base-100 m-auto w-96 shadow-xl">
+    <div class="card-title bg-primary mb-10 w-full">
+      <img class="p-5" src="assets/logo.svg" />
     </div>
-</form>
+    <div class="card-body mt-0 w-full">
+      <form [formGroup]="form">
+        <div class="space-y-4">
+          <div class="space-y-0">
+            <label class="label-text"
+              >Enter your email and password to sign in</label
+            >
+          </div>
+          <div class="space-y-0">
+            <input
+              class="input input-bordered focus:input-primary invalid:input-error w-full"
+              type="email"
+              formControlName="email"
+              placeholder="mail@gmail.com"
+            />
+            @if (email?.dirty && email?.invalid) {
+              <span class="label-text-alt text-error"
+                >Please enter a valid email</span
+              >
+            }
+          </div>
+          <div class="space-y-0">
+            <input
+              class="input input-bordered focus:input-primary invalid:input-error w-full"
+              type="password"
+              formControlName="password"
+              placeholder="Enter your password"
+            />
+            @if (password?.invalid) {
+              <div class="label">
+                <span class="label-text-alt">Min character: 8</span>
+              </div>
+            }
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center">
+              <input
+                id="remember_me"
+                name="remember_me"
+                type="checkbox"
+                class="checkbox checkbox-primary"
+              />
+              <label for="remember_me" class="ml-2 block text-sm">
+                Remember me
+              </label>
+            </div>
+            <div class="text-sm">
+              <a href="#" class="link hover:link-primary no-underline">
+                Forgot your password?
+              </a>
+            </div>
+          </div>
+          <div>
+            <button
+              type="submit"
+              class="btn btn-primary w-full"
+              (click)="signIn()"
+              [disabled]="processing()"
+            >
+              @if (processing()) {
+                <span class="loading loading-spinner"></span>
+                SIGNING IN
+              } @else {
+                SIGN IN
+              }
+            </button>
+          </div>
+        </div>
+      </form>
+      <div class="pt-5 text-center text-xs">
+        <span>
+          Copyright © 2024
+          <a
+            href=""
+            rel=""
+            target="_blank"
+            title="CampaignRaven"
+            class="link hover:link-primary no-underline"
+            >CampaignRaven</a
+          ></span
+        >
+      </div>
+    </div>
+  </div>
+</div>

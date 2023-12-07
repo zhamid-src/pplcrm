@@ -1,5 +1,19 @@
-/* You can add global styles to this file, and also import other style files */
+// regular style toast
+@import "ngx-toastr/toastr";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* You can add global styles to this file, and also import other style files */
+
+html,
+body {
+  height: 100vh;
+}
+body {
+  font-family: "Roboto", sans-serif;
+}
+.bg-image {
+  background-image: url("assets/bg.jpg");
+}

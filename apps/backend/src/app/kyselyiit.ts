@@ -1,15 +1,8 @@
 // import { CockroachDialect } from '@cubos/kysely-cockroach';
-import { promises as fs } from 'fs';
-import {
-  FileMigrationProvider,
-  Kysely,
-  Migrator,
-  PostgresDialect,
-} from 'kysely';
-import * as path from 'path';
-import { Pool } from 'pg';
-import { postgres } from '../env';
-import { Models } from './kysely.models';
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool } from "pg";
+import { postgres } from "../env";
+import { Models } from "./kysely.models";
 
 const dialect = new PostgresDialect({
   pool: new Pool(postgres),
@@ -19,7 +12,8 @@ export const db = new Kysely<Models>({
   dialect,
 });
 
-const migrationFolder = path.join(__dirname, './kysely.migrations');
+/*
+const migrationFolder = path.join(__dirname, "./kysely.migrations");
 
 export const migrator = new Migrator({
   db,
@@ -34,17 +28,17 @@ async function migrateToLatest() {
   const { error, results } = await migrator.migrateToLatest();
 
   results?.forEach((it) => {
-    if (it.status === 'Success') {
+    if (it.status === "Success") {
       console.log(
-        `migration up:"${it.migrationName}" was executed successfully`
+        `migration up:"${it.migrationName}" was executed successfully`,
       );
-    } else if (it.status === 'Error') {
+    } else if (it.status === "Error") {
       console.error(`failed to execute migration up"${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('failed to migrate up');
+    console.error("failed to migrate up");
     console.error(error);
     process.exit(1);
   }
@@ -56,17 +50,17 @@ export async function migrateDown() {
   const { error, results } = await migrator.migrateDown();
 
   results?.forEach((it) => {
-    if (it.status === 'Success') {
+    if (it.status === "Success") {
       console.log(
-        `migration down"${it.migrationName}" was executed successfully`
+        `migration down"${it.migrationName}" was executed successfully`,
       );
-    } else if (it.status === 'Error') {
+    } else if (it.status === "Error") {
       console.error(`failed to execute migration down"${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('failed to migrate down');
+    console.error("failed to migrate down");
     console.error(error);
     process.exit(1);
   }
@@ -74,3 +68,4 @@ export async function migrateDown() {
   // await dbLocal.destroy()
 }
 migrateToLatest();
+*/

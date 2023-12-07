@@ -17,16 +17,8 @@
         "tsConfig": "apps/frontend/tsconfig.app.json",
         "inlineStyleLanguage": "scss",
         "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
-        "styles": [
-          "apps/frontend/src/custom-theme.scss",
-          "apps/frontend/src/styles.scss"
-        ],
-        "scripts": [],
-        "server": "apps/frontend/src/main.server.ts",
-        "prerender": true,
-        "ssr": {
-          "entry": "apps/frontend/server.ts"
-        }
+        "styles": ["apps/frontend/src/styles.scss"],
+        "scripts": []
       },
       "configurations": {
         "production": {
