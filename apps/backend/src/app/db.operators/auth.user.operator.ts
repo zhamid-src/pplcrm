@@ -1,6 +1,6 @@
-import { db } from '../kysely';
-import { TableType } from '../kysely.models';
-import { BaseOperator } from './base.operator';
+import { TableType } from "../kysely.models";
+import { db } from "../kyselyiit";
+import { BaseOperator } from "./base.operator";
 
 export class AuthUsersOperator extends BaseOperator<TableType.AuthUsers> {
   constructor() {
@@ -17,7 +17,7 @@ export class AuthUsersOperator extends BaseOperator<TableType.AuthUsers> {
       .set({
         raw_user_meta_data: json,
       })
-      .where('id', '=', id)
+      .where("id", "=", id)
       .executeTakeFirst();
   }
 }

@@ -1,5 +1,4 @@
 import { sql } from "kysely";
-import { db } from "../kysely";
 import {
   GetOperandType,
   GroupDataType,
@@ -7,6 +6,7 @@ import {
   OperationDataType,
   TableColumnsType,
 } from "../kysely.models";
+import { db } from "../kyselyiit";
 
 export type QueryParams<T extends keyof Models> = {
   columns?: TableColumnsType<T>[];
