@@ -1,13 +1,30 @@
 import { Injectable, signal } from "@angular/core";
-import { AuthErrors, IAuthUser } from "@common/types";
+
 import { from } from "rxjs";
 import { TRPCService } from "./trpc.service.js";
+
+interface IAuthUser {
+  user: unknown | null;
+  session: unknown | null;
+  error: AuthErrors | null;
+}
+
+enum AuthErrors {
+  BadLogin = 1,
+  EmailNotConfirmed,
+  InvalidRefreshToken,
+  AdminTokenRequired,
+  MissingInformation,
+  UserAlreadyRegistered,
+  BadPassword,
+  Unknown,
+}
 
 @Injectable({
   providedIn: "root",
 })
 export class AuthService extends TRPCService {
-  private static _user: any = signal(null);
+  private static _user = signal<unknown | null>(null);
 
   public static get user() {
     return this._user;
