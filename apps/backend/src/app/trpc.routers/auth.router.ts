@@ -1,4 +1,3 @@
-import { AuthErrors, IAuthUser } from "@common/types";
 import {
   AuthResponse,
   SignInWithPasswordCredentials,
@@ -6,11 +5,26 @@ import {
 import { z } from "zod";
 import { supabase } from "../../supabase";
 import { trpc } from "../../trpc";
-import { UsersOperator } from "../db.operators/users.operator";
 
-const operator = new UsersOperator();
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
+
+interface IAuthUser {
+  user: unknown | null;
+  session: unknown | null;
+  error: AuthErrors | null;
+}
+
+enum AuthErrors {
+  BadLogin = 1,
+  EmailNotConfirmed,
+  InvalidRefreshToken,
+  AdminTokenRequired,
+  MissingInformation,
+  UserAlreadyRegistered,
+  BadPassword,
+  Unknown,
+}
 
 export const authRouter = router({
   signUp: publicProcedure

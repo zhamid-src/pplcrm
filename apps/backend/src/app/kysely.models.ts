@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // This file is used to generate the types for the database schema to assist with
 // migration. It also tells kysely the types of the columns in the database.
 // We don't really use it anywhere else
@@ -17,8 +18,8 @@ import type {
   Selectable,
   Updateable,
 } from "kysely";
-import { UndirectedOrderByExpression } from "kysely/dist/cjs/parser/order-by-parser";
-import { ExtractTableAlias } from "kysely/dist/cjs/parser/table-parser";
+import { UndirectedOrderByExpression } from "node_modules/kysely/dist/cjs/parser/order-by-parser";
+import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 
 export interface Models {
   campaigns: Campaigns;
@@ -108,7 +109,6 @@ type TablesOperationMap = {
 };
 
 type Keys<T> = keyof T;
-type ValuesOf<T> = T[Keys<T>];
 
 type DiscriminatedUnionOfRecord<
   A,
@@ -133,7 +133,7 @@ export type TableColumnsType<T extends keyof Models> = T extends keyof Models
   : never;
 
 export type GroupDataType<T extends keyof Models> = T extends keyof Models
-  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, {}>
+  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
   : never;
 export type OperationDataType<
   T extends keyof Models,

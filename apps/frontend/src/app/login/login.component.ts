@@ -7,9 +7,26 @@ import {
   UntypedFormBuilder,
   Validators,
 } from "@angular/forms";
-import { AuthErrors } from "@common/types.js";
+
 import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
+
+interface IAuthUser {
+  user: unknown | null;
+  session: unknown | null;
+  error: AuthErrors | null;
+}
+
+enum AuthErrors {
+  BadLogin = 1,
+  EmailNotConfirmed,
+  InvalidRefreshToken,
+  AdminTokenRequired,
+  MissingInformation,
+  UserAlreadyRegistered,
+  BadPassword,
+  Unknown,
+}
 
 @Component({
   selector: "pplcrm-login",
@@ -33,9 +50,8 @@ export class LoginComponent {
   ) {}
 
   async signIn() {
-    /*
     if (!(this.email?.valid && this.password?.valid)) {
-      this.toastr.info("Please check your email and password.");
+      this.toastr.error(this.mapErrorToString(AuthErrors.BadPassword));
       return;
     }
 
@@ -48,28 +64,31 @@ export class LoginComponent {
     });
 
     if (payload?.error) {
-      console.log("error", payload?.error);
+      if (payload?.error === AuthErrors.EmailNotConfirmed) {
+        // TODO: continue to the 'verify email' component
+      }
       this.toastr.error(this.mapErrorToString(payload.error));
     } else {
-      console.log(AuthService.user);
+      // TODO: The user is signed in.  Continue.
+      console.log(AuthService.user());
     }
 
     this.processing.set(false);
-    */
   }
 
-  mapErrorToString(error: AuthErrors) {
-    return error === AuthErrors.BadLogin
-      ? "Check your email address"
-      : error === AuthErrors.EmailNotConfirmed
-        ? "Your email is not confirmed. Please check your email."
-        : error === AuthErrors.InvalidRefreshToken ||
-            AuthErrors.AdminTokenRequired ||
-            AuthErrors.MissingInformation
-          ? "Please log in again"
-          : AuthErrors.BadPassword
-            ? "Please check your password and try again"
-            : "Sorry, could not log you in. Please check your network connection, email and password.";
+  mapErrorToString(error?: AuthErrors) {
+    switch (error) {
+      case AuthErrors.InvalidRefreshToken:
+      case AuthErrors.AdminTokenRequired:
+      case AuthErrors.MissingInformation:
+        return "There was an error logging you in. Please try again.";
+      case AuthErrors.BadPassword:
+        return "Please check your password and try again";
+      case AuthErrors.BadLogin:
+      case AuthErrors.Unknown:
+      default:
+        return "Sorry, could not log you in. Please check your network connection, email and password. If the issue persists then contact us.";
+    }
   }
 
   get email() {
@@ -79,6 +98,4 @@ export class LoginComponent {
   get password() {
     return this.form.get("password");
   }
-
-  toggleLoggedIn(_event: any) {}
 }
