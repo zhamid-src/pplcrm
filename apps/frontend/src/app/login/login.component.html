@@ -1,42 +1,34 @@
-<div class="bg-image flex min-h-full">
-  <div class="card card-compact bg-base-100 m-auto w-96 shadow-xl">
+<div class="bg-image flex min-h-full font-light">
+  <div class="card card-compact glass m-auto w-96 shadow-xl">
     <div class="card-title bg-primary mb-10 w-full">
       <img class="p-5" src="assets/logo.svg" />
     </div>
     <div class="card-body mt-0 w-full">
       <form [formGroup]="form">
         <div class="space-y-4">
-          <div class="space-y-0">
-            <label class="label-text"
-              >Enter your email and password to sign in</label
+          <input
+            class="input-pplcrm mt-3"
+            type="email"
+            formControlName="email"
+            placeholder="mail@gmail.com"
+          />
+          @if (email?.dirty && email?.invalid) {
+            <span class="label-text-alt text-error"
+              >Please enter a valid email</span
             >
-          </div>
-          <div class="space-y-0">
-            <input
-              class="input input-bordered focus:input-primary invalid:input-error w-full"
-              type="email"
-              formControlName="email"
-              placeholder="mail@gmail.com"
-            />
-            @if (email?.dirty && email?.invalid) {
-              <span class="label-text-alt text-error"
-                >Please enter a valid email</span
-              >
-            }
-          </div>
-          <div class="space-y-0">
-            <input
-              class="input input-bordered focus:input-primary invalid:input-error w-full"
-              type="password"
-              formControlName="password"
-              placeholder="Enter your password"
-            />
-            @if (password?.invalid) {
-              <div class="label">
-                <span class="label-text-alt">Min character: 8</span>
-              </div>
-            }
-          </div>
+          }
+
+          <input
+            class="input-pplcrm"
+            type="password"
+            formControlName="password"
+            placeholder="Enter your password"
+          />
+          <!--
+          @if (password?.invalid) {
+            <span class="label-text-alt text-slate-400">Min character: 8</span>
+          }-->
+
           <div class="flex items-center justify-between">
             <div class="flex items-center">
               <input
@@ -63,8 +55,9 @@
               [disabled]="processing()"
             >
               @if (processing()) {
-                <span class="loading loading-spinner"></span>
-                SIGNING IN
+                <span
+                  class="loading loading-dots loading-lg text-primary"
+                ></span>
               } @else {
                 SIGN IN
               }
@@ -72,7 +65,12 @@
           </div>
         </div>
       </form>
-      <div class="pt-5 text-center text-xs">
+      <div class="pt-3 text-center">
+        <a href="/signup" class="link hover:link-primary no-underline"
+          >SIGN UP</a
+        >
+      </div>
+      <div class="text-center text-xs text-gray-400">
         <span>
           Copyright © 2024
           <a
