@@ -4,9 +4,13 @@ import { from } from "rxjs";
 import { TRPCService } from "./trpc.service.js";
 
 interface IAuthUser {
-  user: unknown | null;
-  session: unknown | null;
+  // #region Properties (3)
+
   error: AuthErrors | null;
+  session: unknown | null;
+  user: unknown | null;
+
+  // #endregion Properties (3)
 }
 
 enum AuthErrors {
@@ -24,23 +28,21 @@ enum AuthErrors {
   providedIn: "root",
 })
 export class AuthService extends TRPCService {
+  // #region Properties (1)
+
   private static _user = signal<unknown | null>(null);
+
+  // #endregion Properties (1)
+
+  // #region Public Static Accessors (1)
 
   public static get user() {
     return this._user;
   }
 
-  public signUp(input: { email: string; password: string }) {
-    return this.api.auth.signUp
-      .mutate(input)
-      .then((payload: Partial<IAuthUser>) => {
-        AuthService._user.set(payload?.user);
-      })
-      .catch(() => {
-        AuthService._user.set(null);
-        return { error: AuthErrors.BadLogin } as IAuthUser;
-      });
-  }
+  // #endregion Public Static Accessors (1)
+
+  // #region Public Methods (3)
 
   public signIn(input: { email: string; password: string }) {
     return this.api.auth.signIn
@@ -60,6 +62,20 @@ export class AuthService extends TRPCService {
       this.api.auth.signOut.mutate().finally(() => AuthService._user.set(null)),
     );
   }
+
+  public signUp(input: { email: string; password: string }) {
+    return this.api.auth.signUp
+      .mutate(input)
+      .then((payload: Partial<IAuthUser>) => {
+        AuthService._user.set(payload?.user);
+      })
+      .catch(() => {
+        AuthService._user.set(null);
+        return { error: AuthErrors.BadLogin } as IAuthUser;
+      });
+  }
+
+  // #endregion Public Methods (3)
 }
 
 /*
@@ -154,7 +170,6 @@ export class AuthService extends TRPCService {
     "message": "Invalid login credentials",
     "status": 400
 }
-
 
 */
 

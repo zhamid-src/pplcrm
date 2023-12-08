@@ -20,8 +20,8 @@ export interface ITodo extends Partial<ITodoBody> {
 
 export const personsRouter = router({
   getOneById: publicProcedure.input(z.number()).query((input) => {
-    const id: any = input;
-    return operator.getOneById(id);
+    const id = input;
+    return operator.getOneById(id as never);
   }),
   getAll: publicProcedure.query(() => {
     return operator.getAll();

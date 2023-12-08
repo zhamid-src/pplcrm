@@ -2,27 +2,37 @@
   <div class="m-auto flex-col">
     <ul class="steps mb-4 min-w-full">
       <li class="step step-primary cursor-pointer">Organization</li>
-      <li class="step cursor-pointer" [class.step-primary]="step > 2">
+      <li class="step cursor-pointer" [class.step-primary]="step > 1">
         Your Info
       </li>
-      <li class="step cursor-pointer" [class.step-primary]="step === 6">
+      <li class="step cursor-pointer" [class.step-primary]="step === 4">
         Finalize
       </li>
     </ul>
     <div class="mb-6 min-w-fit max-w-md rounded-xl bg-white p-4">
-      <div [class.hidden]="step !== 1">
-        <label class="label">
-          Every user is a part of an organization. If you'd like to join an
-          existing organization then ask them for an invitation. Otherwise the
-          first step is to create a new organization.
-        </label>
+      <form [formGroup]="form">
+        <div [class.hidden]="step !== 1">
+          <label class="label">
+            Every user is a part of an organization. If you'd like to join an
+            existing organization then ask them for an invitation. Otherwise the
+            first step is to create a new organization.
+          </label>
 
-        <input
-          class="input-pplcrm required:input-primary"
-          placeholder="Organization name (or self)"
-          required
-        />
-      </div>
+          <input
+            class="input-pplcrm required:input-primary"
+            placeholder="Organization name (or self)"
+            type="text"
+            formControlName="organization"
+            required
+          />
+          @if (organization?.dirty && organization?.invalid) {
+            <span class="label-text-alt text-error"
+              >Organization name is required. If you are solo then you can
+              simply write "Self"</span
+            >
+          }
+        </div>
+        <!--
       <div [class.hidden]="step !== 2">
         <div class="space-y-2">
           <div class="space-y-0">
@@ -350,39 +360,66 @@
           </select>
         </div>
       </div>
+      -->
 
-      <div [class.hidden]="step !== 3" class="space-y-2">
-        <input class="input-pplcrm" placeholder="Email" type="email" />
-        <input
-          pwnedPasswordValidator
-          class="input-pplcrm"
-          placeholder="Password"
-          type="password"
-        />
-        <div class="text-sm">
-          This is not a safe password as it has been in
-          <!--{{ pw.errors.pwnedPasswordOccurrence | number: "1.0-0" }}-->
-          data breaches before. If you use it anywhere else, change it!
+        <div [class.hidden]="step !== 2" class="space-y-2">
+          <input
+            class="input-pplcrm"
+            placeholder="Email"
+            type="email"
+            formControlName="email"
+          />
+          @if (email && email.dirty && email.invalid) {
+            <span class="label-text-alt text-error">Enter a valid email</span>
+          }
+          <input
+            pwnedPasswordValidator
+            class="input-pplcrm"
+            placeholder="Password"
+            formControlName="password"
+            type="password"
+          />
+          @if (passwordInBreach()) {
+            <span class="label-text-alt text-error"
+              >This is not a safe password as it has been in
+              <span class="font-bold">{{
+                passwordBreachNumber() | number: "1.0-0"
+              }}</span>
+              data breaches before. You should select a different
+              password.</span
+            >
+          } @else if (password?.dirty && password?.invalid) {
+            <span class="label-text-alt text-error"
+              >Your password should have at least 8 characters</span
+            >
+          }
         </div>
-        <div class="text-sm">Please pick a unique password.</div>
-      </div>
 
-      <div [class.hidden]="step !== 4" class="space-y-2">
-        <input
-          class="input-pplcrm required:input-primary"
-          placeholder="Your first name*"
-          required
-        />
-        <input
-          class="input-pplcrm required:input-primary"
-          placeholder="Middle name(s) (optional)"
-        />
-        <input
-          class="input-pplcrm required:input-primary"
-          placeholder="Last name (optional)"
-        />
-      </div>
+        <div [class.hidden]="step !== 3" class="space-y-2">
+          <input
+            class="input-pplcrm required:input-primary"
+            placeholder="Your first name*"
+            formControlName="first_name"
+            required
+          />
+          @if (firstName?.dirty && firstName?.invalid) {
+            <span class="label-text-alt text-error"
+              >First name is required</span
+            >
+          }
+          <input
+            class="input-pplcrm required:input-primary"
+            placeholder="Middle name(s) (optional)"
+            formControlName="middle_names"
+          />
+          <input
+            class="input-pplcrm required:input-primary"
+            placeholder="Last name (optional)"
+            formControlName="last_name"
+          />
+        </div>
 
+        <!--
       <div [class.hidden]="step !== 5">
         <div class="space-y-2">
           <div class="space-y-0">
@@ -718,91 +755,100 @@
           </select>
         </div>
       </div>
+      -->
 
-      <div [class.hidden]="step !== 6" class="space-y-2">
-        <label class="label label-text">Just one last thign! </label>
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary"
-          />
-          <label for="remember_me" class="ml-2 block text-sm">
-            I accept the Terms & Conditions
-          </label>
+        <div [class.hidden]="step !== 4" class="space-y-2">
+          <label class="label label-text">Just one last thign! </label>
+          <div class="flex items-center">
+            <input
+              [(ngModel)]="termsAccepted"
+              [ngModelOptions]="{ standalone: true }"
+              id="terms"
+              name="terms"
+              fromControlName="terms"
+              type="checkbox"
+              class="checkbox checkbox-primary"
+            />
+            <label for="terms" class="ml-2 block text-sm">
+              I accept the Terms & Conditions
+            </label>
+          </div>
+          @if (joinAttempted && !termsAccepted) {
+            <span class="label-text-alt text-error"
+              >Please read and accept the terms & conditions.</span
+            >
+          }
         </div>
-      </div>
 
-      <div class="flex justify-between">
-        <button
-          [class.hidden]="step === 1 || step === 6"
-          class="btn btn-primary float-left my-4 text-lg font-light"
-          (click)="prev()"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="h-6 w-6"
+        <div class="flex justify-between">
+          <button
+            [class.hidden]="step === 1"
+            class="btn btn-primary float-left my-4 text-lg font-light"
+            (click)="prev()"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M19.5 12h-15m0 0l6.75 6.75M4.5 12l6.75-6.75"
-            />
-          </svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="h-6 w-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19.5 12h-15m0 0l6.75 6.75M4.5 12l6.75-6.75"
+              />
+            </svg>
 
-          Back
-        </button>
+            Back
+          </button>
 
-        <button
-          [class.w-full]="step === 1"
-          [class.hidden]="step === 6"
-          class="btn btn-primary my-4 text-lg font-light"
-          (click)="next()"
-        >
-          Next
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="h-6 w-6"
+          <button
+            [class.w-full]="step === 1"
+            [class.hidden]="step === 4"
+            class="btn btn-primary my-4 text-lg font-light"
+            (click)="next()"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
-            />
-          </svg>
-        </button>
-        <button
-          [class.w-full]="step === 6"
-          [class.hidden]="step !== 6"
-          class="btn btn-primary my-4 text-lg font-light"
-          (click)="submit()"
-        >
-          Create the account
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="h-6 w-6"
+            Next
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="h-6 w-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
+              />
+            </svg>
+          </button>
+          <button
+            [class.hidden]="step !== 4"
+            class="btn btn-primary my-4 text-lg font-light"
+            (click)="join()"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
-            />
-          </svg>
-        </button>
-      </div>
+            Join
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="h-6 w-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
+              />
+            </svg>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>

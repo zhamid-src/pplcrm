@@ -2,9 +2,9 @@ import { CommonModule } from "@angular/common";
 import { Component, signal } from "@angular/core";
 
 import {
+  FormBuilder,
   FormsModule,
   ReactiveFormsModule,
-  UntypedFormBuilder,
   Validators,
 } from "@angular/forms";
 
@@ -12,9 +12,13 @@ import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
 
 interface IAuthUser {
-  user: unknown | null;
-  session: unknown | null;
+  // #region Properties (3)
+
   error: AuthErrors | null;
+  session: unknown | null;
+  user: unknown | null;
+
+  // #endregion Properties (3)
 }
 
 enum AuthErrors {
@@ -36,20 +40,58 @@ enum AuthErrors {
   styleUrl: "./login.component.scss",
 })
 export class LoginComponent {
-  hidePassword = true;
+  // #region Properties (3)
+
   protected processing = signal(false);
-  form = this.fb.group({
+
+  public form = this.fb.group({
     email: ["", [Validators.required, Validators.email]],
     password: ["", [Validators.required, Validators.minLength(8)]],
   });
+  public hidePassword = true;
+
+  // #endregion Properties (3)
+
+  // #region Constructors (1)
 
   constructor(
-    private fb: UntypedFormBuilder,
+    private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
   ) {}
 
-  async signIn() {
+  // #endregion Constructors (1)
+
+  // #region Public Accessors (2)
+
+  public get email() {
+    return this.form.get("email");
+  }
+
+  public get password() {
+    return this.form.get("password");
+  }
+
+  // #endregion Public Accessors (2)
+
+  // #region Public Methods (2)
+
+  public mapErrorToString(error?: AuthErrors) {
+    switch (error) {
+      case AuthErrors.InvalidRefreshToken:
+      case AuthErrors.AdminTokenRequired:
+      case AuthErrors.MissingInformation:
+        return "There was an error logging you in. Please try again.";
+      case AuthErrors.BadPassword:
+        return "Please check your password and try again";
+      case AuthErrors.BadLogin:
+      case AuthErrors.Unknown:
+      default:
+        return "Sorry, could not log you in. Please check your network connection, email and password. If the issue persists then contact us.";
+    }
+  }
+
+  public async signIn() {
     if (!(this.email?.valid && this.password?.valid)) {
       this.toastr.error(this.mapErrorToString(AuthErrors.BadPassword));
       return;
@@ -59,8 +101,8 @@ export class LoginComponent {
     this.processing.set(true);
 
     const payload: Partial<IAuthUser> = await this.authService.signIn({
-      email: this.email.value,
-      password: this.password.value,
+      email: this.email.value as string,
+      password: this.password.value as string,
     });
 
     if (payload?.error) {
@@ -76,26 +118,5 @@ export class LoginComponent {
     this.processing.set(false);
   }
 
-  mapErrorToString(error?: AuthErrors) {
-    switch (error) {
-      case AuthErrors.InvalidRefreshToken:
-      case AuthErrors.AdminTokenRequired:
-      case AuthErrors.MissingInformation:
-        return "There was an error logging you in. Please try again.";
-      case AuthErrors.BadPassword:
-        return "Please check your password and try again";
-      case AuthErrors.BadLogin:
-      case AuthErrors.Unknown:
-      default:
-        return "Sorry, could not log you in. Please check your network connection, email and password. If the issue persists then contact us.";
-    }
-  }
-
-  get email() {
-    return this.form.get("email");
-  }
-
-  get password() {
-    return this.form.get("password");
-  }
+  // #endregion Public Methods (2)
 }

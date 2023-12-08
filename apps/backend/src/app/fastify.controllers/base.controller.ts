@@ -3,10 +3,45 @@ import { BaseOperator } from "../db.operators/base.operator";
 import { GetOperandType, Models, OperationDataType } from "../kysely.models";
 
 export class BaseController<T extends keyof Models> {
+  // #region Properties (1)
+
   protected readonly operator: BaseOperator<T>;
+
+  // #endregion Properties (1)
+
+  // #region Constructors (1)
 
   constructor(dbOperator: BaseOperator<T>) {
     this.operator = dbOperator;
+  }
+
+  // #endregion Constructors (1)
+
+  // #region Public Methods (6)
+
+  /**
+   * Add the given user
+   * @param req FastifyRequest - req.body contains the user payload
+   * @param reply FastifyReply
+   * @returns
+   */
+  public async add(row: OperationDataType<T, "insert">, reply: FastifyReply) {
+    const result = await this.operator.add(row);
+    return reply.code(201).send(result);
+  }
+
+  /**
+   *  Delete the user by ID
+   * @param req FastifyRequest - req.params.id contains the user ID
+   * @param reply FastifyReply
+   *
+   */
+  public async delete(
+    id: GetOperandType<T, "select", "id">,
+    reply: FastifyReply,
+  ) {
+    const result = await this.operator.delete(id);
+    return reply.code(204).send(result);
   }
 
   /**
@@ -18,6 +53,18 @@ export class BaseController<T extends keyof Models> {
   public async getAll(reply: FastifyReply) {
     const result = await this.operator.getAll();
     return result ? reply.code(200).send(result) : reply.send(404);
+  }
+
+  /**
+   * Get all users. Optional: query parameters
+   * @param reply FastifyReply
+   * @returns
+   */
+  public async getCount(reply: FastifyReply) {
+    const { count } = (await this.operator.getCount()) as unknown as {
+      count: number;
+    };
+    return reply.code(200).send(count);
   }
 
   /**
@@ -35,29 +82,6 @@ export class BaseController<T extends keyof Models> {
   }
 
   /**
-   * Get all users. Optional: query parameters
-   * @param reply FastifyReply
-   * @returns
-   */
-  public async getCount(reply: FastifyReply) {
-    const { count } = (await this.operator.getCount()) as unknown as {
-      count: number;
-    };
-    return reply.code(200).send(count);
-  }
-
-  /**
-   * Add the given user
-   * @param req FastifyRequest - req.body contains the user payload
-   * @param reply FastifyReply
-   * @returns
-   */
-  public async add(row: OperationDataType<T, "insert">, reply: FastifyReply) {
-    const result = await this.operator.add(row);
-    return reply.code(201).send(result);
-  }
-
-  /**
    * Update the user by ID
    * @param req FastifyRequest - req.params.id contains the user ID
    * @param reply FastifyReply
@@ -72,17 +96,5 @@ export class BaseController<T extends keyof Models> {
     return reply.code(200).send(result);
   }
 
-  /**
-   *  Delete the user by ID
-   * @param req FastifyRequest - req.params.id contains the user ID
-   * @param reply FastifyReply
-   *
-   */
-  public async delete(
-    id: GetOperandType<T, "select", "id">,
-    reply: FastifyReply,
-  ) {
-    const result = await this.operator.delete(id);
-    return reply.code(204).send(result);
-  }
+  // #endregion Public Methods (6)
 }

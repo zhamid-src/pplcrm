@@ -10,9 +10,13 @@ const publicProcedure = trpc.procedure;
 const router = trpc.router;
 
 interface IAuthUser {
-  user: unknown | null;
-  session: unknown | null;
+  // #region Properties (3)
+
   error: AuthErrors | null;
+  session: unknown | null;
+  user: unknown | null;
+
+  // #endregion Properties (3)
 }
 
 enum AuthErrors {
