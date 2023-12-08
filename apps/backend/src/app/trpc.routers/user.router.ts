@@ -30,8 +30,8 @@ const dogSchema = z.object<Dog>({
 */
 export const usersRouter = router({
   getOneById: publicProcedure.input(z.number()).query((input) => {
-    const id: any = input;
-    return operator.getOneById(id);
+    const id = input;
+    return operator.getOneById(id as never);
   }),
   getAll: publicProcedure.query(() => {
     return operator.getAll();

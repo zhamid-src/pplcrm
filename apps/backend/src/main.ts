@@ -1,13 +1,13 @@
-import closeWithGrace from 'close-with-grace';
-import * as pino from 'pino';
-import { FastifyServer } from './fastify.server';
+import closeWithGrace from "close-with-grace";
+import * as pino from "pino";
+import { FastifyServer } from "./fastify.server";
 
-process.on('SIGTERM', closeWithGrace);
-process.on('SIGINT', closeWithGrace);
+process.on("SIGTERM", closeWithGrace);
+process.on("SIGINT", closeWithGrace);
 
 const logger: pino.Logger = pino.pino({
   transport: {
-    target: 'pino-pretty',
+    target: "pino-pretty",
   },
 });
 const server = new FastifyServer(logger);
@@ -15,7 +15,7 @@ const server = new FastifyServer(logger);
   await server.serve();
 })();
 
-closeWithGrace({ delay: 2500 }, async function ({ signal, err, manual }) {
+closeWithGrace({ delay: 2500 }, async function ({ err }) {
   if (err) logger.error(err);
   // await migrateDown();
   await server.close();

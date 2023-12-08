@@ -6,6 +6,8 @@ import { TRPCService } from "./trpc.service";
   providedIn: "root",
 })
 export class PersonsService extends TRPCService {
+  // #region Public Methods (2)
+
   public getAll() {
     return from(this.api.persons.getAll.query());
   }
@@ -14,6 +16,7 @@ export class PersonsService extends TRPCService {
     return from(this.api.persons.getOneById.query(id));
   }
 
+  // #endregion Public Methods (2)
   /*
   public addTodo(todo: ITodoBody): Observable<ITodo> {
     return from(this.api.todo.add.mutate(todo));

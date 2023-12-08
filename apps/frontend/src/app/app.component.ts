@@ -9,5 +9,9 @@ import { RouterModule } from "@angular/router";
   styleUrl: "./app.component.scss",
 })
 export class AppComponent {
-  title = "frontend";
+  // #region Properties (1)
+
+  public title = "frontend";
+
+  // #endregion Properties (1)
 }
