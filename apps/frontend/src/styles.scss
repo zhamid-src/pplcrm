@@ -4,6 +4,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@tailwind animation;
 
 /* You can add global styles to this file, and also import other style files */
 
@@ -16,4 +17,10 @@ body {
 }
 .bg-image {
   background-image: url("assets/bg.jpg");
+}
+
+@layer components {
+  .input-pplcrm {
+    @apply input input-bordered focus:input-primary invalid:input-error caret-primary w-full;
+  }
 }

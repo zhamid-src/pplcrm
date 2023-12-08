@@ -260,52 +260,51 @@ interface Households {
 }
 
 interface Tenants {
+  id: Generated<Int8>;
   admin_id: Int8;
+  createdby_id: Int8;
+  name: string;
+  billing_street1: string;
+  billing_street2: string;
   billing_city: string;
   billing_country: string;
   billing_state: string;
-  billing_street1: string;
-  billing_street2: string;
   billing_zip: string;
-  city: string | null;
-  country: string | null;
-  created_at: Generated<Timestamp>;
-  createdby_id: Int8;
-  email: string | null;
-  email2: string | null;
-  id: Generated<Int8>;
-  json: Json | null;
-  mobile: string | null;
-  name: string;
-  notes: string | null;
-  state: string | null;
   street1: string | null;
   street2: string | null;
-  updated_at: Generated<Timestamp>;
+  state: string | null;
+  city: string | null;
+  country: string | null;
   zip: string | null;
+  email: string | null;
+  email2: string | null;
+  phone: string | null;
+  json: Json | null;
+  notes: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 interface Users {
-  city: string | null;
-  country: string | null;
-  created_at: Generated<Timestamp>;
-  email: string | null;
-  email2: string | null;
-  first_name: string | null;
-  home_phone: string | null;
   id: Generated<Int8>;
-  json: Json | null;
-  last_name: string | null;
+  tenant_id: Int8 | null;
+  first_name: string | null;
   middle_names: string | null;
-  mobile: string | null;
-  role: string | null;
-  state: string | null;
+  last_name: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: Int8 | null;
-  updated_at: Generated<Timestamp>;
-  username: string | null;
+  city: string | null;
+  state: string | null;
   zip: string | null;
+  country: string | null;
+  email: string | null;
+  email2: string | null;
+  home_phone: string | null;
+  mobile: string | null;
+  json: Json | null;
+  role: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 interface AuthUsers {
