@@ -33,48 +33,51 @@ enum AuthErrors {
   Unknown,
 }
 
-type SignUpFormType = {
-  organization: string;
-  email: string;
-  password: string;
-  first_name: string;
-  middle_names: string | null;
-  last_name: string | null;
-  terms: string | null;
-};
-
 const tenants: TenantsOperator = new TenantsOperator();
 const users: UsersOperator = new UsersOperator();
 
+const signupInputObj = z.object({
+  organization: z.string(),
+  email: z.string(),
+  password: z.string(),
+  first_name: z.string(),
+  middle_names: z.string().nullable(),
+  last_name: z.string().nullable(),
+});
+const signupInput = signupInputObj.parse({
+  organization: "",
+  email: "",
+  first_name: "",
+  password: "",
+  middle_names: "",
+  last_name: "",
+});
+type signupInputType = typeof signupInput;
+
+const signinInputObj = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
 export const authRouter = router({
   signUp: publicProcedure
-    .input(
-      z.object({
-        organization: z.string(),
-        email: z.string(),
-        password: z.string(),
-        first_name: z.string(),
-        middle_names: z.string().nullable(),
-        last_name: z.string().nullable(),
-      }),
-    )
-    .mutation((data) => signUpHelper(data.input as SignUpFormType)),
+    .input(signupInputObj)
+    .mutation((data) => signUpHelper(data.input)),
 
   signIn: publicProcedure
-    .input(z.object({ email: z.string().email(), password: z.string().min(8) }))
+    .input(signinInputObj)
     .mutation((data) => signInHelper(data.input)),
 
   signOut: publicProcedure.mutation(() => {
     return supabase.auth.signOut();
   }),
 });
-async function signUpHelper(input: SignUpFormType): Promise<IAuthUser> {
+
+async function signUpHelper(input: signupInputType): Promise<IAuthUser> {
   // TODO: should be a transaction
 
   // First, add tenant
   const tenantAddResult = await tenants.add({ name: input.organization });
-  console.log("tenantAddResult", tenantAddResult);
-
   const tenantId = tenantAddResult?.id;
 
   // Now create a new user in auth
@@ -102,7 +105,6 @@ async function signUpHelper(input: SignUpFormType): Promise<IAuthUser> {
 async function signInHelper(
   credentials: SignInWithPasswordCredentials,
 ): Promise<IAuthUser> {
-  console.log("credentials", credentials);
   const payload = await supabase.auth.signInWithPassword(credentials);
   return mapPayloadToUser(payload);
 }
@@ -111,9 +113,10 @@ function mapPayloadToUser(payload: AuthResponse): IAuthUser {
   return {
     user: payload?.data?.user,
     session: payload?.data?.session,
-    error: payload?.data?.user
-      ? null
-      : mapErrorMsgToCode(payload?.error?.message),
+    error:
+      payload?.error || !payload?.data?.user
+        ? mapErrorMsgToCode(payload?.error?.message)
+        : null,
   };
 }
 
