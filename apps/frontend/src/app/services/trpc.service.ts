@@ -1,4 +1,4 @@
-import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
+import { createTRPCProxyClient, httpBatchLink, loggerLink } from "@trpc/client";
 import { Routers } from "APPS/backend/src/app/app.router";
 
 export class TRPCService {
@@ -13,6 +13,7 @@ export class TRPCService {
   constructor() {
     this.api = createTRPCProxyClient<Routers>({
       links: [
+        loggerLink(),
         httpBatchLink({
           url: "http://localhost:3000",
         }),
