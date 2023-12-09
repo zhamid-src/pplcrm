@@ -11,6 +11,7 @@
             type="email"
             formControlName="email"
             placeholder="mail@gmail.com"
+            autocomplete="email"
           />
           @if (email?.dirty && email?.invalid) {
             <span class="label-text-alt text-error"
@@ -22,6 +23,7 @@
             class="input-pplcrm"
             type="password"
             formControlName="password"
+            autocomplete="current-password"
             placeholder="Enter your password"
           />
           <!--

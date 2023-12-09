@@ -55,7 +55,7 @@ export enum TableType {
 // type definitions to help me out.
 // ====================================================================
 
-type TablesOperationMap = {
+export type TablesOperationMap = {
   campaigns: {
     select: Selectable<Campaigns>;
     insert: Insertable<Campaigns>;
@@ -261,15 +261,15 @@ interface Households {
 
 interface Tenants {
   id: Generated<Int8>;
-  admin_id: Int8;
-  createdby_id: Int8;
+  admin_id: Int8 | null;
+  createdby_id: Int8 | null;
   name: string;
-  billing_street1: string;
-  billing_street2: string;
-  billing_city: string;
-  billing_country: string;
-  billing_state: string;
-  billing_zip: string;
+  billing_street1: string | null;
+  billing_street2: string | null;
+  billing_city: string | null;
+  billing_country: string | null;
+  billing_state: string | null;
+  billing_zip: string | null;
   street1: string | null;
   street2: string | null;
   state: string | null;
@@ -288,6 +288,7 @@ interface Tenants {
 interface Users {
   id: Generated<Int8>;
   tenant_id: Int8 | null;
+  uid: string;
   first_name: string | null;
   middle_names: string | null;
   last_name: string | null;

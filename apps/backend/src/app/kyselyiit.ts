@@ -1,5 +1,12 @@
 // import { CockroachDialect } from '@cubos/kysely-cockroach';
-import { Kysely, PostgresDialect } from "kysely";
+import { promises as fs } from "fs";
+import {
+  FileMigrationProvider,
+  Kysely,
+  Migrator,
+  PostgresDialect,
+} from "kysely";
+import path from "path";
 import { Pool } from "pg";
 import { postgres } from "../env";
 import { Models } from "./kysely.models";
@@ -12,7 +19,6 @@ export const db = new Kysely<Models>({
   dialect,
 });
 
-/*
 const migrationFolder = path.join(__dirname, "./kysely.migrations");
 
 export const migrator = new Migrator({
@@ -67,5 +73,5 @@ export async function migrateDown() {
 
   // await dbLocal.destroy()
 }
+
 migrateToLatest();
-*/

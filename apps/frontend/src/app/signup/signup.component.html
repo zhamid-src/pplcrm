@@ -367,6 +367,7 @@
             class="input-pplcrm"
             placeholder="Email"
             type="email"
+            autocomplete="email"
             formControlName="email"
           />
           @if (email && email.dirty && email.invalid) {
@@ -377,6 +378,7 @@
             class="input-pplcrm"
             placeholder="Password"
             formControlName="password"
+            autocomplete="new-password"
             type="password"
           />
           @if (passwordInBreach()) {
@@ -400,6 +402,7 @@
             class="input-pplcrm required:input-primary"
             placeholder="Your first name*"
             formControlName="first_name"
+            autocomplete="given-name"
             required
           />
           @if (firstName?.dirty && firstName?.invalid) {
@@ -411,11 +414,13 @@
             class="input-pplcrm required:input-primary"
             placeholder="Middle name(s) (optional)"
             formControlName="middle_names"
+            autocomplete="additional-name"
           />
           <input
             class="input-pplcrm required:input-primary"
             placeholder="Last name (optional)"
             formControlName="last_name"
+            autocomplete="family-name"
           />
         </div>
 
@@ -785,6 +790,7 @@
             [class.hidden]="step === 1"
             class="btn btn-primary float-left my-4 text-lg font-light"
             (click)="prev()"
+            [disabled]="processing()"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -808,6 +814,7 @@
             [class.w-full]="step === 1"
             [class.hidden]="step === 4"
             class="btn btn-primary my-4 text-lg font-light"
+            autofocus
             (click)="next()"
           >
             Next
@@ -830,8 +837,13 @@
             [class.hidden]="step !== 4"
             class="btn btn-primary my-4 text-lg font-light"
             (click)="join()"
+            [disabled]="processing()"
           >
-            Join
+            @if (processing()) {
+              <span class="loading loading-dots loading-lg text-primary"></span>
+            } @else {
+              JOIN
+            }
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"

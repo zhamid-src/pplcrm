@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { InsertObjectOrList } from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
 import {
   GetOperandType,
   GroupDataType,
@@ -33,8 +34,13 @@ export class BaseOperator<T extends keyof Models> {
 
   // #region Public Methods (6)
 
-  public async add(row: OperationDataType<T, "insert">) {
-    return db.insertInto(this.table).values(row).executeTakeFirst();
+  public async add(row: InsertObjectOrList<Models, T>) {
+    console.log("row", row);
+    return db
+      .insertInto(this.table)
+      .values(row)
+      .returningAll()
+      .executeTakeFirst();
   }
 
   public async delete(id: GetOperandType<T, "select", "id">) {

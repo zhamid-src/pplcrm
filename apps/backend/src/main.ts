@@ -1,5 +1,6 @@
 import closeWithGrace from "close-with-grace";
 import * as pino from "pino";
+import { migrateDown } from "./app/kyselyiit";
 import { FastifyServer } from "./fastify.server";
 
 process.on("SIGTERM", closeWithGrace);
@@ -16,7 +17,8 @@ const server = new FastifyServer(logger);
 })();
 
 closeWithGrace({ delay: 2500 }, async function ({ err }) {
+  console.log("Closing with grace!");
+  await migrateDown();
   if (err) logger.error(err);
-  // await migrateDown();
   await server.close();
 });

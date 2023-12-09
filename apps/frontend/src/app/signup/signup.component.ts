@@ -1,6 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { HttpClientModule } from "@angular/common/http";
-import { Component } from "@angular/core";
+import { Component, signal } from "@angular/core";
 import {
   AbstractControl,
   FormBuilder,
@@ -8,9 +8,21 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
+import { Router } from "@angular/router";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
-import { AuthService } from "../services/auth.service.js";
+import { AuthService, SignUpFormType } from "../services/auth.service.js";
+
+enum AuthErrors {
+  BadLogin = 1,
+  EmailNotConfirmed,
+  InvalidRefreshToken,
+  AdminTokenRequired,
+  MissingInformation,
+  UserAlreadyRegistered,
+  BadPassword,
+  Unknown,
+}
 
 @Component({
   selector: "pplcrm-signup",
@@ -26,7 +38,7 @@ import { AuthService } from "../services/auth.service.js";
   styleUrl: "./signup.component.scss",
 })
 export class SignupComponent {
-  // #region Properties (4)
+  // #region Properties (5)
 
   protected form = this.fb.group({
     organization: ["", [Validators.required]],
@@ -38,10 +50,11 @@ export class SignupComponent {
     terms: [""],
   });
   protected joinAttempted = false;
+  protected processing = signal(false);
   protected step = 1;
   protected termsAccepted = false;
 
-  // #endregion Properties (4)
+  // #endregion Properties (5)
 
   // #region Constructors (1)
 
@@ -49,6 +62,7 @@ export class SignupComponent {
     private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
+    private router: Router,
   ) {}
 
   // #endregion Constructors (1)
@@ -79,10 +93,35 @@ export class SignupComponent {
 
   // #region Public Methods (3)
 
-  public join() {
+  public async join() {
     this.joinAttempted = true;
     if (!this.termsAccepted) {
       this.terms?.setErrors({ incorrect: true });
+    } else {
+      // Alright, we're ready to start
+      this.processing.set(true);
+
+      const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
+      const payload = await this.authService.signUp(formObj);
+      console.log("payload", payload);
+
+      this.processing.set(false);
+
+      if (payload?.error) {
+        if (payload?.error === AuthErrors.UserAlreadyRegistered) {
+          this.toastr.error(
+            "This email already exists. Did you mean to sign in?",
+          );
+        } else {
+          this.toastr.error(
+            "Unknown error while signing you up. Please try agian later",
+          );
+        }
+      } else {
+        // TODO: The user is signed up.  Continue.
+        console.log("user signed up", AuthService.user);
+        this.router.navigateByUrl("/dashboard");
+      }
     }
   }
 
