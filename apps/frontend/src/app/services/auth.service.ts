@@ -24,6 +24,16 @@ enum AuthErrors {
   Unknown,
 }
 
+export type SignUpFormType = {
+  organization: string;
+  email: string;
+  password: string;
+  first_name: string;
+  middle_names: string | null;
+  last_name: string | null;
+  terms: string | null;
+};
+
 @Injectable({
   providedIn: "root",
 })
@@ -37,7 +47,7 @@ export class AuthService extends TRPCService {
   // #region Public Static Accessors (1)
 
   public static get user() {
-    return this._user;
+    return this._user();
   }
 
   // #endregion Public Static Accessors (1)
@@ -48,6 +58,7 @@ export class AuthService extends TRPCService {
     return this.api.auth.signIn
       .mutate(input)
       .then((payload: Partial<IAuthUser>) => {
+        console.log("payload2", payload);
         AuthService._user.set(payload?.user);
         return payload;
       })
@@ -63,15 +74,18 @@ export class AuthService extends TRPCService {
     );
   }
 
-  public signUp(input: { email: string; password: string }) {
+  public signUp(input: SignUpFormType) {
     return this.api.auth.signUp
       .mutate(input)
       .then((payload: Partial<IAuthUser>) => {
         AuthService._user.set(payload?.user);
+        if (payload.error) {
+          throw payload.error;
+        }
       })
-      .catch(() => {
+      .catch((err) => {
         AuthService._user.set(null);
-        return { error: AuthErrors.BadLogin } as IAuthUser;
+        return { error: err || AuthErrors.BadLogin } as IAuthUser;
       });
   }
 

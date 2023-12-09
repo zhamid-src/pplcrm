@@ -8,6 +8,7 @@ import {
   Validators,
 } from "@angular/forms";
 
+import { Router } from "@angular/router";
 import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
 
@@ -58,6 +59,7 @@ export class LoginComponent {
     private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
+    private router: Router,
   ) {}
 
   // #endregion Constructors (1)
@@ -80,10 +82,10 @@ export class LoginComponent {
     switch (error) {
       case AuthErrors.InvalidRefreshToken:
       case AuthErrors.AdminTokenRequired:
-      case AuthErrors.MissingInformation:
         return "There was an error logging you in. Please try again.";
       case AuthErrors.BadPassword:
-        return "Please check your password and try again";
+      case AuthErrors.MissingInformation:
+        return "Please check your email and password";
       case AuthErrors.BadLogin:
       case AuthErrors.Unknown:
       default:
@@ -105,14 +107,16 @@ export class LoginComponent {
       password: this.password.value as string,
     });
 
+    console.log("payload", payload);
+
     if (payload?.error) {
       if (payload?.error === AuthErrors.EmailNotConfirmed) {
         // TODO: continue to the 'verify email' component
       }
       this.toastr.error(this.mapErrorToString(payload.error));
     } else {
-      // TODO: The user is signed in.  Continue.
-      console.log(AuthService.user());
+      this.router.navigateByUrl("/dashboard");
+      console.log(AuthService.user);
     }
 
     this.processing.set(false);

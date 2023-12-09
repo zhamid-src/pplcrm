@@ -10,7 +10,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       col.primaryKey().generatedByDefaultAsIdentity().unique(),
     )
     .addColumn("tenant_id", "bigint")
-    .addColumn("username", "varchar(100)")
+    .addColumn("uid", "uuid", (col) => col.notNull())
     .addColumn("role", "varchar(100)")
     .addColumn("first_name", "varchar(100)")
     .addColumn("middle_names", "varchar(100)")
@@ -35,18 +35,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 
   await db.schema
-    .createIndex("user_tenant_username_index")
-    .on("users")
-    .columns(["tenant_id", "username"])
-    .execute();
-
-  await db.schema
     .createTable("tenants")
     .addColumn("id", "bigint", (col) =>
       col.primaryKey().generatedByDefaultAsIdentity().unique(),
     )
-    .addColumn("admin_id", "bigint", (col) => col.notNull())
-    .addColumn("createdby_id", "bigint", (col) => col.notNull())
+    .addColumn("admin_id", "bigint")
+    .addColumn("createdby_id", "bigint")
     .addColumn("name", "varchar(255)", (col) => col.notNull())
     .addColumn("mobile", "varchar(100)")
     .addColumn("email", "varchar(255)")
@@ -57,12 +51,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("state", "varchar(100)")
     .addColumn("zip", "varchar(32)")
     .addColumn("country", "varchar(100)")
-    .addColumn("billing_street1", "varchar(255)", (col) => col.notNull())
-    .addColumn("billing_street2", "varchar(255)", (col) => col.notNull())
-    .addColumn("billing_city", "varchar(100)", (col) => col.notNull())
-    .addColumn("billing_state", "varchar(100)", (col) => col.notNull())
-    .addColumn("billing_zip", "varchar(32)", (col) => col.notNull())
-    .addColumn("billing_country", "varchar(100)", (col) => col.notNull())
+    .addColumn("billing_street1", "varchar(255)")
+    .addColumn("billing_street2", "varchar(255)")
+    .addColumn("billing_city", "varchar(100)")
+    .addColumn("billing_state", "varchar(100)")
+    .addColumn("billing_zip", "varchar(32)")
+    .addColumn("billing_country", "varchar(100)")
     .addColumn("notes", "varchar")
     .addColumn("json", "jsonb")
     .addColumn("created_at", "timestamp", (col) =>
@@ -307,7 +301,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .insertInto("users")
     .values({
       id: "1",
-      username: "zee",
+      uid: "c0946f62-0f08-428c-b31f-4d14e7b56b6c",
       first_name: "Zee",
       last_name: "Hamid",
       mobile: "416-823-6993",
