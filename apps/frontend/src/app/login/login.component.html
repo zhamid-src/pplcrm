@@ -7,7 +7,7 @@
       <form [formGroup]="form">
         <div class="space-y-4">
           <input
-            class="input-pplcrm mt-3"
+            class="input-pplcrm peer mt-3"
             type="email"
             formControlName="email"
             placeholder="mail@gmail.com"
@@ -44,7 +44,10 @@
               </label>
             </div>
             <div class="text-sm">
-              <a href="#" class="link hover:link-primary no-underline">
+              <a
+                routerLink="/resetpassword"
+                class="link hover:link-primary no-underline"
+              >
                 Forgot your password?
               </a>
             </div>

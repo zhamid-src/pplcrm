@@ -18,3 +18,20 @@ export interface IAuthUser {
 
   // #endregion Properties (3)
 }
+
+interface IPasswordResetError {
+  error: {
+    message: string;
+    name: string;
+    status?: number | undefined;
+    stack?: string | undefined;
+  };
+  data: null;
+}
+
+interface IPasswordResetData {
+  error: null;
+  data: Record<never, never>;
+}
+
+export type IPasswordResetPayload = IPasswordResetError | IPasswordResetData;

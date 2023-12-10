@@ -93,7 +93,6 @@ export class SignupComponent {
 
       const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
       const payload = await this.authService.signUp(formObj);
-      console.log("payload", payload);
 
       this.processing.set(false);
 

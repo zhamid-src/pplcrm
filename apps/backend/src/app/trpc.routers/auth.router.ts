@@ -48,10 +48,36 @@ export const authRouter = router({
     .input(signinInputObj)
     .mutation((data) => signInHelper(data.input)),
 
-  signOut: publicProcedure.mutation(() => {
-    return supabase.auth.signOut();
-  }),
+  signOut: publicProcedure.mutation(() => supabase.auth.signOut()),
+
+  resetPassword: publicProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation((data) =>
+      supabase.auth.resetPasswordForEmail(data.input.email, {
+        redirectTo: "http://localhost:4200/newpassword/",
+      }),
+    ),
+
+  newPassword: publicProcedure
+    .input(z.object({ password: z.string().min(8), refresh_token: z.string() }))
+    .mutation((data) => resetPassword(data.input)),
 });
+
+async function resetPassword(input: {
+  password: string;
+  refresh_token: string;
+}) {
+  const payload: AuthResponse = await supabase.auth.refreshSession({
+    refresh_token: input.refresh_token,
+  });
+
+  if (!payload?.error && payload?.data?.user) {
+    return supabase.auth.updateUser({ password: input.password });
+  } else {
+    // throw error
+    throw payload.error;
+  }
+}
 
 async function signUpHelper(input: signupInputType): Promise<common.IAuthUser> {
   // TODO: should be a transaction

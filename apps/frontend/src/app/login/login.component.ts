@@ -88,8 +88,6 @@ export class LoginComponent {
       password: this.password.value as string,
     });
 
-    console.log("payload", payload);
-
     if (payload?.error) {
       if (payload?.error === common.AuthErrors.EmailNotConfirmed) {
         // TODO: continue to the 'verify email' component
@@ -97,7 +95,6 @@ export class LoginComponent {
       this.toastr.error(this.mapErrorToString(payload.error));
     } else {
       this.router.navigateByUrl("/dashboard");
-      console.log(AuthService.user);
     }
 
     this.processing.set(false);
