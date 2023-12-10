@@ -16,8 +16,8 @@
     "baseUrl": "./",
     "paths": {
       "@backend/*": ["./apps/backend/src/*"],
-      "@common/*": ["./apps/backend/common/*"],
-      "@frontend/*": ["./apps/frontend/src/*"]
+      "@frontend/*": ["./apps/frontend/src/*"],
+      "@common": ["common/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

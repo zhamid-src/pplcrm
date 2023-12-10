@@ -1,30 +1,10 @@
 import { Injectable, signal } from "@angular/core";
-
+import * as common from "@common";
 import { from } from "rxjs";
 import { TRPCService } from "./trpc.service.js";
 
 // TODO: zee - find a way to share these, these are also
 // defined in auth.router.ts
-interface IAuthUser {
-  // #region Properties (3)
-
-  error: AuthErrors | null;
-  session: unknown | null;
-  user: unknown | null;
-
-  // #endregion Properties (3)
-}
-
-enum AuthErrors {
-  BadLogin = 1,
-  EmailNotConfirmed,
-  InvalidRefreshToken,
-  AdminTokenRequired,
-  MissingInformation,
-  UserAlreadyRegistered,
-  BadPassword,
-  Unknown,
-}
 
 export type SignUpFormType = {
   organization: string;
@@ -59,13 +39,13 @@ export class AuthService extends TRPCService {
   public signIn(input: { email: string; password: string }) {
     return this.api.auth.signIn
       .mutate(input)
-      .then((payload: Partial<IAuthUser>) => {
+      .then((payload: Partial<common.IAuthUser>) => {
         AuthService._user.set(payload?.user);
         return payload;
       })
       .catch(() => {
         AuthService._user.set(null);
-        return { error: AuthErrors.BadLogin } as IAuthUser;
+        return { error: common.AuthErrors.BadLogin } as common.IAuthUser;
       });
   }
 
@@ -78,7 +58,7 @@ export class AuthService extends TRPCService {
   public signUp(input: SignUpFormType) {
     return this.api.auth.signUp
       .mutate(input)
-      .then((payload: Partial<IAuthUser>) => {
+      .then((payload: Partial<common.IAuthUser>) => {
         AuthService._user.set(payload?.user);
         if (payload.error) {
           throw payload.error;
@@ -86,7 +66,7 @@ export class AuthService extends TRPCService {
       })
       .catch((err) => {
         AuthService._user.set(null);
-        return { error: err || AuthErrors.BadLogin } as IAuthUser;
+        return { error: err || common.AuthErrors.BadLogin } as common.IAuthUser;
       });
   }
 
