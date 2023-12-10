@@ -1,6 +1,5 @@
 import { Injectable, signal } from "@angular/core";
 import * as common from "@common";
-import { from } from "rxjs";
 import { TRPCService } from "./trpc.service.js";
 
 // TODO: zee - find a way to share these, these are also
@@ -49,10 +48,18 @@ export class AuthService extends TRPCService {
       });
   }
 
+  public newPassword(password: string, refresh_token: string) {
+    return this.api.auth.newPassword.mutate({ password, refresh_token });
+  }
+
+  public resetPassword(email: string) {
+    return this.api.auth.resetPassword.mutate({ email });
+  }
+
   public signOut() {
-    return from(
-      this.api.auth.signOut.mutate().finally(() => AuthService._user.set(null)),
-    );
+    return this.api.auth.signOut
+      .mutate()
+      .finally(() => AuthService._user.set(null));
   }
 
   public signUp(input: SignUpFormType) {

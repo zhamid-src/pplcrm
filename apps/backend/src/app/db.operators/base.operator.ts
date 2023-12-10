@@ -35,7 +35,6 @@ export class BaseOperator<T extends keyof Models> {
   // #region Public Methods (6)
 
   public async add(row: InsertObjectOrList<Models, T>) {
-    console.log("row", row);
     return db
       .insertInto(this.table)
       .values(row)
