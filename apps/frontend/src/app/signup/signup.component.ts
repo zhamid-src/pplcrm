@@ -108,8 +108,6 @@ export class SignupComponent {
           );
         }
       } else {
-        // TODO: The user is signed up.  Continue.
-        console.log("user signed up", AuthService.user);
         this.router.navigateByUrl("/dashboard");
       }
     }
@@ -118,11 +116,12 @@ export class SignupComponent {
   public next() {
     if (this.step === 1 && !this.organization?.valid) {
       this.markInvalid(this.organization);
-    } else if (
-      this.step === 2 &&
-      (this.email?.invalid || this.password?.invalid || this.passwordInBreach())
-    ) {
-      // continue
+    } else if (this.step === 2) {
+      if (this.email?.invalid) {
+        this.markInvalid(this.email);
+      } else if (this.password?.invalid || this.passwordInBreach()) {
+        this.markInvalid(this.password);
+      }
     } else if (this.step === 3 && !this.firstName?.valid) {
       this.markInvalid(this.firstName);
     } else {
