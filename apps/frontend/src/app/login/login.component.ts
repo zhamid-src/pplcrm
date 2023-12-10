@@ -9,7 +9,7 @@ import {
   Validators,
 } from "@angular/forms";
 
-import { Router } from "@angular/router";
+import { Router, RouterLink } from "@angular/router";
 import * as common from "@common";
 import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
@@ -17,7 +17,7 @@ import { AuthService } from "../services/auth.service.js";
 @Component({
   selector: "pplcrm-login",
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
   templateUrl: "./login.component.html",
   styleUrl: "./login.component.scss",
 })
