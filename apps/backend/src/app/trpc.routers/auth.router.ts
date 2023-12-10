@@ -1,3 +1,4 @@
+import * as common from "@common";
 import {
   AuthResponse,
   SignInWithPasswordCredentials,
@@ -11,27 +12,6 @@ import { UsersOperator } from "../db.operators/users.operator";
 
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
-
-interface IAuthUser {
-  // #region Properties (3)
-
-  error: AuthErrors | null;
-  session: unknown | null;
-  user: unknown | null;
-
-  // #endregion Properties (3)
-}
-
-enum AuthErrors {
-  BadLogin = 1,
-  EmailNotConfirmed,
-  InvalidRefreshToken,
-  AdminTokenRequired,
-  MissingInformation,
-  UserAlreadyRegistered,
-  BadPassword,
-  Unknown,
-}
 
 const tenants: TenantsOperator = new TenantsOperator();
 const users: UsersOperator = new UsersOperator();
@@ -73,7 +53,7 @@ export const authRouter = router({
   }),
 });
 
-async function signUpHelper(input: signupInputType): Promise<IAuthUser> {
+async function signUpHelper(input: signupInputType): Promise<common.IAuthUser> {
   // TODO: should be a transaction
 
   // First, add tenant
@@ -104,12 +84,12 @@ async function signUpHelper(input: signupInputType): Promise<IAuthUser> {
 
 async function signInHelper(
   credentials: SignInWithPasswordCredentials,
-): Promise<IAuthUser> {
+): Promise<common.IAuthUser> {
   const payload = await supabase.auth.signInWithPassword(credentials);
   return mapPayloadToUser(payload);
 }
 
-function mapPayloadToUser(payload: AuthResponse): IAuthUser {
+function mapPayloadToUser(payload: AuthResponse): common.IAuthUser {
   return {
     user: payload?.data?.user,
     session: payload?.data?.session,
@@ -120,7 +100,7 @@ function mapPayloadToUser(payload: AuthResponse): IAuthUser {
   };
 }
 
-function mapErrorMsgToCode(message: string | undefined): AuthErrors {
+function mapErrorMsgToCode(message: string | undefined): common.AuthErrors {
   if (
     message?.indexOf("phone") ||
     message?.indexOf("Phone") ||
@@ -128,28 +108,28 @@ function mapErrorMsgToCode(message: string | undefined): AuthErrors {
     message?.indexOf("Email") ||
     message?.indexOf("provide")
   ) {
-    return AuthErrors.MissingInformation;
+    return common.AuthErrors.MissingInformation;
   }
 
   if (message?.indexOf("password")) {
-    return AuthErrors.BadPassword;
+    return common.AuthErrors.BadPassword;
   }
 
   switch (message) {
     case "Invalid login":
-      return AuthErrors.BadLogin;
+      return common.AuthErrors.BadLogin;
     case "Email not confirmed":
-      return AuthErrors.EmailNotConfirmed;
+      return common.AuthErrors.EmailNotConfirmed;
     case "User already registered":
-      return AuthErrors.UserAlreadyRegistered;
+      return common.AuthErrors.UserAlreadyRegistered;
     case "Invalid Refresh Token":
-      return AuthErrors.InvalidRefreshToken;
+      return common.AuthErrors.InvalidRefreshToken;
     case "This endpoint requires a Bearer token":
-      return AuthErrors.AdminTokenRequired;
+      return common.AuthErrors.AdminTokenRequired;
     case "Invalid token":
-      return AuthErrors.AdminTokenRequired;
+      return common.AuthErrors.AdminTokenRequired;
     default:
-      return AuthErrors.Unknown;
+      return common.AuthErrors.Unknown;
   }
 }
 

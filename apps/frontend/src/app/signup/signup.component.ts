@@ -9,20 +9,10 @@ import {
   Validators,
 } from "@angular/forms";
 import { Router } from "@angular/router";
+import * as common from "@common";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
 import { AuthService, SignUpFormType } from "../services/auth.service.js";
-
-enum AuthErrors {
-  BadLogin = 1,
-  EmailNotConfirmed,
-  InvalidRefreshToken,
-  AdminTokenRequired,
-  MissingInformation,
-  UserAlreadyRegistered,
-  BadPassword,
-  Unknown,
-}
 
 @Component({
   selector: "pplcrm-signup",
@@ -108,7 +98,7 @@ export class SignupComponent {
       this.processing.set(false);
 
       if (payload?.error) {
-        if (payload?.error === AuthErrors.UserAlreadyRegistered) {
+        if (payload?.error === common.AuthErrors.UserAlreadyRegistered) {
           this.toastr.error(
             "This email already exists. Did you mean to sign in?",
           );
