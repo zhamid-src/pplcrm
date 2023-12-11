@@ -29,7 +29,6 @@ export class FastifyServer {
 
     //this.server.setErrorHandler(errorHandler);
     this.server.register(routes);
-
     this.server.register(cors, {
       origin: true,
     });

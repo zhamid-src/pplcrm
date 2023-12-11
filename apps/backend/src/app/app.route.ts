@@ -6,12 +6,12 @@ const householdsRoute = require("./fastify.routes/households.route");
 
 export function routes(
   fastify: FastifyInstance,
-  opts: never,
+  _opts: never,
   done: () => void,
 ) {
   fastify.register(personsRoute, { prefix: "/v1/persons" });
   fastify.register(householdsRoute, { prefix: "/v1/households" });
 
-  fastify.get("/", opts, (req, res) => res.send({ message: "API healthy." }));
+  fastify.get("/", (req, res) => res.send({ message: "API healthy." }));
   done();
 }
