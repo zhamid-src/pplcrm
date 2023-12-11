@@ -18,21 +18,14 @@ const users: UsersOperator = new UsersOperator();
 
 const signupInputObj = z.object({
   organization: z.string(),
-  email: z.string(),
-  password: z.string(),
-  first_name: z.string(),
+  email: z.string().max(100),
+  password: z.string().min(8).max(72),
+  first_name: z.string().max(100),
   middle_names: z.string().nullable(),
   last_name: z.string().nullable(),
 });
-const signupInput = signupInputObj.parse({
-  organization: "",
-  email: "",
-  first_name: "",
-  password: "",
-  middle_names: "",
-  last_name: "",
-});
-type signupInputType = typeof signupInput;
+
+type signupInputType = z.infer<typeof signupInputObj>;
 
 const signinInputObj = z.object({
   email: z.string().email(),
@@ -59,24 +52,27 @@ export const authRouter = router({
     ),
 
   newPassword: publicProcedure
-    .input(z.object({ password: z.string().min(8), refresh_token: z.string() }))
-    .mutation((data) => resetPassword(data.input)),
+    .input(
+      z.object({
+        password: z.string().min(8).max(100),
+        refresh_token: z.string(),
+      }),
+    )
+    .mutation((data) =>
+      newPassword(data.input.password, data.input.refresh_token),
+    ),
 });
 
-async function resetPassword(input: {
-  password: string;
-  refresh_token: string;
-}) {
+async function newPassword(password: string, refresh_token: string) {
   const payload: AuthResponse = await supabase.auth.refreshSession({
-    refresh_token: input.refresh_token,
+    refresh_token,
   });
 
-  if (!payload?.error && payload?.data?.user) {
-    return supabase.auth.updateUser({ password: input.password });
-  } else {
-    // throw error
+  if (!payload || payload.error || !payload.data?.user) {
     throw payload.error;
   }
+
+  return supabase.auth.updateUser({ password });
 }
 
 async function signUpHelper(input: signupInputType): Promise<common.IAuthUser> {
@@ -84,20 +80,20 @@ async function signUpHelper(input: signupInputType): Promise<common.IAuthUser> {
 
   // First, add tenant
   const tenantAddResult = await tenants.add({ name: input.organization });
-  const tenantId = tenantAddResult?.id;
+  const tenant_id = tenantAddResult?.id;
 
   // Now create a new user in auth
   const credentials: SignUpWithPasswordCredentials = {
-    email: input.email as string,
-    password: input.password as string,
-    options: { data: { tenant_id: tenantId } },
+    email: input.email,
+    password: input.password,
+    options: { data: { tenant_id } },
   };
   const payload = await supabase.auth.signUp(credentials);
   const authUser = payload?.data?.user;
 
   if (authUser) {
     await users.add({
-      tenant_id: tenantId,
+      tenant_id,
       uid: authUser.id,
       email: authUser.email,
       first_name: input.first_name,

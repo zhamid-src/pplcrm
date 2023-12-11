@@ -44,8 +44,7 @@ async function migrateToLatest() {
   });
 
   if (error) {
-    console.error("failed to migrate up");
-    console.error(error);
+    console.error("failed to migrate up: ", error);
     process.exit(1);
   }
 
@@ -66,12 +65,9 @@ export async function migrateDown() {
   });
 
   if (error) {
-    console.error("failed to migrate down");
-    console.error(error);
+    console.error("failed to migrate down: ", error);
     process.exit(1);
   }
-
-  // await dbLocal.destroy()
 }
 
 migrateToLatest();
