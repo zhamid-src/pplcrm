@@ -129,12 +129,11 @@ export class AuthHelper {
     }
 
     // Finally, add a profile for the user
-    //const profile = await profiles.add({
     const profile = await profiles.add({
       uid: user.id as unknown as number,
       tenant_id,
       auth_id: user.id as unknown as number,
-    } as OperationDataType<"userprofiles", "insert">);
+    } as OperationDataType<"profiles", "insert">);
 
     if (!profile) {
       throw new TRPCError({

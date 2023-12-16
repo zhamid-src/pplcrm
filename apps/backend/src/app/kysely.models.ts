@@ -30,11 +30,11 @@ export interface Models {
   map_peoples_tags: MapPeoplesTags;
   map_roles_users: MapRolesUsers;
   persons: Persons;
+  profiles: Profiles;
   roles: Roles;
   sessions: Sessions;
   tags: Tags;
   tenants: Tenants;
-  userprofiles: UserProfiles;
 }
 
 // The above interface and the below tables should match
@@ -47,7 +47,7 @@ export enum TableType {
   persons = "persons",
   tags = "tags",
   tenants = "tenants",
-  userprofiles = "userprofiles",
+  profiles = "profiles",
   authusers = "authusers",
   sessions = "sessions",
   roles = "roles",
@@ -102,10 +102,10 @@ export type TablesOperationMap = {
     insert: Insertable<Tenants>;
     update: Updateable<Tenants>;
   };
-  userprofiles: {
-    select: Selectable<UserProfiles>;
-    insert: Insertable<UserProfiles>;
-    update: Updateable<UserProfiles>;
+  profiles: {
+    select: Selectable<Profiles>;
+    insert: Insertable<Profiles>;
+    update: Updateable<Profiles>;
   };
   authusers: {
     select: Selectable<AuthUsers>;
@@ -350,7 +350,7 @@ interface AuthUsers {
 }
 export type AuthUsersType = AuthUsers;
 
-interface UserProfiles {
+interface Profiles {
   auth_id: number;
   city: string | null;
   country: string | null;
