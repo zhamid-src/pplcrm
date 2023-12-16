@@ -9,7 +9,7 @@ import {
   Validators,
 } from "@angular/forms";
 import { Router } from "@angular/router";
-import * as common from "@common";
+import { IToken } from "@common";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
 import { AuthService, SignUpFormType } from "../services/auth.service.js";
@@ -28,8 +28,6 @@ import { AuthService, SignUpFormType } from "../services/auth.service.js";
   styleUrl: "./signup.component.scss",
 })
 export class SignupComponent {
-  // #region Properties (5)
-
   protected form = this.fb.group({
     organization: ["", [Validators.required]],
     email: ["", [Validators.required, Validators.email]],
@@ -44,20 +42,12 @@ export class SignupComponent {
   protected step = 1;
   protected termsAccepted = false;
 
-  // #endregion Properties (5)
-
-  // #region Constructors (1)
-
   constructor(
     private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
     private router: Router,
   ) {}
-
-  // #endregion Constructors (1)
-
-  // #region Public Accessors (5)
 
   public get email() {
     return this.form.get("email");
@@ -79,10 +69,6 @@ export class SignupComponent {
     return this.form.get("terms");
   }
 
-  // #endregion Public Accessors (5)
-
-  // #region Public Methods (3)
-
   public async join() {
     this.joinAttempted = true;
     if (!this.termsAccepted) {
@@ -92,23 +78,17 @@ export class SignupComponent {
       this.processing.set(true);
 
       const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
-      const payload = await this.authService.signUp(formObj);
-
-      this.processing.set(false);
-
-      if (payload?.error) {
-        if (payload?.error === common.AuthErrors.UserAlreadyRegistered) {
-          this.toastr.error(
-            "This email already exists. Did you mean to sign in?",
-          );
-        } else {
-          this.toastr.error(
-            "Unknown error while signing you up. Please try agian later",
-          );
-        }
-      } else {
-        this.router.navigateByUrl("/dashboard");
-      }
+      return this.authService
+        .signUp(formObj)
+        .then((payload: IToken) => {
+          if (payload.auth_token) {
+            this.router.navigateByUrl("/dashboard");
+          } else {
+            this.toastr.error("Unknown error");
+          }
+        })
+        .catch((err) => this.toastr.error(err.message))
+        .finally(() => this.processing.set(false));
     }
   }
 
@@ -120,6 +100,8 @@ export class SignupComponent {
         this.markInvalid(this.email);
       } else if (this.password?.invalid || this.passwordInBreach()) {
         this.markInvalid(this.password);
+      } else {
+        this.step++;
       }
     } else if (this.step === 3 && !this.firstName?.valid) {
       this.markInvalid(this.firstName);
@@ -132,10 +114,6 @@ export class SignupComponent {
     this.step--;
   }
 
-  // #endregion Public Methods (3)
-
-  // #region Protected Methods (2)
-
   protected passwordBreachNumber() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.password?.errors as any)?.pwnedPasswordOccurrence;
@@ -146,16 +124,10 @@ export class SignupComponent {
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
   }
 
-  // #endregion Protected Methods (2)
-
-  // #region Private Methods (1)
-
   private markInvalid(
     control: AbstractControl<string | null, string | null> | null,
   ) {
     control?.markAsDirty();
     control?.setErrors({ incorrect: true });
   }
-
-  // #endregion Private Methods (1)
 }

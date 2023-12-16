@@ -18,21 +18,11 @@ export type QueryParams<T extends keyof Models> = {
 };
 
 export class BaseOperator<T extends keyof Models> {
-  // #region Properties (1)
-
   protected readonly table: T;
-
-  // #endregion Properties (1)
-
-  // #region Constructors (1)
 
   constructor(tableIn: T) {
     this.table = tableIn;
   }
-
-  // #endregion Constructors (1)
-
-  // #region Public Methods (6)
 
   public async add(row: InsertObjectOrList<Models, T>) {
     return db
@@ -42,8 +32,9 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
-  public async delete(id: GetOperandType<T, "select", "id">) {
-    return db.deleteFrom(this.table).where("id", "=", id).executeTakeFirst();
+  // delete
+  public async delete(id: GetOperandType<T, "update", "id">) {
+    return db.deleteFrom(this.table).where("id", "=", id).execute();
   }
 
   public getAll(options?: QueryParams<T>) {
@@ -75,13 +66,8 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
-  // #endregion Public Methods (6)
-
-  // #region Protected Methods (1)
-
   protected getQuery(options?: QueryParams<T>) {
     let query = db.selectFrom(this.table);
-
     query = options?.columns
       ? query.select(options.columns)
       : query.selectAll();
@@ -92,6 +78,4 @@ export class BaseOperator<T extends keyof Models> {
 
     return query;
   }
-
-  // #endregion Protected Methods (1)
 }

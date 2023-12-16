@@ -2,13 +2,7 @@ import { createTRPCProxyClient, httpBatchLink, loggerLink } from "@trpc/client";
 import { Routers } from "APPS/backend/src/app/app.router";
 
 export class TRPCService {
-  // #region Properties (1)
-
   protected api;
-
-  // #endregion Properties (1)
-
-  // #region Constructors (1)
 
   constructor() {
     this.api = createTRPCProxyClient<Routers>({
@@ -16,10 +10,15 @@ export class TRPCService {
         loggerLink(),
         httpBatchLink({
           url: "http://localhost:3000",
+          headers() {
+            return localStorage.getItem("auth-token")
+              ? {
+                  Authorization: `Bearer ${localStorage.getItem("auth-token")}`,
+                }
+              : {};
+          },
         }),
       ],
     });
   }
-
-  // #endregion Constructors (1)
 }
