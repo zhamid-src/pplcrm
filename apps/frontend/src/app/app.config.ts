@@ -4,7 +4,11 @@ import {
   withInterceptors,
   withInterceptorsFromDi,
 } from "@angular/common/http";
-import { ApplicationConfig, importProvidersFrom } from "@angular/core";
+import {
+  APP_INITIALIZER,
+  ApplicationConfig,
+  importProvidersFrom,
+} from "@angular/core";
 import { provideAnimations } from "@angular/platform-browser/animations";
 import { provideRouter } from "@angular/router";
 import { JwtModule } from "@auth0/angular-jwt";
@@ -12,6 +16,13 @@ import { provideToastr } from "ngx-toastr";
 import { appRoutes } from "./app.routes";
 import { httpInterceptor } from "./interceptors/http.interceptor";
 import { ErrorCatchingInterceptor } from "./interceptors/httperrors.interceptor";
+import { AuthService } from "./services/auth.service";
+
+export function initSession(authService: AuthService) {
+  return async () => {
+    await authService.init();
+  };
+}
 
 export function tokenGetter() {
   return localStorage.getItem("auth-token");
@@ -34,11 +45,15 @@ export const appConfig: ApplicationConfig = {
       JwtModule.forRoot({
         config: {
           tokenGetter: tokenGetter,
-          allowedDomains: ["example.com"],
-          disallowedRoutes: ["http://example.com/examplebadroute/"],
         },
       }),
     ),
     provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: APP_INITIALIZER,
+      multi: true,
+      useFactory: initSession,
+      deps: [AuthService],
+    },
   ],
 };
