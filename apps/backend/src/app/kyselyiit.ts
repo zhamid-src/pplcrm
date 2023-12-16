@@ -1,4 +1,5 @@
 // import { CockroachDialect } from '@cubos/kysely-cockroach';
+import { config } from "dotenv";
 import { promises as fs } from "fs";
 import {
   FileMigrationProvider,
@@ -8,11 +9,16 @@ import {
 } from "kysely";
 import path from "path";
 import { Pool } from "pg";
-import { postgres } from "../env";
 import { Models } from "./kysely.models";
 
+// import configs from env via dotenv
+config();
+
 const dialect = new PostgresDialect({
-  pool: new Pool(postgres),
+  pool: new Pool({
+    connectionString: process.env["DATABASE_URL"],
+    ssl: true,
+  }),
 });
 
 export const db = new Kysely<Models>({

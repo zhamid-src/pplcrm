@@ -1,10 +1,19 @@
 import { inferAsyncReturnType } from "@trpc/server";
 import { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
+import { SignerOptions, createDecoder } from "fast-jwt";
 
-export function createContext({ req, res }: CreateFastifyContextOptions) {
-  const user = { name: req?.headers?.["username"] ?? "anonymous" };
+export async function createContext({ req, res }: CreateFastifyContextOptions) {
+  if (!req.headers.authorization) {
+    return { req, res, auth: null };
+  }
+  const token = req.headers.authorization.split(" ")[1];
+  if (!token) {
+    return { req, res, auth: null };
+  }
 
-  return { req, res, user };
+  const decode = createDecoder();
+  const payload: SignerOptions = decode(token);
+  return { req, res, auth: payload };
 }
 
 export type Context = inferAsyncReturnType<typeof createContext>;

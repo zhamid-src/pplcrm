@@ -10,7 +10,6 @@ import {
 import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
-import { firstValueFrom } from "rxjs";
 import { AuthService } from "../services/auth.service.js";
 
 @Component({
@@ -27,20 +26,12 @@ import { AuthService } from "../services/auth.service.js";
   styleUrl: "./new-password.component.scss",
 })
 export class NewPasswordComponent {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-
-  // #region Properties (3)
-
-  protected processing = signal(false);
   protected error = signal(false);
+  protected processing = signal(false);
 
   public form = this.fb.group({
     password: ["", [Validators.required, Validators.minLength(8)]],
   });
-
-  // #endregion Properties (3)
-
-  // #region Constructors (1)
 
   constructor(
     private fb: FormBuilder,
@@ -50,37 +41,36 @@ export class NewPasswordComponent {
     private toastr: ToastrService,
   ) {}
 
-  // #endregion Constructors (1)
-
-  // #region Public Accessors (2)
-
   public get password() {
     return this.form.get("password");
   }
 
-  // #endregion Public Accessors (2)
-
-  protected passwordBreachNumber() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  protected passwordInBreach() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  // #region Public Methods (2)
-
   public async submit() {
+    this.error.set(false);
+    console.log("submitting");
+    if (!this.password?.valid) {
+      this.toastr.error("Please check the password.");
+      return;
+    }
+
+    this.toastr.clear();
     this.processing.set(true);
 
+    //const params: Params = await firstValueFrom(this.route.queryParams);
+    //console.log(params);
+
+    if (this.processing()) {
+      this.error.set(true);
+    }
+
+    /*
     const fragment = await firstValueFrom(this.route.fragment);
     if (fragment) {
       const params = new URLSearchParams(fragment);
 
       if (params.get("refresh_token")) {
         const refresh_token = params.get("refresh_token");
+        
         const payload = await this.authService.newPassword(
           this.password?.value as string,
           refresh_token as string,
@@ -107,7 +97,16 @@ export class NewPasswordComponent {
     if (this.processing()) {
       this.error.set(true);
     }
+    */
   }
 
-  // #endregion Public Methods (2)
+  protected passwordBreachNumber() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  protected passwordInBreach() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
 }

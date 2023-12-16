@@ -3,21 +3,11 @@ import { BaseOperator } from "../db.operators/base.operator";
 import { GetOperandType, Models, OperationDataType } from "../kysely.models";
 
 export class BaseController<T extends keyof Models> {
-  // #region Properties (1)
-
   protected readonly operator: BaseOperator<T>;
-
-  // #endregion Properties (1)
-
-  // #region Constructors (1)
 
   constructor(dbOperator: BaseOperator<T>) {
     this.operator = dbOperator;
   }
-
-  // #endregion Constructors (1)
-
-  // #region Public Methods (6)
 
   /**
    * Add the given user
@@ -37,7 +27,7 @@ export class BaseController<T extends keyof Models> {
    *
    */
   public async delete(
-    id: GetOperandType<T, "select", "id">,
+    id: GetOperandType<T, "update", "id">,
     reply: FastifyReply,
   ) {
     const result = await this.operator.delete(id);
@@ -73,11 +63,8 @@ export class BaseController<T extends keyof Models> {
    * @param reply FastifyReply
    * @returns
    */
-  public async getOneById(
-    id: GetOperandType<T, "select", "id">,
-    reply: FastifyReply,
-  ) {
-    const row = await this.operator.getOneById(id);
+  public async getOneById(id: number, reply: FastifyReply) {
+    const row = await this.operator.getOneById(id as never);
     return row ? reply.code(200).send(row) : reply.send(404);
   }
 
@@ -95,6 +82,4 @@ export class BaseController<T extends keyof Models> {
     const result = await this.operator.update(id, row);
     return reply.code(200).send(result);
   }
-
-  // #endregion Public Methods (6)
 }

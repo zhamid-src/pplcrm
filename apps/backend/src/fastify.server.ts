@@ -7,18 +7,13 @@ import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import * as path from "path";
 import { routes } from "./app/app.route";
 import { routers } from "./app/app.router";
+import { createContext } from "./context";
 
 const host = process.env.HOST ?? "localhost";
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 export class FastifyServer {
-  // #region Properties (1)
-
   private readonly server;
-
-  // #endregion Properties (1)
-
-  // #region Constructors (1)
 
   constructor(logger: pino.Logger, opts: object = {}) {
     this.server = fastify({
@@ -32,8 +27,10 @@ export class FastifyServer {
     this.server.register(cors, {
       origin: true,
     });
+
     this.server.register(fastifyTRPCPlugin, {
-      trpcOptions: { router: routers },
+      prefix: "/",
+      trpcOptions: { router: routers, createContext },
     });
 
     // This loads all plugins defined in the plugins folder
@@ -42,10 +39,6 @@ export class FastifyServer {
       options: { ...opts },
     });
   }
-
-  // #endregion Constructors (1)
-
-  // #region Public Methods (2)
 
   public async close() {
     return await this.server.close();
@@ -61,6 +54,4 @@ export class FastifyServer {
       }
     });
   }
-
-  // #endregion Public Methods (2)
 }

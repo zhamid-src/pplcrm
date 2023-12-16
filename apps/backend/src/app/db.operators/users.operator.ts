@@ -1,20 +1,22 @@
 import { TableType } from "../kysely.models";
 import { BaseOperator, QueryParams } from "./base.operator";
 
-export class UsersOperator extends BaseOperator<TableType.users> {
-  // #region Constructors (1)
-
+export class UserPofilesOperator extends BaseOperator<TableType.userprofiles> {
   constructor() {
-    super(TableType.users);
+    super(TableType.userprofiles);
   }
 
-  // #endregion Constructors (1)
-
-  // #region Public Methods (1)
-
+  /*
   public getOneByEmail(email: string, columns?: QueryParams<TableType.users>) {
     return this.getQuery(columns).where("email", "=", email).executeTakeFirst();
   }
-
-  // #endregion Public Methods (1)
+  */
+  public getOneByAuthId(
+    auth_id: number,
+    options?: QueryParams<TableType.userprofiles>,
+  ) {
+    return this.getQuery(options)
+      .where("auth_id", "=", auth_id)
+      .executeTakeFirst();
+  }
 }

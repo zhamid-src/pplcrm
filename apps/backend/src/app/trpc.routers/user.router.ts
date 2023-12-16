@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { trpc } from "../../trpc";
-import { UsersOperator } from "../db.operators/users.operator";
+import { UserPofilesOperator } from "../db.operators/users.operator";
 
-const operator = new UsersOperator();
+const operator = new UserPofilesOperator();
 const publicProcedure = trpc.procedure;
 const router = trpc.router;
 
