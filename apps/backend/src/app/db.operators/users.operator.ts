@@ -1,9 +1,9 @@
 import { TableType } from "../kysely.models";
 import { BaseOperator, QueryParams } from "./base.operator";
 
-export class UserPofilesOperator extends BaseOperator<TableType.userprofiles> {
+export class UserPofilesOperator extends BaseOperator<TableType.profiles> {
   constructor() {
-    super(TableType.userprofiles);
+    super(TableType.profiles);
   }
 
   /*
@@ -13,7 +13,7 @@ export class UserPofilesOperator extends BaseOperator<TableType.userprofiles> {
   */
   public getOneByAuthId(
     auth_id: number,
-    options?: QueryParams<TableType.userprofiles>,
+    options?: QueryParams<TableType.profiles>,
   ) {
     return this.getQuery(options)
       .where("auth_id", "=", auth_id)
