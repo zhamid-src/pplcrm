@@ -12,6 +12,7 @@ import {
 import { Router, RouterLink } from "@angular/router";
 import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
+import { TokenService } from "../services/token.service.js";
 
 @Component({
   selector: "pplcrm-login",
@@ -22,6 +23,7 @@ import { AuthService } from "../services/auth.service.js";
 })
 export class LoginComponent {
   protected processing = signal(false);
+  protected persistence = this.tokenService.persistence;
 
   public form = this.fb.group({
     email: ["", [Validators.required, Validators.email]],
@@ -33,13 +35,12 @@ export class LoginComponent {
     private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
+    private tokenService: TokenService,
     private router: Router,
   ) {
     effect(() => {
       if (this.authService.user()) {
         this.router.navigateByUrl("dashboard");
-      } else {
-        this.authService.signOut();
       }
     });
   }
@@ -68,5 +69,10 @@ export class LoginComponent {
       })
       .catch((err) => this.toastr.error(err.message))
       .finally(() => this.processing.set(false));
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    this.tokenService.persistence = (target as HTMLInputElement).checked;
   }
 }

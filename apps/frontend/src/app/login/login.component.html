@@ -38,6 +38,8 @@
                 name="remember_me"
                 type="checkbox"
                 class="checkbox checkbox-primary"
+                [checked]="persistence"
+                (change)="togglePersistence($event.target)"
               />
               <label for="remember_me" class="ml-2 block text-sm">
                 Remember me

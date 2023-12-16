@@ -22,10 +22,14 @@ export type SignUpFormType = {
 export class AuthService extends TRPCService {
   private _user = signal<IAuthUser | null>(null);
 
+  public user() {
+    return this._user();
+  }
+
   public signIn(input: { email: string; password: string }) {
     return this.api.auth.signIn.mutate(input).then((token) => {
       if (token) {
-        this.saveTokens(token);
+        this.updateTokens(token);
       } else {
         throw new Error("Sign in failed");
       }
@@ -33,11 +37,14 @@ export class AuthService extends TRPCService {
     });
   }
 
+  public init() {
+    return this.getCurrentUser();
+  }
+
   public signOut() {
     const apiReturn = this.api.auth.signOut.mutate();
-
-    localStorage.removeItem("auth-token");
-    localStorage.removeItem("refresh-token");
+    this._user.set(null);
+    this.tokenService.clearAll();
 
     return apiReturn;
   }
@@ -45,24 +52,22 @@ export class AuthService extends TRPCService {
   public signUp(input: SignUpFormType) {
     return this.api.auth.signUp
       .mutate(input)
-      .then((token) => this.saveTokens(token));
+      .then((token) => this.updateTokens(token));
   }
 
-  public user() {
-    return this._user();
+  private async getCurrentUser() {
+    const user = await this.api.auth.currentUser.query();
+    this._user.set(user);
+    return user;
   }
 
-  private async saveTokens(token: IToken | TRPCError) {
+  private async updateTokens(token: IToken | TRPCError) {
     if (!token || token instanceof TRPCError) {
       throw token;
     }
 
-    localStorage.setItem("auth-token", token.auth_token);
-    localStorage.setItem("refresh-token", token.refresh_token);
-
-    const user = await this.api.auth.currentUser.query();
-    this._user.set(user);
-
+    this.tokenService.set(token.auth_token, token.refresh_token);
+    this.getCurrentUser();
     return token;
   }
 }
