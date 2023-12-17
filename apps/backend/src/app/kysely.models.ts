@@ -347,6 +347,8 @@ interface AuthUsers {
   tenant_id: number;
   updated_at: Generated<Timestamp>;
   verified: boolean;
+  password_reset_code: string | null;
+  password_reset_code_created_at: Timestamp | null;
 }
 export type AuthUsersType = AuthUsers;
 

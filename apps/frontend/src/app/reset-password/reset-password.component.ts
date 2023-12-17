@@ -7,7 +7,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
-import { RouterLink } from "@angular/router";
+import { Router, RouterLink } from "@angular/router";
 import { ToastrService } from "ngx-toastr";
 import { AuthService } from "../services/auth.service.js";
 
@@ -30,6 +30,7 @@ export class ResetPasswordComponent {
     private fb: FormBuilder,
     private toastr: ToastrService,
     private authService: AuthService,
+    private router: Router,
   ) {}
 
   public get email() {
@@ -45,6 +46,14 @@ export class ResetPasswordComponent {
     this.toastr.clear();
     this.processing.set(true);
 
+    await this.authService.sendPasswordResetEmail({
+      email: this.email.value as string,
+    });
+
+    this.toastr.success(
+      "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+    );
     this.processing.set(false);
+    this.router.navigateByUrl("signin");
   }
 }

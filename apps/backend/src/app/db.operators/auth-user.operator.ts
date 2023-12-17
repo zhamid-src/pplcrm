@@ -27,4 +27,28 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
   ) {
     return this.getQuery(options).where("email", "=", email).executeTakeFirst();
   }
+
+  public updatePassword(password: string, code: string) {
+    return db
+      .updateTable(this.table)
+      .set({
+        password,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      })
+      .where("password_reset_code", "=", code)
+      .executeTakeFirst();
+  }
+
+  public addPasswordResetCode(id: number) {
+    return db
+      .updateTable(this.table)
+      .set({
+        password_reset_code: sql<string>`gen_random_uuid()`,
+        password_reset_code_created_at: sql`now()`,
+      })
+      .where("id", "=", id)
+      .returning(["password_reset_code"])
+      .executeTakeFirst();
+  }
 }

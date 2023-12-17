@@ -1,5 +1,6 @@
-import { sql } from "kysely";
+import { ReferenceExpression, sql } from "kysely";
 import { InsertObjectOrList } from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
+import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 import {
   GetOperandType,
   GroupDataType,
@@ -41,6 +42,17 @@ export class BaseOperator<T extends keyof Models> {
     return this.getQuery(options).execute();
   }
 
+  public getPasswordResetCodeTime(code: string) {
+    const codeColumn = "password_reset_code" as ReferenceExpression<
+      Models,
+      ExtractTableAlias<Models, T>
+    >;
+    const columns = ["password_reset_code_created_at"] as TableColumnsType<T>[];
+    return this.getQuery({ columns })
+      .where(codeColumn, "=", code)
+      .executeTakeFirstOrThrow();
+  }
+
   public getCount() {
     return db
       .selectFrom(this.table)
@@ -57,12 +69,13 @@ export class BaseOperator<T extends keyof Models> {
 
   public async update(
     id: GetOperandType<T, "update", "id">,
-    row: OperationDataType<T, "update">,
+    row: Partial<OperationDataType<T, "update">>,
   ) {
     return db
       .updateTable(this.table)
       .set(row)
       .where("id", "=", id)
+      .returningAll()
       .executeTakeFirst();
   }
 
