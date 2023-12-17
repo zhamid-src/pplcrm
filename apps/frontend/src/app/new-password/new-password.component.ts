@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, signal } from "@angular/core";
+import { Component, OnInit, signal } from "@angular/core";
 
 import {
   FormBuilder,
@@ -7,9 +7,11 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
-import { ActivatedRoute, Router, RouterLink } from "@angular/router";
+import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
 import { PasswordCheckerModule } from "@triangular/password-checker";
+import { TRPCError } from "@trpc/server";
 import { ToastrService } from "ngx-toastr";
+import { firstValueFrom } from "rxjs";
 import { AuthService } from "../services/auth.service.js";
 
 @Component({
@@ -25,9 +27,10 @@ import { AuthService } from "../services/auth.service.js";
   templateUrl: "./new-password.component.html",
   styleUrl: "./new-password.component.scss",
 })
-export class NewPasswordComponent {
+export class NewPasswordComponent implements OnInit {
   protected error = signal(false);
   protected processing = signal(false);
+  private code: string | null = null;
 
   public form = this.fb.group({
     password: ["", [Validators.required, Validators.minLength(8)]],
@@ -41,63 +44,41 @@ export class NewPasswordComponent {
     private toastr: ToastrService,
   ) {}
 
+  async ngOnInit() {
+    const params: Params = await firstValueFrom(this.route.queryParams);
+
+    if (!params["code"]) {
+      this.error.set(true);
+    }
+
+    this.code = params["code"];
+  }
+
   public get password() {
     return this.form.get("password");
   }
 
   public async submit() {
-    this.error.set(false);
-    console.log("submitting");
     if (!this.password?.valid) {
       this.toastr.error("Please check the password.");
       return;
     }
-
     this.toastr.clear();
     this.processing.set(true);
 
-    //const params: Params = await firstValueFrom(this.route.queryParams);
-    //console.log(params);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await this.authService.resetPassword({
+      code: this.code as string,
+      password: this.password?.value as string,
+    });
 
-    if (this.processing()) {
+    if (result instanceof TRPCError) {
       this.error.set(true);
     }
 
-    /*
-    const fragment = await firstValueFrom(this.route.fragment);
-    if (fragment) {
-      const params = new URLSearchParams(fragment);
-
-      if (params.get("refresh_token")) {
-        const refresh_token = params.get("refresh_token");
-        
-        const payload = await this.authService.newPassword(
-          this.password?.value as string,
-          refresh_token as string,
-        );
-
-        if (payload?.error?.name === "AuthWeakPasswordError") {
-          this.toastr.error(
-            "Your password is weak. Please select a different password",
-          );
-          this.processing.set(false);
-        } else if (
-          payload?.error?.message ===
-          "New password should be different from the old password."
-        ) {
-          this.toastr.error(payload.error.message);
-          this.processing.set(false);
-        } else if (!payload?.error) {
-          this.router.navigateByUrl("/signin");
-        }
-      }
-    }
-
-    // if we're still processing then we had an error
-    if (this.processing()) {
-      this.error.set(true);
-    }
-    */
+    this.processing.set(false);
+    this.toastr.success("Password reset successfully. Please sign in again");
+    this.router.navigateByUrl("signin");
   }
 
   protected passwordBreachNumber() {

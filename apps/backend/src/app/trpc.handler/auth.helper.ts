@@ -2,13 +2,16 @@
 import { IAuthUser } from "@common";
 import { TRPCError } from "@trpc/server";
 import * as bcrypt from "bcrypt";
-import { SignerOptions, createSigner } from "fast-jwt";
+import { AuthTokenPayload, createSigner } from "fast-jwt";
+import { sql } from "kysely";
+import nodemailer from "nodemailer";
 import { z } from "zod";
 import { AuthUsersOperator } from "../db.operators/auth-user.operator";
 import { SessionsOperator } from "../db.operators/sessions.operator";
 import { TenantsOperator } from "../db.operators/tenants.operator";
 import { UserPofilesOperator } from "../db.operators/users.operator";
 import { AuthUsersType, OperationDataType } from "../kysely.models";
+import { db } from "../kyselyiit";
 
 const tenants: TenantsOperator = new TenantsOperator();
 const authUsers: AuthUsersOperator = new AuthUsersOperator();
@@ -32,7 +35,7 @@ export const signInInputObj = z.object({
 export type signInInputType = z.infer<typeof signInInputObj>;
 
 export class AuthHelper {
-  public async currentUser(auth: SignerOptions | null) {
+  public async currentUser(auth: AuthTokenPayload | null) {
     if (!auth?.sub) {
       return null;
     }
@@ -41,6 +44,97 @@ export class AuthHelper {
     });
     // get the auth header
     return user as IAuthUser;
+  }
+
+  public async resetPassword(plaintextPassword: string, code: string) {
+    const password = await bcrypt.hash(plaintextPassword, 10);
+
+    if (!password) {
+      throw new TRPCError({
+        message: "Something went wrong, please try again",
+        code: "UNAUTHORIZED",
+      });
+    }
+
+    // Check if the code is valid
+    const data: Partial<AuthUsersType> =
+      await authUsers.getPasswordResetCodeTime(code);
+    const thenTimestamp =
+      data.password_reset_code_created_at as unknown as string;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nowData: any = await sql`select now()::timestamp`.execute(db);
+
+    if (!nowData || !nowData?.rows[0]?.now) {
+      throw new TRPCError({
+        message: "Something went wrong, please try again",
+        code: "UNAUTHORIZED",
+      });
+    }
+
+    const nowTimestamp = nowData?.rows[0]?.now as unknown as string;
+
+    // See if codeTime is less than 15 minutes ago
+    const then = new Date(thenTimestamp);
+    const now = new Date(nowTimestamp);
+    const diff = now.getTime() - then.getTime();
+    const minutes = Math.floor(diff / 60000);
+
+    if (minutes > 15) {
+      throw new TRPCError({
+        message: "The code is expired. Please request a new code",
+        code: "BAD_REQUEST",
+      });
+    }
+
+    const result = await authUsers.updatePassword(password, code);
+    if (result.numUpdatedRows === BigInt(0)) {
+      throw new TRPCError({
+        message: "Wrong code, please try again",
+        code: "UNAUTHORIZED",
+      });
+    }
+
+    return true;
+  }
+
+  public async sendPasswordResetEmail(email: string) {
+    const user = (await authUsers.getOneByEmail(email)) as AuthUsersType;
+
+    if (!user) {
+      throw new TRPCError({
+        message: "User not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    // set the reset code
+    const code = authUsers.addPasswordResetCode(user.id as unknown as number);
+
+    // send the reset email
+    const transport = nodemailer.createTransport({
+      sendmail: true,
+    });
+
+    transport.sendMail(
+      {
+        from: '"CampaignRaven" <pplcrm@campaignraven.com>',
+        to: email,
+        subject: "Your password reset link",
+        text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
+        html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (err: any, info: any) => {
+        if (err) {
+          throw new TRPCError({
+            message: "Something went wrong, please try again",
+            code: "UNAUTHORIZED",
+          });
+        }
+      },
+    );
+    return true;
   }
 
   public async signIn(input: signInInputType) {
@@ -65,7 +159,7 @@ export class AuthHelper {
     );
   }
 
-  public async signOut(auth: SignerOptions | null) {
+  public async signOut(auth: AuthTokenPayload | null) {
     if (!auth?.sub) {
       return null;
     }
@@ -174,7 +268,7 @@ export class AuthHelper {
     }
 
     // TODO: add a secret key
-    const authPayload: SignerOptions = {
+    const authPayload: AuthTokenPayload = {
       expiresIn: "30m",
       iss: "pplcrm",
       sub: user_id.toString(),

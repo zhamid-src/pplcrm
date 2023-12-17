@@ -26,6 +26,14 @@ export class AuthService extends TRPCService {
     return this._user();
   }
 
+  public resetPassword(input: { code: string; password: string }) {
+    return this.api.auth.resetPassword.mutate(input);
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    return this.api.auth.sendPasswordResetEmail.mutate(input);
+  }
+
   public signIn(input: { email: string; password: string }) {
     return this.api.auth.signIn.mutate(input).then((token) => {
       if (token) {

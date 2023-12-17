@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import z from "zod";
 import { publicProcedure, router } from "../../trpc";
 import {
   AuthHelper,
@@ -21,5 +22,15 @@ export const authRouter = router({
   currentUser: publicProcedure.query(async ({ ctx }) =>
     authHelper.currentUser(ctx.auth),
   ),
+  resetPassword: publicProcedure
+    .input(z.object({ password: z.string(), code: z.string() }))
+    .mutation(async ({ input }) =>
+      authHelper.resetPassword(input.password, input.code),
+    ),
+  sendPasswordResetEmail: publicProcedure
+    .input(z.object({ email: z.string() }))
+    .mutation(async ({ input }) =>
+      authHelper.sendPasswordResetEmail(input.email),
+    ),
 });
 export type AuthRouter = typeof authRouter;
