@@ -15,15 +15,20 @@ module.exports = {
       {
         light: {
           ...require("daisyui/src/theming/themes")["light"],
-          primary: "#0ea5e9",
           "primary-content": "#ffffff",
-          secondary: "#14b8a6",
+          primary: "#0ea5e9",
+          secondary: "#14e8a6",
           accent: "#0c506e",
           neutral: "#cbd5e1",
-          "neutral-content": "#454d63",
+          "base-100": "#ffffff",
+          info: "#38bdf8",
+          success: "#2dd4bf",
+          warning: "#fde047",
+          error: "#ef4444",
         },
       },
     ],
   },
+
   plugins: [require("daisyui")],
 };

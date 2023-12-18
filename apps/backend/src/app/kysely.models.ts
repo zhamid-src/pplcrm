@@ -186,97 +186,97 @@ type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 interface MapCampaignsUsers {
-  campaign_id: number;
+  campaign_id: bigint;
   created_at: Generated<Timestamp>;
-  id: Generated<number>;
-  tenant_id: number;
+  id: Generated<bigint>;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
-  user_id: number;
+  user_id: bigint;
 }
 
 interface MapHouseholdsTags {
   created_at: Generated<Timestamp>;
-  household_id: number;
-  id: Generated<number>;
-  tag_id: number;
-  tenant_id: number;
+  household_id: bigint;
+  id: Generated<bigint>;
+  tag_id: bigint;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface MapPeoplesTags {
   created_at: Generated<Timestamp>;
-  id: Generated<number>;
-  person_id: number;
-  tag_id: number;
-  tenant_id: number;
+  id: Generated<bigint>;
+  person_id: bigint;
+  tag_id: bigint;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface Tags {
   created_at: Generated<Timestamp>;
-  createdby_id: number;
-  id: Generated<number>;
+  createdby_id: bigint;
+  id: Generated<bigint>;
   name: string;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface Campaigns {
-  admin_id: number;
+  admin_id: bigint;
   created_at: Generated<Timestamp>;
-  createdby_id: number;
+  createdby_id: bigint;
   description: string | null;
   enddate: string | null;
-  id: Generated<number>;
+  id: Generated<bigint>;
   json: Json | null;
   name: string;
   notes: string | null;
   startdate: string | null;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface Persons {
-  campaign_id: number;
+  campaign_id: bigint;
   created_at: Generated<Timestamp>;
-  createdby_id: number;
+  createdby_id: bigint;
   email: string | null;
   email2: string | null;
-  file_id: number | null;
+  file_id: bigint | null;
   first_name: string | null;
   home_phone: string | null;
-  household_id: number;
-  id: Generated<number>;
+  household_id: bigint;
+  id: Generated<bigint>;
   json: Json | null;
   last_name: string | null;
   middle_names: string | null;
   mobile: string | null;
   notes: string | null;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface Households {
-  campaign_id: number;
+  campaign_id: bigint;
   city: string | null;
   country: string | null;
   created_at: Generated<Timestamp>;
-  createdby_id: number;
-  file_id: number | null;
+  createdby_id: bigint;
+  file_id: bigint | null;
   home_phone: string | null;
-  id: Generated<number>;
+  id: Generated<bigint>;
   json: Json | null;
   notes: string | null;
   state: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
   zip: string | null;
 }
 
 interface Tenants {
-  admin_id: number | null;
+  admin_id: bigint | null;
   billing_city: string | null;
   billing_country: string | null;
   billing_state: string | null;
@@ -286,10 +286,10 @@ interface Tenants {
   city: string | null;
   country: string | null;
   created_at: Generated<Timestamp>;
-  createdby_id: number | null;
+  createdby_id: bigint | null;
   email: string | null;
   email2: string | null;
-  id: Generated<number>;
+  id: Generated<bigint>;
   json: Json | null;
   name: string;
   notes: string | null;
@@ -310,41 +310,41 @@ interface Sessions {
   other_properties: Json | null;
   refresh_token: Generated<string>;
   status: string;
-  tenant_id: number;
+  tenant_id: bigint;
   user_agent: string;
-  user_id: number;
+  user_id: bigint;
 }
 export type SesssionsType = Sessions;
 
 interface Roles {
   created_at: Generated<Timestamp>;
   description: string | null;
-  id: Generated<number>;
+  id: Generated<bigint>;
   name: string;
   permissions: Json | null;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
 }
 
 interface MapRolesUsers {
   created_at: Generated<Timestamp>;
-  id: Generated<number>;
-  role_id: number;
-  tenant_id: number;
+  id: Generated<bigint>;
+  role_id: bigint;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
-  user_id: number;
+  user_id: bigint;
 }
 
 interface AuthUsers {
   created_at: Generated<Timestamp>;
   email: string;
   first_name: string;
-  id: Generated<number>;
+  id: Generated<bigint>;
   last_name: string | null;
   middle_names: string | null;
   password: string;
   role: string | null;
-  tenant_id: number;
+  tenant_id: bigint;
   updated_at: Generated<Timestamp>;
   verified: boolean;
   password_reset_code: string | null;
@@ -353,20 +353,20 @@ interface AuthUsers {
 export type AuthUsersType = AuthUsers;
 
 interface Profiles {
-  auth_id: number;
+  auth_id: bigint;
   city: string | null;
   country: string | null;
   created_at: Generated<Timestamp>;
   email2: string | null;
   home_phone: string | null;
-  id: number;
+  id: bigint;
   json: Json | null;
   mobile: string | null;
   state: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: number | null;
-  uid: number;
+  tenant_id: bigint | null;
+  uid: bigint;
   updated_at: Generated<Timestamp>;
   zip: string | null;
 }

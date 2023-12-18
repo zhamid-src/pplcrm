@@ -40,7 +40,7 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
       .executeTakeFirst();
   }
 
-  public addPasswordResetCode(id: number) {
+  public addPasswordResetCode(id: bigint) {
     return db
       .updateTable(this.table)
       .set({
