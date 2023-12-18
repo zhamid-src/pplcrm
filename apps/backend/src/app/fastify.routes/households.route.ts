@@ -16,7 +16,7 @@ async function routes(fastify: FastifyInstance, _: never, done: () => void) {
     controller.getOneById(+req.params.id, reply),
   );
   fastify.get("/:id/persons", personsSchema.getAll, (req: IdParam, reply) =>
-    personsController.getPersonsInHousehold(+req.params.id, reply),
+    personsController.getPersonsInHousehold(BigInt(+req.params.id), reply),
   );
   fastify.get("/count", schema.count, (_req, reply) =>
     controller.getCount(reply),
@@ -25,11 +25,11 @@ async function routes(fastify: FastifyInstance, _: never, done: () => void) {
     controller.add(req.body as never, reply),
   );
   fastify.patch("/:id", schema.findFromId, (req: IdParam, reply) =>
-    controller.update(+req.params.id, req.body as never, reply),
+    controller.update(BigInt(+req.params.id), req.body as never, reply),
   );
 
   fastify.delete("/:id", schema.findFromId, (req: IdParam, reply) =>
-    controller.delete(+req.params.id, reply),
+    controller.delete(BigInt(+req.params.id), reply),
   );
 
   done();

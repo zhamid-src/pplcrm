@@ -1,16 +1,15 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
-import { NavbarComponent } from "../navbar/navbar.component";
 import { AuthService } from "../services/auth.service";
 
 @Component({
-  selector: "pplcrm-dashboard",
+  selector: "pplcrm-navbar",
   standalone: true,
-  imports: [CommonModule, NavbarComponent],
-  templateUrl: "./dashboard.component.html",
-  styleUrl: "./dashboard.component.scss",
+  imports: [CommonModule],
+  templateUrl: "./navbar.component.html",
+  styleUrl: "./navbar.component.scss",
 })
-export class DashboardComponent {
+export class NavbarComponent {
   constructor(private auth: AuthService) {}
   signOut() {
     this.auth.signOut();

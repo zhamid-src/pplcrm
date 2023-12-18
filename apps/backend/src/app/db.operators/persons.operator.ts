@@ -7,7 +7,7 @@ export class PersonsOperator extends BaseOperator<TableType.persons> {
   }
 
   public getPersonsInHousehold(
-    household_id: number,
+    household_id: bigint,
     options?: QueryParams<TableType.persons>,
   ) {
     return this.getQuery(options)

@@ -49,10 +49,11 @@ export class AuthService extends TRPCService {
     return this.getCurrentUser();
   }
 
-  public signOut() {
-    const apiReturn = this.api.auth.signOut.mutate();
+  public async signOut() {
+    const apiReturn = await this.api.auth.signOut.mutate();
     this._user.set(null);
     this.tokenService.clearAll();
+    this.routerService.navigate(["/signin"]);
 
     return apiReturn;
   }

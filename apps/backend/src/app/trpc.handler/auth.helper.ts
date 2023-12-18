@@ -39,7 +39,7 @@ export class AuthHelper {
     if (!auth?.sub) {
       return null;
     }
-    const user = await authUsers.getOneById(+auth.sub, {
+    const user = await authUsers.getOneById(BigInt(+auth.sub), {
       columns: ["id", "email", "first_name"],
     });
     // get the auth header
@@ -109,7 +109,7 @@ export class AuthHelper {
     }
 
     // set the reset code
-    const code = authUsers.addPasswordResetCode(user.id as unknown as number);
+    const code = authUsers.addPasswordResetCode(user.id as unknown as bigint);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -153,7 +153,7 @@ export class AuthHelper {
     }
 
     return this.createTokens(
-      user.id as unknown as number,
+      user.id as unknown as bigint,
       user.tenant_id,
       user.first_name,
     );
@@ -163,7 +163,8 @@ export class AuthHelper {
     if (!auth?.sub) {
       return null;
     }
-    return sessions.deleteByAuthUserId(+auth.sub);
+    const userId = BigInt(+auth.sub);
+    return sessions.deleteByAuthUserId(userId);
   }
 
   public async signUp(
@@ -246,7 +247,7 @@ export class AuthHelper {
     return this.createTokens(profile.uid, user.tenant_id, user.first_name);
   }
 
-  private async createTokens(user_id: number, tenant_id: number, name: string) {
+  private async createTokens(user_id: bigint, tenant_id: bigint, name: string) {
     // start a new session
     const expires_at = new Date();
     expires_at.setTime(expires_at.getTime() + 30 /* minutes */ * 60 * 1000);

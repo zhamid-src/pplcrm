@@ -1,0 +1,53 @@
+<!-- Nav bar -->
+<div class="navbar bg-base-100 shadow-lg">
+  <div class="flex-1"></div>
+  <div class="flex-none gap-4">
+    <div class="form-control">
+      <input
+        type="text"
+        placeholder="Search"
+        class="input input-pplcrm w-24 md:w-auto"
+      />
+    </div>
+    <!-- notifications -->
+    <div class="cursor-pointer text-slate-400">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+        class="h-6 w-6"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
+        />
+      </svg>
+    </div>
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+        <div class="w-10 rounded-full">
+          <img alt="User Profile Picture" src="assets/sq.svg" />
+        </div>
+      </div>
+      <ul
+        tabindex="0"
+        class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 p-2 text-slate-600 shadow"
+      >
+        <li>
+          <a class="my-2 justify-between text-lg font-light">
+            Profile
+            <span class="badge">New</span>
+          </a>
+        </li>
+        <li><a class="my-2 text-lg font-light">Settings</a></li>
+        <li><hr /></li>
+        <li>
+          <a class="my-2 text-lg font-light" (click)="signOut()">Logout</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>

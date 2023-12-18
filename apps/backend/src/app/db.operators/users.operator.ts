@@ -12,7 +12,7 @@ export class UserPofilesOperator extends BaseOperator<TableType.profiles> {
   }
   */
   public getOneByAuthId(
-    auth_id: number,
+    auth_id: bigint,
     options?: QueryParams<TableType.profiles>,
   ) {
     return this.getQuery(options)
