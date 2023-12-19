@@ -16,6 +16,14 @@ import { ThemeService } from "../services/theme.service";
 export class PeopleComponent {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private api: any;
+  protected rowSelection: "single" | "multiple" = "single";
+
+  gridOptions = {
+    // set background colour on every row, this is probably bad, should be using CSS classes
+    rowStyle: { cursor: "pointer" },
+    suppressCellFocus: true,
+    // other grid options ...
+  };
 
   constructor(
     private personsSvc: PersonsService,
@@ -40,10 +48,13 @@ export class PeopleComponent {
   };
 
   protected colDefs: ColDef[] = [
-    { field: "first_name" },
-    { field: "last_name" },
-    { field: "email" },
-    { field: "notes" },
+    { field: "first_name", headerName: "First Name" },
+    { field: "last_name", headerName: "Last Name" },
+    { field: "email", headerName: "Email" },
+    { field: "mobile", headerName: "Mobile" },
+    { field: "street1", headerName: "Street" },
+    { field: "city", headerName: "City" },
+    { field: "notes", headerName: "Notes" },
   ];
 
   getTheme() {
@@ -53,7 +64,17 @@ export class PeopleComponent {
   }
   onGridReady(params: GridReadyEvent) {
     this.api = params.api;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.personsSvc.getAll().subscribe((data: any) => (this.rowData = data));
+    this.personsSvc
+      .getAllWithHouseholds()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .subscribe((data: any) => (this.rowData = data));
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  onSelectionChanged(event: any) {
+    const selectedRows = this.api.getSelectedRows();
+    console.log(selectedRows);
   }
 }

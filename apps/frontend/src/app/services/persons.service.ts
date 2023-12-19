@@ -8,22 +8,12 @@ import { TRPCService } from "./trpc.service";
 export class PersonsService extends TRPCService {
   // #region Public Methods (2)
 
-  public getAll() {
-    return from(this.api.persons.getAll.query());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public getAllWithHouseholds(options?: any) {
+    return from(this.api.persons.getAllWithHouseholds.query(options));
   }
 
   public getOneById(id: number) {
     return from(this.api.persons.getOneById.query(id));
   }
-
-  // #endregion Public Methods (2)
-  /*
-  public addTodo(todo: ITodoBody): Observable<ITodo> {
-    return from(this.api.todo.add.mutate(todo));
-  }
-
-  public updateTodo(todo: ITodo): Observable<ITodo> {
-    return from(this.api.todo.update.mutate(todo));
-  }
-  */
 }
