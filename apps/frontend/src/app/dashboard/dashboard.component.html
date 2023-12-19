@@ -16,34 +16,36 @@
       <!-- First, add logo (full or square) -->
       <div
         [class.hidden]="!this.drawerOpen"
-        class="bg-primary mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1"
+        class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1"
       >
         <img src="../../assets/logo.svg" />
       </div>
       <div
         [class.hidden]="this.drawerOpen"
-        class="bg-primary avatar border-secondary mx-4 mb-5 mt-3 w-10 rounded-full border-2 p-0"
+        class="bg-base-200 avatar mx-4 mb-5 mt-3 w-10 rounded-full p-0"
       >
         <img src="../../assets/sq.svg" class="min-w-24 h-auto w-full p-2" />
       </div>
 
       <!-- Sidebar content here -->
       @for (item of items; track item.name) {
-        <div class="flex-none px-2 py-1">
+        <div
+          class="flex-none px-2 py-1"
+          [class.bg-base-200]="this.router.url === item['route']"
+        >
           @if (item["type"] === "subheading") {
-            <span
-              class="flex-1 pl-2 capitalize text-neutral-400"
-              [class.text-xs]="!this.drawerOpen"
-              >{{ item["name"] }}</span
-            >
+            <span class="text-base-400 py-2 pl-2 text-xs capitalize">{{
+              item["name"]
+            }}</span>
           } @else {
             <a
-              class="tooltip tooltip-primary tooltip-top light:text-neutral-600 flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg hover:bg-neutral-100 dark:text-neutral-100"
-              [class.bg-neutral-100]="this.router.url === item['route']"
-              [class.dark:text-neutral-600]="this.router.url === item['route']"
+              class="tooltip tooltip-primary tooltip-top hover:bg-base-200 group flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
               routerLink="{{ item['route'] }}"
             >
-              <pplcrm-icon [icon]="item['icon']"></pplcrm-icon>
+              <pplcrm-icon
+                class="group-hover:text-primary"
+                [icon]="item['icon']"
+              ></pplcrm-icon>
               <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
                 item["name"]
               }}</span></a

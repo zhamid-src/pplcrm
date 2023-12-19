@@ -14,27 +14,29 @@
     <div class="form-control">
       <label class="label cursor-pointer">
         <span class="label-text pr-2">{{ themeSvc.theme | titlecase }}</span>
-        <input type="checkbox" class="toggle" (click)="toggleTheme()" checked />
+        <input
+          type="checkbox"
+          class="toggle hover:input-primary"
+          (click)="toggleTheme()"
+          checked
+        />
       </label>
     </div>
     <!-- notifications -->
-    <div class="cursor-pointe">
-      <pplcrm-icon
-        icon="bell"
-        class="light:text-neutral-400 cursor-pointer hover:text-neutral-600 dark:text-neutral-200"
-      />
+    <div class="text-base-400 cursor-pointer">
+      <pplcrm-icon class="hover:text-primary" icon="bell" />
     </div>
     <div class="dropdown dropdown-end">
       <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
         <div
-          class="bg-secondary border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 p-1 hover:border-2"
+          class="bg-base-100 border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 p-1 hover:border-2"
         >
           <img alt="User Profile Picture" src="assets/sq.svg" />
         </div>
       </div>
       <ul
         tabindex="0"
-        class="menu menu-sm dropdown-content bg-base-100 rounded-box light:text-neutral-600 z-[1] mt-3 w-52 cursor-pointer p-2 shadow dark:text-neutral-200"
+        class="menu menu-sm dropdown-content bg-base-100 rounded-box light:text-base-600 dark:text-base-200 z-[1] mt-3 w-52 cursor-pointer p-2 shadow"
       >
         <li>
           <a class="my-2 justify-between text-lg font-light">
