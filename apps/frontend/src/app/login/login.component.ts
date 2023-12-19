@@ -40,7 +40,7 @@ export class LoginComponent {
   ) {
     effect(() => {
       if (this.authService.user()) {
-        this.router.navigateByUrl("dashboard");
+        this.router.navigateByUrl("console");
       }
     });
   }

@@ -1,35 +1,23 @@
 <!-- Nav bar -->
 <div class="navbar bg-base-100 shadow-lg">
-  <div class="flex-1"></div>
-  <div class="flex-none gap-4">
+  <div class="flex-1">
     <div class="form-control">
       <input
         type="text"
         placeholder="Search"
-        class="input input-pplcrm w-24 md:w-auto"
+        class="input input-pplcrm w-24 md:w-80"
       />
     </div>
+  </div>
+  <div class="flex-none gap-4">
     <!-- notifications -->
     <div class="cursor-pointer text-slate-400">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke-width="1.5"
-        stroke="currentColor"
-        class="h-6 w-6"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
-        />
-      </svg>
+      <pplcrm-icon icon="bell" class="text-primary hover:text-secondary" />
     </div>
     <div class="dropdown dropdown-end">
       <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
         <div
-          class="bg-primary border-primary hover:bg-secondary hover:border-secondary w-10 rounded-full border-2 p-1 hover:border-2"
+          class="bg-secondary border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 p-1 hover:border-2"
         >
           <img alt="User Profile Picture" src="assets/sq.svg" />
         </div>
