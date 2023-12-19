@@ -14,13 +14,11 @@ export class IconsComponent {
   public svg = "";
 
   getSvg() {
-    console.log(this.icon);
-    const r =
+    return (
       (this.icon &&
         iconCollection.find((icon) => icon.name === this.icon)?.svg) ||
-      "?";
-    console.log(r);
-    return r;
+      "?"
+    );
   }
 }
 

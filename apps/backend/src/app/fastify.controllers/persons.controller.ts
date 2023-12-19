@@ -3,7 +3,9 @@ import { PersonsOperator } from "../db.operators/persons.operator";
 import { GetOperandType, TableType } from "../kysely.models";
 import { BaseController } from "./base.controller";
 
-export class PersonsController extends BaseController<TableType.persons> {
+export class PersonsController extends BaseController<
+  TableType.persons | TableType.households
+> {
   constructor() {
     super(new PersonsOperator());
   }

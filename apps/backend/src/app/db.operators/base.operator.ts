@@ -1,4 +1,4 @@
-import { ReferenceExpression, sql } from "kysely";
+import { ReferenceExpression, SelectQueryBuilder, sql } from "kysely";
 import { InsertObjectOrList } from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
 import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 import {
@@ -79,8 +79,10 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
-  protected getQuery(options?: QueryParams<T>) {
-    let query = db.selectFrom(this.table);
+  protected getQueryWithOptions(
+    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
+    options?: QueryParams<T>,
+  ) {
     query = options?.columns
       ? query.select(options.columns)
       : query.selectAll();
@@ -89,6 +91,12 @@ export class BaseOperator<T extends keyof Models> {
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
     query = options?.groupBy ? query.groupBy(options.groupBy) : query;
 
+    return query;
+  }
+
+  protected getQuery(options?: QueryParams<T>) {
+    let query = db.selectFrom(this.table);
+    query = this.getQueryWithOptions(query, options);
     return query;
   }
 }

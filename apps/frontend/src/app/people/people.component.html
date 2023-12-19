@@ -8,5 +8,8 @@
   [paginationAutoPageSize]="true"
   [defaultColDef]="defaultColDef"
   (gridReady)="onGridReady($event)"
+  [rowSelection]="rowSelection"
+  (selectionChanged)="onSelectionChanged($event)"
+  [gridOptions]="gridOptions"
 >
 </ag-grid-angular>
