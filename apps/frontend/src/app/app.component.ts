@@ -1,5 +1,6 @@
-import { Component } from "@angular/core";
+import { Component, effect } from "@angular/core";
 import { RouterLink, RouterModule } from "@angular/router";
+import { ThemeService } from "./services/theme.service";
 
 @Component({
   standalone: true,
@@ -11,7 +12,14 @@ import { RouterLink, RouterModule } from "@angular/router";
 export class AppComponent {
   // #region Properties (1)
 
-  public title = "frontend";
+  public title = "pplcrm";
+  protected theme = this.themeSvc.theme;
+
+  constructor(private themeSvc: ThemeService) {
+    effect(() => {
+      this.theme = this.themeSvc.theme;
+    });
+  }
 
   // #endregion Properties (1)
 }

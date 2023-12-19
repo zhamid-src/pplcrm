@@ -27,6 +27,20 @@ module.exports = {
           error: "#ef4444",
         },
       },
+      {
+        dark: {
+          ...require("daisyui/src/theming/themes")["dark"],
+          primary: "#00b5ff",
+          secondary: "#00dfff",
+          accent: "#ce6400",
+          neutral: "#040404",
+          "base-100": "#272a25",
+          info: "#007cc1",
+          success: "#009700",
+          warning: "#ffa000",
+          error: "#ff555f",
+        },
+      },
     ],
   },
 

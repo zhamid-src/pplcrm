@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 import { IconsComponent } from "../icons/icons.component";
 import { AuthService } from "../services/auth.service";
+import { ThemeService } from "../services/theme.service";
 
 @Component({
   selector: "pplcrm-navbar",
@@ -11,8 +12,15 @@ import { AuthService } from "../services/auth.service";
   styleUrl: "./navbar.component.scss",
 })
 export class NavbarComponent {
-  constructor(private auth: AuthService) {}
+  constructor(
+    private auth: AuthService,
+    protected themeSvc: ThemeService,
+  ) {}
   signOut() {
     this.auth.signOut();
+  }
+
+  toggleTheme() {
+    this.themeSvc.toggleTheme();
   }
 }
