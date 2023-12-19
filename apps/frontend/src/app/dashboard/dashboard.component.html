@@ -2,9 +2,11 @@
 <div class="drawer drawer-open bg-base-200">
   <input id="my-drawer" type="checkbox" class="drawer-toggle" />
 
-  <div class="drawer-content">
-    <pplcrm-navbar></pplcrm-navbar>
-    <router-outlet></router-outlet>
+  <div class="drawer-content flex flex-col">
+    <pplcrm-navbar class=""></pplcrm-navbar>
+    <div class="grow">
+      <router-outlet></router-outlet>
+    </div>
   </div>
 
   <div class="drawer-side bg-base-100 border-r-base-200 border-r-2">

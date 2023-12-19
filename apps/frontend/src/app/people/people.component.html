@@ -1,2 +1,12 @@
 <!-- Sidebar -->
-<p class="min-h-max w-full pt-72 text-center text-3xl">People module</p>
+<ag-grid-angular
+  [class]="getTheme()"
+  style="height: 100%; width: 100%"
+  [rowData]="rowData"
+  [columnDefs]="colDefs"
+  [pagination]="true"
+  [paginationAutoPageSize]="true"
+  [defaultColDef]="defaultColDef"
+  (gridReady)="onGridReady($event)"
+>
+</ag-grid-angular>
