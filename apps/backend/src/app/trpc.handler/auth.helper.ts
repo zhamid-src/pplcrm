@@ -2,7 +2,7 @@
 import { IAuthUser } from "@common";
 import { TRPCError } from "@trpc/server";
 import * as bcrypt from "bcrypt";
-import { AuthTokenPayload, createSigner } from "fast-jwt";
+import { SignerOptions, createSigner } from "fast-jwt";
 import { sql } from "kysely";
 import nodemailer from "nodemailer";
 import { z } from "zod";
@@ -35,7 +35,7 @@ export const signInInputObj = z.object({
 export type signInInputType = z.infer<typeof signInInputObj>;
 
 export class AuthHelper {
-  public async currentUser(auth: AuthTokenPayload | null) {
+  public async currentUser(auth: SignerOptions | null) {
     if (!auth?.sub) {
       return null;
     }
@@ -161,7 +161,7 @@ export class AuthHelper {
     );
   }
 
-  public async signOut(auth: AuthTokenPayload | null) {
+  public async signOut(auth: SignerOptions | null) {
     if (!auth?.sub) {
       return null;
     }
@@ -271,7 +271,7 @@ export class AuthHelper {
     }
 
     // TODO: add a secret key
-    const authPayload: AuthTokenPayload = {
+    const authPayload: SignerOptions = {
       expiresIn: "30m",
       iss: "pplcrm",
       sub: user_id.toString(),

@@ -1,6 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, effect } from "@angular/core";
-import { RouterLink, RouterModule } from "@angular/router";
+import { Router, RouterLink, RouterModule } from "@angular/router";
 import { IconsComponent } from "../icons/icons.component";
 import { NavbarComponent } from "../navbar/navbar.component";
 import { SidebarService } from "../services/sidebar.service";
@@ -24,7 +24,10 @@ export class DashboardComponent {
   private _items = this.sidebarSvc.items;
   protected drawerOpen = true;
 
-  constructor(private sidebarSvc: SidebarService) {
+  constructor(
+    private sidebarSvc: SidebarService,
+    protected router: Router,
+  ) {
     effect(() => {
       this._items = this.sidebarSvc.items;
     });
