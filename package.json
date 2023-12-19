@@ -24,6 +24,7 @@
     "@trpc/client": "^10.44.1",
     "@trpc/server": "^10.44.1",
     "@types/nodemailer": "^6.4.14",
+    "ag-grid-angular": "^31.0.1",
     "bcrypt": "^5.1.1",
     "close-with-grace": "^1.2.0",
     "dotenv": "^16.3.1",

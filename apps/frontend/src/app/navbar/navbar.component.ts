@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 import { IconsComponent } from "../icons/icons.component";
 import { AuthService } from "../services/auth.service";
+import { SearchService } from "../services/search.service";
 import { ThemeService } from "../services/theme.service";
 
 @Component({
@@ -15,6 +16,7 @@ export class NavbarComponent {
   constructor(
     private auth: AuthService,
     protected themeSvc: ThemeService,
+    private searchSvc: SearchService,
   ) {}
   signOut() {
     this.auth.signOut();
@@ -22,5 +24,14 @@ export class NavbarComponent {
 
   toggleTheme() {
     this.themeSvc.toggleTheme();
+  }
+
+  search(target: EventTarget | null | undefined) {
+    const str = (target as HTMLInputElement)?.value;
+    if (str) {
+      this.searchSvc.doSearch(str);
+    } else {
+      this.searchSvc.clearSearch();
+    }
   }
 }
