@@ -9,26 +9,43 @@
     <div class="card-body mt-0 w-full">
       <form [formGroup]="form">
         <div class="space-y-4">
-          <input
-            class="input-pplcrm peer mt-3"
-            type="email"
-            formControlName="email"
-            placeholder="mail@gmail.com"
-            autocomplete="email"
-          />
+          <label class="relative block">
+            <pplcrm-icon
+              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
+              icon="at-symbol"
+            />
+
+            <input
+              type="email"
+              placeholder="email"
+              formControlName="email"
+              aria-placeholder="email"
+              placeholder="email"
+              class="input-pplcrm pl-11"
+            />
+          </label>
+
           @if (email?.dirty && email?.invalid) {
             <span class="label-text-alt text-error"
               >Please enter a valid email</span
             >
           }
 
-          <input
-            class="input-pplcrm"
-            type="password"
-            formControlName="password"
-            autocomplete="current-password"
-            placeholder="Enter your password"
-          />
+          <label class="relative block">
+            <pplcrm-icon
+              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-gray-300"
+              icon="lock-closed"
+            />
+
+            <input
+              class="input-pplcrm pl-11"
+              type="password"
+              formControlName="password"
+              autocomplete="current-password"
+              placeholder="Enter your password"
+            />
+          </label>
+
           <!--
           @if (password?.invalid) {
             <span class="label-text-alt text-slate-400">Min character: 8</span>

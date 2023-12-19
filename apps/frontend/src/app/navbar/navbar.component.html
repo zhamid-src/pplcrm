@@ -1,26 +1,38 @@
 <!-- Nav bar -->
 <div class="navbar bg-base-100 shadow-lg">
   <div class="flex-1">
-    <div class="form-control">
+    <label class="group relative block">
+      <pplcrm-icon
+        class="group-focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
+        icon="magnifying-glass"
+      />
+
       <input
         type="text"
         placeholder="Search"
-        class="input input-pplcrm w-24 md:w-80"
-        (input)="search($event.target)"
+        class="input-pplcrm w-42 pl-10 pr-6 md:w-80"
+        [(ngModel)]="searchStr"
+        (ngModelChange)="search()"
       />
-    </div>
+
+      <pplcrm-icon
+        class="absolute right-3 top-1/3 h-4 w-4 -translate-y-1/2 transform cursor-pointer pt-1 text-sm text-gray-400/0 group-focus-within:text-gray-400 group-hover:text-gray-400"
+        icon="x-mark"
+        (click)="clearSearch()"
+      />
+    </label>
   </div>
   <div class="flex-none gap-4">
     <!-- themes -->
     <div class="form-control">
-      <label class="label cursor-pointer">
-        <span class="label-text pr-2">{{ themeSvc.theme | titlecase }}</span>
+      <label class="swap swap-rotate">
         <input
           type="checkbox"
-          class="toggle hover:input-primary"
           (click)="toggleTheme()"
-          checked
+          [checked]="initialTheme === 'light'"
         />
+        <pplcrm-icon icon="sun" class="swap-on" />
+        <pplcrm-icon icon="moon" class="swap-off" />
       </label>
     </div>
     <!-- notifications -->
@@ -37,7 +49,7 @@
       </div>
       <ul
         tabindex="0"
-        class="menu menu-sm dropdown-content bg-base-100 rounded-box light:text-base-600 dark:text-base-200 z-[1] mt-3 w-52 cursor-pointer p-2 shadow"
+        class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 cursor-pointer p-2 shadow"
       >
         <li>
           <a class="my-2 justify-between text-lg font-light">
@@ -46,7 +58,7 @@
           </a>
         </li>
         <li><a class="my-2 text-lg font-light">Settings</a></li>
-        <li><hr /></li>
+        <li class="dark:border-t-gray border-t-2 border-t-gray-900"></li>
         <li>
           <a class="my-2 text-lg font-light" (click)="signOut()">Logout</a>
         </li>

@@ -1,6 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, effect, signal } from "@angular/core";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { IconsComponent } from "../icons/icons.component";
 
 import {
   FormBuilder,
@@ -17,7 +17,13 @@ import { TokenService } from "../services/token.service.js";
 @Component({
   selector: "pplcrm-login",
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    RouterLink,
+    IconsComponent,
+  ],
   templateUrl: "./login.component.html",
   styleUrl: "./login.component.scss",
 })

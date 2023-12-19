@@ -33,11 +33,7 @@ export class PeopleComponent {
     effect(() => {
       const search = this.serachSvc.search;
       if (this.api) {
-        if (search?.length) {
-          this.api.setQuickFilter(search);
-        } else {
-          this.api.resetQuickFilter();
-        }
+        this.api.setQuickFilter(search);
       }
     });
   }
