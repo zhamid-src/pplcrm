@@ -4,7 +4,7 @@ import { Injectable, signal } from "@angular/core";
   providedIn: "root",
 })
 export class ThemeService {
-  private _theme = signal<"light" | "dark">("light");
+  private _theme = signal<"light" | "dark">(this.getStoredTheme());
 
   constructor() {}
 
@@ -14,5 +14,10 @@ export class ThemeService {
 
   toggleTheme() {
     this._theme.set(this._theme() === "light" ? "dark" : "light");
+    localStorage.setItem("pplcrm-theme", this._theme());
+  }
+
+  private getStoredTheme() {
+    return localStorage.getItem("pplcrm-theme") === "dark" ? "dark" : "light";
   }
 }
