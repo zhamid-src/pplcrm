@@ -82,7 +82,7 @@ export class SignupComponent {
         .signUp(formObj)
         .then((payload: IToken) => {
           if (payload.auth_token) {
-            this.router.navigateByUrl("/dashboard");
+            this.router.navigateByUrl("/console");
           } else {
             this.toastr.error("Unknown error");
           }

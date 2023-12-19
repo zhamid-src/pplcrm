@@ -1,25 +1,67 @@
 <!-- Sidebar -->
-<div class="drawer lg:drawer-open">
-  <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
+<div class="drawer drawer-open bg-slate-50">
+  <input id="my-drawer" type="checkbox" class="drawer-toggle" />
 
   <div class="drawer-content">
     <pplcrm-navbar></pplcrm-navbar>
-
-    Hello World
+    <router-outlet></router-outlet>
   </div>
 
-  <div class="drawer-side bg-white">
-    <label
-      for="my-drawer-2"
-      aria-label="close sidebar"
-      class="drawer-overlay"
-    ></label>
-    <ul class="menu text-base-content min-h-full w-48 p-4 text-lg font-light">
-      <li><span class="text-xl font-light">Ppl CRM</span></li>
+  <div class="drawer-side border-r-2 border-r-slate-100 bg-white">
+    <div
+      class="flex min-h-full flex-col text-sm font-light"
+      [class.w-56]="this.drawerOpen"
+      [class.w-18]="!this.drawerOpen"
+    >
+      <!-- First, add logo (full or square) -->
+      <div
+        [class.hidden]="!this.drawerOpen"
+        class="bg-primary mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1"
+      >
+        <img src="../../assets/logo.svg" />
+      </div>
+      <div
+        [class.hidden]="this.drawerOpen"
+        class="bg-primary avatar border-secondary mx-4 mb-5 mt-3 w-10 rounded-full border-2 p-0"
+      >
+        <img src="../../assets/sq.svg" class="min-w-24 h-auto w-full p-2" />
+      </div>
 
       <!-- Sidebar content here -->
-      <li><a>Sidebar Item 1</a></li>
-      <li><a>Sidebar Item 2</a></li>
-    </ul>
+      @for (item of items; track item.name) {
+        <div class="flex-none p-2">
+          @if (item["type"] === "subheading") {
+            <span
+              class="flex-1 pl-1 capitalize text-slate-500"
+              [class.text-xs]="!this.drawerOpen"
+              >{{ item["name"] }}</span
+            >
+          } @else {
+            <a
+              class="text-primary tooltip tooltip-primary tooltip-top flex flex-auto pl-2 tracking-widest"
+              routerLink="{{ item['route'] }}"
+            >
+              <pplcrm-icon [icon]="item['icon']"></pplcrm-icon>
+              <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
+                item["name"]
+              }}</span></a
+            >
+          }
+        </div>
+      }
+      <div class="flex flex-auto grow flex-col">
+        <span class="min-h-full grow"></span>
+        <span
+          class="text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
+          (click)="toggleDrawer()"
+        >
+          @if (this.drawerOpen) {
+            <pplcrm-icon icon="arrow-left-on-rectangle"></pplcrm-icon>
+          } @else {
+            <pplcrm-icon icon="arrow-right-end-on-rectangle"></pplcrm-icon>
+          }
+        </span>
+      </div>
+    </div>
   </div>
 </div>
