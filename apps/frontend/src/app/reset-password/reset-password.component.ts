@@ -8,8 +8,8 @@ import {
   Validators,
 } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
+import { AuthService } from "@services/auth.service.js";
 import { ToastrService } from "ngx-toastr";
-import { AuthService } from "../services/auth.service.js";
 
 @Component({
   selector: "pplcrm-reset-password",

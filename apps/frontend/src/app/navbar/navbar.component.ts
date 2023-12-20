@@ -2,10 +2,10 @@ import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 
 import { FormsModule } from "@angular/forms";
+import { AuthService } from "@services/auth.service";
+import { SearchService } from "@services/search.service";
+import { ThemeService } from "@services/theme.service";
 import { IconsComponent } from "../icons/icons.component";
-import { AuthService } from "../services/auth.service";
-import { SearchService } from "../services/search.service";
-import { ThemeService } from "../services/theme.service";
 import { SwapComponent } from "../swap/swap.component";
 
 @Component({
@@ -16,28 +16,29 @@ import { SwapComponent } from "../swap/swap.component";
   styleUrl: "./navbar.component.scss",
 })
 export class NavbarComponent {
-  protected searchStr = "";
   protected initialTheme = this.themeSvc.theme;
+  protected searchStr = "";
 
   constructor(
     private auth: AuthService,
     private themeSvc: ThemeService,
     private searchSvc: SearchService,
   ) {}
-  signOut() {
-    this.auth.signOut();
+
+  public clearSearch() {
+    this.searchStr = "";
+    this.searchSvc.clearSearch();
   }
 
-  search() {
+  public search() {
     this.searchSvc.doSearch(this.searchStr);
   }
 
-  toggleTheme() {
-    this.themeSvc.toggleTheme();
+  public signOut() {
+    this.auth.signOut();
   }
 
-  clearSearch() {
-    this.searchStr = "";
-    this.searchSvc.clearSearch();
+  public toggleTheme() {
+    this.themeSvc.toggleTheme();
   }
 }

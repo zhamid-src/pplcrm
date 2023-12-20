@@ -10,9 +10,9 @@ import {
 } from "@angular/forms";
 import { Router } from "@angular/router";
 import { IToken } from "@common";
+import { AuthService, SignUpFormType } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
-import { AuthService, SignUpFormType } from "../services/auth.service.js";
 
 @Component({
   selector: "pplcrm-signup",

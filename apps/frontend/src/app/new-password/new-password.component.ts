@@ -8,11 +8,11 @@ import {
   Validators,
 } from "@angular/forms";
 import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
+import { AuthService } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { TRPCError } from "@trpc/server";
 import { ToastrService } from "ngx-toastr";
 import { firstValueFrom } from "rxjs";
-import { AuthService } from "../services/auth.service.js";
 
 @Component({
   selector: "pplcrm-new-password",
@@ -28,9 +28,10 @@ import { AuthService } from "../services/auth.service.js";
   styleUrl: "./new-password.component.scss",
 })
 export class NewPasswordComponent implements OnInit {
+  private code: string | null = null;
+
   protected error = signal(false);
   protected processing = signal(false);
-  private code: string | null = null;
 
   public form = this.fb.group({
     password: ["", [Validators.required, Validators.minLength(8)]],
@@ -44,7 +45,11 @@ export class NewPasswordComponent implements OnInit {
     private toastr: ToastrService,
   ) {}
 
-  async ngOnInit() {
+  public get password() {
+    return this.form.get("password");
+  }
+
+  public async ngOnInit() {
     const params: Params = await firstValueFrom(this.route.queryParams);
 
     if (!params["code"]) {
@@ -52,10 +57,6 @@ export class NewPasswordComponent implements OnInit {
     }
 
     this.code = params["code"];
-  }
-
-  public get password() {
-    return this.form.get("password");
   }
 
   public async submit() {
