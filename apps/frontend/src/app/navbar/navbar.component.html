@@ -4,7 +4,7 @@
     <label class="group relative block">
       <pplcrm-icon
         class="group-focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
-        icon="magnifying-glass"
+        name="magnifying-glass"
       />
 
       <input
@@ -17,7 +17,7 @@
 
       <pplcrm-icon
         class="absolute right-3 top-1/3 h-4 w-4 -translate-y-1/2 transform cursor-pointer pt-1 text-sm text-gray-400/0 group-focus-within:text-gray-400 group-hover:text-gray-400"
-        icon="x-mark"
+        name="x-mark"
         (click)="clearSearch()"
       />
     </label>
@@ -31,13 +31,13 @@
           (click)="toggleTheme()"
           [checked]="initialTheme === 'light'"
         />
-        <pplcrm-icon icon="sun" class="swap-on" />
-        <pplcrm-icon icon="moon" class="swap-off" />
+        <pplcrm-icon name="sun" class="swap-on" />
+        <pplcrm-icon name="moon" class="swap-off" />
       </label>
     </div>
     <!-- notifications -->
     <div class="text-base-400 cursor-pointer">
-      <pplcrm-icon class="hover:text-primary" icon="bell" />
+      <pplcrm-icon class="hover:text-primary" name="bell" />
     </div>
     <div class="dropdown dropdown-end">
       <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">

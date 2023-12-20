@@ -46,7 +46,7 @@
             >
               <pplcrm-icon
                 class="group-hover:text-primary"
-                [icon]="item['icon']"
+                [name]="item['icon']"
               ></pplcrm-icon>
               <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
                 item["name"]
@@ -62,8 +62,8 @@
             class="swap swap-flip text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
           >
             <input type="checkbox" (click)="toggleDrawer()" checked />
-            <pplcrm-icon icon="arrow-left-on-rectangle" class="swap-on" />
-            <pplcrm-icon icon="arrow-right-end-on-rectangle" class="swap-off" />
+            <pplcrm-icon name="arrow-left-on-rectangle" class="swap-on" />
+            <pplcrm-icon name="arrow-right-end-on-rectangle" class="swap-off" />
           </label>
         </div>
       </div>
