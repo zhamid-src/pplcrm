@@ -148,8 +148,6 @@ export class AuthHelper {
       });
     }
 
-    console.log(input.password);
-    console.log(user.password);
     const isMatch = bcrypt.compareSync(input.password, user.password);
     if (!isMatch) {
       throw new TRPCError({ message: "Wrong password!", code: "FORBIDDEN" });
