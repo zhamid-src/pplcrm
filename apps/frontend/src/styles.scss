@@ -29,3 +29,7 @@ body {
     @apply input input-bordered focus:input-primary invalid:input-error caret-primary w-full;
   }
 }
+
+.ag-theme-quartz {
+  --ag-font-family: "Roboto", sans-serif;
+}

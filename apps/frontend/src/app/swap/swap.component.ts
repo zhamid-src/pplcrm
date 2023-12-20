@@ -11,6 +11,7 @@ import { IconsComponent } from "../icons/icons.component";
   styleUrl: "./swap.component.scss",
 })
 export class SwapComponent {
+  @Input() public animation: "flip" | "rotate" = "rotate";
   @Input({ required: true }) public swapOnIcon: string | undefined;
   @Input({ required: true }) public swapOffIcon: string | undefined;
 

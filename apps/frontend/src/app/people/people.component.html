@@ -1,15 +1,57 @@
-<!-- Sidebar -->
-<ag-grid-angular
-  [class]="getTheme()"
-  style="height: 100%; width: 100%"
-  [rowData]="rowData"
-  [columnDefs]="colDefs"
-  [pagination]="true"
-  [paginationAutoPageSize]="true"
-  [defaultColDef]="defaultColDef"
-  (gridReady)="onGridReady($event)"
-  [rowSelection]="rowSelection"
-  (selectionChanged)="onSelectionChanged($event)"
-  [gridOptions]="gridOptions"
->
-</ag-grid-angular>
+<div class="flex h-full w-full flex-col">
+  <ul class="menu menu-horizontal">
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Add a new person"
+      >
+        <pplcrm-icon name="plus"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Refresh the grid"
+      >
+        <pplcrm-icon name="arrow-path"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Download as CSV"
+        (click)="exportToCSV()"
+      >
+        <pplcrm-icon name="arrow-down-tray"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="tooltip tooltip-accent text-gray-400"
+        data-tip="Delete the selected person"
+      >
+        <pplcrm-icon name="trash"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a class="hover:text-primary">
+        <pplcrm-icon name="ellipsis-vertical"></pplcrm-icon>
+      </a>
+    </li>
+  </ul>
+
+  <ag-grid-angular
+    class="flex-1 font-light"
+    [class]="getTheme()"
+    [rowData]="rowData"
+    [columnDefs]="colDefs"
+    [pagination]="true"
+    [paginationAutoPageSize]="true"
+    [defaultColDef]="defaultColDef"
+    (gridReady)="onGridReady($event)"
+    [rowSelection]="rowSelection"
+    (selectionChanged)="onSelectionChanged($event)"
+    [gridOptions]="gridOptions"
+  >
+  </ag-grid-angular>
+</div>

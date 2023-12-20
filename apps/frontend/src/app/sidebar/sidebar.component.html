@@ -29,7 +29,8 @@
         }}</span>
       } @else {
         <a
-          class="tooltip tooltip-primary tooltip-top hover:bg-base-200 group flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
+          class="tooltip tooltip-accent hover:bg-base-200 group z-50 flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
+          data-tooltip-target="tooltip"
           routerLink="{{ item['route'] }}"
         >
           <pplcrm-icon
@@ -52,6 +53,7 @@
       swapOnIcon="arrow-left-on-rectangle"
       swapOffIcon="arrow-right-end-on-rectangle"
       [checked]="drawerOpen"
+      animation="flip"
       (clickEvent)="toggleDrawer()"
     ></pplcrm-swap>
   </div>

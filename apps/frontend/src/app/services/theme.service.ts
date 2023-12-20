@@ -6,18 +6,33 @@ import { Injectable, signal } from "@angular/core";
 export class ThemeService {
   private _theme = signal<"light" | "dark">(this.getStoredTheme());
 
-  constructor() {}
+  constructor() {
+    window
+      .matchMedia("(prefers-color-scheme:dark)")
+      .addEventListener("change", (e) => {
+        this.setTheme(e.matches ? "dark" : "light");
+      });
+  }
 
   get theme() {
     return this._theme();
   }
 
-  toggleTheme() {
-    this._theme.set(this._theme() === "light" ? "dark" : "light");
+  private setTheme(value: "light" | "dark") {
+    this._theme.set(value);
     localStorage.setItem("pplcrm-theme", this._theme());
   }
 
+  toggleTheme() {
+    this.setTheme(this._theme() === "light" ? "dark" : "light");
+  }
+
   private getStoredTheme() {
-    return localStorage.getItem("pplcrm-theme") === "dark" ? "dark" : "light";
+    const isSystemDark = window.matchMedia(
+      "(prefers-color-scheme:dark)",
+    ).matches;
+    return isSystemDark || localStorage.getItem("pplcrm-theme") === "dark"
+      ? "dark"
+      : "light";
   }
 }
