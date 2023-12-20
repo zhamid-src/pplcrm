@@ -1,5 +1,6 @@
 <!-- Nav bar -->
 <div class="navbar bg-base-100 shadow-lg">
+  <!-- Search bar -->
   <div class="flex-1">
     <label class="group relative block">
       <pplcrm-icon
@@ -23,18 +24,14 @@
     </label>
   </div>
   <div class="flex-none gap-4">
-    <!-- themes -->
-    <div class="form-control">
-      <label class="swap swap-rotate">
-        <input
-          type="checkbox"
-          (click)="toggleTheme()"
-          [checked]="initialTheme === 'light'"
-        />
-        <pplcrm-icon name="sun" class="swap-on" />
-        <pplcrm-icon name="moon" class="swap-off" />
-      </label>
-    </div>
+    <!-- light / dark theme switcher -->
+    <pplcrm-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="initialTheme === 'light'"
+      (clickEvent)="toggleTheme()"
+    ></pplcrm-swap>
+
     <!-- notifications -->
     <div class="text-base-400 cursor-pointer">
       <pplcrm-icon class="hover:text-primary" name="bell" />

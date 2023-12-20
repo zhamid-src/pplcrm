@@ -43,16 +43,16 @@
       }
     </div>
   }
+
+  <!-- Finally, the togg--le drawer icon -->
   <div class="flex flex-auto grow flex-col">
     <span class="min-h-full grow"></span>
-    <div class="form-control">
-      <label
-        class="swap swap-flip text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
-      >
-        <input type="checkbox" (click)="toggleDrawer()" checked />
-        <pplcrm-icon name="arrow-left-on-rectangle" class="swap-on" />
-        <pplcrm-icon name="arrow-right-end-on-rectangle" class="swap-off" />
-      </label>
-    </div>
+    <pplcrm-swap
+      class="text-primary hover:text-secondary"
+      swapOnIcon="arrow-left-on-rectangle"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      [checked]="drawerOpen"
+      (clickEvent)="toggleDrawer()"
+    ></pplcrm-swap>
   </div>
 </div>

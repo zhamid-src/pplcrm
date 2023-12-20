@@ -37,7 +37,7 @@ export class PeopleComponent {
       }
     });
   }
-  protected rowData = [];
+  protected rowData = null;
 
   protected defaultColDef: ColDef = {
     // filter: true,

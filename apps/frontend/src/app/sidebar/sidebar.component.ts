@@ -3,11 +3,12 @@ import { Component, effect } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { IconsComponent } from "../icons/icons.component";
 import { SidebarService } from "../services/sidebar.service";
+import { SwapComponent } from "../swap/swap.component";
 
 @Component({
   selector: "pplcrm-sidebar",
   standalone: true,
-  imports: [CommonModule, IconsComponent, RouterLink],
+  imports: [CommonModule, IconsComponent, RouterLink, SwapComponent],
   templateUrl: "./sidebar.component.html",
   styleUrl: "./sidebar.component.scss",
 })
