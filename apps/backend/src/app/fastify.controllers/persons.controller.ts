@@ -1,6 +1,9 @@
 import { FastifyReply } from "fastify";
+import {
+  GetOperandType,
+  TableType,
+} from "../../../../../common/src/lib/kysely.models";
 import { PersonsOperator } from "../db.operators/persons.operator";
-import { GetOperandType, TableType } from "../kysely.models";
 import { BaseController } from "./base.controller";
 
 export class PersonsController extends BaseController<

@@ -9,7 +9,7 @@ import {
 } from "kysely";
 import path from "path";
 import { Pool } from "pg";
-import { Models } from "./kysely.models";
+import { Models } from "../../../../common/src/lib/kysely.models";
 
 // import configs from env via dotenv
 config();

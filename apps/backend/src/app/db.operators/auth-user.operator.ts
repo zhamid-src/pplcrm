@@ -1,5 +1,8 @@
 import { sql } from "kysely";
-import { GetOperandType, TableType } from "../kysely.models";
+import {
+  GetOperandType,
+  TableType,
+} from "../../../../../common/src/lib/kysely.models";
 import { db } from "../kyselyiit";
 import { BaseOperator, QueryParams } from "./base.operator";
 
@@ -11,14 +14,13 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
   public async getCountByEmail(
     email: GetOperandType<TableType.authusers, "select", "email">,
   ): Promise<number> {
-    const { count } = await (db
+    const { count } = (await db
       .selectFrom(this.table)
       .select(sql<string>`count(*)`.as("count"))
       .where("email", "=", email)
-      .executeTakeFirst() as unknown as {
-      count: number;
-    });
-    return count;
+      .executeTakeFirst()) || { count: "0" };
+
+    return parseInt(count);
   }
 
   public getOneByEmail(

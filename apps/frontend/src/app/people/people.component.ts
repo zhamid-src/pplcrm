@@ -1,7 +1,14 @@
 import { CommonModule } from "@angular/common";
 import { Component, effect } from "@angular/core";
 import { AgGridModule } from "ag-grid-angular";
-import { ColDef, GridReadyEvent } from "ag-grid-community";
+import {
+  ColDef,
+  GridApi,
+  GridOptions,
+  GridReadyEvent,
+  RowSelectedEvent,
+} from "ag-grid-community";
+import { TableType } from "common/src/lib/kysely.models";
 import { IconsComponent } from "../icons/icons.component";
 import { PersonsService } from "../services/persons.service";
 import { SearchService } from "../services/search.service";
@@ -15,15 +22,27 @@ import { ThemeService } from "../services/theme.service";
   styleUrl: "./people.component.scss",
 })
 export class PeopleComponent {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private api: any;
+  private api:
+    | GridApi<Partial<TableType.persons | TableType.households>>
+    | undefined;
   protected rowSelection: "single" | "multiple" = "multiple";
 
-  gridOptions = {
-    // set background colour on every row, this is probably bad, should be using CSS classes
-    rowStyle: { cursor: "pointer" },
-    suppressCellFocus: true,
-    // other grid options ...
+  loading =
+    '<span class="ag-overlay-loading-center">Download data ... <span class="inline loading loading-infinity"></span></span>';
+
+  gridOptions: GridOptions<Partial<TableType.persons | TableType.households>> =
+    {
+      rowStyle: { cursor: "pointer" },
+      suppressCellFocus: true,
+      overlayLoadingTemplate: this.loading,
+      onRowSelected: this.onRowSelected.bind(this),
+      // other grid options ...
+    };
+
+  protected rowData: Partial<TableType.persons | TableType.households>[] = [];
+
+  protected defaultColDef: ColDef = {
+    // filter: true,
   };
 
   constructor(
@@ -31,18 +50,12 @@ export class PeopleComponent {
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
   ) {
+    // Set effects
     effect(() => {
-      const search = this.serachSvc.search;
-      if (this.api) {
-        this.api.setQuickFilter(search);
-      }
+      const quickFilterText = this.serachSvc.search;
+      this.api?.updateGridOptions({ quickFilterText });
     });
   }
-  protected rowData = null;
-
-  protected defaultColDef: ColDef = {
-    // filter: true,
-  };
 
   protected colDefs: ColDef[] = [
     { field: "first_name", headerName: "First Name", checkboxSelection: true },
@@ -61,20 +74,27 @@ export class PeopleComponent {
   }
   onGridReady(params: GridReadyEvent) {
     this.api = params.api;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.personsSvc
-      .getAllWithHouseholds()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .subscribe((data: any) => (this.rowData = data));
+    this.refreshGrid();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
-  onSelectionChanged(event: any) {
-    const selectedRows = this.api.getSelectedRows();
+  onRowSelected(
+    event: RowSelectedEvent<Partial<TableType.persons | TableType.households>>,
+  ) {
+    const selectedRow = event.data;
+    console.log(selectedRow);
+    const selectedRows = this.api!.getSelectedRows();
     console.log(selectedRows);
   }
   exportToCSV() {
-    this.api.exportDataAsCsv();
+    this.api!.exportDataAsCsv();
+  }
+  refreshGrid() {
+    this.api!.showLoadingOverlay();
+
+    setTimeout(() => {
+      this.personsSvc
+        .getAllWithHouseholds()
+        .subscribe((data) => (this.rowData = data));
+    }, 2000);
   }
 }

@@ -66,13 +66,12 @@ export class NewPasswordComponent implements OnInit {
     this.toastr.clear();
     this.processing.set(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await this.authService.resetPassword({
+    const error: TRPCError | null = await this.authService.resetPassword({
       code: this.code as string,
       password: this.password?.value as string,
     });
 
-    if (result instanceof TRPCError) {
+    if (error) {
       this.error.set(true);
     }
 

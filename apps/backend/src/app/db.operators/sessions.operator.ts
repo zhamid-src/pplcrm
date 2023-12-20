@@ -1,5 +1,8 @@
 import { UpdateResult } from "kysely";
-import { GetOperandType, TableType } from "../kysely.models";
+import {
+  GetOperandType,
+  TableType,
+} from "../../../../../common/src/lib/kysely.models";
 import { db } from "../kyselyiit";
 import { BaseOperator } from "./base.operator";
 

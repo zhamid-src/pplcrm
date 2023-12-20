@@ -1,5 +1,5 @@
+import { TableType } from "common/src/lib/kysely.models";
 import { HouseholdOperator } from "../db.operators/households.operator";
-import { TableType } from "../kysely.models";
 import { BaseController } from "./base.controller";
 
 export class HouseholdsController extends BaseController<TableType.households> {

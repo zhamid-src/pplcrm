@@ -1,7 +1,7 @@
 import { getAllOptionsType } from "@common";
+import { TableType } from "../../../../../common/src/lib/kysely.models";
 import { QueryParams } from "../db.operators/base.operator";
 import { PersonsOperator } from "../db.operators/persons.operator";
-import { TableType } from "../kysely.models";
 
 const persons = new PersonsOperator();
 
@@ -9,19 +9,18 @@ export class PersonsHelper {
   public async getAll(options: getAllOptionsType) {
     const queryOptions: QueryParams<TableType.persons | TableType.households> =
       {
-        ...(options as unknown as QueryParams<TableType.persons>),
+        ...(options as QueryParams<TableType.persons>),
       };
     return persons.getAll(queryOptions);
   }
 
   public getAllWithHouseholds(options: getAllOptionsType) {
-    const queryOptions: QueryParams<TableType.persons | TableType.households> =
-      {
-        ...(options as unknown as QueryParams<
-          TableType.persons | TableType.households
-        >),
-      };
-    return persons.getAllWithHouseholds(queryOptions);
+    const queryOptions = {
+      ...options,
+    };
+    return persons.getAllWithHouseholds(
+      queryOptions as QueryParams<TableType.persons | TableType.households>,
+    );
   }
 
   public async getOneById(id: number) {

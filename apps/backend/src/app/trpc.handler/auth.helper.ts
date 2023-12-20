@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { IAuthUser } from "@common";
+import { IAuthUser, INow } from "@common";
 import { TRPCError } from "@trpc/server";
 import * as bcrypt from "bcrypt";
+import { AuthUsersType, OperationDataType } from "common/src/lib/kysely.models";
 import { SignerOptions, createSigner } from "fast-jwt";
-import { sql } from "kysely";
+import { QueryResult, sql } from "kysely";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 import { AuthUsersOperator } from "../db.operators/auth-user.operator";
 import { SessionsOperator } from "../db.operators/sessions.operator";
 import { TenantsOperator } from "../db.operators/tenants.operator";
 import { UserPofilesOperator } from "../db.operators/users.operator";
-import { AuthUsersType, OperationDataType } from "../kysely.models";
 import { db } from "../kyselyiit";
 
 const tenants: TenantsOperator = new TenantsOperator();
@@ -59,11 +59,11 @@ export class AuthHelper {
     // Check if the code is valid
     const data: Partial<AuthUsersType> =
       await authUsers.getPasswordResetCodeTime(code);
-    const thenTimestamp =
-      data.password_reset_code_created_at as unknown as string;
+    const thenTimestamp = (data.password_reset_code_created_at ||
+      new Date().toString()) as string;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nowData: any = await sql`select now()::timestamp`.execute(db);
+    const nowData: QueryResult<INow> =
+      (await sql`select now()::timestamp`.execute(db)) as QueryResult<INow>;
 
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
@@ -72,7 +72,8 @@ export class AuthHelper {
       });
     }
 
-    const nowTimestamp = nowData?.rows[0]?.now as unknown as string;
+    const nowTimestamp = (nowData?.rows[0]?.now ||
+      new Date().toString()) as string;
 
     // See if codeTime is less than 15 minutes ago
     const then = new Date(thenTimestamp);
@@ -95,7 +96,7 @@ export class AuthHelper {
       });
     }
 
-    return true;
+    return null;
   }
 
   public async sendPasswordResetEmail(email: string) {
@@ -208,7 +209,7 @@ export class AuthHelper {
     const tenant_id = tenantAddResult.id;
 
     // Now create a new user in auth
-    const user: AuthUsersType | undefined = (await authUsers.add({
+    const user = await authUsers.add({
       tenant_id,
       password,
       email,
@@ -216,7 +217,7 @@ export class AuthHelper {
       last_name: input.last_name,
       middle_names: input.middle_names,
       verified: false,
-    })) as unknown as AuthUsersType;
+    });
 
     if (!user) {
       throw new TRPCError({

@@ -1,4 +1,5 @@
 import { Injectable } from "@angular/core";
+import { getAllOptionsType } from "@common";
 import { from } from "rxjs";
 import { TRPCService } from "./trpc.service";
 
@@ -8,8 +9,7 @@ import { TRPCService } from "./trpc.service";
 export class PersonsService extends TRPCService {
   // #region Public Methods (2)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public getAllWithHouseholds(options?: any) {
+  public getAllWithHouseholds(options?: getAllOptionsType) {
     return from(this.api.persons.getAllWithHouseholds.query(options));
   }
 

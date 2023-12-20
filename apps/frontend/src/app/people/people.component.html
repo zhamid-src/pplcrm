@@ -12,8 +12,17 @@
       <a
         class="hover:text-primary tooltip tooltip-accent"
         data-tip="Refresh the grid"
+        (click)="refreshGrid()"
       >
         <pplcrm-icon name="arrow-path"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Import data from CSV"
+      >
+        <pplcrm-icon name="arrow-up-tray"></pplcrm-icon>
       </a>
     </li>
     <li>
@@ -50,7 +59,6 @@
     [defaultColDef]="defaultColDef"
     (gridReady)="onGridReady($event)"
     [rowSelection]="rowSelection"
-    (selectionChanged)="onSelectionChanged($event)"
     [gridOptions]="gridOptions"
   >
   </ag-grid-angular>
