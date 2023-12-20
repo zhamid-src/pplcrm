@@ -10,9 +10,9 @@ import {
 } from "@angular/forms";
 
 import { Router, RouterLink } from "@angular/router";
+import { AuthService } from "@services/auth.service.js";
+import { TokenService } from "@services/token.service.js";
 import { ToastrService } from "ngx-toastr";
-import { AuthService } from "../services/auth.service.js";
-import { TokenService } from "../services/token.service.js";
 
 @Component({
   selector: "pplcrm-login",
@@ -28,8 +28,8 @@ import { TokenService } from "../services/token.service.js";
   styleUrl: "./login.component.scss",
 })
 export class LoginComponent {
-  protected processing = signal(false);
   protected persistence = this.tokenService.persistence;
+  protected processing = signal(false);
 
   public form = this.fb.group({
     email: ["", [Validators.required, Validators.email]],

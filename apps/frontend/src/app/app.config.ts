@@ -12,11 +12,11 @@ import {
 import { provideAnimations } from "@angular/platform-browser/animations";
 import { provideRouter } from "@angular/router";
 import { JwtModule } from "@auth0/angular-jwt";
+import { AuthService } from "@services/auth.service";
 import { provideToastr } from "ngx-toastr";
 import { appRoutes } from "./app.routes";
 import { httpInterceptor } from "./interceptors/http.interceptor";
 import { ErrorCatchingInterceptor } from "./interceptors/httperrors.interceptor";
-import { AuthService } from "./services/auth.service";
 
 export function initSession(authService: AuthService) {
   return async () => {
