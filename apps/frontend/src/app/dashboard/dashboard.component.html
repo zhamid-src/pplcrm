@@ -1,7 +1,8 @@
 <!-- Sidebar -->
 <div class="drawer drawer-open bg-base-200">
-  <input id="my-drawer" type="checkbox" class="drawer-toggle" />
+  <input class="drawer-toggle" />
 
+  <!-- Add the Navbar and router-outlet for the body -->
   <div class="drawer-content flex flex-col">
     <pplcrm-navbar class=""></pplcrm-navbar>
     <div class="grow">
@@ -9,64 +10,7 @@
     </div>
   </div>
 
-  <div class="drawer-side bg-base-100 border-r-base-200 border-r-2">
-    <div
-      class="flex min-h-full flex-col text-sm font-light"
-      [class.w-56]="this.drawerOpen"
-      [class.w-18]="!this.drawerOpen"
-    >
-      <!-- First, add logo (full or square) -->
-      <div
-        [class.hidden]="!this.drawerOpen"
-        class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1"
-      >
-        <img src="../../assets/logo.svg" />
-      </div>
-      <div
-        [class.hidden]="this.drawerOpen"
-        class="bg-base-200 avatar mx-4 mb-5 mt-3 w-10 rounded-full p-0"
-      >
-        <img src="../../assets/sq.svg" class="min-w-24 h-auto w-full p-2" />
-      </div>
-
-      <!-- Sidebar content here -->
-      @for (item of items; track item.name) {
-        <div
-          class="flex-none px-2 py-1"
-          [class.bg-base-200]="this.router.url === item['route']"
-        >
-          @if (item["type"] === "subheading") {
-            <span class="text-base-400 py-2 pl-2 text-xs capitalize">{{
-              item["name"]
-            }}</span>
-          } @else {
-            <a
-              class="tooltip tooltip-primary tooltip-top hover:bg-base-200 group flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
-              routerLink="{{ item['route'] }}"
-            >
-              <pplcrm-icon
-                class="group-hover:text-primary"
-                [name]="item['icon']"
-              ></pplcrm-icon>
-              <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
-                item["name"]
-              }}</span></a
-            >
-          }
-        </div>
-      }
-      <div class="flex flex-auto grow flex-col">
-        <span class="min-h-full grow"></span>
-        <div class="form-control">
-          <label
-            class="swap swap-flip text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
-          >
-            <input type="checkbox" (click)="toggleDrawer()" checked />
-            <pplcrm-icon name="arrow-left-on-rectangle" class="swap-on" />
-            <pplcrm-icon name="arrow-right-end-on-rectangle" class="swap-off" />
-          </label>
-        </div>
-      </div>
-    </div>
+  <div class="drawer-side">
+    <pplcrm-sidebar></pplcrm-sidebar>
   </div>
 </div>

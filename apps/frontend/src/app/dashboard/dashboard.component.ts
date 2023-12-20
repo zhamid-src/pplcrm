@@ -1,43 +1,14 @@
 import { CommonModule } from "@angular/common";
-import { Component, effect } from "@angular/core";
-import { Router, RouterLink, RouterModule } from "@angular/router";
-import { IconsComponent } from "../icons/icons.component";
+import { Component } from "@angular/core";
+import { RouterModule } from "@angular/router";
 import { NavbarComponent } from "../navbar/navbar.component";
-import { SidebarService } from "../services/sidebar.service";
-import { SummaryComponent } from "../summary/summary.component";
+import { SidebarComponent } from "../sidebar/sidebar.component";
 
 @Component({
   selector: "pplcrm-dashboard",
   standalone: true,
-  imports: [
-    CommonModule,
-    NavbarComponent,
-    RouterLink,
-    SummaryComponent,
-    RouterModule,
-    IconsComponent,
-  ],
+  imports: [CommonModule, NavbarComponent, SidebarComponent, RouterModule],
   templateUrl: "./dashboard.component.html",
   styleUrl: "./dashboard.component.scss",
 })
-export class DashboardComponent {
-  private _items = this.sidebarSvc.items;
-  protected drawerOpen = true;
-
-  constructor(
-    private sidebarSvc: SidebarService,
-    protected router: Router,
-  ) {
-    effect(() => {
-      this._items = this.sidebarSvc.items;
-    });
-  }
-
-  public get items() {
-    return this._items;
-  }
-
-  toggleDrawer() {
-    this.drawerOpen = !this.drawerOpen;
-  }
-}
+export class DashboardComponent {}
