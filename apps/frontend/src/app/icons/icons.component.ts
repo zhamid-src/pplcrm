@@ -10,13 +10,13 @@ import { BypassHtmlSanitizerPipe } from "../svg-html.pipe";
   styleUrl: "./icons.component.scss",
 })
 export class IconsComponent {
-  @Input({ required: true }) icon: string | undefined;
+  @Input({ required: true }) name: string | undefined;
   public svg = "";
 
   getSvg() {
     return (
-      (this.icon &&
-        iconCollection.find((icon) => icon.name === this.icon)?.svg) ||
+      (this.name &&
+        iconCollection.find((icon) => icon.name === this.name)?.svg) ||
       "?"
     );
   }
