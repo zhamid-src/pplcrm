@@ -1,4 +1,4 @@
-import { TableType } from "../kysely.models";
+import { TableType } from "../../../../../common/src/lib/kysely.models";
 import { BaseOperator, QueryParams } from "./base.operator";
 
 export class UserPofilesOperator extends BaseOperator<TableType.profiles> {

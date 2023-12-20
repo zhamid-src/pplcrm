@@ -21,3 +21,7 @@ export const getAllOptions = z
   })
   .optional();
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export interface INow {
+  now: string;
+}

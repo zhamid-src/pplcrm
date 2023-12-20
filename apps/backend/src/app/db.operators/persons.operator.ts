@@ -1,4 +1,4 @@
-import { TableType } from "../kysely.models";
+import { TableType } from "../../../../../common/src/lib/kysely.models";
 import { db } from "../kyselyiit";
 import { BaseOperator, QueryParams } from "./base.operator";
 
@@ -20,11 +20,12 @@ export class PersonsOperator extends BaseOperator<
 
   public getAllWithHouseholds(
     optionsIn?: QueryParams<TableType.persons | TableType.households>,
-  ) {
-    const options: QueryParams<TableType.persons | TableType.households> =
-      optionsIn || {};
+  ): Promise<Partial<TableType.persons | TableType.households>[]> {
+    const options =
+      optionsIn ||
+      ({} as QueryParams<TableType.persons | TableType.households>);
 
-    options.columns = options?.columns || [
+    options!.columns = options?.columns || [
       "persons.id",
       "persons.first_name",
       "persons.last_name",
@@ -40,6 +41,8 @@ export class PersonsOperator extends BaseOperator<
 
     query = this.getQueryWithOptions(query, options);
 
-    return query.execute();
+    return query.execute() as Promise<
+      Partial<TableType.persons | TableType.households>[]
+    >;
   }
 }

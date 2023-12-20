@@ -1,4 +1,4 @@
-import { TableType } from "../kysely.models";
+import { TableType } from "../../../../../common/src/lib/kysely.models";
 import { BaseOperator } from "./base.operator";
 
 export class HouseholdOperator extends BaseOperator<TableType.households> {

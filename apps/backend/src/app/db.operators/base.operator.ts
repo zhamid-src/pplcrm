@@ -7,7 +7,7 @@ import {
   Models,
   OperationDataType,
   TableColumnsType,
-} from "../kysely.models";
+} from "../../../../../common/src/lib/kysely.models";
 import { db } from "../kyselyiit";
 
 export type QueryParams<T extends keyof Models> = {

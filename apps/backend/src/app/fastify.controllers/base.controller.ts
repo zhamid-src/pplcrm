@@ -1,6 +1,10 @@
 import { FastifyReply } from "fastify";
+import {
+  GetOperandType,
+  Models,
+  OperationDataType,
+} from "../../../../../common/src/lib/kysely.models";
 import { BaseOperator } from "../db.operators/base.operator";
-import { GetOperandType, Models, OperationDataType } from "../kysely.models";
 
 export class BaseController<T extends keyof Models> {
   protected readonly operator: BaseOperator<T>;
@@ -51,9 +55,7 @@ export class BaseController<T extends keyof Models> {
    * @returns
    */
   public async getCount(reply: FastifyReply) {
-    const { count } = (await this.operator.getCount()) as unknown as {
-      count: number;
-    };
+    const { count } = (await this.operator.getCount()) || { count: "0" };
     return reply.code(200).send(count);
   }
 
