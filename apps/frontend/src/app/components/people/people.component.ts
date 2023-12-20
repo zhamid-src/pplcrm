@@ -3,6 +3,7 @@ import { Component, effect } from "@angular/core";
 import { PersonsService } from "@services/persons.service";
 import { SearchService } from "@services/search.service";
 import { ThemeService } from "@services/theme.service";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { AgGridModule } from "ag-grid-angular";
 import {
   ColDef,
@@ -12,7 +13,6 @@ import {
   RowSelectedEvent,
 } from "ag-grid-community";
 import { TableType } from "common/src/lib/kysely.models";
-import { IconsComponent } from "../icons/icons.component";
 
 type TYPE = TableType.persons | TableType.households;
 

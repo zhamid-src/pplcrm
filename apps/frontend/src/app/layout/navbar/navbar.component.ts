@@ -5,8 +5,8 @@ import { FormsModule } from "@angular/forms";
 import { AuthService } from "@services/auth.service";
 import { SearchService } from "@services/search.service";
 import { ThemeService } from "@services/theme.service";
-import { IconsComponent } from "../icons/icons.component";
-import { SwapComponent } from "../swap/swap.component";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
+import { SwapComponent } from "@uxcommon/swap/swap.component";
 
 @Component({
   selector: "pplcrm-navbar",

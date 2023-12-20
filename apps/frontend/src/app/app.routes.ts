@@ -1,13 +1,13 @@
 import { Route } from "@angular/router";
-import { authGuard } from "./auth.guard";
-import { DashboardComponent } from "./dashboard/dashboard.component";
-import { loginGuard } from "./login.guard";
-import { LoginComponent } from "./login/login.component";
-import { NewPasswordComponent } from "./new-password/new-password.component";
-import { PeopleComponent } from "./people/people.component";
-import { ResetPasswordComponent } from "./reset-password/reset-password.component";
-import { SignupComponent } from "./signup/signup.component";
-import { SummaryComponent } from "./summary/summary.component";
+import { LoginComponent } from "./auth/login/login.component";
+import { NewPasswordComponent } from "./auth/new-password/new-password.component";
+import { ResetPasswordComponent } from "./auth/reset-password/reset-password.component";
+import { SignupComponent } from "./auth/signup/signup.component";
+import { PeopleComponent } from "./components/people/people.component";
+import { SummaryComponent } from "./components/summary/summary.component";
+import { authGuard } from "./guards/auth.guard";
+import { loginGuard } from "./guards/login.guard";
+import { DashboardComponent } from "./layout/dashboard/dashboard.component";
 
 export const appRoutes: Route[] = [
   { path: "", redirectTo: "console", pathMatch: "full" },

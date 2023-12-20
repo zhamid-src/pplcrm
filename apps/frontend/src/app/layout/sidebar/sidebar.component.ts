@@ -2,8 +2,8 @@ import { CommonModule } from "@angular/common";
 import { Component, effect } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { SidebarService } from "@services/sidebar.service";
-import { IconsComponent } from "../icons/icons.component";
-import { SwapComponent } from "../swap/swap.component";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
+import { SwapComponent } from "@uxcommon/swap/swap.component";
 
 @Component({
   selector: "pplcrm-sidebar",

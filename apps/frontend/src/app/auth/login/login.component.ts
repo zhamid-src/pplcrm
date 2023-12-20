@@ -1,6 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, effect, signal } from "@angular/core";
-import { IconsComponent } from "../icons/icons.component";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 import {
   FormBuilder,

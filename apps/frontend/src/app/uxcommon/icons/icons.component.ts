@@ -1,6 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, Input } from "@angular/core";
-import { BypassHtmlSanitizerPipe } from "../svg-html.pipe";
+import { BypassHtmlSanitizerPipe } from "@pipes/svg-html.pipe";
 
 @Component({
   selector: "pplcrm-icon",
@@ -10,10 +10,10 @@ import { BypassHtmlSanitizerPipe } from "../svg-html.pipe";
   styleUrl: "./icons.component.scss",
 })
 export class IconsComponent {
-  @Input({ required: true }) name: string | undefined;
+  @Input({ required: true }) public name: string | undefined;
   public svg = "";
 
-  getSvg() {
+  public getSvg() {
     return (
       (this.name &&
         iconCollection.find((icon) => icon.name === this.name)?.svg) ||
