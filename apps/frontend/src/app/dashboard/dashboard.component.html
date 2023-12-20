@@ -57,16 +57,15 @@
       }
       <div class="flex flex-auto grow flex-col">
         <span class="min-h-full grow"></span>
-        <span
-          class="text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
-          (click)="toggleDrawer()"
-        >
-          @if (this.drawerOpen) {
-            <pplcrm-icon icon="arrow-left-on-rectangle"></pplcrm-icon>
-          } @else {
-            <pplcrm-icon icon="arrow-right-end-on-rectangle"></pplcrm-icon>
-          }
-        </span>
+        <div class="form-control">
+          <label
+            class="swap swap-flip text-primary hover:text-secondary ml-auto flex-none cursor-pointer p-2"
+          >
+            <input type="checkbox" (click)="toggleDrawer()" checked />
+            <pplcrm-icon icon="arrow-left-on-rectangle" class="swap-on" />
+            <pplcrm-icon icon="arrow-right-end-on-rectangle" class="swap-off" />
+          </label>
+        </div>
       </div>
     </div>
   </div>
