@@ -20,6 +20,7 @@ export class TRPCService {
         loggerLink(),
         httpBatchLink({
           url: "http://localhost:3000",
+
           headers() {
             return token.hasAuthToken()
               ? {

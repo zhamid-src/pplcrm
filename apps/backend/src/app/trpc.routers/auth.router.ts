@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import z from "zod";
-import { publicProcedure, router } from "../../trpc";
+import { authProcedure, publicProcedure, router } from "../../trpc";
 import {
   AuthHelper,
   signInInputObj,
@@ -19,7 +19,7 @@ export const authRouter = router({
   signOut: publicProcedure.mutation(async ({ ctx }) =>
     authHelper.signOut(ctx.auth),
   ),
-  currentUser: publicProcedure.query(async ({ ctx }) =>
+  currentUser: authProcedure.query(async ({ ctx }) =>
     authHelper.currentUser(ctx.auth),
   ),
   resetPassword: publicProcedure
