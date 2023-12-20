@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component, effect } from "@angular/core";
 import { AgGridModule } from "ag-grid-angular";
 import { ColDef, GridReadyEvent } from "ag-grid-community";
+import { IconsComponent } from "../icons/icons.component";
 import { PersonsService } from "../services/persons.service";
 import { SearchService } from "../services/search.service";
 import { ThemeService } from "../services/theme.service";
@@ -9,14 +10,14 @@ import { ThemeService } from "../services/theme.service";
 @Component({
   selector: "pplcrm-people",
   standalone: true,
-  imports: [CommonModule, AgGridModule],
+  imports: [CommonModule, AgGridModule, IconsComponent],
   templateUrl: "./people.component.html",
   styleUrl: "./people.component.scss",
 })
 export class PeopleComponent {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private api: any;
-  protected rowSelection: "single" | "multiple" = "single";
+  protected rowSelection: "single" | "multiple" = "multiple";
 
   gridOptions = {
     // set background colour on every row, this is probably bad, should be using CSS classes
@@ -44,7 +45,7 @@ export class PeopleComponent {
   };
 
   protected colDefs: ColDef[] = [
-    { field: "first_name", headerName: "First Name" },
+    { field: "first_name", headerName: "First Name", checkboxSelection: true },
     { field: "last_name", headerName: "Last Name" },
     { field: "email", headerName: "Email" },
     { field: "mobile", headerName: "Mobile" },
@@ -72,5 +73,8 @@ export class PeopleComponent {
   onSelectionChanged(event: any) {
     const selectedRows = this.api.getSelectedRows();
     console.log(selectedRows);
+  }
+  exportToCSV() {
+    this.api.exportDataAsCsv();
   }
 }
