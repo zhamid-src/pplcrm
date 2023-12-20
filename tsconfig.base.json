@@ -15,9 +15,7 @@
     "moduleResolution": "node",
     "baseUrl": "./",
     "paths": {
-      "@backend/*": ["./apps/backend/src/*"],
-      "@common": ["common/src/index.ts"],
-      "@frontend/*": ["./apps/frontend/src/*"]
+      "@common": ["common/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
