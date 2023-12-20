@@ -1,21 +1,18 @@
 import { getAllOptions } from "@common";
 import { z } from "zod";
-import { trpc } from "../../trpc";
+import { authProcedure, router } from "../../trpc";
 import { PersonsHelper } from "../trpc.handler/persons.helper";
 
-const publicProcedure = trpc.procedure;
 const personsHelper = new PersonsHelper();
 
-const router = trpc.router;
-
 export const personsRouter = router({
-  getOneById: publicProcedure
+  getOneById: authProcedure
     .input(z.number())
     .query(({ input }) => personsHelper.getOneById(input)),
-  getAll: publicProcedure
+  getAll: authProcedure
     .input(getAllOptions)
     .query(({ input }) => personsHelper.getAll(input)),
-  getAllWithHouseholds: publicProcedure
+  getAllWithHouseholds: authProcedure
     .input(getAllOptions)
     .query(({ input }) => personsHelper.getAllWithHouseholds(input)),
 });
