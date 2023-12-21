@@ -3,18 +3,16 @@ import { Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
 import { from } from "rxjs";
-import { CacheService } from "./cache.service";
+import { CachedTRPCService } from "./cached-trpc.service";
 import { TokenService } from "./token.service";
-import { TRPCService } from "./trpc.service";
 
 export type TYPE = TableType.persons | TableType.households;
 
 @Injectable({
   providedIn: "root",
 })
-export class PersonsService extends TRPCService {
+export class PersonsService extends CachedTRPCService<TYPE> {
   constructor(
-    private cache: CacheService<TYPE>,
     protected override tokenService: TokenService,
     protected override routerService: Router,
   ) {
@@ -25,21 +23,16 @@ export class PersonsService extends TRPCService {
     options?: getAllOptionsType,
     refresh: boolean = false,
   ) {
-    const cacheKey = JSON.stringify({
-      query: "getAllWithHouseholds",
-      ...options,
-    });
-
-    if (refresh || !this.cache.has(cacheKey)) {
-      this.cache.set(
-        cacheKey,
-        from(this.api.persons.getAllWithHouseholds.query(options)),
-      );
-    }
-    return this.cache.get(cacheKey);
+    return this.runCachedCall(
+      this.api.persons.getAllWithHouseholds.query(options),
+      "getAllWithHouseholds",
+      options,
+      refresh,
+    );
   }
 
   public getOneById(id: number) {
+    // No need to run the cached call for getting just one
     return from(this.api.persons.getOneById.query(id));
   }
 }

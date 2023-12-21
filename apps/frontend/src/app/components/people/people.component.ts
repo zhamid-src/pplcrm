@@ -34,6 +34,6 @@ export class PeopleComponent {
     const forced = input?.forced || false;
     return this.personsSvc
       .getAllWithHouseholds({}, forced)
-      .subscribe((data: Partial<TYPE>[]) => (this.rowData = data));
+      .subscribe((data) => (this.rowData = data));
   }
 }

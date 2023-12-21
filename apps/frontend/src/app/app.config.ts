@@ -4,14 +4,9 @@ import {
   withInterceptors,
   withInterceptorsFromDi,
 } from "@angular/common/http";
-import {
-  APP_INITIALIZER,
-  ApplicationConfig,
-  importProvidersFrom,
-} from "@angular/core";
+import { APP_INITIALIZER, ApplicationConfig } from "@angular/core";
 import { provideAnimations } from "@angular/platform-browser/animations";
 import { RouteReuseStrategy, provideRouter } from "@angular/router";
-import { JwtModule } from "@auth0/angular-jwt";
 import { AuthService } from "@services/auth.service";
 import { provideToastr } from "ngx-toastr";
 import { appRoutes } from "./app.routes";
@@ -46,13 +41,6 @@ export const appConfig: ApplicationConfig = {
     provideToastr({
       preventDuplicates: true,
     }),
-    importProvidersFrom(
-      JwtModule.forRoot({
-        config: {
-          tokenGetter: tokenGetter,
-        },
-      }),
-    ),
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: APP_INITIALIZER,
