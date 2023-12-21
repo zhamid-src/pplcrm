@@ -35,7 +35,7 @@ export class LoginComponent {
     email: ["", [Validators.required, Validators.email]],
     password: ["", [Validators.required, Validators.minLength(8)]],
   });
-  public hidePassword = true;
+  protected hidePassword = true;
 
   constructor(
     private fb: FormBuilder,
@@ -80,5 +80,17 @@ export class LoginComponent {
   public togglePersistence(target: EventTarget | null) {
     if (!target) return;
     this.tokenService.persistence = (target as HTMLInputElement).checked;
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? "password" : "text";
+  }
+
+  public toggleVisibility() {
+    this.hidePassword = !this.hidePassword;
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? "eye-slash" : "eye";
   }
 }

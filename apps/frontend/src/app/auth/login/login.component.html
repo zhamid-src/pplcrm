@@ -5,7 +5,7 @@
     </div>
     <div class="card-body mt-0 w-full">
       <form [formGroup]="form">
-        <div class="space-y-4">
+        <div class="space-y-3">
           <label class="relative block">
             <pplcrm-icon
               class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
@@ -29,18 +29,24 @@
             >
           }
 
-          <label class="relative block">
+          <label class="group relative block">
             <pplcrm-icon
-              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-gray-300"
-              name="lock-closed"
+              class="group-focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
+              name="magnifying-glass"
             />
 
             <input
-              class="input-pplcrm pl-11"
-              type="password"
+              class="input-pplcrm pl-11 pr-8"
+              [type]="getVisibility()"
               formControlName="password"
               autocomplete="current-password"
               placeholder="Enter your password"
+            />
+
+            <pplcrm-icon
+              class="absolute right-3 top-1/3 h-3 w-3 -translate-y-1/2 transform cursor-pointer pr-5 pt-1 text-xs text-gray-500"
+              [name]="getVisibilityIcon()"
+              (click)="toggleVisibility()"
             />
           </label>
 

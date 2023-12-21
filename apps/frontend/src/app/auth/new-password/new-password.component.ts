@@ -11,6 +11,7 @@ import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
 import { AuthService } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { TRPCError } from "@trpc/server";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { ToastrService } from "ngx-toastr";
 import { firstValueFrom } from "rxjs";
 
@@ -23,12 +24,15 @@ import { firstValueFrom } from "rxjs";
     ReactiveFormsModule,
     RouterLink,
     PasswordCheckerModule,
+    IconsComponent,
   ],
   templateUrl: "./new-password.component.html",
   styleUrl: "./new-password.component.scss",
 })
 export class NewPasswordComponent implements OnInit {
   private code: string | null = null;
+
+  private hidePassword = true;
 
   protected error = signal(false);
   protected processing = signal(false);
@@ -89,5 +93,17 @@ export class NewPasswordComponent implements OnInit {
   protected passwordInBreach() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? "password" : "text";
+  }
+
+  public toggleVisibility() {
+    this.hidePassword = !this.hidePassword;
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? "eye-slash" : "eye";
   }
 }
