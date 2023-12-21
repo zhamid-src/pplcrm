@@ -13,10 +13,11 @@ export class TokenService {
     this.persistence = !!localStorage.getItem("pplcrm-persistence");
   }
 
-  get persistence() {
+  public get persistence() {
     return this._persistence;
   }
-  set persistence(persistence: boolean) {
+
+  public set persistence(persistence: boolean) {
     // first clear
     if (this.persistence && !persistence) {
       this.clearPersistentStorage();
@@ -32,14 +33,11 @@ export class TokenService {
     this.clearSessionStorage();
   }
 
-  private clearPersistentStorage() {
-    localStorage.removeItem(AUTHTOKEN);
-    localStorage.removeItem(REFRESHTOKEN);
-  }
-
-  private clearSessionStorage() {
-    sessionStorage.removeItem(AUTHTOKEN);
-    sessionStorage.removeItem(REFRESHTOKEN);
+  public get() {
+    return {
+      auth_token: this.getAuthToken(),
+      refresh_token: this.getRefreshToken(),
+    };
   }
 
   public getAuthToken() {
@@ -54,8 +52,9 @@ export class TokenService {
       : sessionStorage.getItem(REFRESHTOKEN);
   }
 
-  public hasAuthToken() {
-    return !!this.getAuthToken();
+  public set(auth_token: string, refresh_token: string) {
+    this.setAuthToken(auth_token);
+    this.setRefreshToken(refresh_token);
   }
 
   public setAuthToken(token: string) {
@@ -74,15 +73,13 @@ export class TokenService {
     }
   }
 
-  public set(auth_token: string, refresh_token: string) {
-    this.setAuthToken(auth_token);
-    this.setRefreshToken(refresh_token);
+  private clearPersistentStorage() {
+    localStorage.removeItem(AUTHTOKEN);
+    localStorage.removeItem(REFRESHTOKEN);
   }
 
-  public get() {
-    return {
-      auth_token: this.getAuthToken(),
-      refresh_token: this.getRefreshToken(),
-    };
+  private clearSessionStorage() {
+    sessionStorage.removeItem(AUTHTOKEN);
+    sessionStorage.removeItem(REFRESHTOKEN);
   }
 }

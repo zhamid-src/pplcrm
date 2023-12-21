@@ -41,9 +41,7 @@ async function migrateToLatest() {
 
   results?.forEach((it) => {
     if (it.status === "Success") {
-      console.log(
-        `migration up:"${it.migrationName}" was executed successfully`,
-      );
+      console.log(`migration up:"${it.migrationName}" successful`);
     } else if (it.status === "Error") {
       console.error(`failed to execute migration up"${it.migrationName}"`);
     }
@@ -62,9 +60,7 @@ export async function migrateDown() {
 
   results?.forEach((it) => {
     if (it.status === "Success") {
-      console.log(
-        `migration down"${it.migrationName}" was executed successfully`,
-      );
+      console.log(`migration down"${it.migrationName}" successsful`);
     } else if (it.status === "Error") {
       console.error(`failed to execute migration down"${it.migrationName}"`);
     }

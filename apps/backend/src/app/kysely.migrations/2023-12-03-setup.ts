@@ -113,7 +113,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("last_accessed", "timestamp", (col) =>
       col.defaultTo(sql`now()`).notNull(),
     )
-    .addColumn("expires_at", "timestamp", (col) => col.notNull())
     .addColumn("ip_address", "text", (col) => col.notNull())
     .addColumn("user_agent", "text")
     .addColumn("status", "text", (col) => col.defaultTo("active"))

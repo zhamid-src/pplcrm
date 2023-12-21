@@ -3,12 +3,24 @@ import {
   GetOperandType,
   TableType,
 } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyiit";
+import { db } from "../kyselyinit";
 import { BaseOperator, QueryParams } from "./base.operator";
 
 export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
   constructor() {
     super(TableType.authusers);
+  }
+
+  public addPasswordResetCode(id: bigint) {
+    return db
+      .updateTable(this.table)
+      .set({
+        password_reset_code: sql<string>`gen_random_uuid()`,
+        password_reset_code_created_at: sql`now()`,
+      })
+      .where("id", "=", id)
+      .returning(["password_reset_code"])
+      .executeTakeFirst();
   }
 
   public async getCountByEmail(
@@ -39,18 +51,6 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
         password_reset_code_created_at: null,
       })
       .where("password_reset_code", "=", code)
-      .executeTakeFirst();
-  }
-
-  public addPasswordResetCode(id: bigint) {
-    return db
-      .updateTable(this.table)
-      .set({
-        password_reset_code: sql<string>`gen_random_uuid()`,
-        password_reset_code_created_at: sql`now()`,
-      })
-      .where("id", "=", id)
-      .returning(["password_reset_code"])
       .executeTakeFirst();
   }
 }

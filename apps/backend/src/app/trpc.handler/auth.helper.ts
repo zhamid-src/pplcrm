@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { IAuthUser, INow } from "@common";
+import { IAuthKeyPayload, IAuthUser, INow } from "@common";
 import { TRPCError } from "@trpc/server";
 import * as bcrypt from "bcrypt";
 import { AuthUsersType, OperationDataType } from "common/src/lib/kysely.models";
-import { SignerOptions, createSigner } from "fast-jwt";
+import { createDecoder, createSigner } from "fast-jwt";
 import { QueryResult, sql } from "kysely";
 import nodemailer from "nodemailer";
 import { z } from "zod";
@@ -11,7 +11,7 @@ import { AuthUsersOperator } from "../db.operators/auth-user.operator";
 import { SessionsOperator } from "../db.operators/sessions.operator";
 import { TenantsOperator } from "../db.operators/tenants.operator";
 import { UserPofilesOperator } from "../db.operators/users.operator";
-import { db } from "../kyselyiit";
+import { db } from "../kyselyinit";
 
 const tenants: TenantsOperator = new TenantsOperator();
 const authUsers: AuthUsersOperator = new AuthUsersOperator();
@@ -35,15 +35,36 @@ export const signInInputObj = z.object({
 export type signInInputType = z.infer<typeof signInInputObj>;
 
 export class AuthHelper {
-  public async currentUser(auth: SignerOptions | null) {
-    if (!auth?.sub) {
+  public async currentUser(auth: IAuthKeyPayload) {
+    if (!auth?.user_id) {
       return null;
     }
-    const user = await authUsers.getOneById(BigInt(+auth.sub), {
+    const user = await authUsers.getOneById(auth.user_id, {
       columns: ["id", "email", "first_name"],
     });
     // get the auth header
     return user as IAuthUser;
+  }
+
+  public async renewAuthToken(input: {
+    auth_token: string;
+    refresh_token: string;
+  }) {
+    if (!input?.auth_token || !input?.refresh_token) {
+      throw new TRPCError({
+        message: "Missing auth token",
+        code: "UNAUTHORIZED",
+      });
+    }
+    const decode = createDecoder();
+    const payload = decode(input.auth_token);
+
+    return this.createTokens(
+      payload.user_id,
+      payload.tenant_id,
+      payload.name,
+      payload.session_id,
+    );
   }
 
   public async resetPassword(plaintextPassword: string, code: string) {
@@ -160,12 +181,11 @@ export class AuthHelper {
     );
   }
 
-  public async signOut(auth: SignerOptions | null) {
-    if (!auth?.sub) {
+  public async signOut(auth: IAuthKeyPayload) {
+    if (!auth?.session_id) {
       return null;
     }
-    const userId = BigInt(+auth.sub);
-    return sessions.deleteByAuthUserId(userId);
+    return sessions.delete(auth.session_id);
   }
 
   public async signUp(
@@ -248,10 +268,14 @@ export class AuthHelper {
     return this.createTokens(profile.uid, user.tenant_id, user.first_name);
   }
 
-  private async createTokens(user_id: bigint, tenant_id: bigint, name: string) {
-    // start a new session
-    const expires_at = new Date();
-    expires_at.setTime(expires_at.getTime() + 30 /* minutes */ * 60 * 1000);
+  private async createTokens(
+    user_id: bigint,
+    tenant_id: bigint,
+    name: string,
+    oldSession?: string,
+  ) {
+    // Delete the old session
+    await sessions.delete(oldSession);
 
     const currentSession = await sessions.add({
       user_id,
@@ -259,7 +283,6 @@ export class AuthHelper {
       ip_address: "",
       user_agent: "",
       status: "active",
-      expires_at,
     });
 
     if (!currentSession) {
@@ -269,17 +292,14 @@ export class AuthHelper {
       });
     }
 
-    // TODO: add a secret key
-    const authPayload: SignerOptions = {
-      expiresIn: "30m",
-      iss: "pplcrm",
-      sub: user_id.toString(),
-      //nonce: random key?
-    };
-
-    const signer = createSigner({ key: "supersecretkey" });
-    const auth_token = signer(authPayload);
-
+    const session_id = currentSession.id!;
+    const signer = createSigner({
+      key: "supersecretkey",
+      clockTimestamp: Date.now(),
+      expiresIn: 10000,
+    });
+    const auth_token = signer({ user_id, tenant_id, name, session_id });
+    console.log("new auth token", auth_token);
     return { auth_token, refresh_token: currentSession.refresh_token };
   }
 }

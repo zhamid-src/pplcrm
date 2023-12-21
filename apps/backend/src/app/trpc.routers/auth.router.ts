@@ -32,5 +32,8 @@ export const authRouter = router({
     .mutation(async ({ input }) =>
       authHelper.sendPasswordResetEmail(input.email),
     ),
+  renewAuthToken: publicProcedure
+    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
+    .mutation(async ({ input }) => authHelper.renewAuthToken(input)),
 });
 export type AuthRouter = typeof authRouter;

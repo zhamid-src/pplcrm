@@ -10,7 +10,6 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-  RowSelectedEvent,
 } from "ag-grid-community";
 import { TableType } from "common/src/lib/kysely.models";
 
@@ -78,20 +77,16 @@ export class PeopleComponent {
     this.refreshGrid();
   }
 
-  public onRowSelected(event: RowSelectedEvent<Partial<TYPE>>) {
-    const selectedRow = event.data;
-    console.log(selectedRow);
-    const selectedRows = this.api!.getSelectedRows();
-    console.log(selectedRows);
+  public onRowSelected(/*event: RowSelectedEvent<Partial<TYPE>>*/) {
+    // const selectedRow = event.data;
+    // const selectedRows = this.api!.getSelectedRows();
   }
 
   public refreshGrid() {
     this.api!.showLoadingOverlay();
 
-    setTimeout(() => {
-      this.personsSvc
-        .getAllWithHouseholds()
-        .subscribe((data) => (this.rowData = data));
-    }, 2000);
+    this.personsSvc
+      .getAllWithHouseholds()
+      .subscribe((data) => (this.rowData = data));
   }
 }

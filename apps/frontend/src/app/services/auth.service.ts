@@ -22,8 +22,8 @@ export type SignUpFormType = {
 export class AuthService extends TRPCService {
   private _user = signal<IAuthUser | null>(null);
 
-  public user() {
-    return this._user();
+  public init() {
+    return this.getCurrentUser();
   }
 
   public resetPassword(input: { code: string; password: string }) {
@@ -45,10 +45,6 @@ export class AuthService extends TRPCService {
     });
   }
 
-  public init() {
-    return this.getCurrentUser();
-  }
-
   public async signOut() {
     const apiReturn = await this.api.auth.signOut.mutate();
     this._user.set(null);
@@ -64,8 +60,12 @@ export class AuthService extends TRPCService {
       .then((token) => this.updateTokens(token));
   }
 
+  public user() {
+    return this._user();
+  }
+
   private async getCurrentUser() {
-    const user = await this.api.auth.currentUser.query();
+    const user = await this.api.auth.currentUser.query().catch(() => null);
     this._user.set(user);
     return user;
   }

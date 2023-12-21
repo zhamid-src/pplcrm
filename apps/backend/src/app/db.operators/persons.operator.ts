@@ -1,5 +1,5 @@
 import { TableType } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyiit";
+import { db } from "../kyselyinit";
 import { BaseOperator, QueryParams } from "./base.operator";
 
 export class PersonsOperator extends BaseOperator<
@@ -9,16 +9,7 @@ export class PersonsOperator extends BaseOperator<
     super(TableType.persons);
   }
 
-  public getPersonsInHousehold(
-    household_id: bigint,
-    options?: QueryParams<TableType.persons | TableType.households>,
-  ) {
-    return this.getQuery(options)
-      .where("household_id", "=", household_id)
-      .execute();
-  }
-
-  public getAllWithHouseholds(
+  public async getAllWithHouseholds(
     optionsIn?: QueryParams<TableType.persons | TableType.households>,
   ): Promise<Partial<TableType.persons | TableType.households>[]> {
     const options =
@@ -41,8 +32,17 @@ export class PersonsOperator extends BaseOperator<
 
     query = this.getQueryWithOptions(query, options);
 
-    return query.execute() as Promise<
-      Partial<TableType.persons | TableType.households>[]
-    >;
+    return (await query.execute()) as Partial<
+      TableType.households | TableType.persons
+    >[];
+  }
+
+  public getPersonsInHousehold(
+    household_id: bigint,
+    options?: QueryParams<TableType.persons | TableType.households>,
+  ) {
+    return this.getQuery(options)
+      .where("household_id", "=", household_id)
+      .execute();
   }
 }

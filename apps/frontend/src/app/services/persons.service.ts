@@ -7,8 +7,6 @@ import { TRPCService } from "./trpc.service";
   providedIn: "root",
 })
 export class PersonsService extends TRPCService {
-  // #region Public Methods (2)
-
   public getAllWithHouseholds(options?: getAllOptionsType) {
     return from(this.api.persons.getAllWithHouseholds.query(options));
   }
