@@ -273,6 +273,7 @@ interface Households {
   tenant_id: bigint;
   updated_at: Generated<Timestamp>;
   zip: string | null;
+  people_count: string | null;
 }
 
 interface Tenants {
