@@ -2,7 +2,6 @@ import { Injectable } from "@angular/core";
 import { Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { get, set } from "idb-keyval";
-import { from } from "rxjs";
 import { TokenService } from "./token.service";
 import { TRPCService } from "./trpc.service";
 
@@ -34,17 +33,15 @@ export class CachedTRPCService<T> extends TRPCService {
       }),
     );
 
-    return from(
-      get(cacheKey).then((cachedResult) => {
-        if (refresh || cachedResult.length === 0) {
-          return apiCall.then((data: Partial<T>[]) => {
-            return set(cacheKey, data).then(() => data);
-          });
-        }
+    return get(cacheKey).then((cachedResult) => {
+      if (refresh || cachedResult.length === 0) {
+        return apiCall.then((data: Partial<T>[]) => {
+          return set(cacheKey, data).then(() => data);
+        });
+      }
 
-        return cachedResult;
-      }),
-    );
+      return cachedResult;
+    });
   }
 
   // The hash isn't secure, but it's good enough for our purposes

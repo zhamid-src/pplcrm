@@ -10,6 +10,7 @@ import {
   GridOptions,
   GridReadyEvent,
 } from "ag-grid-community";
+import { LoadingOverlayComponent } from "./loadingOverlay.component";
 
 @Component({
   selector: "pplcrm-datagrid",
@@ -26,19 +27,18 @@ export class DatagridComponent<T> {
   @Input() gridOptions: GridOptions<Partial<T>> = {};
 
   @Output() refresh = new EventEmitter<{ forced: boolean }>();
-
-  public _loading =
-    '<div class="flex flex-row justify-between gap-2"><span class="font-bold text-lg">Downloading data </span><span class="loading loading-dots"></span></span></div>';
+  @Output() abortRefresh = new EventEmitter<void>();
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     rowStyle: { cursor: "pointer" },
     suppressCellFocus: true,
-    overlayLoadingTemplate: this._loading,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: "multiple",
     onRowSelected: this.onRowSelected.bind(this),
     onRowDataUpdated: this.onRowDataUpdated.bind(this),
+    loadingOverlayComponent: LoadingOverlayComponent,
+    context: this,
   };
 
   protected combinedGridOptions: GridOptions<Partial<T>> = {
@@ -84,7 +84,11 @@ export class DatagridComponent<T> {
 
   public refreshGrid(forced: boolean = false) {
     this.api!.showLoadingOverlay();
-
     this.refresh.emit({ forced });
+  }
+
+  public sendAbort() {
+    this.abortRefresh.emit();
+    this.api!.hideOverlay();
   }
 }

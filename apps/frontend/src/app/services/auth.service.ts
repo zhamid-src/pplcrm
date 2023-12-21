@@ -34,15 +34,14 @@ export class AuthService extends TRPCService {
     return this.api.auth.sendPasswordResetEmail.mutate(input);
   }
 
-  public signIn(input: { email: string; password: string }) {
-    return this.api.auth.signIn.mutate(input).then((token) => {
-      if (token) {
-        this.updateTokens(token);
-      } else {
-        throw new Error("Sign in failed");
-      }
-      return token;
-    });
+  public async signIn(input: { email: string; password: string }) {
+    const token = await this.api.auth.signIn.mutate(input);
+    if (token) {
+      this.updateTokens(token);
+    } else {
+      throw new Error("Sign in failed");
+    }
+    return token;
   }
 
   public async signOut() {
@@ -54,10 +53,9 @@ export class AuthService extends TRPCService {
     return apiReturn;
   }
 
-  public signUp(input: SignUpFormType) {
-    return this.api.auth.signUp
-      .mutate(input)
-      .then((token) => this.updateTokens(token));
+  public async signUp(input: SignUpFormType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokens(token);
   }
 
   public user() {

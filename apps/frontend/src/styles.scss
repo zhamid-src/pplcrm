@@ -32,4 +32,9 @@ body {
 
 .ag-theme-quartz {
   --ag-font-family: "Roboto", sans-serif;
+  --ag-modal-overlay-background-color: rgba(255, 255, 255, 0.9);
+}
+
+.ag-theme-quartz-dark {
+  --ag-modal-overlay-background-color: rgba(18, 35, 46, 0.95);
 }
