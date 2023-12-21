@@ -1,0 +1,66 @@
+<div class="flex h-full w-full flex-col">
+  <ul class="menu menu-horizontal flex flex-row">
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Add a new person"
+      >
+        <pplcrm-icon name="plus"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Refresh the grid"
+        (click)="refreshGrid()"
+      >
+        <pplcrm-icon name="arrow-path"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Import data from CSV"
+      >
+        <pplcrm-icon name="arrow-up-tray"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="hover:text-primary tooltip tooltip-accent"
+        data-tip="Download as CSV"
+        (click)="exportToCSV()"
+      >
+        <pplcrm-icon name="arrow-down-tray"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a
+        class="tooltip tooltip-accent text-gray-400"
+        data-tip="Delete the selected person"
+      >
+        <pplcrm-icon name="trash"></pplcrm-icon>
+      </a>
+    </li>
+    <li>
+      <a class="hover:text-primary">
+        <pplcrm-icon name="ellipsis-vertical"></pplcrm-icon>
+      </a>
+    </li>
+    <li class="grow">
+      <a class="hover:text-primary ml-auto">
+        <pplcrm-icon name="information-circle"></pplcrm-icon>
+      </a>
+    </li>
+  </ul>
+
+  <ag-grid-angular
+    class="flex-1 font-light"
+    [class]="getTheme()"
+    [rowData]="rowData"
+    [columnDefs]="colDefs"
+    (gridReady)="onGridReady($event)"
+    [gridOptions]="combinedGridOptions"
+  >
+  </ag-grid-angular>
+</div>
