@@ -1,11 +1,8 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
-import { PersonsService } from "@services/persons.service";
+import { PersonsService, TYPE } from "@services/persons.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
-import { TableType } from "common/src/lib/kysely.models";
-
-type TYPE = TableType.persons | TableType.households;
 
 @Component({
   selector: "pplcrm-people",
@@ -33,9 +30,10 @@ export class PeopleComponent {
 
   constructor(private personsSvc: PersonsService) {}
 
-  public refresh() {
+  public refresh(input: { forced: boolean }) {
+    const forced = input?.forced || false;
     return this.personsSvc
-      .getAllWithHouseholds()
-      .subscribe((data) => (this.rowData = data));
+      .getAllWithHouseholds({}, forced)
+      .subscribe((data: Partial<TYPE>[]) => (this.rowData = data));
   }
 }

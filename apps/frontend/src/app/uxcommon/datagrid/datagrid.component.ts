@@ -26,7 +26,7 @@ export class DatagridComponent<T> {
   @Input({ required: true }) rowData: Partial<T>[] = [];
   @Input() gridOptions: GridOptions<Partial<T>> = {};
 
-  @Output() refresh = new EventEmitter<void>();
+  @Output() refresh = new EventEmitter<{ forced: boolean }>();
 
   public _loading =
     '<span class="ag-overlay-loading-center">Download data ... <span class="inline loading loading-infinity"></span></span>';
@@ -59,8 +59,8 @@ export class DatagridComponent<T> {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public onRowDataUpdated(event: any) {
-    console.log("onRowDataUpdated", event);
+  public onRowDataUpdated(/*event: GridReadyEvent*/) {
+    // empty
   }
 
   public exportToCSV() {
@@ -84,9 +84,10 @@ export class DatagridComponent<T> {
     // const selectedRows = this.api!.getSelectedRows();
   }
 
-  public refreshGrid() {
+  public refreshGrid(forced: boolean = false) {
+    console.log("forced refresh is", forced);
     this.api!.showLoadingOverlay();
 
-    this.refresh.emit();
+    this.refresh.emit({ forced });
   }
 }
