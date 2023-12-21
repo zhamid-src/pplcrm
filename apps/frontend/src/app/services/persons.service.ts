@@ -1,7 +1,10 @@
 import { Injectable } from "@angular/core";
+import { Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
-import { Observable, from } from "rxjs";
+import { from } from "rxjs";
+import { CacheService } from "./cache.service";
+import { TokenService } from "./token.service";
 import { TRPCService } from "./trpc.service";
 
 export type TYPE = TableType.persons | TableType.households;
@@ -10,24 +13,30 @@ export type TYPE = TableType.persons | TableType.households;
   providedIn: "root",
 })
 export class PersonsService extends TRPCService {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private getAllCache: Record<string, Observable<Partial<TYPE>[]>> = {};
+  constructor(
+    private cache: CacheService<TYPE>,
+    protected override tokenService: TokenService,
+    protected override routerService: Router,
+  ) {
+    super(tokenService, routerService);
+  }
 
   public getAllWithHouseholds(
     options?: getAllOptionsType,
     refresh: boolean = false,
   ) {
-    const cacheKeyJSON = {
+    const cacheKey = JSON.stringify({
       query: "getAllWithHouseholds",
       ...options,
-    };
-    const cacheKey = JSON.stringify(cacheKeyJSON);
-    if (refresh || !this.getAllCache[cacheKey]) {
-      this.getAllCache[cacheKey] = from(
-        this.api.persons.getAllWithHouseholds.query(options),
+    });
+
+    if (refresh || !this.cache.has(cacheKey)) {
+      this.cache.set(
+        cacheKey,
+        from(this.api.persons.getAllWithHouseholds.query(options)),
       );
     }
-    return this.getAllCache[cacheKey];
+    return this.cache.get(cacheKey);
   }
 
   public getOneById(id: number) {
