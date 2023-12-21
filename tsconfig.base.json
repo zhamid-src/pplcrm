@@ -16,9 +16,9 @@
     "baseUrl": "./",
     "paths": {
       "@common": ["common/src/index.ts"],
+      "@pipes/*": ["apps/frontend/src/app/pipes/*"],
       "@services/*": ["apps/frontend/src/app/services/*"],
-      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"],
-      "@pipes/*": ["apps/frontend/src/app/pipes/*"]
+      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]
