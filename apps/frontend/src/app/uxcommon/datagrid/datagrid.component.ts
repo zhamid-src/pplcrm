@@ -9,7 +9,6 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-  RowSelectedEvent,
 } from "ag-grid-community";
 
 @Component({
@@ -28,7 +27,8 @@ export class DatagridComponent<T> {
 
   @Output() refresh = new EventEmitter<{ forced: boolean }>();
 
-  public _loading = '<span class="inline loading loading-infinity"></span>';
+  public _loading =
+    '<div class="flex flex-row justify-between gap-2"><span class="font-bold text-lg">Downloading data </span><span class="loading loading-dots"></span></span></div>';
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     rowStyle: { cursor: "pointer" },
@@ -77,14 +77,12 @@ export class DatagridComponent<T> {
     this.refreshGrid();
   }
 
-  public onRowSelected(event: RowSelectedEvent<Partial<T>>) {
-    const selectedRow = event.data;
-    console.log(selectedRow);
+  public onRowSelected(/*event: RowSelectedEvent<Partial<T>>*/) {
+    // const selectedRow = event.data;
     // const selectedRows = this.api!.getSelectedRows();
   }
 
   public refreshGrid(forced: boolean = false) {
-    console.log("forced refresh is", forced);
     this.api!.showLoadingOverlay();
 
     this.refresh.emit({ forced });
