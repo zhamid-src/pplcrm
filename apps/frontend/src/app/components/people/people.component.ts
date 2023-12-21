@@ -30,10 +30,13 @@ export class PeopleComponent {
 
   constructor(private personsSvc: PersonsService) {}
 
-  public refresh(input: { forced: boolean }) {
+  public async refresh(input: { forced: boolean }) {
     const forced = input?.forced || false;
-    return this.personsSvc
-      .getAllWithHouseholds({}, forced)
-      .subscribe((data) => (this.rowData = data));
+    const data = await this.personsSvc.getAllWithHouseholds({}, forced);
+    this.rowData = data;
+  }
+
+  public abortRefresh() {
+    this.personsSvc.abort();
   }
 }

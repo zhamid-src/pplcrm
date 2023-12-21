@@ -10,6 +10,7 @@ import { TokenService } from "./token.service";
 })
 export class TRPCService {
   protected api;
+  protected ac = new AbortController();
 
   constructor(
     protected tokenService: TokenService,
@@ -70,6 +71,9 @@ export class TRPCService {
         }),
       ],
     });
+  }
+  public abort() {
+    this.ac.abort();
   }
 }
 
