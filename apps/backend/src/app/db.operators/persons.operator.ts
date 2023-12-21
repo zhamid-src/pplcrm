@@ -1,5 +1,4 @@
 import { TableType } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyinit";
 import { BaseOperator, QueryParams } from "./base.operator";
 
 export class PersonsOperator extends BaseOperator<
@@ -26,9 +25,11 @@ export class PersonsOperator extends BaseOperator<
       "households.street1",
       "households.city",
     ];
-    let query = db
-      .selectFrom(this.table)
-      .innerJoin("households", "persons.household_id", "households.id");
+    let query = this.selectFrom().innerJoin(
+      "households",
+      "persons.household_id",
+      "households.id",
+    );
 
     query = this.getQueryWithOptions(query, options);
 

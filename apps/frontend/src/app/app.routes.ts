@@ -3,6 +3,7 @@ import { LoginComponent } from "./auth/login/login.component";
 import { NewPasswordComponent } from "./auth/new-password/new-password.component";
 import { ResetPasswordComponent } from "./auth/reset-password/reset-password.component";
 import { SignupComponent } from "./auth/signup/signup.component";
+import { HouseholdsComponent } from "./components/households/households.component";
 import { PeopleComponent } from "./components/people/people.component";
 import { SummaryComponent } from "./components/summary/summary.component";
 import { authGuard } from "./guards/auth.guard";
@@ -27,6 +28,10 @@ export const appRoutes: Route[] = [
       {
         path: "people",
         component: PeopleComponent,
+      },
+      {
+        path: "households",
+        component: HouseholdsComponent,
       },
     ],
   },

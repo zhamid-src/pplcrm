@@ -34,7 +34,7 @@ export class CachedTRPCService<T> extends TRPCService {
     );
 
     return get(cacheKey).then((cachedResult) => {
-      if (refresh || cachedResult.length === 0) {
+      if (refresh || !cachedResult || cachedResult.length === 0) {
         return apiCall.then((data: Partial<T>[]) => {
           return set(cacheKey, data).then(() => data);
         });

@@ -12,6 +12,9 @@ export const householdsRouter = router({
   getAll: authProcedure.query(() => {
     return operator.getAll();
   }),
+  getAllWithPeopleCount: authProcedure.query(() => {
+    return operator.getAllWithPeopleCount();
+  }),
 });
 
 export type HouseholdsRouter = typeof householdsRouter;

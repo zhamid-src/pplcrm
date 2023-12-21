@@ -26,7 +26,7 @@ export class PersonsService extends CachedTRPCService<TYPE> {
       this.api.persons.getAllWithHouseholds.query(options, {
         signal: this.ac.signal,
       }),
-      "getAllWithHouseholds",
+      "persons.getAllWithHouseholds",
       options,
       refresh,
     );

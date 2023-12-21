@@ -39,7 +39,7 @@ export class BaseOperator<T extends keyof Models> {
   }
 
   public getAll(options?: QueryParams<T>) {
-    return this.getQuery(options).execute();
+    return this.getQuery(options).execute() as Promise<Partial<T>[]>;
   }
 
   public getCount() {
@@ -79,8 +79,12 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
+  protected selectFrom() {
+    return db.selectFrom(this.table);
+  }
+
   protected getQuery(options?: QueryParams<T>) {
-    let query = db.selectFrom(this.table);
+    let query = this.selectFrom();
     query = this.getQueryWithOptions(query, options);
     return query;
   }
