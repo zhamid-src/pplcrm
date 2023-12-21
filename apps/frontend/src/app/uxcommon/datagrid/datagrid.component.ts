@@ -28,8 +28,7 @@ export class DatagridComponent<T> {
 
   @Output() refresh = new EventEmitter<{ forced: boolean }>();
 
-  public _loading =
-    '<span class="ag-overlay-loading-center">Download data ... <span class="inline loading loading-infinity"></span></span>';
+  public _loading = '<span class="inline loading loading-infinity"></span>';
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     rowStyle: { cursor: "pointer" },
