@@ -8,7 +8,7 @@ import {
   OperationDataType,
   TableColumnsType,
 } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyiit";
+import { db } from "../kyselyinit";
 
 export type QueryParams<T extends keyof Models> = {
   columns?: TableColumnsType<T>[];
@@ -42,17 +42,6 @@ export class BaseOperator<T extends keyof Models> {
     return this.getQuery(options).execute();
   }
 
-  public getPasswordResetCodeTime(code: string) {
-    const codeColumn = "password_reset_code" as ReferenceExpression<
-      Models,
-      ExtractTableAlias<Models, T>
-    >;
-    const columns = ["password_reset_code_created_at"] as TableColumnsType<T>[];
-    return this.getQuery({ columns })
-      .where(codeColumn, "=", code)
-      .executeTakeFirstOrThrow();
-  }
-
   public getCount() {
     return db
       .selectFrom(this.table)
@@ -67,6 +56,17 @@ export class BaseOperator<T extends keyof Models> {
     return this.getQuery(options).where("id", "=", id).executeTakeFirst();
   }
 
+  public getPasswordResetCodeTime(code: string) {
+    const codeColumn = "password_reset_code" as ReferenceExpression<
+      Models,
+      ExtractTableAlias<Models, T>
+    >;
+    const columns = ["password_reset_code_created_at"] as TableColumnsType<T>[];
+    return this.getQuery({ columns })
+      .where(codeColumn, "=", code)
+      .executeTakeFirstOrThrow();
+  }
+
   public async update(
     id: GetOperandType<T, "update", "id">,
     row: Partial<OperationDataType<T, "update">>,
@@ -77,6 +77,12 @@ export class BaseOperator<T extends keyof Models> {
       .where("id", "=", id)
       .returningAll()
       .executeTakeFirst();
+  }
+
+  protected getQuery(options?: QueryParams<T>) {
+    let query = db.selectFrom(this.table);
+    query = this.getQueryWithOptions(query, options);
+    return query;
   }
 
   protected getQueryWithOptions(
@@ -91,12 +97,6 @@ export class BaseOperator<T extends keyof Models> {
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
     query = options?.groupBy ? query.groupBy(options.groupBy) : query;
 
-    return query;
-  }
-
-  protected getQuery(options?: QueryParams<T>) {
-    let query = db.selectFrom(this.table);
-    query = this.getQueryWithOptions(query, options);
     return query;
   }
 }

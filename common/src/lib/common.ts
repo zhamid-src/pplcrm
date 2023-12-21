@@ -25,3 +25,10 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 export interface INow {
   now: string;
 }
+
+export interface IAuthKeyPayload {
+  name: string;
+  session_id: string;
+  tenant_id: bigint;
+  user_id: bigint;
+}

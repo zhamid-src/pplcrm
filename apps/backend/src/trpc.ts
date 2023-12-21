@@ -14,8 +14,10 @@ export const router = trpc.router;
 
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
-  if (!ctx.auth?.sub) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+  if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+    });
   }
   return opts.next({ ctx });
 });

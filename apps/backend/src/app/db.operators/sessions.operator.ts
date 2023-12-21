@@ -3,23 +3,12 @@ import {
   GetOperandType,
   TableType,
 } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyiit";
+import { db } from "../kyselyinit";
 import { BaseOperator } from "./base.operator";
 
 export class SessionsOperator extends BaseOperator<TableType.sessions> {
   constructor() {
     super(TableType.sessions);
-  }
-
-  public deleteByAuthUserId(
-    user_id: GetOperandType<TableType.sessions, "update", "user_id">,
-  ) {
-    if (!user_id) return Promise.resolve(undefined);
-
-    return db
-      .deleteFrom(this.table)
-      .where("user_id", "=", user_id)
-      .executeTakeFirst();
   }
 
   public getOneByAuthUserId(

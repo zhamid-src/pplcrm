@@ -303,7 +303,6 @@ interface Tenants {
 
 interface Sessions {
   created_at: Generated<Timestamp>;
-  expires_at: Generated<Timestamp>;
   id: Generated<string>;
   ip_address: string;
   last_accessed: Generated<Timestamp>;
@@ -343,12 +342,13 @@ interface AuthUsers {
   last_name: string | null;
   middle_names: string | null;
   password: string;
+  password_reset_code: string | null;
+  // move to Sessions
+  password_reset_code_created_at: Timestamp | null;
   role: string | null;
   tenant_id: bigint;
   updated_at: Generated<Timestamp>;
   verified: boolean;
-  password_reset_code: string | null;
-  password_reset_code_created_at: Timestamp | null;
 }
 export type AuthUsersType = AuthUsers;
 
