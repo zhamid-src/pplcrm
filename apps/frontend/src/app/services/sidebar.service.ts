@@ -26,7 +26,7 @@ export class SidebarService {
       name: `Summary`,
       code: "summary",
       route: "/console/summary",
-      icon: "home",
+      icon: "presentation-chart-line",
       pathMatchExact: true,
     },
     {
