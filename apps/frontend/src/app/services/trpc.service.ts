@@ -103,13 +103,20 @@ export class TRPCService<T> {
     });
   }
 
-  private get(key: string) {
-    return get(key);
+  private async get(key: string) {
+    const payload = await get(key);
+    return payload?.expires > Date.now() ? payload.data : null;
   }
 
   private set(key: string, data: Partial<T>[]) {
-    return set(key, data);
+    return set(key, { expires: this.addDays(1), data });
   }
+
+  private addDays = function (days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  };
 
   // The hash isn't secure, but it's good enough for our purposes
   // It allows us to not use the entire stringified json as the key

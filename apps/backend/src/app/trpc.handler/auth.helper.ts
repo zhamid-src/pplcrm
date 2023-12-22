@@ -296,7 +296,7 @@ export class AuthHelper {
     const signer = createSigner({
       key: "supersecretkey",
       clockTimestamp: Date.now(),
-      expiresIn: 10000,
+      expiresIn: "30m",
     });
     const auth_token = signer({ user_id, tenant_id, name, session_id });
     console.log("new auth token", auth_token);
