@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { authProcedure, router } from "../../trpc";
-import { UserPofilesOperator } from "../db.operators/users.operator";
+import { UserPofilesOperator } from "../db.operators/user-profiles.operator";
 
 const operator = new UserPofilesOperator();
 
-export const usersRouter = router({
+export const userProfilesRouter = router({
   getOneById: authProcedure.input(z.number()).query((input) => {
     const id = input;
     return operator.getOneById(id as never);
@@ -14,4 +14,4 @@ export const usersRouter = router({
   }),
 });
 
-export type UsersRouter = typeof usersRouter;
+export type UserProfilesRouter = typeof userProfilesRouter;

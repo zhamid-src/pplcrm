@@ -5,14 +5,14 @@ import { TRPCService } from "./trpc.service";
 @Injectable({
   providedIn: "root",
 })
-export class UserService extends TRPCService<TableType.profiles> {
+export class UserProfilesService extends TRPCService<TableType.profiles> {
   // #region Public Methods (2)
 
   public getAll() {
-    return this.api.users.getAll.query();
+    return this.api.userProfiles.getAll.query();
   }
 
   public getOneById(id: number) {
-    return this.api.users.getOneById.query(id);
+    return this.api.userProfiles.getOneById.query(id);
   }
 }
