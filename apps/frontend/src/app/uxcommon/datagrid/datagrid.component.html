@@ -41,9 +41,18 @@
       ></a>
     </li>
     <li>
-      <a class="hover:text-primary">
-        <pplcrm-icon name="ellipsis-vertical"></pplcrm-icon>
-      </a>
+      <div class="dropdown">
+        <div tabindex="0" class="hover:text-primary">
+          <pplcrm-icon name="ellipsis-vertical"></pplcrm-icon>
+        </div>
+        <ul
+          tabindex="0"
+          class="dropdown-content menu bg-base-100 rounded-box z-50 ml-10 mt-20 w-52 shadow"
+        >
+          <li><a>Edit</a></li>
+          <li><a>Delete</a></li>
+        </ul>
+      </div>
     </li>
     <li class="grow">
       <a class="hover:text-primary ml-auto">
