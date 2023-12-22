@@ -4,6 +4,6 @@ import { AuthService } from "@services/auth.service";
 
 export const loginGuard: CanActivateFn = () => {
   return inject(AuthService).user()
-    ? inject(Router).navigateByUrl("/dashboard")
+    ? inject(Router).navigateByUrl("/console/summary")
     : true;
 };

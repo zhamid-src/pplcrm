@@ -46,7 +46,7 @@ export class LoginComponent {
   ) {
     effect(() => {
       if (this.authService.user()) {
-        this.router.navigateByUrl("console");
+        this.router.navigateByUrl("console/summary");
       }
     });
   }
