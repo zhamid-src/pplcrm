@@ -1,6 +1,7 @@
 import { Injectable, signal } from "@angular/core";
 import { IAuthUser, IToken } from "@common";
 import { TRPCError } from "@trpc/server";
+import { TableType } from "common/src/lib/kysely.models";
 import { TRPCService } from "./trpc.service";
 
 // TODO: zee - find a way to share these, these are also
@@ -19,7 +20,7 @@ export type SignUpFormType = {
 @Injectable({
   providedIn: "root",
 })
-export class AuthService extends TRPCService {
+export class AuthService extends TRPCService<TableType.authusers> {
   private _user = signal<IAuthUser | null>(null);
 
   public init() {
