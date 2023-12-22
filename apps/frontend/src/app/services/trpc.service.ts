@@ -1,14 +1,16 @@
 import { Injectable } from "@angular/core";
 import { Router } from "@angular/router";
+import { getAllOptionsType } from "@common";
 import { refreshTokenLink } from "@pyncz/trpc-refresh-token-link";
 import { createTRPCProxyClient, httpBatchLink, loggerLink } from "@trpc/client";
 import { Routers } from "APPS/backend/src/app/app.router";
+import { get, set } from "idb-keyval";
 import { TokenService } from "./token.service";
 
 @Injectable({
   providedIn: "root",
 })
-export class TRPCService {
+export class TRPCService<T> {
   protected api;
   protected ac = new AbortController();
 
@@ -74,6 +76,50 @@ export class TRPCService {
   }
   public abort() {
     this.ac.abort();
+  }
+
+  protected runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    // Create a cache key from the api name and the options
+    const cacheKey = this.hash(
+      JSON.stringify({
+        apiName,
+        ...options,
+      }),
+    );
+
+    return this.get(cacheKey).then((cachedResult) => {
+      if (refresh || !cachedResult || cachedResult.length === 0) {
+        return apiCall.then((data: Partial<T>[]) => {
+          return this.set(cacheKey, data).then(() => data);
+        });
+      }
+
+      return cachedResult;
+    });
+  }
+
+  private get(key: string) {
+    return get(key);
+  }
+
+  private set(key: string, data: Partial<T>[]) {
+    return set(key, data);
+  }
+
+  // The hash isn't secure, but it's good enough for our purposes
+  // It allows us to not use the entire stringified json as the key
+  private hash(str: string) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash &= hash; // Convert to 32bit integer
+    }
+    return (hash >>> 0).toString(36);
   }
 }
 

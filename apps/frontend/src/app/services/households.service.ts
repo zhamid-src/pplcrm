@@ -1,14 +1,14 @@
 import { Injectable } from "@angular/core";
 import { getAllOptionsType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
-import { CachedTRPCService } from "./cached-trpc.service";
+import { TRPCService } from "./trpc.service";
 
 export type TYPE = TableType.households;
 
 @Injectable({
   providedIn: "root",
 })
-export class HouseholdsService extends CachedTRPCService<TYPE> {
+export class HouseholdsService extends TRPCService<TYPE> {
   public getAll(options?: getAllOptionsType, refresh: boolean = false) {
     return this.runCachedCall(
       this.api.households.getAll.query(undefined, {

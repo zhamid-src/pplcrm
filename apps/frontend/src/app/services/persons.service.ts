@@ -2,15 +2,15 @@ import { Injectable } from "@angular/core";
 import { Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
-import { CachedTRPCService } from "./cached-trpc.service";
 import { TokenService } from "./token.service";
+import { TRPCService } from "./trpc.service";
 
 export type TYPE = TableType.persons | TableType.households;
 
 @Injectable({
   providedIn: "root",
 })
-export class PersonsService extends CachedTRPCService<TYPE> {
+export class PersonsService extends TRPCService<TYPE> {
   constructor(
     protected override tokenService: TokenService,
     protected override routerService: Router,
