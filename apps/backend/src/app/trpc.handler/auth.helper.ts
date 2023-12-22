@@ -10,7 +10,7 @@ import { z } from "zod";
 import { AuthUsersOperator } from "../db.operators/auth-user.operator";
 import { SessionsOperator } from "../db.operators/sessions.operator";
 import { TenantsOperator } from "../db.operators/tenants.operator";
-import { UserPofilesOperator } from "../db.operators/users.operator";
+import { UserPofilesOperator } from "../db.operators/user-profiles.operator";
 import { db } from "../kyselyinit";
 
 const tenants: TenantsOperator = new TenantsOperator();
