@@ -5,7 +5,7 @@ import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
 
 @Component({
-  selector: "pplcrm-people",
+  selector: "pc-people",
   standalone: true,
   imports: [CommonModule, DatagridComponent],
   templateUrl: "./people.component.html",

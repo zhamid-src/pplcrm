@@ -20,7 +20,7 @@ export class ThemeService {
 
   private setTheme(value: "light" | "dark") {
     this._theme.set(value);
-    localStorage.setItem("pplcrm-theme", this._theme());
+    localStorage.setItem("pc-theme", this._theme());
   }
 
   toggleTheme() {
@@ -31,7 +31,7 @@ export class ThemeService {
     const isSystemDark = window.matchMedia(
       "(prefers-color-scheme:dark)",
     ).matches;
-    return isSystemDark || localStorage.getItem("pplcrm-theme") === "dark"
+    return isSystemDark || localStorage.getItem("pc-theme") === "dark"
       ? "dark"
       : "light";
   }

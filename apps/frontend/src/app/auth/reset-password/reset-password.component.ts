@@ -12,7 +12,7 @@ import { AuthService } from "@services/auth.service.js";
 import { ToastrService } from "ngx-toastr";
 
 @Component({
-  selector: "pplcrm-reset-password",
+  selector: "pc-reset-password",
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
   templateUrl: "./reset-password.component.html",

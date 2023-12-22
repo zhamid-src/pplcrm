@@ -5,7 +5,7 @@ import { ThemeService } from "@services/theme.service";
 @Component({
   standalone: true,
   imports: [RouterModule, RouterLink],
-  selector: "pplcrm-root",
+  selector: "pc-root",
   templateUrl: "./app.component.html",
   styleUrl: "./app.component.scss",
 })

@@ -4,7 +4,7 @@ import { Router } from "@angular/router";
 import { SidebarService } from "@services/sidebar.service";
 
 @Component({
-  selector: "pplcrm-breadcrumb",
+  selector: "pc-breadcrumb",
   standalone: true,
   imports: [CommonModule],
   templateUrl: "./breadcrumb.component.html",
