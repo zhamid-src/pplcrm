@@ -13,7 +13,7 @@ import {
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
 
 @Component({
-  selector: "pplcrm-datagrid",
+  selector: "pc-datagrid",
   standalone: true,
   imports: [CommonModule, AgGridModule, IconsComponent],
   templateUrl: "./datagrid.component.html",

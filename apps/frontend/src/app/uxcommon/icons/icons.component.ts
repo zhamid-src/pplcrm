@@ -3,7 +3,7 @@ import { Component, Input } from "@angular/core";
 import { BypassHtmlSanitizerPipe } from "@pipes/svg-html.pipe";
 
 @Component({
-  selector: "pplcrm-icon",
+  selector: "pc-icon",
   standalone: true,
   imports: [CommonModule, BypassHtmlSanitizerPipe],
   templateUrl: "./icons.component.html",

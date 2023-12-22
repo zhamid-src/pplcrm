@@ -15,7 +15,7 @@ import { TokenService } from "@services/token.service.js";
 import { ToastrService } from "ngx-toastr";
 
 @Component({
-  selector: "pplcrm-login",
+  selector: "pc-login",
   standalone: true,
   imports: [
     CommonModule,

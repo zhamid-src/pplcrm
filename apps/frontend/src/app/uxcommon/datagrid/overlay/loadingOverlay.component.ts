@@ -3,7 +3,7 @@ import { ILoadingOverlayAngularComp } from "ag-grid-angular";
 import { ILoadingOverlayParams } from "ag-grid-community";
 
 @Component({
-  selector: "pplcrm-loading-overlay",
+  selector: "pc-loading-overlay",
   templateUrl: "./loadingOverlay.component.html",
   styleUrls: ["./loadingOverlay.component.scss"],
 })

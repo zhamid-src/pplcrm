@@ -15,7 +15,7 @@ import { PasswordCheckerModule } from "@triangular/password-checker";
 import { ToastrService } from "ngx-toastr";
 
 @Component({
-  selector: "pplcrm-signup",
+  selector: "pc-signup",
   standalone: true,
   imports: [
     CommonModule,

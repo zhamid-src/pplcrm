@@ -16,7 +16,7 @@ import { ToastrService } from "ngx-toastr";
 import { firstValueFrom } from "rxjs";
 
 @Component({
-  selector: "pplcrm-new-password",
+  selector: "pc-new-password",
   standalone: true,
   imports: [
     CommonModule,

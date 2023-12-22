@@ -9,7 +9,7 @@ import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { SwapComponent } from "@uxcommon/swap/swap.component";
 
 @Component({
-  selector: "pplcrm-navbar",
+  selector: "pc-navbar",
   standalone: true,
   imports: [CommonModule, IconsComponent, SwapComponent, FormsModule],
   templateUrl: "./navbar.component.html",

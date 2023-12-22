@@ -10,7 +10,7 @@ export class TokenService {
   private _persistence: boolean = false;
 
   constructor() {
-    this.persistence = !!localStorage.getItem("pplcrm-persistence");
+    this.persistence = !!localStorage.getItem("pc-persistence");
   }
 
   public get persistence() {
@@ -25,7 +25,7 @@ export class TokenService {
       this.clearSessionStorage();
     }
     this._persistence = persistence;
-    localStorage.setItem("pplcrm-persistence", persistence ? "1" : "0");
+    localStorage.setItem("pc-persistence", persistence ? "1" : "0");
   }
 
   public clearAll() {

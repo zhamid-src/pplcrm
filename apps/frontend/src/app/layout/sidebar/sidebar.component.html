@@ -33,10 +33,10 @@
           data-tooltip-target="tooltip"
           routerLink="{{ item['route'] }}"
         >
-          <pplcrm-icon
+          <pc-icon
             class="group-hover:text-primary"
             [name]="item['icon']"
-          ></pplcrm-icon>
+          ></pc-icon>
           <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
             item["name"]
           }}</span></a
@@ -48,13 +48,13 @@
   <!-- Finally, the togg--le drawer icon -->
   <div class="flex flex-auto grow flex-col">
     <span class="min-h-full grow"></span>
-    <pplcrm-swap
+    <pc-swap
       class="text-primary hover:text-secondary"
       swapOnIcon="arrow-left-on-rectangle"
       swapOffIcon="arrow-right-end-on-rectangle"
       [checked]="drawerOpen"
       animation="flip"
       (clickEvent)="toggleDrawer()"
-    ></pplcrm-swap>
+    ></pc-swap>
   </div>
 </div>

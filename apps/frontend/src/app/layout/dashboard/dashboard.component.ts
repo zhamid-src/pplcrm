@@ -6,7 +6,7 @@ import { NavbarComponent } from "../navbar/navbar.component";
 import { SidebarComponent } from "../sidebar/sidebar.component";
 
 @Component({
-  selector: "pplcrm-dashboard",
+  selector: "pc-dashboard",
   standalone: true,
   imports: [
     CommonModule,

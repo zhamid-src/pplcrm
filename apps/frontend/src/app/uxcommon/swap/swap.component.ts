@@ -4,7 +4,7 @@ import { FormsModule } from "@angular/forms";
 import { IconsComponent } from "../icons/icons.component";
 
 @Component({
-  selector: "pplcrm-swap",
+  selector: "pc-swap",
   standalone: true,
   imports: [CommonModule, FormsModule, IconsComponent],
   templateUrl: "./swap.component.html",
