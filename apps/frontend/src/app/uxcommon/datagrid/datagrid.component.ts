@@ -10,7 +10,7 @@ import {
   GridOptions,
   GridReadyEvent,
 } from "ag-grid-community";
-import { LoadingOverlayComponent } from "./loadingOverlay.component";
+import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
 
 @Component({
   selector: "pplcrm-datagrid",

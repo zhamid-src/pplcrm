@@ -11,7 +11,7 @@ import { loginGuard } from "./guards/login.guard";
 import { DashboardComponent } from "./layout/dashboard/dashboard.component";
 
 export const appRoutes: Route[] = [
-  { path: "", redirectTo: "console", pathMatch: "full" },
+  { path: "", redirectTo: "console/summary", pathMatch: "full" },
   { path: "signin", component: LoginComponent, canActivate: [loginGuard] },
   { path: "signup", component: SignupComponent },
   { path: "resetpassword", component: ResetPasswordComponent },

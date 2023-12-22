@@ -166,4 +166,9 @@ export class SidebarService {
   set currentlyOpen(currentlyOpen: SidenavItem) {
     this._currentlyOpen.set(currentlyOpen);
   }
+
+  findRoute(destination: string) {
+    const target = this.items.find((item) => item.route?.endsWith(destination));
+    return target?.route;
+  }
 }
