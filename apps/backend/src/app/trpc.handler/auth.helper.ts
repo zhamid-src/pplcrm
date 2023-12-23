@@ -171,7 +171,11 @@ export class AuthHelper {
 
     const isMatch = bcrypt.compareSync(input.password, user.password);
     if (!isMatch) {
-      throw new TRPCError({ message: "Wrong password!", code: "FORBIDDEN" });
+      throw new TRPCError({
+        message:
+          "Sorry this email or password is not valid. If you forgot your password, you can try recovering it.",
+        code: "FORBIDDEN",
+      });
     }
 
     return this.createTokens(

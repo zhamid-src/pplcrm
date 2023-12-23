@@ -9,7 +9,7 @@ import {
 } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
 import { AuthService } from "@services/auth.service.js";
-import { ToastrService } from "ngx-toastr";
+import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 
 @Component({
   selector: "pc-reset-password",
@@ -28,7 +28,7 @@ export class ResetPasswordComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toastr: ToastrService,
+    private toast: PplCrmToastrService,
     private authService: AuthService,
     private router: Router,
   ) {}
@@ -39,18 +39,18 @@ export class ResetPasswordComponent {
 
   public async submit() {
     if (!this.email?.valid) {
-      this.toastr.error("Please check the email address.");
+      this.toast.error("Please check the email address.");
       return;
     }
 
-    this.toastr.clear();
+    this.toast.clear();
     this.processing.set(true);
 
     await this.authService.sendPasswordResetEmail({
       email: this.email.value as string,
     });
 
-    this.toastr.success(
+    this.toast.success(
       "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
     );
     this.processing.set(false);
