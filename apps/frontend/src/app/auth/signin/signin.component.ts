@@ -11,8 +11,8 @@ import {
 
 import { Router, RouterLink } from "@angular/router";
 import { AuthService } from "@services/auth.service.js";
+import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { TokenService } from "@services/token.service.js";
-import { ToastrService } from "ngx-toastr";
 
 @Component({
   selector: "pc-login",
@@ -39,13 +39,16 @@ export class SignInComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toastr: ToastrService,
+    private toast: PplCrmToastrService,
     private authService: AuthService,
     private tokenService: TokenService,
     private router: Router,
   ) {
     effect(() => {
       if (this.authService.user()) {
+        this.toast.success(
+          `Welcome back, ${this.authService.user()?.first_name}`,
+        );
         this.router.navigateByUrl("console/summary");
       }
     });
@@ -60,20 +63,15 @@ export class SignInComponent {
   }
 
   public async signIn() {
-    if (!(this.email?.valid && this.password?.valid)) {
-      this.toastr.error("Bad password");
-      return;
-    }
-
-    this.toastr.clear();
+    this.toast.clear();
     this.processing.set(true);
 
+    const email = this.email!.value!;
+    const password = this.password!.value!;
+
     return this.authService
-      .signIn({
-        email: this.email.value as string,
-        password: this.password.value as string,
-      })
-      .catch((err) => this.toastr.error(err.message))
+      .signIn({ email, password })
+      .catch((err) => this.toast.error(err.message))
       .finally(() => this.processing.set(false));
   }
 

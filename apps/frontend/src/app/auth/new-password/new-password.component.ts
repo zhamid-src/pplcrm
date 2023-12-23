@@ -9,10 +9,10 @@ import {
 } from "@angular/forms";
 import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
 import { AuthService } from "@services/auth.service.js";
+import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { TRPCError } from "@trpc/server";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
-import { ToastrService } from "ngx-toastr";
 import { firstValueFrom } from "rxjs";
 
 @Component({
@@ -46,7 +46,7 @@ export class NewPasswordComponent implements OnInit {
     private authService: AuthService,
     private router: Router,
     private route: ActivatedRoute,
-    private toastr: ToastrService,
+    private toast: PplCrmToastrService,
   ) {}
 
   public get password() {
@@ -65,10 +65,10 @@ export class NewPasswordComponent implements OnInit {
 
   public async submit() {
     if (!this.password?.valid) {
-      this.toastr.error("Please check the password.");
+      this.toast.error("Please check the password.");
       return;
     }
-    this.toastr.clear();
+    this.toast.clear();
     this.processing.set(true);
 
     const error: TRPCError | null = await this.authService.resetPassword({
@@ -81,7 +81,7 @@ export class NewPasswordComponent implements OnInit {
     }
 
     this.processing.set(false);
-    this.toastr.success("Password reset successfully. Please sign in again");
+    this.toast.success("Password reset successfully. Please sign in again");
     this.router.navigateByUrl("signin");
   }
 

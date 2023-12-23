@@ -59,7 +59,7 @@ export class AuthService extends TRPCService<TableType.authusers> {
     return this.updateTokens(token);
   }
 
-  public user() {
+  public user(): IAuthUser | null {
     return this._user();
   }
 

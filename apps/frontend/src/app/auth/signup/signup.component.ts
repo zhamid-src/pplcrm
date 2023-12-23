@@ -10,9 +10,9 @@ import {
 import { Router, RouterModule } from "@angular/router";
 import { IToken } from "@common";
 import { AuthService, SignUpFormType } from "@services/auth.service.js";
+import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
-import { ToastrService } from "ngx-toastr";
 
 @Component({
   selector: "pc-signup",
@@ -45,7 +45,7 @@ export class SignUpComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toastr: ToastrService,
+    private toast: PplCrmToastrService,
     private authService: AuthService,
     private router: Router,
   ) {}
@@ -77,10 +77,10 @@ export class SignUpComponent {
         if (payload.auth_token) {
           this.router.navigateByUrl("/console/summary");
         } else {
-          this.toastr.error("Unknown error");
+          this.toast.error("Unknown error");
         }
       })
-      .catch((err) => this.toastr.error(err.message))
+      .catch((err) => this.toast.error(err.message))
       .finally(() => this.processing.set(false));
   }
 
