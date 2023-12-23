@@ -1,14 +1,18 @@
 <div class="bg-image flex min-h-screen font-light" data-theme="light">
   <div class="card card-compact glass m-auto w-96 shadow-xl">
-    <div class="card-title bg-primary mb-10 w-full">
+    <div class="card-title shadow-lg">
       <img class="p-5" src="assets/logo.svg" />
     </div>
-    <div class="card-body mt-0 w-full">
+    <div class="card-body">
+      <label class="label text-base text-neutral-600"
+        >Enter your email and password to sign in</label
+      >
       <form [formGroup]="form">
         <div class="space-y-3">
           <label class="relative block">
             <pc-icon
-              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
+              [size]="5"
+              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform text-sm text-gray-300"
               name="at-symbol"
             />
 
@@ -30,7 +34,8 @@
 
           <label class="group relative block">
             <pc-icon
-              class="group-focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
+              [size]="5"
+              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform text-sm text-gray-300"
               name="lock-closed"
             />
 
@@ -43,6 +48,7 @@
             />
 
             <pc-icon
+              [size]="5"
               class="absolute right-3 top-1/3 h-3 w-3 -translate-y-1/2 transform cursor-pointer pr-5 pt-1 text-xs text-gray-500"
               [name]="getVisibilityIcon()"
               (click)="toggleVisibility()"
@@ -54,22 +60,28 @@
             <span class="label-text-alt text-slate-400">Min character: 8</span>
           }-->
 
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between pt-2">
             <div class="flex items-center">
               <input
                 id="remember_me"
                 name="remember_me"
                 type="checkbox"
-                class="checkbox checkbox-primary"
+                class="checkbox checkbox-primary checkbox-sm"
                 [checked]="persistence"
                 (change)="togglePersistence($event.target)"
               />
-              <label for="remember_me" class="ml-2 block text-sm">
+              <label
+                for="remember_me"
+                class="ml-2 block text-sm text-neutral-600"
+              >
                 Remember me
               </label>
             </div>
             <div class="text-sm">
-              <a routerLink="/resetpassword" class="link link-hover">
+              <a
+                routerLink="/resetpassword"
+                class="link link-hover text-neutral-600"
+              >
                 Forgot your password?
               </a>
             </div>
@@ -92,10 +104,12 @@
           </div>
         </div>
       </form>
-      <div class="pt-3 text-center">
-        <a routerLink="/signup" class="link link-hover">SIGN UP</a>
+      <div class="py-3 text-center">
+        <a routerLink="/signup" class="link link-hover text-neutral-600"
+          >SIGN UP</a
+        >
       </div>
-      <div class="text-base-400 text-center text-xs">
+      <div class="text-center text-xs text-neutral-500">
         <span>
           Copyright © 2024
           <a

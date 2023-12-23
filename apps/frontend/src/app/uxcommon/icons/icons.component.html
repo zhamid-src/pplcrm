@@ -1,1 +1,4 @@
-<div [innerHTML]="getSvg() | bypassHtmlSanitizer"></div>
+<div
+  [innerHTML]="getSvg() | bypassHtmlSanitizer"
+  class="h-{{ size }} w-{{ size }}"
+></div>
