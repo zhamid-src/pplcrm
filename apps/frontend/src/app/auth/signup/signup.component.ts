@@ -2,13 +2,12 @@ import { CommonModule } from "@angular/common";
 import { HttpClientModule } from "@angular/common/http";
 import { Component, signal } from "@angular/core";
 import {
-  AbstractControl,
   FormBuilder,
   FormsModule,
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
-import { Router } from "@angular/router";
+import { Router, RouterModule } from "@angular/router";
 import { IToken } from "@common";
 import { AuthService, SignUpFormType } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
@@ -25,6 +24,7 @@ import { ToastrService } from "ngx-toastr";
     FormsModule,
     ReactiveFormsModule,
     IconsComponent,
+    RouterModule,
   ],
   templateUrl: "./signup.component.html",
   styleUrl: "./signup.component.scss",
@@ -39,10 +39,8 @@ export class SignupComponent {
     last_name: [""],
     terms: [""],
   });
-  protected joinAttempted = false;
+
   protected processing = signal(false);
-  protected step = 1;
-  protected termsAccepted = false;
   protected hidePassword = true;
 
   constructor(
@@ -68,53 +66,22 @@ export class SignupComponent {
     return this.form.get("password");
   }
 
-  public get terms() {
-    return this.form.get("terms");
-  }
-
   public async join() {
-    this.joinAttempted = true;
-    if (!this.termsAccepted) {
-      this.terms?.setErrors({ incorrect: true });
-    } else {
-      // Alright, we're ready to start
-      this.processing.set(true);
+    // Alright, we're ready to start
+    this.processing.set(true);
 
-      const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
-      return this.authService
-        .signUp(formObj)
-        .then((payload: IToken) => {
-          if (payload.auth_token) {
-            this.router.navigateByUrl("/console/summary");
-          } else {
-            this.toastr.error("Unknown error");
-          }
-        })
-        .catch((err) => this.toastr.error(err.message))
-        .finally(() => this.processing.set(false));
-    }
-  }
-
-  public next() {
-    if (this.step === 1 && !this.organization?.valid) {
-      this.markInvalid(this.organization);
-    } else if (this.step === 2) {
-      if (this.email?.invalid) {
-        this.markInvalid(this.email);
-      } else if (this.password?.invalid || this.passwordInBreach()) {
-        this.markInvalid(this.password);
-      } else {
-        this.step++;
-      }
-    } else if (this.step === 3 && !this.firstName?.valid) {
-      this.markInvalid(this.firstName);
-    } else {
-      this.step++;
-    }
-  }
-
-  public prev() {
-    this.step--;
+    const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
+    return this.authService
+      .signUp(formObj)
+      .then((payload: IToken) => {
+        if (payload.auth_token) {
+          this.router.navigateByUrl("/console/summary");
+        } else {
+          this.toastr.error("Unknown error");
+        }
+      })
+      .catch((err) => this.toastr.error(err.message))
+      .finally(() => this.processing.set(false));
   }
 
   protected passwordBreachNumber() {
@@ -125,13 +92,6 @@ export class SignupComponent {
   protected passwordInBreach() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  private markInvalid(
-    control: AbstractControl<string | null, string | null> | null,
-  ) {
-    control?.markAsDirty();
-    control?.setErrors({ incorrect: true });
   }
 
   public getVisibility() {
