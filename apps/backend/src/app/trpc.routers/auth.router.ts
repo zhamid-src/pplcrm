@@ -1,11 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { signInInputObj, signUpInputObj } from "@common";
 import z from "zod";
 import { authProcedure, publicProcedure, router } from "../../trpc";
-import {
-  AuthHelper,
-  signInInputObj,
-  signUpInputObj,
-} from "../trpc.handler/auth.helper";
+import { AuthHelper } from "../trpc.handler/auth.helper";
 
 const authHelper = new AuthHelper();
 

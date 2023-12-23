@@ -1,21 +1,8 @@
 import { Injectable, signal } from "@angular/core";
-import { IAuthUser, IToken } from "@common";
+import { IAuthUser, IToken, signInInputType, signUpInputType } from "@common";
 import { TRPCError } from "@trpc/server";
 import { TableType } from "common/src/lib/kysely.models";
 import { TRPCService } from "./trpc.service";
-
-// TODO: zee - find a way to share these, these are also
-// defined in auth.router.ts
-
-export type SignUpFormType = {
-  organization: string;
-  email: string;
-  password: string;
-  first_name: string;
-  middle_names: string | null;
-  last_name: string | null;
-  terms: string | null;
-};
 
 @Injectable({
   providedIn: "root",
@@ -35,14 +22,9 @@ export class AuthService extends TRPCService<TableType.authusers> {
     return this.api.auth.sendPasswordResetEmail.mutate(input);
   }
 
-  public async signIn(input: { email: string; password: string }) {
+  public async signIn(input: signInInputType) {
     const token = await this.api.auth.signIn.mutate(input);
-    if (token) {
-      this.updateTokens(token);
-    } else {
-      throw new Error("Sign in failed");
-    }
-    return token;
+    return this.updateTokensAndGetCurrentUser(token);
   }
 
   public async signOut() {
@@ -54,9 +36,9 @@ export class AuthService extends TRPCService<TableType.authusers> {
     return apiReturn;
   }
 
-  public async signUp(input: SignUpFormType) {
+  public async signUp(input: signUpInputType) {
     const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokens(token);
+    return this.updateTokensAndGetCurrentUser(token);
   }
 
   public user(): IAuthUser | null {
@@ -69,13 +51,12 @@ export class AuthService extends TRPCService<TableType.authusers> {
     return user;
   }
 
-  private async updateTokens(token: IToken | TRPCError) {
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
     if (!token || token instanceof TRPCError) {
       throw token;
     }
 
     this.tokenService.set(token.auth_token, token.refresh_token);
-    this.getCurrentUser();
-    return token;
+    return this.getCurrentUser();
   }
 }

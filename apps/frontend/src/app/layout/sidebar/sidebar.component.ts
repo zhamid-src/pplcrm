@@ -15,7 +15,8 @@ import { SwapComponent } from "@uxcommon/swap/swap.component";
 export class SidebarComponent {
   private _items = this.sidebarSvc.items;
 
-  protected drawerOpen = true;
+  protected drawerOpen =
+    localStorage.getItem("pc-drawnOpen") === "false" ? false : true;
 
   constructor(
     private sidebarSvc: SidebarService,
@@ -32,5 +33,6 @@ export class SidebarComponent {
 
   public toggleDrawer() {
     this.drawerOpen = !this.drawerOpen;
+    localStorage.setItem("pc-drawnOpen", this.drawerOpen.toString());
   }
 }

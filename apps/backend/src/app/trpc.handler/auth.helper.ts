@@ -1,12 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { IAuthKeyPayload, IAuthUser, INow } from "@common";
+import {
+  IAuthKeyPayload,
+  IAuthUser,
+  INow,
+  signInInputType,
+  signUpInputType,
+} from "@common";
 import { TRPCError } from "@trpc/server";
 import * as bcrypt from "bcrypt";
 import { AuthUsersType, OperationDataType } from "common/src/lib/kysely.models";
 import { createDecoder, createSigner } from "fast-jwt";
 import { QueryResult, sql } from "kysely";
 import nodemailer from "nodemailer";
-import { z } from "zod";
 import { AuthUsersOperator } from "../db.operators/auth-user.operator";
 import { SessionsOperator } from "../db.operators/sessions.operator";
 import { TenantsOperator } from "../db.operators/tenants.operator";
@@ -17,22 +22,6 @@ const tenants: TenantsOperator = new TenantsOperator();
 const authUsers: AuthUsersOperator = new AuthUsersOperator();
 const profiles: UserPofilesOperator = new UserPofilesOperator();
 const sessions: SessionsOperator = new SessionsOperator();
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-  middle_names: z.string().nullable(),
-  last_name: z.string().nullable(),
-});
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-export type signInInputType = z.infer<typeof signInInputObj>;
 
 export class AuthHelper {
   public async currentUser(auth: IAuthKeyPayload) {
@@ -73,7 +62,7 @@ export class AuthHelper {
     if (!password) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 
@@ -89,7 +78,7 @@ export class AuthHelper {
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 
@@ -151,7 +140,7 @@ export class AuthHelper {
         if (err) {
           throw new TRPCError({
             message: "Something went wrong, please try again",
-            code: "UNAUTHORIZED",
+            code: "INTERNAL_SERVER_ERROR",
           });
         }
       },
@@ -162,19 +151,11 @@ export class AuthHelper {
   public async signIn(input: signInInputType) {
     const user = (await authUsers.getOneByEmail(input.email)) as AuthUsersType;
 
-    if (!user) {
-      throw new TRPCError({
-        message: "Wrong email and password.",
-        code: "UNAUTHORIZED",
-      });
-    }
-
-    const isMatch = bcrypt.compareSync(input.password, user.password);
-    if (!isMatch) {
+    if (!user || !bcrypt.compareSync(input.password, user.password)) {
       throw new TRPCError({
         message:
           "Sorry this email or password is not valid. If you forgot your password, you can try recovering it.",
-        code: "FORBIDDEN",
+        code: "UNAUTHORIZED",
       });
     }
 
@@ -214,7 +195,7 @@ export class AuthHelper {
     if (!password) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 
@@ -225,7 +206,7 @@ export class AuthHelper {
     if (!tenantAddResult) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
     const tenant_id = tenantAddResult.id;
@@ -236,15 +217,13 @@ export class AuthHelper {
       password,
       email,
       first_name: input.first_name,
-      last_name: input.last_name,
-      middle_names: input.middle_names,
       verified: false,
     });
 
     if (!user) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 
@@ -258,7 +237,7 @@ export class AuthHelper {
     if (!profile) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 
@@ -292,7 +271,7 @@ export class AuthHelper {
     if (!currentSession) {
       throw new TRPCError({
         message: "Session creation failed",
-        code: "UNAUTHORIZED",
+        code: "INTERNAL_SERVER_ERROR",
       });
     }
 

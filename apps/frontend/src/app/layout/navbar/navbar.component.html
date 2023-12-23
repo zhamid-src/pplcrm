@@ -44,20 +44,29 @@
           <img alt="User Profile Picture" src="assets/sq.svg" />
         </div>
       </div>
+
+      <!-- Menu -->
       <ul
         tabindex="0"
-        class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 cursor-pointer p-2 shadow"
+        class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-44 cursor-pointer font-light shadow"
       >
-        <li>
-          <a class="my-2 justify-between text-lg font-light">
+        <li class="hover:text-primary">
+          <a>
+            <pc-icon name="user-circle" />
             Profile
-            <span class="badge">New</span>
           </a>
         </li>
-        <li><a class="my-2 text-lg font-light">Settings</a></li>
-        <li class="dark:border-t-gray border-t-2 border-t-gray-900"></li>
-        <li>
-          <a class="my-2 text-lg font-light" (click)="signOut()">Logout</a>
+        <li class="hover:text-primary">
+          <a>
+            <pc-icon name="cog-6-tooth" />
+            Settings
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle" />
+            Sign out
+          </a>
         </li>
       </ul>
     </div>

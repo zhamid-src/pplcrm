@@ -47,7 +47,7 @@ export class SignInComponent {
     effect(() => {
       if (this.authService.user()) {
         this.toast.success(
-          `Welcome back, ${this.authService.user()?.first_name}`,
+          `Welcome back, ${this.authService.user()?.first_name}.`,
         );
         this.router.navigateByUrl("console/summary");
       }
@@ -63,6 +63,9 @@ export class SignInComponent {
   }
 
   public async signIn() {
+    if (this.form.invalid)
+      return this.toast.error("Please enter a valid email and password.");
+
     this.toast.clear();
     this.processing.set(true);
 

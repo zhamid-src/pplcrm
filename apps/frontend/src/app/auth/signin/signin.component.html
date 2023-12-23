@@ -91,7 +91,7 @@
               type="submit"
               class="btn btn-primary w-full"
               (click)="signIn()"
-              [disabled]="processing() || form.invalid"
+              [disabled]="processing()"
             >
               @if (processing()) {
                 <span

@@ -133,9 +133,9 @@
         }
 
         <button
-          class="btn btn-primary text-lg font-light"
+          class="btn btn-primary"
           (click)="join()"
-          [disabled]="processing() || !form.valid"
+          [disabled]="processing()"
         >
           @if (processing()) {
             <span class="loading loading-dots loading-lg text-primary"></span>
