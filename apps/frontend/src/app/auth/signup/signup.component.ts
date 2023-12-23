@@ -12,6 +12,7 @@ import { Router } from "@angular/router";
 import { IToken } from "@common";
 import { AuthService, SignUpFormType } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { ToastrService } from "ngx-toastr";
 
 @Component({
@@ -23,6 +24,7 @@ import { ToastrService } from "ngx-toastr";
     HttpClientModule,
     FormsModule,
     ReactiveFormsModule,
+    IconsComponent,
   ],
   templateUrl: "./signup.component.html",
   styleUrl: "./signup.component.scss",
@@ -41,6 +43,7 @@ export class SignupComponent {
   protected processing = signal(false);
   protected step = 1;
   protected termsAccepted = false;
+  protected hidePassword = true;
 
   constructor(
     private fb: FormBuilder,
@@ -129,5 +132,17 @@ export class SignupComponent {
   ) {
     control?.markAsDirty();
     control?.setErrors({ incorrect: true });
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? "password" : "text";
+  }
+
+  public toggleVisibility() {
+    this.hidePassword = !this.hidePassword;
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? "eye-slash" : "eye";
   }
 }

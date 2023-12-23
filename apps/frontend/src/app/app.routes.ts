@@ -1,4 +1,5 @@
 import { Route } from "@angular/router";
+import { NotFoundComponent } from "@uxcommon/not-found/not-found.component";
 import { LoginComponent } from "./auth/login/login.component";
 import { NewPasswordComponent } from "./auth/new-password/new-password.component";
 import { ResetPasswordComponent } from "./auth/reset-password/reset-password.component";
@@ -34,5 +35,9 @@ export const appRoutes: Route[] = [
         component: HouseholdsComponent,
       },
     ],
+  },
+  {
+    path: "**",
+    component: NotFoundComponent,
   },
 ];
