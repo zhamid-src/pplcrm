@@ -24,10 +24,10 @@ import { ToastrService } from "ngx-toastr";
     RouterLink,
     IconsComponent,
   ],
-  templateUrl: "./login.component.html",
-  styleUrl: "./login.component.scss",
+  templateUrl: "./signin.component.html",
+  styleUrl: "./signin.component.scss",
 })
-export class LoginComponent {
+export class SignInComponent {
   protected persistence = this.tokenService.persistence;
   protected processing = signal(false);
 

@@ -1,9 +1,9 @@
 import { Route } from "@angular/router";
 import { NotFoundComponent } from "@uxcommon/not-found/not-found.component";
-import { LoginComponent } from "./auth/login/login.component";
 import { NewPasswordComponent } from "./auth/new-password/new-password.component";
 import { ResetPasswordComponent } from "./auth/reset-password/reset-password.component";
-import { SignupComponent } from "./auth/signup/signup.component";
+import { SignInComponent } from "./auth/signin/signin.component";
+import { SignUpComponent } from "./auth/signup/signup.component";
 import { HouseholdsComponent } from "./components/households/households.component";
 import { PeopleComponent } from "./components/people/people.component";
 import { SummaryComponent } from "./components/summary/summary.component";
@@ -13,8 +13,8 @@ import { DashboardComponent } from "./layout/dashboard/dashboard.component";
 
 export const appRoutes: Route[] = [
   { path: "", redirectTo: "console/summary", pathMatch: "full" },
-  { path: "signin", component: LoginComponent, canActivate: [loginGuard] },
-  { path: "signup", component: SignupComponent },
+  { path: "signin", component: SignInComponent, canActivate: [loginGuard] },
+  { path: "signup", component: SignUpComponent },
   { path: "resetpassword", component: ResetPasswordComponent },
   { path: "newpassword", component: NewPasswordComponent },
   {
