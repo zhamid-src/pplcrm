@@ -29,7 +29,7 @@ import { ToastrService } from "ngx-toastr";
   templateUrl: "./signup.component.html",
   styleUrl: "./signup.component.scss",
 })
-export class SignupComponent {
+export class SignUpComponent {
   protected form = this.fb.group({
     organization: ["", [Validators.required]],
     email: ["", [Validators.required, Validators.email]],
