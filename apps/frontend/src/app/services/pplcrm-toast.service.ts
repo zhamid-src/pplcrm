@@ -11,6 +11,7 @@ export class PplCrmToastrService {
   private defaultOptions = {
     positionClass: "toast-top-full-width",
     messageClass: "toast-title text-center",
+    enableHtml: true,
   };
 
   constructor(private toastr: ToastrService) {}
@@ -22,7 +23,6 @@ export class PplCrmToastrService {
    */
   info(message: string, title?: string, options?: Partial<IndividualConfig>) {
     return this.toastr.info(message, title, {
-      toastClass: "ngx-toastr bg-info",
       ...this.defaultOptions,
       ...options,
     });
@@ -39,7 +39,6 @@ export class PplCrmToastrService {
     options?: Partial<IndividualConfig>,
   ) {
     return this.toastr.success(message, title, {
-      toastClass: "ngx-toastr bg-success",
       ...this.defaultOptions,
       ...options,
     });
@@ -55,7 +54,6 @@ export class PplCrmToastrService {
       return;
     }
     return this.toastr.error(message, title, {
-      toastClass: "ngx-toastr bg-error",
       ...this.defaultOptions,
       ...options,
     });
@@ -69,13 +67,16 @@ export class PplCrmToastrService {
    */
   warn(message: string, title?: string, options?: Partial<IndividualConfig>) {
     return this.toastr.warning(message, title, {
-      toastClass: "ngx-toastr bg-warning",
       ...this.defaultOptions,
       ...options,
     });
   }
 
-  clear() {
-    return this.toastr.clear();
+  clear(toastId?: number) {
+    return this.toastr.clear(toastId);
+  }
+
+  remove(toastId: number) {
+    this.toastr.remove(toastId);
   }
 }

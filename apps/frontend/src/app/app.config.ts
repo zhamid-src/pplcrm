@@ -40,6 +40,12 @@ export const appConfig: ApplicationConfig = {
     },
     provideToastr({
       preventDuplicates: true,
+      iconClasses: {
+        error: "toast-error bg-error",
+        info: "toast-info bg-info",
+        success: "toast-success bg-success",
+        warning: "toast-warning bg-warning",
+      },
     }),
     provideHttpClient(withInterceptorsFromDi()),
     {
