@@ -8,8 +8,8 @@ import {
   Validators,
 } from "@angular/forms";
 import { Router, RouterModule } from "@angular/router";
-import { IToken } from "@common";
-import { AuthService, SignUpFormType } from "@services/auth.service.js";
+import { signUpInputType } from "@common";
+import { AuthService } from "@services/auth.service.js";
 import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
@@ -67,17 +67,20 @@ export class SignUpComponent {
   }
 
   public async join() {
-    // Alright, we're ready to start
+    if (this.form.invalid)
+      return this.toast.error(
+        "Please enter all information before continuing.",
+      );
+
     this.processing.set(true);
 
-    const formObj: SignUpFormType = this.form.getRawValue() as SignUpFormType;
+    const formObj = this.form.getRawValue() as signUpInputType;
+
     return this.authService
       .signUp(formObj)
-      .then((payload: IToken) => {
-        if (payload.auth_token) {
-          this.router.navigateByUrl("/console/summary");
-        } else {
-          this.toast.error("Unknown error");
+      .then((user) => {
+        if (!user) {
+          this.toast.error("Unknown error"); // TODO: better error msg
         }
       })
       .catch((err) => this.toast.error(err.message))

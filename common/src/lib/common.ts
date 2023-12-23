@@ -32,3 +32,17 @@ export interface IAuthKeyPayload {
   tenant_id: bigint;
   user_id: bigint;
 }
+
+export const signUpInputObj = z.object({
+  organization: z.string(),
+  email: z.string().max(100),
+  password: z.string().min(8).max(72),
+  first_name: z.string().max(100),
+});
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
+export const signInInputObj = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+export type signInInputType = z.infer<typeof signInInputObj>;
