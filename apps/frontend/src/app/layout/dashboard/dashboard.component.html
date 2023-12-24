@@ -9,7 +9,7 @@
   <div class="drawer-content flex flex-col">
     <pc-navbar class=""></pc-navbar>
     <pc-breadcrumb></pc-breadcrumb>
-    <div class="grow">
+    <div class="grow" [class.hidden]="isMobileOpen()">
       <router-outlet></router-outlet>
     </div>
   </div>
