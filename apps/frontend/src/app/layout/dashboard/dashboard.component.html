@@ -8,7 +8,7 @@
   <!-- Add the Navbar and router-outlet for the body -->
   <div class="drawer-content flex flex-col">
     <pc-navbar class=""></pc-navbar>
-    <pc-breadcrumb></pc-breadcrumb>
+    <pc-breadcrumb class="invisible sm:visible"></pc-breadcrumb>
     <div class="grow" [class.hidden]="isMobileOpen()">
       <router-outlet></router-outlet>
     </div>
