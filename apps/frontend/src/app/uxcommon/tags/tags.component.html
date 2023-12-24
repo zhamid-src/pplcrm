@@ -1,0 +1,11 @@
+<input type="text" (keyup)="onKey($event)" [class.hidden]="readonly" />
+<div class="flex flex-row gap-2">
+  @for (tag of tags; track tag) {
+    <pc-tag
+      [name]="tag"
+      [allowDetele]="allowDetele"
+      (clickEvent)="clicked(tag)"
+      (closeEvent)="closed(tag)"
+    ></pc-tag>
+  }
+</div>
