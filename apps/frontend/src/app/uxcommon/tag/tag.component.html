@@ -1,0 +1,15 @@
+<div class="badge badge-neutral text-neutral-content gap-2 rounded-none pr-1">
+  <span
+    (click)="emitClick()"
+    class="hover:text-primary cursor-pointer font-light"
+    [class.pr-2]="!allowDetele"
+    >{{ name }}</span
+  >
+  <pc-icon
+    name="x-mark"
+    size="4"
+    class="hover:text-primary cursor-pointer"
+    [class.hidden]="!allowDetele"
+    (click)="emitClose()"
+  />
+</div>

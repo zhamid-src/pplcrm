@@ -11,8 +11,14 @@ import { BypassHtmlSanitizerPipe } from "@pipes/svg-html.pipe";
 })
 export class IconsComponent {
   @Input({ required: true }) public name: string | undefined;
-  @Input() public size = 6;
+  @Input() public size: number | string = 6;
   public svg = "";
+
+  constructor() {
+    if (typeof this.size === "string") {
+      this.size = Number(this.size);
+    }
+  }
 
   public getSvg() {
     return (
