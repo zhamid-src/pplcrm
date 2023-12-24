@@ -1,18 +1,20 @@
 <div
-  class="bg-base-100 border-r-base-200 flex min-h-full flex-col border-r-2 text-sm font-light"
-  [class.w-56]="this.drawerOpen"
-  [class.w-18]="!this.drawerOpen"
+  class="bg-base-100 border-r-base-200 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-56"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-56]="this.isDrawerFull() || this.isMobileOpen()"
+  [class.w-14]="this.isDrawerHalf()"
 >
   <!-- First, add logo (full or square) -->
   <div
-    [class.hidden]="!this.drawerOpen"
-    class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1"
+    [class.hidden]="!this.isDrawerFull()"
+    class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
   >
     <img src="../../assets/logo.svg" />
   </div>
+
   <div
-    [class.hidden]="this.drawerOpen"
-    class="bg-base-200 avatar mx-4 mb-5 mt-3 w-10 rounded-full p-0"
+    [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
+    class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
   >
     <img src="../../assets/sq.svg" class="min-w-24 h-auto w-full p-2" />
   </div>
@@ -24,45 +26,44 @@
       [class.bg-base-200]="this.router.url === item['route']"
     >
       @if (item["type"] === "subheading") {
-        <span class="text-base-400 py-2 pl-2 text-xs capitalize">{{
-          item["name"]
-        }}</span>
+        <span
+          class="text-base-400 py-2 pl-2 capitalize group-hover:text-xs"
+          [class.text-[9px]]="this.isDrawerHalf()"
+          [class.text-xs]="this.isDrawerFull()"
+          >{{ item["name"] }}</span
+        >
       } @else {
         <a
-          class="hover:bg-base-200 group z-50 flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
+          class="hover:bg-base-200 flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
+          (click)="this.closeMobile()"
           routerLink="{{ item['route'] }}"
         >
           <pc-icon
-            class="tooltip-accent tooltip-right group-hover:text-primary z-50 before:z-50 before:content-[attr(data-tip)]"
-            style="
-              .tooltip::before {
-                z-index: 1000 !important;
-              }
-              .tooltip {
-                z-index: 1000 !important;
-              }
-            "
-            attr.data-tip="{{ item['name'] }}"
-            [class.tooltip]="!this.drawerOpen"
+            class="hover:text-primary text-xs"
             [name]="item['icon']"
           ></pc-icon>
-          <span class="pl-3 pt-1" [class.hidden]="!this.drawerOpen">{{
-            item["name"]
-          }}</span></a
+          <span
+            class="pl-3 pt-1 group-hover:md:visible"
+            [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
+            [class.w-0]="!this.isDrawerFull()"
+          >
+            {{ item["name"] }}</span
+          ></a
         >
       }
     </div>
   }
 
-  <!-- Finally, the togg--le drawer icon -->
-  <div class="flex flex-auto grow flex-col">
+  <!-- Finally, the toggle drawer icon -->
+  <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
-      class="hover:text-primary"
-      swapOnIcon="chevron-double-left"
-      swapOffIcon="chevron-double-right"
-      [checked]="drawerOpen"
-      animation="flip"
+      class="hover:text-primary group-hover:visible"
+      [class.invisible]="this.isDrawerHalf()"
+      swapOffIcon="bars-3"
+      swapOnIcon="x-mark"
+      [checked]="isDrawerFull()"
+      animation="rotate"
       (clickEvent)="toggleDrawer()"
     ></pc-swap>
   </div>

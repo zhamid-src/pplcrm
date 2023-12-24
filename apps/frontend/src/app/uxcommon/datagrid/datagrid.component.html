@@ -41,16 +41,28 @@
       ></a>
     </li>
     <li>
-      <div class="dropdown">
-        <div tabindex="0" class="hover:text-primary">
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button">
           <pc-icon name="ellipsis-vertical"></pc-icon>
         </div>
+
+        <!-- Menu -->
         <ul
           tabindex="0"
-          class="dropdown-content menu bg-base-100 rounded-box z-50 ml-10 mt-20 w-52 shadow"
+          class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
         >
-          <li><a>Edit</a></li>
-          <li><a>Delete</a></li>
+          <li class="hover:text-primary">
+            <a>
+              <pc-icon name="pencil-square" />
+              Edit
+            </a>
+          </li>
+          <li class="hover:text-primary">
+            <a>
+              <pc-icon name="trash" />
+              Delete
+            </a>
+          </li>
         </ul>
       </div>
     </li>

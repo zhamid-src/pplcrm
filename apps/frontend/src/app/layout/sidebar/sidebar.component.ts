@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, effect } from "@angular/core";
+import { Component } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { SidebarService } from "@services/sidebar.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
@@ -13,26 +13,34 @@ import { SwapComponent } from "@uxcommon/swap/swap.component";
   styleUrl: "./sidebar.component.scss",
 })
 export class SidebarComponent {
-  private _items = this.sidebarSvc.items;
-
-  protected drawerOpen =
-    localStorage.getItem("pc-drawnOpen") === "false" ? false : true;
+  private _mobileOpen = this.sidebarSvc.mobileOpen;
 
   constructor(
     private sidebarSvc: SidebarService,
     protected router: Router,
-  ) {
-    effect(() => {
-      this._items = this.sidebarSvc.items;
-    });
-  }
+  ) {}
 
   public get items() {
-    return this._items;
+    return this.sidebarSvc.items;
+  }
+
+  public isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  public isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  public isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  public closeMobile() {
+    this.sidebarSvc.closeMobile();
   }
 
   public toggleDrawer() {
-    this.drawerOpen = !this.drawerOpen;
-    localStorage.setItem("pc-drawnOpen", this.drawerOpen.toString());
+    return this.sidebarSvc.toggleDrawer();
   }
 }

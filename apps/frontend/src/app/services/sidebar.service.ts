@@ -1,27 +1,35 @@
-import { Injectable, signal } from "@angular/core";
+import { Injectable } from "@angular/core";
 
 export interface SidenavItem {
-  name: string;
-  code: string;
-  icon?: string;
-  route?: string;
-  parent?: SidenavItem;
-  subItems?: SidenavItem[];
-  pathMatchExact?: boolean;
+  adminOnly?: boolean;
   badge?: string;
-  hidden?: boolean; // hidden item, only shown to admins
   badgeColor?: string;
-  type?: "item" | "subheading";
+  code: string;
   customClass?: string;
-  adminOnly?: boolean; // admin only item
+  hidden?: boolean;
+  icon?: string;
+  name: string;
+  parent?: SidenavItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  subItems?: SidenavItem[];
+  type?: "item" | "subheading";
+
+  // admin only item
 }
+
+type DrawerStates = "full" | "half";
 
 @Injectable({
   providedIn: "root",
 })
 export class SidebarService {
+  constructor() {
+    console.log("SidebarService constructor", this._drawerState);
+  }
+  private _drawerState: DrawerStates = this.getState();
   // Add all the sidebar items here. They go in the order they're added
-  private _items = signal<SidenavItem[]>([
+  private _items: SidenavItem[] = [
     {
       name: `Summary`,
       code: "summary",
@@ -146,29 +154,66 @@ export class SidebarService {
       route: "/console/settings",
       icon: "cog-6-tooth",
     },
-  ]);
-  private _currentlyOpen = signal<SidenavItem | null>(null);
+  ];
+  private _mobileOpen = false;
 
-  constructor() {}
-
-  get items() {
-    return this._items();
+  public get mobileOpen() {
+    return this._mobileOpen;
   }
 
-  set items(items: SidenavItem[]) {
-    this._items.set(items);
+  public get items() {
+    return this._items;
   }
 
-  get currentlyOpen(): SidenavItem | null {
-    return this._currentlyOpen();
+  public set items(items: SidenavItem[]) {
+    this._items = items;
   }
 
-  set currentlyOpen(currentlyOpen: SidenavItem) {
-    this._currentlyOpen.set(currentlyOpen);
-  }
-
-  findRoute(destination: string) {
+  public findRoute(destination: string) {
     const target = this.items.find((item) => item.route?.endsWith(destination));
     return target?.route;
+  }
+
+  public isFull() {
+    return this._drawerState === "full";
+  }
+
+  public isHalf() {
+    return this._drawerState === "half";
+  }
+
+  public isMobileOpen() {
+    return this._mobileOpen;
+  }
+
+  public setFull() {
+    this.setState("full");
+  }
+
+  public setHalf() {
+    this.setState("half");
+  }
+
+  public toggleMobile() {
+    this._mobileOpen = !this._mobileOpen;
+  }
+
+  public closeMobile() {
+    this._mobileOpen = false;
+  }
+
+  public toggleDrawer() {
+    return this.setState(this._drawerState === "full" ? "half" : "full");
+  }
+
+  private getState(): DrawerStates {
+    const state = localStorage.getItem("pc-drawerState");
+    return state === "full" ? "full" : "half";
+  }
+
+  private setState(state: DrawerStates) {
+    this._drawerState = state;
+    localStorage.setItem("pc-drawerState", this._drawerState);
+    return this._drawerState;
   }
 }
