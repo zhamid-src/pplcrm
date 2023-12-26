@@ -56,6 +56,7 @@ export class DatagridComponent<T> {
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: "multiple",
+    animateRows: true,
     onCellValueChanged: this.onCellValueChanged.bind(this),
     onCellMouseOver: this.onCellMouseOver.bind(this),
     loadingOverlayComponent: LoadingOverlayComponent,
@@ -79,6 +80,7 @@ export class DatagridComponent<T> {
       sortable: false,
       resizable: false,
       maxWidth: 30,
+      suppressCellFlash: true,
     },
     {
       filter: false,
@@ -87,6 +89,7 @@ export class DatagridComponent<T> {
       resizable: false,
       maxWidth: 75,
       cellRenderer: EditCellRendererComponent,
+      suppressCellFlash: true,
     },
   ];
 
@@ -105,10 +108,17 @@ export class DatagridComponent<T> {
     return row.data.id;
   }
 
-  public exportToCSV() {
+  public confirmExport() {
     //TODO: dialog to tell people that it only exports
     //the columns on the grid. If they want to export
     //all data then they should use the export component
+
+    const dialog = document.querySelector("#confirmExport");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (dialog as any)?.showModal();
+  }
+
+  protected exportToCSV() {
     this.api!.exportDataAsCsv();
   }
 
