@@ -37,7 +37,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableExport"
       [class.disabled]="disableExport"
-      (click)="!disableExport && exportToCSV()"
+      (click)="!disableExport && confirmExport()"
       data-tip="Download as CSV"
     >
       <a>
@@ -106,3 +106,21 @@
   >
   </ag-grid-angular>
 </div>
+
+<dialog id="confirmExport" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Export limitation</h3>
+    <p class="py-2 font-light">
+      This only exports the columns visible in the grid. If you'd like to export
+      everything then please use the Export component from the sidebar.
+    </p>
+
+    <form
+      method="dialog"
+      class="modal-backdrop float-right flex flex-row gap-2"
+    >
+      <button class="btn btn-primary" (click)="exportToCSV()">Accept</button>
+      <button class="btn">Cancel</button>
+    </form>
+  </div>
+</dialog>
