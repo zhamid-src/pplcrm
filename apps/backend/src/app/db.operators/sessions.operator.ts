@@ -3,7 +3,6 @@ import {
   GetOperandType,
   TableType,
 } from "../../../../../common/src/lib/kysely.models";
-import { db } from "../kyselyinit";
 import { BaseOperator } from "./base.operator";
 
 export class SessionsOperator extends BaseOperator<TableType.sessions> {
@@ -15,11 +14,7 @@ export class SessionsOperator extends BaseOperator<TableType.sessions> {
     user_id: GetOperandType<TableType.sessions, "select", "user_id">,
   ) {
     if (!user_id) return Promise.resolve(undefined);
-
-    return db
-      .selectFrom(this.table)
-      .where("user_id", "=", user_id)
-      .executeTakeFirst();
+    return this.selectFrom().where("user_id", "=", user_id).executeTakeFirst();
   }
 
   public updateRefreshToken(
@@ -27,11 +22,13 @@ export class SessionsOperator extends BaseOperator<TableType.sessions> {
     refresh_token: string,
   ): Promise<UpdateResult> {
     if (!user_id) return Promise.resolve({ numUpdatedRows: BigInt(0) });
-
-    return db
-      .updateTable(this.table)
+    return this.updateTable()
       .set({ refresh_token })
       .where("user_id", "=", user_id)
       .executeTakeFirst();
+  }
+
+  public deleteBySessionId(session_id: string) {
+    return this.deleteFrom().where("session_id", "=", session_id).execute();
   }
 }

@@ -16,14 +16,15 @@ export class PeopleComponent {
     {
       field: "first_name",
       headerName: "First Name",
-      checkboxSelection: true,
+      headerTooltip: "First name",
+      editable: true,
     },
-    { field: "last_name", headerName: "Last Name" },
-    { field: "email", headerName: "Email" },
-    { field: "mobile", headerName: "Mobile" },
+    { field: "last_name", headerName: "Last Name", editable: true },
+    { field: "email", headerName: "Email", editable: true },
+    { field: "mobile", headerName: "Mobile", editable: true },
     { field: "street1", headerName: "Street" },
     { field: "city", headerName: "City" },
-    { field: "notes", headerName: "Notes" },
+    { field: "notes", headerName: "Notes", editable: true },
   ];
 
   protected rowData: Partial<TYPE>[] = [];

@@ -49,7 +49,7 @@ export class SignInComponent {
         this.toast.success(
           `Welcome back, ${this.authService.user()?.first_name}.`,
         );
-        this.router.navigateByUrl("console/summary");
+        this.router.navigate(["console", "summary"]);
       }
     });
   }
@@ -64,7 +64,7 @@ export class SignInComponent {
 
   public async signIn() {
     if (this.form.invalid)
-      return this.toast.error("Please enter a valid email and password.");
+      return this.setError("Please enter a valid email and password.");
 
     this.toast.clear();
     this.processing.set(true);
@@ -74,7 +74,7 @@ export class SignInComponent {
 
     return this.authService
       .signIn({ email, password })
-      .catch((err) => this.toast.error(err.message))
+      .catch((err) => this.setError(err.message))
       .finally(() => this.processing.set(false));
   }
 
@@ -93,5 +93,15 @@ export class SignInComponent {
 
   public getVisibilityIcon() {
     return this.hidePassword ? "eye-slash" : "eye";
+  }
+
+  protected setError(message: string) {
+    this.form?.setErrors({ message });
+  }
+  protected hasError() {
+    return this.form?.errors && this.form?.errors["message"]?.length;
+  }
+  protected getError() {
+    return this.form?.errors ? this.form?.errors["message"] : null;
   }
 }

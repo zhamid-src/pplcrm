@@ -185,126 +185,108 @@ type JsonObject = {
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
-interface MapCampaignsUsers {
-  campaign_id: bigint;
-  created_at: Generated<Timestamp>;
+
+export interface NonTenantRecordType {
   id: Generated<bigint>;
-  tenant_id: bigint;
+  created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface RecordType extends NonTenantRecordType {
+  tenant_id: bigint;
+}
+
+interface MapCampaignsUsers extends RecordType {
   user_id: bigint;
+  campaign_id: bigint;
 }
 
-interface MapHouseholdsTags {
-  created_at: Generated<Timestamp>;
+interface MapHouseholdsTags extends RecordType {
   household_id: bigint;
-  id: Generated<bigint>;
   tag_id: bigint;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
 }
 
-interface MapPeoplesTags {
-  created_at: Generated<Timestamp>;
-  id: Generated<bigint>;
+interface MapPeoplesTags extends RecordType {
   person_id: bigint;
   tag_id: bigint;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
 }
 
-interface Tags {
-  created_at: Generated<Timestamp>;
+interface Tags extends RecordType {
   createdby_id: bigint;
-  id: Generated<bigint>;
   name: string;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
+  description: string | null;
 }
 
-interface Campaigns {
+interface Campaigns extends RecordType {
+  name: string;
   admin_id: bigint;
-  created_at: Generated<Timestamp>;
   createdby_id: bigint;
   description: string | null;
-  enddate: string | null;
-  id: Generated<bigint>;
-  json: Json | null;
-  name: string;
-  notes: string | null;
   startdate: string | null;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
+  enddate: string | null;
+  json: Json | null;
+  notes: string | null;
 }
 
-interface Persons {
+interface Persons extends RecordType {
   campaign_id: bigint;
-  created_at: Generated<Timestamp>;
+  household_id: bigint;
   createdby_id: bigint;
   email: string | null;
   email2: string | null;
-  file_id: bigint | null;
   first_name: string | null;
-  home_phone: string | null;
-  household_id: bigint;
-  id: Generated<bigint>;
-  json: Json | null;
-  last_name: string | null;
   middle_names: string | null;
+  last_name: string | null;
+  home_phone: string | null;
   mobile: string | null;
+  file_id: bigint | null;
   notes: string | null;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
+  json: Json | null;
 }
 
-interface Households {
+interface Households extends RecordType {
   campaign_id: bigint;
-  city: string | null;
-  country: string | null;
-  created_at: Generated<Timestamp>;
   createdby_id: bigint;
   file_id: bigint | null;
   home_phone: string | null;
-  id: Generated<bigint>;
-  json: Json | null;
-  notes: string | null;
-  state: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
+  state: string | null;
+  city: string | null;
   zip: string | null;
+  country: string | null;
+  json: Json | null;
+  notes: string | null;
+
   people_count: string | null;
 }
 
-interface Tenants {
+interface Tenants extends NonTenantRecordType {
+  name: string;
   admin_id: bigint | null;
-  billing_city: string | null;
-  billing_country: string | null;
-  billing_state: string | null;
   billing_street1: string | null;
   billing_street2: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
   billing_zip: string | null;
+  billing_country: string | null;
+  street1: string | null;
+  street2: string | null;
   city: string | null;
+  state: string | null;
+  zip: string | null;
   country: string | null;
-  created_at: Generated<Timestamp>;
   createdby_id: bigint | null;
   email: string | null;
   email2: string | null;
-  id: Generated<bigint>;
   json: Json | null;
-  name: string;
   notes: string | null;
   phone: string | null;
-  state: string | null;
-  street1: string | null;
-  street2: string | null;
-  updated_at: Generated<Timestamp>;
-  zip: string | null;
 }
 
-interface Sessions {
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
+// We use a UUID for the Id here, so we can't extend the recordtype
+interface Sessions extends RecordType {
+  session_id: Generated<string>;
   ip_address: string;
   last_accessed: Generated<Timestamp>;
   other_properties: Json | null;
@@ -316,58 +298,40 @@ interface Sessions {
 }
 export type SesssionsType = Sessions;
 
-interface Roles {
-  created_at: Generated<Timestamp>;
-  description: string | null;
-  id: Generated<bigint>;
+interface Roles extends RecordType {
   name: string;
+  description: string | null;
   permissions: Json | null;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
 }
 
-interface MapRolesUsers {
-  created_at: Generated<Timestamp>;
-  id: Generated<bigint>;
+interface MapRolesUsers extends RecordType {
   role_id: bigint;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
   user_id: bigint;
 }
 
-interface AuthUsers {
-  created_at: Generated<Timestamp>;
+interface AuthUsers extends RecordType {
   email: string;
   first_name: string;
-  id: Generated<bigint>;
-  last_name: string | null;
-  middle_names: string | null;
   password: string;
   password_reset_code: string | null;
   // move to Sessions
   password_reset_code_created_at: Timestamp | null;
   role: string | null;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
   verified: boolean;
 }
 export type AuthUsersType = AuthUsers;
 
-interface Profiles {
+interface Profiles extends RecordType {
   auth_id: bigint;
   city: string | null;
   country: string | null;
   created_at: Generated<Timestamp>;
   email2: string | null;
   home_phone: string | null;
-  id: bigint;
   json: Json | null;
   mobile: string | null;
   state: string | null;
   street1: string | null;
   street2: string | null;
-  tenant_id: bigint | null;
-  uid: bigint;
-  updated_at: Generated<Timestamp>;
   zip: string | null;
 }

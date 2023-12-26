@@ -31,7 +31,6 @@ export class HouseholdsComponent {
   public async refresh(input: { forced: boolean }) {
     const forced = input?.forced || false;
     const data = await this.householdsSvc.getAllWithPeopleCount({}, forced);
-    console.log(data);
     this.rowData = data;
   }
 

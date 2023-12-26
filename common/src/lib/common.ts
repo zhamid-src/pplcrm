@@ -46,3 +46,9 @@ export const signInInputObj = z.object({
   password: z.string().min(8),
 });
 export type signInInputType = z.infer<typeof signInInputObj>;
+
+export const addTagObj = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+export type addTagType = z.infer<typeof addTagObj>;
