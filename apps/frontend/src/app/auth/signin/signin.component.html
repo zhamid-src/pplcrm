@@ -1,7 +1,10 @@
 <div class="bg-image flex min-h-screen font-light" data-theme="light">
   <div class="card card-compact glass m-auto w-96 shadow-xl">
-    <div class="card-title shadow-lg">
+    <div class="card-title mb-0 shadow-lg">
       <img class="p-5" src="assets/logo.svg" />
+    </div>
+    <div class="alert-error rounded-none text-white" [class.alert]="hasError()">
+      {{ getError() }}
     </div>
     <div class="card-body">
       <label class="label text-base text-neutral-600"
@@ -41,6 +44,7 @@
 
             <input
               class="input-pplcrm pl-11 pr-8 text-sm"
+              [class.border-error]="hasError()"
               [type]="getVisibility()"
               formControlName="password"
               autocomplete="current-password"

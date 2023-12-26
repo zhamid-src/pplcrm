@@ -170,7 +170,7 @@ export class AuthHelper {
     if (!auth?.session_id) {
       return null;
     }
-    return sessions.delete(auth.session_id);
+    return sessions.deleteBySessionId(auth.session_id);
   }
 
   public async signUp(
@@ -202,7 +202,9 @@ export class AuthHelper {
     // *** 3- add tenant
     //const tenantAddResult = await tenants.add({ name: input.organization });
 
-    const tenantAddResult = await tenants.add({ name: input.organization });
+    const tenantAddResult = await tenants.add({
+      name: input.organization,
+    });
     if (!tenantAddResult) {
       throw new TRPCError({
         message: "Something went wrong, please try again",
@@ -229,7 +231,7 @@ export class AuthHelper {
 
     // Finally, add a profile for the user
     const profile = await profiles.add({
-      uid: user.id as unknown as number,
+      id: user.id as unknown as number,
       tenant_id,
       auth_id: user.id as unknown as number,
     } as OperationDataType<"profiles", "insert">);
@@ -243,12 +245,12 @@ export class AuthHelper {
 
     // now go back and update the tenant with the profile id
     const tenantUpdateResult = await tenants.update(tenant_id, {
-      admin_id: profile.uid,
-      createdby_id: profile.uid,
+      admin_id: profile.id,
+      createdby_id: profile.id,
     } as OperationDataType<"tenants", "update">);
 
     // TODO: make the hash a secret
-    return this.createTokens(profile.uid, user.tenant_id, user.first_name);
+    return this.createTokens(profile.id, user.tenant_id, user.first_name);
   }
 
   private async createTokens(
@@ -258,7 +260,7 @@ export class AuthHelper {
     oldSession?: string,
   ) {
     // Delete the old session
-    await sessions.delete(oldSession);
+    oldSession && (await sessions.deleteBySessionId(oldSession));
 
     const currentSession = await sessions.add({
       user_id,

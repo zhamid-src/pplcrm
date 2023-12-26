@@ -11,8 +11,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("verified", "boolean", (col) => col.defaultTo(false))
     .addColumn("role", "bigint")
     .addColumn("first_name", "text")
-    .addColumn("middle_names", "text")
-    .addColumn("last_name", "text")
     .addColumn("email", "text", (col) => col.notNull().unique())
     .addColumn("password", "text", (col) => col.notNull())
     .addColumn("reset_password_token", "uuid")
@@ -32,9 +30,11 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await db.schema
     .createTable("profiles")
-    .addColumn("uid", "bigserial", (col) => col.unique())
+    .addColumn("id", "bigserial", (col) => col.unique())
     .addColumn("tenant_id", "bigint")
     .addColumn("auth_id", "bigint")
+    .addColumn("middle_names", "text")
+    .addColumn("last_name", "text")
     .addColumn("home_phone", "text")
     .addColumn("mobile", "text")
     .addColumn("email2", "text")
@@ -55,7 +55,7 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   db.schema
     .alterTable("profiles")
-    .addForeignKeyConstraint("profile_uid_authusers", ["uid"], "authusers", [
+    .addForeignKeyConstraint("profile_id_authusers", ["id"], "authusers", [
       "id",
     ]);
 
@@ -88,15 +88,16 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("updated_at", "timestamp", (col) =>
       col.defaultTo(sql`now()`).notNull(),
     )
-    .addForeignKeyConstraint("fk_admin_id", ["admin_id"], "profiles", ["id"])
-    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "profiles", [
+    .addForeignKeyConstraint("fk_admin_id", ["admin_id"], "authusers", ["id"])
+    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "authusers", [
       "id",
     ])
     .execute();
 
   await db.schema
     .createTable("sessions")
-    .addColumn("id", "uuid", (col) =>
+    .addColumn("id", "bigserial", (col) => col.unique())
+    .addColumn("session_id", "uuid", (col) =>
       col
         .primaryKey()
         .defaultTo(sql`gen_random_uuid()`)
@@ -132,6 +133,13 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 
   await db.schema
+    .createIndex("sessions_refresh_token_index")
+    .on("sessions")
+    .column("sessions_id")
+    .execute();
+
+  /*
+  await db.schema
     .createTable("roles")
     .addColumn("id", "bigserial", (col) => col.unique())
     .addColumn("name", "text", (col) => col.notNull().defaultTo("user"))
@@ -153,6 +161,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .column("tenant_id")
     .execute();
 
+ 
   await db.schema
     .createTable("map_roles_profiles")
     .addColumn("id", "bigserial", (col) => col.unique())
@@ -171,10 +180,11 @@ export async function up(db: Kysely<any>): Promise<void> {
       "tenants",
       ["id"],
     )
-    .addForeignKeyConstraint("fk_user_id", ["user_id"], "profiles", ["id"])
+    .addForeignKeyConstraint("fk_user_id", ["user_id"], "authusers", ["id"])
     .addForeignKeyConstraint("fk_role_id", ["role_id"], "roles", ["id"])
     .addPrimaryKeyConstraint("map_roles_id_tenantid", ["id", "tenant_id"])
     .execute();
+    */
 
   await db.schema
     .createTable("campaigns")
@@ -200,8 +210,8 @@ export async function up(db: Kysely<any>): Promise<void> {
       "tenants",
       ["id"],
     )
-    .addForeignKeyConstraint("fk_admin_id", ["admin_id"], "profiles", ["id"])
-    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "profiles", [
+    .addForeignKeyConstraint("fk_admin_id", ["admin_id"], "authusers", ["id"])
+    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "authusers", [
       "id",
     ])
     .addPrimaryKeyConstraint("campaigns_id_tenantid", ["id", "tenant_id"])
@@ -214,7 +224,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 
   await db.schema
-    .createTable("map_campaigns_profiles")
+    .createTable("map_campaigns_users")
     .addColumn("id", "bigserial", (col) => col.unique())
     .addColumn("tenant_id", "bigint", (col) => col.notNull())
     .addColumn("campaign_id", "bigint", (col) => col.notNull())
@@ -231,7 +241,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       "tenants",
       ["id"],
     )
-    .addForeignKeyConstraint("fk_user_id", ["user_id"], "profiles", ["id"])
+    .addForeignKeyConstraint("fk_user_id", ["user_id"], "authusers", ["id"])
     .addForeignKeyConstraint("fk_campaign_id", ["campaign_id"], "campaigns", [
       "id",
     ])
@@ -240,13 +250,13 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await db.schema
     .createIndex("campaigns_map_tenant_user_index")
-    .on("map_campaigns_profiles")
+    .on("map_campaigns_users")
     .columns(["tenant_id", "user_id"])
     .execute();
 
   await db.schema
     .createIndex("campaigns_map_tenant_campaign_index")
-    .on("map_campaigns_profiles")
+    .on("map_campaigns_users")
     .columns(["tenant_id", "campaign_id"])
     .execute();
 
@@ -281,7 +291,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addForeignKeyConstraint("fk_campaign_id", ["campaign_id"], "campaigns", [
       "id",
     ])
-    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "profiles", [
+    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "authusers", [
       "id",
     ])
     .addPrimaryKeyConstraint("households_id_tenantid", ["id", "tenant_id"])
@@ -316,7 +326,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addForeignKeyConstraint("fk_campaign_id", ["campaign_id"], "campaigns", [
       "id",
     ])
-    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "profiles", [
+    .addForeignKeyConstraint("fk_createdby_id", ["createdby_id"], "authusers", [
       "id",
     ])
     .addForeignKeyConstraint(
@@ -340,6 +350,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("tenant_id", "bigint", (col) => col.notNull())
     .addColumn("createdby_id", "bigint", (col) => col.notNull())
     .addColumn("name", "text", (col) => col.notNull())
+    .addColumn("description", "text", (col) => col.notNull())
     .addColumn("created_at", "timestamp", (col) =>
       col.defaultTo(sql`now()`).notNull(),
     )
@@ -421,7 +432,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     .values({
       id: 1,
       first_name: "Zee",
-      last_name: "Hamid",
       email: "zhamid@gmail.com",
       password: "$2b$10$t5uTrvGiUwK4SoHOjG3aiOtwDDwGHh0C7uf/80R7tdNBrQtPG0b.K",
     })
@@ -432,6 +442,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .insertInto("profiles")
     .values({
       id: 1,
+      last_name: "Hamid",
       mobile: "416-823-6993",
       city: "Milton",
     })

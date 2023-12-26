@@ -3,6 +3,9 @@
     <div class="card-title shadow-lg">
       <img src="assets/logo.svg" class="p-5" />
     </div>
+    <div class="alert-error rounded-none text-white" [class.alert]="hasError()">
+      {{ getError() }}
+    </div>
     <div class="card-body">
       <form [formGroup]="form" class="flex flex-col gap-3">
         <label class="label text-base text-neutral-600"

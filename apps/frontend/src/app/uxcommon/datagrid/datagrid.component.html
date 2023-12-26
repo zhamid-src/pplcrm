@@ -1,44 +1,60 @@
 <div class="flex h-full w-full flex-col">
-  <ul class="menu menu-horizontal flex flex-row">
-    <li>
-      <a
-        class="hover:text-primary tooltip tooltip-accent"
-        data-tip="Add a new person"
-      >
+  <ul class="menu menu-horizontal flex flex-row pt-0">
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableAdd"
+      [class.disabled]="disableAdd"
+      (click)="!disableAdd && emitAdd()"
+      data-tip="Add"
+    >
+      <a>
         <pc-icon name="plus"></pc-icon>
       </a>
     </li>
-    <li>
-      <a
-        class="hover:text-primary tooltip tooltip-accent"
-        data-tip="Refresh the grid"
-        (click)="refreshGrid(true)"
-      >
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableRefresh"
+      [class.disabled]="disableRefresh"
+      (click)="!disableRefresh && refreshGrid(true)"
+      data-tip="Refresh the grid"
+    >
+      <a>
         <pc-icon name="arrow-path"></pc-icon>
       </a>
     </li>
-    <li>
-      <a
-        class="hover:text-primary tooltip tooltip-accent"
-        data-tip="Import data from CSV"
-      >
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableImport"
+      [class.disabled]="disableImport"
+      (click)="!disableImport && doImportCSV()"
+      data-tip="Import data from CSV"
+    >
+      <a>
         <pc-icon name="cloud-arrow-up"></pc-icon>
       </a>
     </li>
-    <li>
-      <a
-        class="hover:text-primary tooltip tooltip-accent"
-        data-tip="Download as CSV"
-        (click)="exportToCSV()"
-      >
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableExport"
+      [class.disabled]="disableExport"
+      (click)="!disableExport && exportToCSV()"
+      data-tip="Download as CSV"
+    >
+      <a>
         <pc-icon name="arrow-down-tray"></pc-icon>
       </a>
     </li>
 
-    <li>
-      <a class="tooltip tooltip-accent" data-tip="Apply a filter">
-        <pc-icon name="funnel"></pc-icon
-      ></a>
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableFilter"
+      [class.disabled]="disableFilter"
+      (click)="!disableFilter && applyFilter()"
+      data-tip="Apply a filter"
+    >
+      <a>
+        <pc-icon name="funnel"></pc-icon>
+      </a>
     </li>
     <li>
       <div class="dropdown dropdown-end">
@@ -51,13 +67,19 @@
           tabindex="0"
           class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
         >
-          <li class="hover:text-primary">
+          <li
+            [class.disabled]="disableEdit"
+            (click)="!disableEdit && emitEdit()"
+          >
             <a>
               <pc-icon name="pencil-square" />
               Edit
             </a>
           </li>
-          <li class="hover:text-primary">
+          <li
+            [class.disabled]="disableDelete"
+            (click)="!disableDelete && emitDelete()"
+          >
             <a>
               <pc-icon name="trash" />
               Delete
@@ -77,9 +99,10 @@
     class="flex-1 font-light"
     [class]="getTheme()"
     [rowData]="rowData"
-    [columnDefs]="colDefs"
+    [columnDefs]="colDefsWithEdit"
     (gridReady)="onGridReady($event)"
     [gridOptions]="combinedGridOptions"
+    [getRowId]="getRowId"
   >
   </ag-grid-angular>
 </div>

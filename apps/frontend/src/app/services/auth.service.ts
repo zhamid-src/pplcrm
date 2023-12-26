@@ -31,7 +31,7 @@ export class AuthService extends TRPCService<TableType.authusers> {
     const apiReturn = await this.api.auth.signOut.mutate();
     this._user.set(null);
     this.tokenService.clearAll();
-    this.routerService.navigate(["/signin"]);
+    this.router.navigate(["/signin"]);
 
     return apiReturn;
   }

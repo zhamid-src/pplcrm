@@ -16,11 +16,17 @@ config();
 
 const dialect = new PostgresDialect({
   pool: new Pool({
-    connectionString: process.env["DATABASE_URL"],
-    ssl: true,
+    // connectionString: process.env["DATABASE_URL"],
+    user: "zeehamid",
+    database: "pplcrm",
+    password: "Eternity#1",
+    port: 5432,
+    host: "localhost",
+    ssl: false,
   }),
 });
 
+//TODO: Move to base operator and not export it
 export const db = new Kysely<Models>({
   dialect,
 });

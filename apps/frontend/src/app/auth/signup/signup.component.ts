@@ -10,7 +10,6 @@ import {
 import { Router, RouterModule } from "@angular/router";
 import { signUpInputType } from "@common";
 import { AuthService } from "@services/auth.service.js";
-import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
@@ -45,7 +44,6 @@ export class SignUpComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toast: PplCrmToastrService,
     private authService: AuthService,
     private router: Router,
   ) {}
@@ -68,9 +66,7 @@ export class SignUpComponent {
 
   public async join() {
     if (this.form.invalid)
-      return this.toast.error(
-        "Please enter all information before continuing.",
-      );
+      return this.setError("Please enter all information before continuing.");
 
     this.processing.set(true);
 
@@ -80,10 +76,10 @@ export class SignUpComponent {
       .signUp(formObj)
       .then((user) => {
         if (!user) {
-          this.toast.error("Unknown error"); // TODO: better error msg
+          this.setError("Unknown error"); // TODO: better error msg
         }
       })
-      .catch((err) => this.toast.error(err.message))
+      .catch((err) => this.setError(err.message))
       .finally(() => this.processing.set(false));
   }
 
@@ -107,5 +103,14 @@ export class SignUpComponent {
 
   public getVisibilityIcon() {
     return this.hidePassword ? "eye-slash" : "eye";
+  }
+  protected setError(message: string) {
+    this.form?.setErrors({ message });
+  }
+  protected hasError() {
+    return this.form?.errors && this.form?.errors["message"]?.length;
+  }
+  protected getError() {
+    return this.form?.errors ? this.form?.errors["message"] : null;
   }
 }

@@ -82,6 +82,12 @@ export class BaseOperator<T extends keyof Models> {
   protected selectFrom() {
     return db.selectFrom(this.table);
   }
+  protected updateTable() {
+    return db.updateTable(this.table);
+  }
+  protected deleteFrom() {
+    return db.deleteFrom(this.table);
+  }
 
   protected getQuery(options?: QueryParams<T>) {
     let query = this.selectFrom();
