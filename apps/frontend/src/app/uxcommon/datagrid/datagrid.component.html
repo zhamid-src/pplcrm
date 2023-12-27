@@ -22,12 +22,22 @@
         <pc-icon name="arrow-path"></pc-icon>
       </a>
     </li>
-    <li class="tooltip-accent" (click)="undo()" data-tip="Undo">
+    <li
+      class="tooltip tooltip-accent"
+      (click)="undo()"
+      data-tip="Undo"
+      [class.disabled]="api?.getCurrentUndoSize() === 0"
+    >
       <a>
         <pc-icon name="arrow-uturn-left"></pc-icon>
       </a>
     </li>
-    <li class="tooltip-accent" (click)="redo()" data-tip="Redo">
+    <li
+      class="tooltip tooltip-accent"
+      (click)="redo()"
+      data-tip="Redo"
+      [class.disabled]="api?.getCurrentRedoSize() === 0"
+    >
       <a>
         <pc-icon name="arrow-uturn-right"></pc-icon>
       </a>
@@ -86,10 +96,7 @@
               Edit
             </a>
           </li>
-          <li
-            [class.disabled]="disableDelete"
-            (click)="!disableDelete && emitDelete()"
-          >
+          <li [class.disabled]="!onDelete" (click)="deleteHoveredRow()">
             <a>
               <pc-icon name="trash" />
               Delete
@@ -104,7 +111,7 @@
       </a>
     </li>
   </ul>
-
+  <progress class="progress w-full" [class.hidden]="!processing"></progress>
   <ag-grid-angular
     class="flex-1 font-light"
     [class]="getTheme()"

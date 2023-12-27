@@ -40,4 +40,10 @@ export class PeopleComponent {
   public abortRefresh() {
     this.personsSvc.abort();
   }
+
+  protected async delete(row: Partial<TYPE>) {
+    console.log(row);
+    await new Promise((f) => setTimeout(f, 3000));
+    return false;
+  }
 }

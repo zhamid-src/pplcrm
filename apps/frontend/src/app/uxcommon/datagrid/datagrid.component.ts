@@ -9,6 +9,7 @@ import {
   CellMouseOverEvent,
   CellValueChangedEvent,
   ColDef,
+  GetRowIdParams,
   GridApi,
   GridOptions,
   GridReadyEvent,
@@ -27,6 +28,7 @@ import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
 })
 export class DatagridComponent<T> {
   protected api: GridApi<Partial<T>> | undefined;
+  protected processing = false;
 
   @Input({ required: true }) colDefs: ColDef[] = [];
   @Input({ required: true }) rowData: Partial<T>[] = [];
@@ -38,7 +40,6 @@ export class DatagridComponent<T> {
   @Input() disableExport = false;
   @Input() disableFilter = false;
   @Input() disableEdit = false;
-  @Input() disableDelete = false;
 
   @Output() refresh = new EventEmitter<{ forced: boolean }>();
   @Output() abortRefresh = new EventEmitter<void>();
@@ -46,7 +47,7 @@ export class DatagridComponent<T> {
   @Output() importCSV = new EventEmitter();
   @Output() filter = new EventEmitter();
   @Output() edit = new EventEmitter();
-  @Output() delete = new EventEmitter();
+  @Input() onDelete: ((row: Partial<T>) => Promise<boolean>) | undefined;
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     context: this,
@@ -80,6 +81,7 @@ export class DatagridComponent<T> {
     ...this.gridOptions,
   };
 
+  // Checkbox and delete icon columns
   protected colDefsWithEdit: ColDef[] = [
     {
       checkboxSelection: true,
@@ -111,19 +113,15 @@ export class DatagridComponent<T> {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  protected getRowId(row: any) {
+  protected getRowId(row: GetRowIdParams) {
     return row.data.id;
   }
 
   public confirmExport() {
-    //TODO: dialog to tell people that it only exports
-    //the columns on the grid. If they want to export
-    //all data then they should use the export component
-
-    const dialog = document.querySelector("#confirmExport");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (dialog as any)?.showModal();
+    const dialog = document.querySelector(
+      "#confirmExport",
+    ) as HTMLDialogElement;
+    dialog.showModal();
   }
 
   protected exportToCSV() {
@@ -143,12 +141,9 @@ export class DatagridComponent<T> {
     this.refreshGrid();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onCellValueChanged(row: CellValueChangedEvent<Partial<T>>) {
-    const rowNode = this.api?.getDisplayedRowAtIndex(row.rowIndex!);
-    this.api?.flashCells({ rowNodes: [rowNode!] });
+    this.api?.flashCells({ rowNodes: [row.node!], columns: [row.column] });
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public onCellMouseOver(params: CellMouseOverEvent<Partial<T>>) {
     this.hoveredRow = params.rowIndex;
   }
@@ -208,19 +203,27 @@ export class DatagridComponent<T> {
   protected emitEdit() {
     this.edit.emit();
   }
-  protected emitDelete() {
-    this.delete.emit();
-  }
 
-  public deleteHoveredRow() {
+  public async deleteHoveredRow() {
+    if (!this.onDelete) {
+      return;
+    }
+
     if (this.hoveredRow !== null) {
-      this.api?.applyTransaction({ remove: [this.rowData[this.hoveredRow!]] });
-      this.rowData.splice(this.hoveredRow!, 1);
-      this.alertSvc.show({
-        text: "Row deleted successfully",
-        type: "success",
-        OKBtn: "OK",
-      });
+      this.processing = true;
+
+      const deleted = await this.onDelete(this.rowData[this.hoveredRow!]);
+      if (!deleted) {
+        this.alertSvc.showError(
+          "Could not delete the row. Please try again later.",
+        );
+      } else {
+        this.api?.applyTransaction({
+          remove: [this.rowData[this.hoveredRow!]],
+        });
+        this.rowData.splice(this.hoveredRow!, 1);
+      }
+      this.processing = false;
     }
   }
 }

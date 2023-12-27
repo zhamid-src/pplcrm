@@ -47,8 +47,9 @@ export class ResetPasswordComponent {
 
   public async submit() {
     if (!this.email?.valid) {
-      this.setError("Please check the email address and try again.");
-      return;
+      return this.alertSvc.showError(
+        "Please check the email address and try again.",
+      );
     }
     this.processing.set(true);
 
@@ -56,16 +57,12 @@ export class ResetPasswordComponent {
       .sendPasswordResetEmail({
         email: this.email.value as string,
       })
-      .catch((err) => this.setError(err.message));
+      .catch((err) => this.alertSvc.showError(err.message));
 
-    this.alertSvc.show({
-      text: "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
-      type: "success",
-    });
+    this.alertSvc.showSuccess(
+      "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+    );
     this.processing.set(false);
     this.router.navigateByUrl("signin");
-  }
-  protected setError(text: string) {
-    this.alertSvc.show({ text, type: "error" });
   }
 }

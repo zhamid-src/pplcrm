@@ -70,7 +70,9 @@ export class SignUpComponent {
 
   public async join() {
     if (this.form.invalid)
-      return this.setError("Please enter all information before continuing.");
+      return this.alertSvc.showError(
+        "Please enter all information before continuing.",
+      );
 
     this.processing.set(true);
 
@@ -80,10 +82,10 @@ export class SignUpComponent {
       .signUp(formObj)
       .then((user) => {
         if (!user) {
-          this.setError("Unknown error"); // TODO: better error msg
+          this.alertSvc.showError("Unknown error"); // TODO: better error msg
         }
       })
-      .catch((err) => this.setError(err.message))
+      .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }
 
@@ -107,8 +109,5 @@ export class SignUpComponent {
 
   public getVisibilityIcon() {
     return this.hidePassword ? "eye-slash" : "eye";
-  }
-  protected setError(text: string) {
-    this.alertSvc.show({ text, type: "error" });
   }
 }

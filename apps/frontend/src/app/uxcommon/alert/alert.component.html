@@ -13,9 +13,11 @@
         <h3 class="font-bold" [class.hidden]="!alert.title">
           {{ alert.title }}
         </h3>
-        <div class="font-light" [class.text-sm]="!!alert.title">
-          {{ alert.text }}
-        </div>
+        <div
+          class="font-light"
+          [class.text-sm]="!!alert.title"
+          [innerHTML]="alert.text"
+        ></div>
       </div>
       <button
         class="btn btn-sm"
