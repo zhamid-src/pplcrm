@@ -17,10 +17,6 @@ export class TagsComponent {
 
   private _tags = signal(this.tags);
 
-  constructor() {
-    console.log(this.tags);
-  }
-
   clicked(tag: string) {
     console.log("click", tag);
   }

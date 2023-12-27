@@ -1,4 +1,4 @@
-import { Injectable, effect, signal } from "@angular/core";
+import { Injectable, signal } from "@angular/core";
 
 export type ALERTTYPE = "info" | "error" | "warning" | "success";
 export interface AlertMessage {
@@ -6,11 +6,7 @@ export interface AlertMessage {
   title?: string;
   OKBtn?: string;
   btn2?: string;
-  type: ALERTTYPE;
-}
-
-interface AlertMessageWithMeta extends AlertMessage {
-  createdAt: number;
+  type?: ALERTTYPE;
 }
 
 @Injectable({
@@ -19,66 +15,43 @@ interface AlertMessageWithMeta extends AlertMessage {
 export class AlertService {
   private duration = 2500;
 
-  private _newAlert = signal<AlertMessageWithMeta | null>(null);
-  public get newAlert() {
-    return this._newAlert();
-  }
-
-  private _alerts: AlertMessageWithMeta[] = [];
+  private _alerts = signal<AlertMessage[]>([]);
   public get alerts() {
-    return this._alerts;
+    return this._alerts();
   }
 
-  constructor() {
-    effect(() => {
-      const alert = this._newAlert();
-      if (!alert) return;
-      setTimeout(
-        () => {
-          if (
-            this._alerts.find((m) => m.text === alert.text) &&
-            Date.now() > alert.createdAt + 1500
-          ) {
-            this.removeAlert(alert);
-          }
-        },
-        this.duration,
-        alert,
-      );
-    });
-  }
-
-  public show(
-    text: string,
-    type: ALERTTYPE = "info",
-    title?: string,
-    OKBtn?: string,
-    btn2?: string,
-  ) {
+  public show(alert: AlertMessage) {
     // Ignore if duplicate
-    if (this._alerts.find((m) => m.text === text && m.type === type)) {
+    if (this.alerts.find((m) => m.text === alert.text)) {
       return;
     }
-    const messageWithMeta: AlertMessageWithMeta = {
-      text,
-      type,
-      title,
-      OKBtn,
-      btn2,
-      createdAt: Date.now(),
-    };
-    this._alerts.push(messageWithMeta);
-    this._newAlert.set(messageWithMeta);
+    const messageWithMeta = { ...alert, createdAt: Date.now() };
+
+    this._alerts.update((arr: AlertMessage[]) => {
+      arr.unshift(messageWithMeta);
+      return arr.slice(0);
+    });
+
+    // start the timer to remove
+    setTimeout(
+      () => this.removeAlert(messageWithMeta),
+      this.duration,
+      messageWithMeta,
+    );
   }
 
   public dismiss(text: string) {
-    // The last two don't matter, just the text
-    this.removeAlert({ text, type: "info", createdAt: 0 });
+    this.removeAlert({ text });
   }
 
-  private removeAlert(alert: AlertMessageWithMeta) {
-    const index = this._alerts.indexOf(alert);
-    this._alerts.splice(index, 1);
-    this._newAlert.set(null);
+  private removeAlert(alert: AlertMessage) {
+    const alertToRemove = this.alerts.find((m) => m.text === alert.text);
+    if (!alertToRemove) return;
+
+    const index = this.alerts.indexOf(alertToRemove);
+    this._alerts.update((arr) => {
+      arr.splice(index, 1);
+      return arr.slice(0);
+    });
   }
 }

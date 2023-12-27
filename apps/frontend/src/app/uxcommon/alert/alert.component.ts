@@ -11,36 +11,25 @@ import { IconsComponent } from "@uxcommon/icons/icons.component";
   styleUrl: "./alert.component.scss",
 })
 export class AlertComponent {
-  protected message: string | undefined;
-  protected title: string | undefined;
-  protected type: ALERTTYPE = "error";
-
-  protected OKBtn: string | undefined;
-  protected btn2: string | undefined;
+  protected alerts = this.alertSvc.alerts;
   @Output() btn2Action = new EventEmitter();
 
   constructor(private alertSvc: AlertService) {
-    effect(() => {
-      this.message = this.alertSvc.newAlert?.text;
-      this.type = this.alertSvc.newAlert?.type || "error";
-    });
+    effect(() => (this.alerts = this.alertSvc.alerts));
   }
 
-  icon() {
-    switch (this.type) {
-      case "info":
-        return "exclamation-circle";
-      case "success":
-        return "check-circle";
-      case "warning":
-        return "exclamation-triangle";
-      case "error":
-        return "x-circle";
-    }
+  icon(type: ALERTTYPE) {
+    return type === "success"
+      ? "check-circle"
+      : type === "warning"
+        ? "exclamation-triangle"
+        : type === "error"
+          ? "x-circle"
+          : "exclamation-circle";
   }
 
-  dismiss() {
-    this.alertSvc.dismiss(this.message!);
+  dismiss(text: string) {
+    this.alertSvc.dismiss(text);
   }
 
   btn2Click() {

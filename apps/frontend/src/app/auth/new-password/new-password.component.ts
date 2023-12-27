@@ -67,8 +67,8 @@ export class NewPasswordComponent implements OnInit {
     this.code = params["code"];
   }
 
-  protected setError(message: string) {
-    this.alertSvc.show(message, "error");
+  protected setError(text: string) {
+    this.alertSvc.show({ text, type: "error" });
   }
 
   public async submit() {
@@ -88,10 +88,10 @@ export class NewPasswordComponent implements OnInit {
     }
 
     this.processing.set(false);
-    this.alertSvc.show(
-      "Password reset successfully. Please sign in again",
-      "success",
-    );
+    this.alertSvc.show({
+      text: "Password reset successfully. Please sign in again",
+      type: "success",
+    });
     this.router.navigateByUrl("signin");
   }
 

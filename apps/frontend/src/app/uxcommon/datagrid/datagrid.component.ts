@@ -1,5 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, EventEmitter, Input, Output, effect } from "@angular/core";
+import { AlertService } from "@services/alert.service";
 import { SearchService } from "@services/search.service";
 import { ThemeService } from "@services/theme.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
@@ -96,6 +97,7 @@ export class DatagridComponent<T> {
   constructor(
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
+    private alertSvc: AlertService,
   ) {
     effect(() => {
       const quickFilterText = this.serachSvc.search;
@@ -137,7 +139,6 @@ export class DatagridComponent<T> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onCellValueChanged(row: CellValueChangedEvent<Partial<T>>) {
-    console.log("cell value changed", row);
     const rowNode = this.api?.getDisplayedRowAtIndex(row.rowIndex!);
     this.api?.flashCells({ rowNodes: [rowNode!] });
   }
@@ -185,6 +186,11 @@ export class DatagridComponent<T> {
     if (this.hoveredRow !== null) {
       this.api?.applyTransaction({ remove: [this.rowData[this.hoveredRow!]] });
       this.rowData.splice(this.hoveredRow!, 1);
+      this.alertSvc.show({
+        text: "Row deleted successfully",
+        type: "success",
+        OKBtn: "OK",
+      });
     }
   }
 }

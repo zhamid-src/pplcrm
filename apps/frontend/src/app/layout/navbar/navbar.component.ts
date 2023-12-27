@@ -46,7 +46,7 @@ export class NavbarComponent {
 
   public async signOut() {
     await this.auth.signOut();
-    this.alertSvc.show("Signed out", "success");
+    this.alertSvc.show({ text: "Signed out", type: "success" });
   }
 
   public isMobileOpen() {

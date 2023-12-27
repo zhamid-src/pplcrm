@@ -284,7 +284,6 @@ export class AuthHelper {
       expiresIn: "30m",
     });
     const auth_token = signer({ user_id, tenant_id, name, session_id });
-    console.log("new auth token", auth_token);
     return { auth_token, refresh_token: currentSession.refresh_token };
   }
 }

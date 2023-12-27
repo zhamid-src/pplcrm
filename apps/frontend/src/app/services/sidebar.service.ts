@@ -24,9 +24,6 @@ type DrawerStates = "full" | "half";
   providedIn: "root",
 })
 export class SidebarService {
-  constructor() {
-    console.log("SidebarService constructor", this._drawerState);
-  }
   private _drawerState: DrawerStates = this.getState();
   // Add all the sidebar items here. They go in the order they're added
   private _items: SidenavItem[] = [
