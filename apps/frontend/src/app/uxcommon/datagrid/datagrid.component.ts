@@ -12,6 +12,8 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
+  RedoStartedEvent,
+  UndoStartedEvent,
 } from "ag-grid-community";
 import { EditCellRendererComponent } from "./edit-cell-renderer/edit-cell-renderer.component";
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
@@ -47,24 +49,28 @@ export class DatagridComponent<T> {
   @Output() delete = new EventEmitter();
 
   defaultGridOptions: GridOptions<Partial<T>> = {
+    context: this,
     rowStyle: { cursor: "pointer" },
     undoRedoCellEditing: true,
-    undoRedoCellEditingLimit: 5,
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
-    editType: "fullRow",
+    // editType: "fullRow",
     enableCellChangeFlash: true,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: "multiple",
     animateRows: true,
-    onCellValueChanged: this.onCellValueChanged.bind(this),
-    onCellMouseOver: this.onCellMouseOver.bind(this),
-    loadingOverlayComponent: LoadingOverlayComponent,
-    context: this,
     autoSizeStrategy: {
       type: "fitCellContents",
     },
+    enableFillHandle: true,
+    onCellValueChanged: this.onCellValueChanged.bind(this),
+    onCellMouseOver: this.onCellMouseOver.bind(this),
+    onUndoStarted: this.onUndoStarted.bind(this),
+    onUndoEnded: this.onUndoEnded.bind(this),
+    onRedoStarted: this.onRedoStarted.bind(this),
+    onRedoEnded: this.onRedoEnded.bind(this),
+    loadingOverlayComponent: LoadingOverlayComponent,
   };
 
   private hoveredRow: number | null = null;
@@ -145,6 +151,30 @@ export class DatagridComponent<T> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public onCellMouseOver(params: CellMouseOverEvent<Partial<T>>) {
     this.hoveredRow = params.rowIndex;
+  }
+
+  public onUndoStarted(event: UndoStartedEvent) {
+    console.log("undoStarted", event);
+  }
+
+  public onUndoEnded(event: UndoStartedEvent) {
+    console.log("undoEnded", event);
+  }
+
+  public onRedoStarted(event: RedoStartedEvent) {
+    console.log("redoStarted", event);
+  }
+
+  public onRedoEnded(event: RedoStartedEvent) {
+    console.log("redoEnded", event);
+  }
+
+  public undo() {
+    this.api?.undoCellEditing();
+  }
+
+  public redo() {
+    this.api?.redoCellEditing();
   }
 
   public refreshGrid(forced: boolean = false) {
