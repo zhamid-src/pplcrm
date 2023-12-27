@@ -1,8 +1,12 @@
 <div>
   @for (alert of alerts; track alert) {
     <div
-      class="alert hidden rounded-none alert-{{ alert.type }}"
+      class="alert hidden rounded-none"
       [class.hidden]="!alert.text"
+      [class.alert-info]="alert.type === 'info'"
+      [class.alert-warning]="alert.type === 'warning'"
+      [class.alert-success]="alert.type === 'success'"
+      [class.alert-error]="alert.type === 'error'"
     >
       <pc-icon [name]="icon(alert.type!)" class="mr-2"></pc-icon>
       <div>
@@ -14,7 +18,12 @@
         </div>
       </div>
       <button
-        class="btn btn-sm btn-{{ alert.type }}"
+        class="btn btn-sm"
+        [class.hidden]="!alert.OKBtn"
+        [class.btn-info]="alert.type === 'info'"
+        [class.btn-warning]="alert.type === 'warning'"
+        [class.btn-success]="alert.type === 'success'"
+        [class.btn-error]="alert.type === 'error'"
         [class.hidden]="!alert.OKBtn"
         (click)="dismiss(alert.text)"
       >

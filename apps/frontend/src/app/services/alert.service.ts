@@ -13,7 +13,7 @@ export interface AlertMessage {
   providedIn: "root",
 })
 export class AlertService {
-  private duration = 2500;
+  private duration = 2000;
 
   private _alerts = signal<AlertMessage[]>([]);
   public get alerts() {
