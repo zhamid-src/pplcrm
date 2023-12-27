@@ -22,6 +22,16 @@
         <pc-icon name="arrow-path"></pc-icon>
       </a>
     </li>
+    <li class="tooltip-accent" (click)="undo()" data-tip="Undo">
+      <a>
+        <pc-icon name="arrow-uturn-left"></pc-icon>
+      </a>
+    </li>
+    <li class="tooltip-accent" (click)="redo()" data-tip="Redo">
+      <a>
+        <pc-icon name="arrow-uturn-right"></pc-icon>
+      </a>
+    </li>
     <li
       class="tooltip-accent"
       [class.tooltip]="!disableImport"
