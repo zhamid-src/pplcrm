@@ -20,6 +20,19 @@ export class AlertService {
     return this._alerts();
   }
 
+  public showInfo(text: string) {
+    this.show({ text, type: "info" });
+  }
+  public showError(text: string) {
+    this.show({ text, type: "error" });
+  }
+  public showWarn(text: string) {
+    this.show({ text, type: "warning" });
+  }
+  public showSuccess(text: string) {
+    this.show({ text, type: "success" });
+  }
+
   public show(alert: AlertMessage) {
     // Ignore if duplicate
     if (this.alerts.find((m) => m.text === alert.text)) {

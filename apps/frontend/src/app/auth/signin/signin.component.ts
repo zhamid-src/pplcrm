@@ -61,7 +61,9 @@ export class SignInComponent {
 
   public async signIn() {
     if (this.form.invalid)
-      return this.setError("Please enter a valid email and password.");
+      return this.alertSvc.showError(
+        "Please enter a valid email and password.",
+      );
 
     this.processing.set(true);
 
@@ -70,7 +72,7 @@ export class SignInComponent {
 
     return this.authService
       .signIn({ email, password })
-      .catch((err) => this.setError(err.message))
+      .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }
 
@@ -89,10 +91,6 @@ export class SignInComponent {
 
   public getVisibilityIcon() {
     return this.hidePassword ? "eye-slash" : "eye";
-  }
-
-  protected setError(text: string) {
-    this.alertSvc.show({ text, type: "error" });
   }
   protected hasError() {
     return this.getError()?.length;

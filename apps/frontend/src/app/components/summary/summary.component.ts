@@ -23,12 +23,9 @@ export class SummaryComponent {
   }
 
   Info() {
-    this.alert.show({
-      text: "This is an info alert",
-      type: "info",
-      title: "INFO",
-      OKBtn: "OK",
-    });
+    this.alert.showInfo(
+      "This is an <a href='/console/households' class='link'>info</a> alert",
+    );
   }
   Success() {
     this.alert.show({
