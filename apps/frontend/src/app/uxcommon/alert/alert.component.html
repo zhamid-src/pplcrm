@@ -1,0 +1,32 @@
+<div
+  class="alert hidden rounded-none"
+  [class.alert-info]="type === 'info'"
+  [class.alert-warning]="type === 'warning'"
+  [class.alert-success]="type === 'success'"
+  [class.alert-error]="type === 'error'"
+  [class.hidden]="!message"
+>
+  <pc-icon [name]="icon()" class="mr-2"></pc-icon>
+  <div>
+    <h3 class="font-bold" [class.hidden]="!title">{{ title }}</h3>
+    <div [class.text-sm]="!!title">{{ message }}</div>
+  </div>
+  <button
+    class="btn btn-sm"
+    [class.hidden]="!OKBtn"
+    [class.btn-info]="type === 'info'"
+    [class.btn-warning]="type === 'warning'"
+    [class.btn-success]="type === 'success'"
+    [class.btn-error]="type === 'error'"
+    (click)="dismiss()"
+  >
+    {{ OKBtn }}
+  </button>
+  <button
+    class="btn btn-sm btn-primary"
+    [class.hidden]="!btn2"
+    (click)="btn2Click()"
+  >
+    {{ btn2 }}
+  </button>
+</div>

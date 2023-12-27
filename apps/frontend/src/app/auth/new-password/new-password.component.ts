@@ -8,10 +8,11 @@ import {
   Validators,
 } from "@angular/forms";
 import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
+import { AlertService } from "@services/alert.service";
 import { AuthService } from "@services/auth.service.js";
-import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { PasswordCheckerModule } from "@triangular/password-checker";
 import { TRPCError } from "@trpc/server";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { firstValueFrom } from "rxjs";
 
@@ -25,12 +26,15 @@ import { firstValueFrom } from "rxjs";
     RouterLink,
     PasswordCheckerModule,
     IconsComponent,
+    AlertComponent,
   ],
   templateUrl: "./new-password.component.html",
   styleUrl: "./new-password.component.scss",
 })
 export class NewPasswordComponent implements OnInit {
   private code: string | null = null;
+
+  protected success: string | undefined;
 
   private hidePassword = true;
 
@@ -46,7 +50,7 @@ export class NewPasswordComponent implements OnInit {
     private authService: AuthService,
     private router: Router,
     private route: ActivatedRoute,
-    private toast: PplCrmToastrService,
+    private alertSvc: AlertService,
   ) {}
 
   public get password() {
@@ -63,12 +67,15 @@ export class NewPasswordComponent implements OnInit {
     this.code = params["code"];
   }
 
+  protected setError(message: string) {
+    this.alertSvc.show(message, "error");
+  }
+
   public async submit() {
     if (!this.password?.valid) {
-      this.toast.error("Please check the password.");
+      this.setError("Please check the password.");
       return;
     }
-    this.toast.clear();
     this.processing.set(true);
 
     const error: TRPCError | null = await this.authService.resetPassword({
@@ -81,7 +88,10 @@ export class NewPasswordComponent implements OnInit {
     }
 
     this.processing.set(false);
-    this.toast.success("Password reset successfully. Please sign in again");
+    this.alertSvc.show(
+      "Password reset successfully. Please sign in again",
+      "success",
+    );
     this.router.navigateByUrl("signin");
   }
 

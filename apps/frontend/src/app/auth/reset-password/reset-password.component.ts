@@ -8,19 +8,27 @@ import {
   Validators,
 } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
+import { AlertService } from "@services/alert.service";
 import { AuthService } from "@services/auth.service.js";
-import { PplCrmToastrService } from "@services/pplcrm-toast.service";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
 
 @Component({
   selector: "pc-reset-password",
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    RouterLink,
+    AlertComponent,
+  ],
   templateUrl: "./reset-password.component.html",
   styleUrl: "./reset-password.component.scss",
 })
 export class ResetPasswordComponent {
   protected emailSent = signal(false);
   protected processing = signal(false);
+  protected success: string | undefined;
 
   public form = this.fb.group({
     email: ["", [Validators.required, Validators.email]],
@@ -28,9 +36,9 @@ export class ResetPasswordComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toast: PplCrmToastrService,
     private authService: AuthService,
     private router: Router,
+    private alertSvc: AlertService,
   ) {}
 
   public get email() {
@@ -50,19 +58,14 @@ export class ResetPasswordComponent {
       })
       .catch((err) => this.setError(err.message));
 
-    this.toast.success(
+    this.alertSvc.show(
       "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+      "success",
     );
     this.processing.set(false);
     this.router.navigateByUrl("signin");
   }
   protected setError(message: string) {
-    this.form?.setErrors({ message });
-  }
-  protected hasError() {
-    return this.form?.errors && this.form?.errors["message"]?.length;
-  }
-  protected getError() {
-    return this.form?.errors ? this.form?.errors["message"] : null;
+    this.alertSvc.show(message, "error");
   }
 }

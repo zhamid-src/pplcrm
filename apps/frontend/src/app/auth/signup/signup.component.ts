@@ -9,8 +9,10 @@ import {
 } from "@angular/forms";
 import { Router, RouterModule } from "@angular/router";
 import { signUpInputType } from "@common";
+import { AlertService } from "@services/alert.service";
 import { AuthService } from "@services/auth.service.js";
 import { PasswordCheckerModule } from "@triangular/password-checker";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 @Component({
@@ -24,6 +26,7 @@ import { IconsComponent } from "@uxcommon/icons/icons.component";
     ReactiveFormsModule,
     IconsComponent,
     RouterModule,
+    AlertComponent,
   ],
   templateUrl: "./signup.component.html",
   styleUrl: "./signup.component.scss",
@@ -46,6 +49,7 @@ export class SignUpComponent {
     private fb: FormBuilder,
     private authService: AuthService,
     private router: Router,
+    private alertSvc: AlertService,
   ) {}
 
   public get email() {
@@ -105,12 +109,6 @@ export class SignUpComponent {
     return this.hidePassword ? "eye-slash" : "eye";
   }
   protected setError(message: string) {
-    this.form?.setErrors({ message });
-  }
-  protected hasError() {
-    return this.form?.errors && this.form?.errors["message"]?.length;
-  }
-  protected getError() {
-    return this.form?.errors ? this.form?.errors["message"] : null;
+    this.alertSvc.show(message, "error");
   }
 }
