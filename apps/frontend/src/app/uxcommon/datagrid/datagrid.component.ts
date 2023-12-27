@@ -16,7 +16,7 @@ import {
   RedoStartedEvent,
   UndoStartedEvent,
 } from "ag-grid-community";
-import { EditCellRendererComponent } from "./edit-cell-renderer/edit-cell-renderer.component";
+import { DeleteCellRendererComponent } from "./delete-cell-renderer/delete-cell-renderer.component";
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
 
 @Component({
@@ -94,10 +94,10 @@ export class DatagridComponent<T> {
     {
       filter: false,
       sortable: false,
-      cellClass: "edit-cell",
+      cellClass: "delete-cell",
       resizable: false,
       maxWidth: 75,
-      cellRenderer: EditCellRendererComponent,
+      cellRenderer: DeleteCellRendererComponent,
       suppressCellFlash: true,
     },
   ];
