@@ -58,14 +58,14 @@ export class ResetPasswordComponent {
       })
       .catch((err) => this.setError(err.message));
 
-    this.alertSvc.show(
-      "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
-      "success",
-    );
+    this.alertSvc.show({
+      text: "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+      type: "success",
+    });
     this.processing.set(false);
     this.router.navigateByUrl("signin");
   }
-  protected setError(message: string) {
-    this.alertSvc.show(message, "error");
+  protected setError(text: string) {
+    this.alertSvc.show({ text, type: "error" });
   }
 }

@@ -91,9 +91,8 @@ export class SignInComponent {
     return this.hidePassword ? "eye-slash" : "eye";
   }
 
-  protected setError(message: string) {
-    // this.form?.setErrors({ message });
-    this.alertSvc.show(message, "error");
+  protected setError(text: string) {
+    this.alertSvc.show({ text, type: "error" });
   }
   protected hasError() {
     return this.getError()?.length;

@@ -1,6 +1,7 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 import { RouterModule } from "@angular/router";
+import { AlertService } from "@services/alert.service";
 import { SidebarService } from "@services/sidebar.service";
 import { AlertComponent } from "@uxcommon/alert/alert.component";
 import { BreadcrumbComponent } from "@uxcommon/breadcrumb/breadcrumb.component";
@@ -22,7 +23,10 @@ import { SidebarComponent } from "../sidebar/sidebar.component";
   styleUrl: "./dashboard.component.scss",
 })
 export class DashboardComponent {
-  constructor(private sidebarSvc: SidebarService) {}
+  constructor(
+    private sidebarSvc: SidebarService,
+    private alertSvc: AlertService,
+  ) {}
   isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
   }

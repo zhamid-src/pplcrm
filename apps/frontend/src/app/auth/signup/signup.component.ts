@@ -108,7 +108,7 @@ export class SignUpComponent {
   public getVisibilityIcon() {
     return this.hidePassword ? "eye-slash" : "eye";
   }
-  protected setError(message: string) {
-    this.alertSvc.show(message, "error");
+  protected setError(text: string) {
+    this.alertSvc.show({ text, type: "error" });
   }
 }
