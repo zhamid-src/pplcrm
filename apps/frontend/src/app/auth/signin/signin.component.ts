@@ -10,9 +10,10 @@ import {
 } from "@angular/forms";
 
 import { Router, RouterLink } from "@angular/router";
+import { AlertService } from "@services/alert.service";
 import { AuthService } from "@services/auth.service.js";
-import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { TokenService } from "@services/token.service.js";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
 
 @Component({
   selector: "pc-login",
@@ -23,6 +24,7 @@ import { TokenService } from "@services/token.service.js";
     ReactiveFormsModule,
     RouterLink,
     IconsComponent,
+    AlertComponent,
   ],
   templateUrl: "./signin.component.html",
   styleUrl: "./signin.component.scss",
@@ -39,18 +41,13 @@ export class SignInComponent {
 
   constructor(
     private fb: FormBuilder,
-    private toast: PplCrmToastrService,
     private authService: AuthService,
     private tokenService: TokenService,
     private router: Router,
+    private alertSvc: AlertService,
   ) {
     effect(() => {
-      if (this.authService.user()) {
-        this.toast.success(
-          `Welcome back, ${this.authService.user()?.first_name}.`,
-        );
-        this.router.navigate(["console", "summary"]);
-      }
+      if (this.authService.user()) this.router.navigate(["console", "summary"]);
     });
   }
 
@@ -66,7 +63,6 @@ export class SignInComponent {
     if (this.form.invalid)
       return this.setError("Please enter a valid email and password.");
 
-    this.toast.clear();
     this.processing.set(true);
 
     const email = this.email!.value!;
@@ -96,10 +92,11 @@ export class SignInComponent {
   }
 
   protected setError(message: string) {
-    this.form?.setErrors({ message });
+    // this.form?.setErrors({ message });
+    this.alertSvc.show(message, "error");
   }
   protected hasError() {
-    return this.form?.errors && this.form?.errors["message"]?.length;
+    return this.getError()?.length;
   }
   protected getError() {
     return this.form?.errors ? this.form?.errors["message"] : null;

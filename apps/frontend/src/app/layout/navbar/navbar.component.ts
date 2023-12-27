@@ -2,8 +2,8 @@ import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 
 import { FormsModule } from "@angular/forms";
+import { AlertService } from "@services/alert.service";
 import { AuthService } from "@services/auth.service";
-import { PplCrmToastrService } from "@services/pplcrm-toast.service";
 import { SearchService } from "@services/search.service";
 import { SidebarService } from "@services/sidebar.service";
 import { ThemeService } from "@services/theme.service";
@@ -27,7 +27,7 @@ export class NavbarComponent {
     private themeSvc: ThemeService,
     private searchSvc: SearchService,
     private sideBarSvc: SidebarService,
-    private toast: PplCrmToastrService,
+    private alertSvc: AlertService,
   ) {}
 
   protected showSearchonMobile() {
@@ -46,7 +46,7 @@ export class NavbarComponent {
 
   public async signOut() {
     await this.auth.signOut();
-    this.toast.info("You have been signed out.");
+    this.alertSvc.show("Signed out", "success");
   }
 
   public isMobileOpen() {
