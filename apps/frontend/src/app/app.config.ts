@@ -8,7 +8,6 @@ import { APP_INITIALIZER, ApplicationConfig } from "@angular/core";
 import { provideAnimations } from "@angular/platform-browser/animations";
 import { RouteReuseStrategy, provideRouter } from "@angular/router";
 import { AuthService } from "@services/auth.service";
-import { provideToastr } from "ngx-toastr";
 import { appRoutes } from "./app.routes";
 import { CustomRouteReuseStrategy } from "./components/route.reuse.strategy";
 import { httpInterceptor } from "./interceptors/http.interceptor";
@@ -38,15 +37,6 @@ export const appConfig: ApplicationConfig = {
       useClass: ErrorCatchingInterceptor,
       multi: true,
     },
-    provideToastr({
-      preventDuplicates: true,
-      iconClasses: {
-        error: "toast-error bg-error",
-        info: "toast-info bg-info",
-        success: "toast-success bg-success",
-        warning: "toast-warning bg-warning",
-      },
-    }),
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: APP_INITIALIZER,
