@@ -154,7 +154,7 @@ export class AuthHelper {
     if (!user || !bcrypt.compareSync(input.password, user.password)) {
       throw new TRPCError({
         message:
-          "Sorry this email or password is not valid. If you forgot your password, you can try recovering it.",
+          "Sorry this email or password is not valid. If you forgot your password, you can reset it.",
         code: "UNAUTHORIZED",
       });
     }
