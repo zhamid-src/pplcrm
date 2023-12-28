@@ -11,13 +11,15 @@ export class HouseholdOperator extends BaseOperator<TableType.households> {
     options: QueryParams<TableType.households> = {},
   ): Promise<Partial<TableType.households>[]> {
     options.columns;
-    let query = this.selectFrom();
-    query = query
+
+    const result = this.selectFrom()
       .select(sql<string>`households.*`.as("households"))
       .select(sql<string>`count(persons)`.as("person_count"))
-      .innerJoin("persons", "households.id", "persons.household_id")
-      .groupBy(["households.id", "households.tenant_id"]);
+      .leftJoin("persons", "households.id", "persons.household_id")
+      .groupBy(["households.id", "households.tenant_id"])
+      .execute();
 
-    return (await query.execute()) as Partial<TableType.households>[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return result as any as Partial<TableType.households>[];
   }
 }
