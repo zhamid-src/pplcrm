@@ -17,8 +17,8 @@ import {
   UndoStartedEvent,
 } from "ag-grid-community";
 import { Models } from "common/src/lib/kysely.models";
-import { DeleteCellRendererComponent } from "./delete-cell-renderer/delete-cell-renderer.component";
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
+import { DeleteCellRendererComponent } from "./shortcut-cell-renderer/shortcut-cell-renderer.component";
 
 @Component({
   selector: "pc-datagrid",
@@ -98,7 +98,7 @@ export class DatagridComponent<T extends keyof Models> {
     {
       filter: false,
       sortable: false,
-      cellClass: "delete-cell",
+      cellClass: "shortcut-cell",
       resizable: false,
       minWidth: 50,
       maxWidth: 60,

@@ -7,11 +7,11 @@ import { Models } from "common/src/lib/kysely.models";
 import { DatagridComponent } from "../datagrid.component";
 
 @Component({
-  selector: "pc-delete-cell-renderer",
+  selector: "pc-shortcut-cell-renderer",
   standalone: true,
   imports: [CommonModule, IconsComponent],
-  templateUrl: "./delete-cell-renderer.component.html",
-  styleUrl: "./delete-cell-renderer.component.scss",
+  templateUrl: "./shortcut-cell-renderer.component.html",
+  styleUrl: "./shortcut-cell-renderer.component.scss",
   encapsulation: ViewEncapsulation.None,
 })
 export class DeleteCellRendererComponent<T extends keyof Models>
