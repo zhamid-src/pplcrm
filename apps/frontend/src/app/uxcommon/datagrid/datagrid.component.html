@@ -87,16 +87,7 @@
           tabindex="0"
           class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
         >
-          <li
-            [class.disabled]="disableEdit"
-            (click)="!disableEdit && emitEdit()"
-          >
-            <a>
-              <pc-icon name="pencil-square" />
-              Edit
-            </a>
-          </li>
-          <li [class.disabled]="!onDelete" (click)="deleteHoveredRow()">
+          <li [class.disabled]="!onDelete" (click)="deleteSelectedRows()">
             <a>
               <pc-icon name="trash" />
               Delete
@@ -137,6 +128,23 @@
       class="modal-backdrop float-right flex flex-row gap-2"
     >
       <button class="btn btn-primary" (click)="exportToCSV()">Accept</button>
+      <button class="btn">Cancel</button>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="confirmDelete" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Are you sure?</h3>
+    <p class="py-2 font-light">
+      The data will be deleted permanantly. You cannot undo this.
+    </p>
+
+    <form
+      method="dialog"
+      class="modal-backdrop float-right flex flex-row gap-2"
+    >
+      <button class="btn btn-error" (click)="deleteSelectedRows()">Yes</button>
       <button class="btn">Cancel</button>
     </form>
   </div>

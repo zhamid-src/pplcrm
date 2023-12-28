@@ -3,6 +3,7 @@ import { Component, ViewEncapsulation } from "@angular/core";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { ICellRendererAngularComp } from "ag-grid-angular";
 import { ICellRendererParams } from "ag-grid-community";
+import { Models } from "common/src/lib/kysely.models";
 import { DatagridComponent } from "../datagrid.component";
 
 @Component({
@@ -13,7 +14,7 @@ import { DatagridComponent } from "../datagrid.component";
   styleUrl: "./delete-cell-renderer.component.scss",
   encapsulation: ViewEncapsulation.None,
 })
-export class DeleteCellRendererComponent<T>
+export class DeleteCellRendererComponent<T extends keyof Models>
   implements ICellRendererAngularComp
 {
   private parent: DatagridComponent<T> | undefined;
@@ -27,6 +28,6 @@ export class DeleteCellRendererComponent<T>
   }
 
   delete() {
-    this.parent?.deleteHoveredRow();
+    this.parent?.confirmDelete();
   }
 }

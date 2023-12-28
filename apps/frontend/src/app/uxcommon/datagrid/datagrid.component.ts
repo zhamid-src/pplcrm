@@ -16,6 +16,7 @@ import {
   RedoStartedEvent,
   UndoStartedEvent,
 } from "ag-grid-community";
+import { Models } from "common/src/lib/kysely.models";
 import { DeleteCellRendererComponent } from "./delete-cell-renderer/delete-cell-renderer.component";
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
 
@@ -26,7 +27,7 @@ import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
   templateUrl: "./datagrid.component.html",
   styleUrl: "./datagrid.component.scss",
 })
-export class DatagridComponent<T> {
+export class DatagridComponent<T extends keyof Models> {
   protected api: GridApi<Partial<T>> | undefined;
   protected processing = false;
 
@@ -46,8 +47,12 @@ export class DatagridComponent<T> {
   @Output() add = new EventEmitter();
   @Output() importCSV = new EventEmitter();
   @Output() filter = new EventEmitter();
-  @Output() edit = new EventEmitter();
-  @Input() onDelete: ((row: Partial<T>) => Promise<boolean>) | undefined;
+  @Input() onDelete:
+    | ((row: (Partial<T> & { id: number })[]) => Promise<boolean>)
+    | undefined;
+  @Input() onEdit:
+    | ((id: number, row: Partial<T>) => Promise<boolean>)
+    | undefined;
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     context: this,
@@ -55,7 +60,6 @@ export class DatagridComponent<T> {
     undoRedoCellEditing: true,
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
-    // editType: "fullRow",
     enableCellChangeFlash: true,
     pagination: true,
     paginationAutoPageSize: true,
@@ -141,8 +145,41 @@ export class DatagridComponent<T> {
     this.refreshGrid();
   }
 
-  onCellValueChanged(row: CellValueChangedEvent<Partial<T>>) {
-    this.api?.flashCells({ rowNodes: [row.node!], columns: [row.column] });
+  private createPayload<T>(
+    row: Partial<T>,
+    key: keyof T,
+  ): Partial<Pick<T, typeof key>> {
+    const payload: Partial<Pick<T, typeof key>> = {};
+
+    // Check if the key exists in the row and is not undefined
+    if (key in row && row[key] !== undefined) {
+      payload[key] = row[key];
+    }
+
+    return payload;
+  }
+
+  async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
+    if (!this.onEdit) return;
+
+    const key = event.colDef.field as keyof T;
+    const row = event.data as Partial<T> & { id: number };
+    const payload = this.createPayload(row, key);
+
+    this.processing = true;
+    const edited = await this.onEdit(Number(row.id), payload);
+    if (!edited) {
+      this.alertSvc.showError(
+        "Could not edit the row. Please try again later.",
+      );
+      this.undo();
+    } else {
+      this.api?.flashCells({
+        rowNodes: [event.node!],
+        columns: [event.column],
+      });
+    }
+    this.processing = false;
   }
   public onCellMouseOver(params: CellMouseOverEvent<Partial<T>>) {
     this.hoveredRow = params.rowIndex;
@@ -200,30 +237,39 @@ export class DatagridComponent<T> {
   protected applyFilter() {
     this.filter.emit();
   }
-  protected emitEdit() {
-    this.edit.emit();
+
+  confirmDelete() {
+    if (!this.onDelete) {
+      return this.alertSvc.showError(
+        "You do not have the permission to delete rows from this table.",
+      );
+    }
+
+    const dialog = document.querySelector(
+      "#confirmDelete",
+    ) as HTMLDialogElement;
+    dialog.showModal();
   }
 
-  public async deleteHoveredRow() {
-    if (!this.onDelete) {
-      return;
+  protected async deleteSelectedRows() {
+    const rows = this.api?.getSelectedRows() as (Partial<T> & { id: number })[];
+    if (!rows?.length) {
+      return this.alertSvc.showError(
+        "Please select at least one row to delete.",
+      );
     }
 
-    if (this.hoveredRow !== null) {
-      this.processing = true;
+    this.processing = true;
 
-      const deleted = await this.onDelete(this.rowData[this.hoveredRow!]);
-      if (!deleted) {
-        this.alertSvc.showError(
-          "Could not delete the row. Please try again later.",
-        );
-      } else {
-        this.api?.applyTransaction({
-          remove: [this.rowData[this.hoveredRow!]],
-        });
-        this.rowData.splice(this.hoveredRow!, 1);
-      }
-      this.processing = false;
+    const deleted = await this.onDelete!(rows);
+    if (!deleted) {
+      this.alertSvc.showError(
+        "Could not delete the row. Please try again later.",
+      );
+    } else {
+      this.api?.applyTransaction({ remove: rows });
+      rows.forEach((row) => this.rowData.splice(row.id!, 1));
     }
+    this.processing = false;
   }
 }

@@ -52,3 +52,21 @@ export const addTagObj = z.object({
   description: z.string(),
 });
 export type addTagType = z.infer<typeof addTagObj>;
+
+export const UpdatePersonsObj = z.object({
+  tenant_id: z.string().optional(),
+  campaign_id: z.number().optional(),
+  household_id: z.number().optional(),
+  createdby_id: z.number().optional(),
+  email: z.string().optional(),
+  email2: z.string().optional(),
+  first_name: z.string().optional(),
+  middle_names: z.string().optional(),
+  last_name: z.string().optional(),
+  home_phone: z.string().optional(),
+  mobile: z.string().optional(),
+  file_id: z.number().optional(),
+  notes: z.string().optional(),
+  json: z.string().optional(),
+});
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
