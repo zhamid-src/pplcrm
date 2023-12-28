@@ -35,6 +35,12 @@ export class SidebarService {
       pathMatchExact: true,
     },
     {
+      name: `My Tasks`,
+      code: "tasks",
+      route: "/console/tasks",
+      icon: "rectangle-stack",
+    },
+    {
       name: `PEOPLE`,
       code: "peopleheading",
       type: "subheading",
