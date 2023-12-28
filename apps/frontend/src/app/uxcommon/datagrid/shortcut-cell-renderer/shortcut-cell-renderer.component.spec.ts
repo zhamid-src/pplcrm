@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { DeleteCellRendererComponent } from "./delete-cell-renderer.component";
+import { DeleteCellRendererComponent } from "./shortcut-cell-renderer.component";
 
 describe("DeleteCellRendererComponent", () => {
   let component: DeleteCellRendererComponent;
