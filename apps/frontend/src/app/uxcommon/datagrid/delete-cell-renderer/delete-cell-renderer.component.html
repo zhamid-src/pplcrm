@@ -1,7 +1,13 @@
-<div class="delete-cell invisible pt-2.5 text-gray-500">
+<div class="delete-cell w- invisible flex flex-row gap-2 pt-3">
+  <pc-icon
+    name="arrow-top-right-on-square"
+    [size]="4"
+    class="hover:text-primary text-left"
+    (click)="open()"
+  />
   <pc-icon
     name="trash"
-    [size]="5"
+    [size]="4"
     class="hover:text-error text-left"
     (click)="delete()"
   />
