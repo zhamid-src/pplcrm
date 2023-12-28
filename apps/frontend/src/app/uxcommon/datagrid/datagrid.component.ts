@@ -100,7 +100,8 @@ export class DatagridComponent<T extends keyof Models> {
       sortable: false,
       cellClass: "delete-cell",
       resizable: false,
-      maxWidth: 75,
+      minWidth: 50,
+      maxWidth: 60,
       cellRenderer: DeleteCellRendererComponent,
       suppressCellFlash: true,
     },
@@ -238,6 +239,9 @@ export class DatagridComponent<T extends keyof Models> {
     this.filter.emit();
   }
 
+  open() {
+    console.log("opening");
+  }
   confirmDelete() {
     if (!this.onDelete) {
       return this.alertSvc.showError(

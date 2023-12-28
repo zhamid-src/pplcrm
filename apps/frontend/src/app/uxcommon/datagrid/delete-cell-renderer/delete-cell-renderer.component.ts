@@ -27,6 +27,10 @@ export class DeleteCellRendererComponent<T extends keyof Models>
     return false;
   }
 
+  open() {
+    this.parent?.open();
+  }
+
   delete() {
     this.parent?.confirmDelete();
   }
