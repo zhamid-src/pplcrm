@@ -22,7 +22,7 @@
   <!-- Sidebar content here -->
   @for (item of items; track item.name; let idx = $index) {
     <div
-      class="flex-none px-2 py-1"
+      class="flex-none px-2 py-0.5"
       [class.bg-base-200]="this.router.url === item['route']"
     >
       @if (item["type"] === "subheading") {
@@ -45,7 +45,6 @@
           <span
             class="pl-3 pt-1 group-hover:md:visible"
             [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-            [class.w-0]="!this.isDrawerFull()"
           >
             {{ item["name"] }}</span
           ></a
