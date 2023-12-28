@@ -38,6 +38,14 @@ export class BaseOperator<T extends keyof Models> {
     return db.deleteFrom(this.table).where("id", "=", id).execute();
   }
 
+  public async deleteMany(ids: GetOperandType<T, "update", "id">[]) {
+    return db
+      .deleteFrom(this.table)
+      .where("id", "in", ids)
+      .returningAll()
+      .execute();
+  }
+
   public getAll(options?: QueryParams<T>) {
     return this.getQuery(options).execute() as Promise<Partial<T>[]>;
   }

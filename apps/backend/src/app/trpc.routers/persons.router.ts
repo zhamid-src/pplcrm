@@ -1,4 +1,4 @@
-import { getAllOptions } from "@common";
+import { UpdatePersonsObj, getAllOptions } from "@common";
 import { z } from "zod";
 import { authProcedure, router } from "../../trpc";
 import { PersonsHelper } from "../trpc.handler/persons.helper";
@@ -15,6 +15,15 @@ export const personsRouter = router({
   getAllWithHouseholds: authProcedure
     .input(getAllOptions)
     .query(({ input }) => personsHelper.getAllWithHouseholds(input)),
+  update: authProcedure
+    .input(z.object({ id: z.number(), data: UpdatePersonsObj }))
+    .mutation(({ input }) => personsHelper.update(input.id, input.data)),
+  delete: authProcedure
+    .input(z.number())
+    .mutation(({ input }) => personsHelper.delete(input)),
+  deleteMany: authProcedure
+    .input(z.array(z.number()))
+    .mutation(({ input }) => personsHelper.deleteMany(input)),
 });
 
 export type PersonsRouter = typeof personsRouter;

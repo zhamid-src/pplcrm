@@ -186,13 +186,10 @@ type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
-export interface NonTenantRecordType {
+export interface RecordType {
   id: Generated<bigint>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
-}
-
-export interface RecordType extends NonTenantRecordType {
   tenant_id: bigint;
 }
 
@@ -261,7 +258,7 @@ interface Households extends RecordType {
   people_count: string | null;
 }
 
-interface Tenants extends NonTenantRecordType {
+interface Tenants extends Omit<RecordType, "tenant_id"> {
   name: string;
   admin_id: bigint | null;
   billing_street1: string | null;

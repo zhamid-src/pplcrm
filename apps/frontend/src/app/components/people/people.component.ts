@@ -1,5 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
+import { UpdatePersonsType } from "@common";
 import { PersonsService, TYPE } from "@services/persons.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
@@ -41,9 +42,18 @@ export class PeopleComponent {
     this.personsSvc.abort();
   }
 
-  protected async delete(row: Partial<TYPE>) {
-    console.log(row);
-    await new Promise((f) => setTimeout(f, 3000));
-    return false;
-  }
+  delete = async (rows: (Partial<TYPE> & { id: number })[]) => {
+    const ids = rows.map((row) => Number(row.id));
+    return await this.personsSvc
+      .deleteMany(ids)
+      .then(() => true)
+      .catch(() => false);
+  };
+
+  edit = async (id: number, data: Partial<TYPE>) => {
+    return await this.personsSvc
+      .update(id, data as unknown as UpdatePersonsType)
+      .then(() => true)
+      .catch(() => false);
+  };
 }
