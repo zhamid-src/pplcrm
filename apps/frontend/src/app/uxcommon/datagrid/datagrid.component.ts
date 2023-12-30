@@ -6,7 +6,6 @@ import { ThemeService } from "@services/theme.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { AgGridModule } from "ag-grid-angular";
 import {
-  CellMouseOverEvent,
   CellValueChangedEvent,
   ColDef,
   GetRowIdParams,
@@ -48,10 +47,10 @@ export class DatagridComponent<T extends keyof Models> {
   @Output() importCSV = new EventEmitter();
   @Output() filter = new EventEmitter();
   @Input() onDelete:
-    | ((row: (Partial<T> & { id: number })[]) => Promise<boolean>)
+    | ((rows: (Partial<T> & { id: number })[]) => Promise<boolean>)
     | undefined;
   @Input() onEdit:
-    | ((id: number, row: Partial<T>) => Promise<boolean>)
+    | ((id: number, data: Partial<T>) => Promise<boolean>)
     | undefined;
 
   defaultGridOptions: GridOptions<Partial<T>> = {
@@ -70,15 +69,12 @@ export class DatagridComponent<T extends keyof Models> {
     },
     enableFillHandle: true,
     onCellValueChanged: this.onCellValueChanged.bind(this),
-    onCellMouseOver: this.onCellMouseOver.bind(this),
     onUndoStarted: this.onUndoStarted.bind(this),
     onUndoEnded: this.onUndoEnded.bind(this),
     onRedoStarted: this.onRedoStarted.bind(this),
     onRedoEnded: this.onRedoEnded.bind(this),
     loadingOverlayComponent: LoadingOverlayComponent,
   };
-
-  private hoveredRow: number | null = null;
 
   protected combinedGridOptions: GridOptions<Partial<T>> = {
     ...this.defaultGridOptions,
@@ -87,6 +83,7 @@ export class DatagridComponent<T extends keyof Models> {
 
   // Checkbox and delete icon columns
   protected colDefsWithEdit: ColDef[] = [
+    /*
     {
       checkboxSelection: true,
       filter: false,
@@ -95,6 +92,7 @@ export class DatagridComponent<T extends keyof Models> {
       maxWidth: 30,
       suppressCellFlash: true,
     },
+    */
     {
       filter: false,
       sortable: false,
@@ -163,6 +161,7 @@ export class DatagridComponent<T extends keyof Models> {
   async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     if (!this.onEdit) return;
 
+    // TODO: fix the type
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: number };
     const payload = this.createPayload(row, key);
@@ -181,9 +180,6 @@ export class DatagridComponent<T extends keyof Models> {
       });
     }
     this.processing = false;
-  }
-  public onCellMouseOver(params: CellMouseOverEvent<Partial<T>>) {
-    this.hoveredRow = params.rowIndex;
   }
 
   public onUndoStarted(event: UndoStartedEvent) {
@@ -274,6 +270,9 @@ export class DatagridComponent<T extends keyof Models> {
       this.api?.applyTransaction({ remove: rows });
       rows.forEach((row) => this.rowData.splice(row.id!, 1));
     }
+
+    // put rows in undo
+    //TODO:
     this.processing = false;
   }
 }

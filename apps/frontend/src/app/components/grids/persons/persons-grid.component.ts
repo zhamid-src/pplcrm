@@ -6,13 +6,13 @@ import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
 
 @Component({
-  selector: "pc-people",
+  selector: "pc-persons-grid",
   standalone: true,
   imports: [CommonModule, DatagridComponent],
-  templateUrl: "./people.component.html",
-  styleUrl: "./people.component.scss",
+  templateUrl: "./persons-grid.component.html",
+  styleUrl: "./persons-grid.component.scss",
 })
-export class PeopleComponent {
+export class PersonsGridComponent {
   protected colDefs: ColDef[] = [
     {
       field: "first_name",
@@ -23,8 +23,16 @@ export class PeopleComponent {
     { field: "last_name", headerName: "Last Name", editable: true },
     { field: "email", headerName: "Email", editable: true },
     { field: "mobile", headerName: "Mobile", editable: true },
-    { field: "street1", headerName: "Street" },
-    { field: "city", headerName: "City" },
+    {
+      field: "street1",
+      headerName: "Street",
+      cellClass: "text-gray-500 cursor-auto",
+    },
+    {
+      field: "city",
+      headerName: "City",
+      cellClass: "text-gray-500 cursor-auto",
+    },
     { field: "notes", headerName: "Notes", editable: true },
   ];
 
@@ -37,7 +45,6 @@ export class PeopleComponent {
     const data = await this.personsSvc.getAllWithHouseholds({}, forced);
     this.rowData = data;
   }
-
   public abortRefresh() {
     this.personsSvc.abort();
   }

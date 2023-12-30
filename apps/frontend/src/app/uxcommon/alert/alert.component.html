@@ -1,5 +1,5 @@
-<div>
-  @for (alert of alerts; track alert) {
+<div class="sticky z-50">
+  @for (alert of alertSvc.alerts; track alert) {
     <div
       class="alert hidden rounded-none"
       [class.hidden]="!alert.text"
@@ -10,9 +10,9 @@
     >
       <pc-icon [name]="icon(alert.type!)" class="mr-2"></pc-icon>
       <div>
-        <h3 class="font-bold" [class.hidden]="!alert.title">
+        <h4 class="text-base font-normal" [class.hidden]="!alert.title">
           {{ alert.title }}
-        </h3>
+        </h4>
         <div
           class="font-light"
           [class.text-sm]="!!alert.title"

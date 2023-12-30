@@ -1,18 +1,19 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
-import { TYPE, TagsManagerService } from "@services/tagsmanager.service";
+import { AddTagType } from "@common";
+import { TYPE, TagsService } from "@services/tags.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
 
 @Component({
-  selector: "pc-tags-manager",
+  selector: "pc-tags-grid",
   standalone: true,
   imports: [CommonModule, DatagridComponent],
-  templateUrl: "./tags-manager.component.html",
-  styleUrl: "./tags-manager.component.scss",
+  templateUrl: "./tags-grid.component.html",
+  styleUrl: "./tags-grid.component.scss",
 })
-export class TagsManagerComponent {
+export class TagsGridComponent {
   protected colDefs: ColDef[] = [
     { field: "name", headerName: "Tag Name" },
     { field: "description", headerName: "Description" },
@@ -21,7 +22,7 @@ export class TagsManagerComponent {
   protected rowData: Partial<TYPE>[] = [];
 
   constructor(
-    private tagsSvc: TagsManagerService,
+    private tagsSvc: TagsService,
     private router: Router,
     private route: ActivatedRoute,
   ) {}
@@ -36,4 +37,19 @@ export class TagsManagerComponent {
   protected add() {
     this.router.navigate(["add"], { relativeTo: this.route });
   }
+
+  delete = async (rows: (Partial<TYPE> & { id: number })[]) => {
+    const ids = rows.map((row) => Number(row.id));
+    return await this.tagsSvc
+      .deleteMany(ids)
+      .then(() => true)
+      .catch(() => false);
+  };
+
+  edit = async (id: number, data: Partial<TYPE>) => {
+    return await this.tagsSvc
+      .update(id, data as unknown as AddTagType)
+      .then(() => true)
+      .catch(() => false);
+  };
 }

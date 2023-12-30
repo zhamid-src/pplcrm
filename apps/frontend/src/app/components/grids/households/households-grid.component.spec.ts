@@ -1,16 +1,16 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { TagsManagerComponent } from "./tags-manager.component";
+import { HouseholdsGridComponent } from "./households-grid.component";
 
-describe("TagsManagerComponent", () => {
-  let component: TagsManagerComponent;
-  let fixture: ComponentFixture<TagsManagerComponent>;
+describe("HouseholdsGridComponent", () => {
+  let component: HouseholdsGridComponent;
+  let fixture: ComponentFixture<HouseholdsGridComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [TagsManagerComponent],
+      imports: [HouseholdsGridComponent],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(TagsManagerComponent);
+    fixture = TestBed.createComponent(HouseholdsGridComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

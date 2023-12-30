@@ -1,4 +1,4 @@
-import { Component, effect } from "@angular/core";
+import { Component } from "@angular/core";
 import { RouterLink, RouterModule } from "@angular/router";
 import { ThemeService } from "@services/theme.service";
 
@@ -10,13 +10,5 @@ import { ThemeService } from "@services/theme.service";
   styleUrl: "./app.component.scss",
 })
 export class AppComponent {
-  protected theme = this.themeSvc.theme;
-
-  public title = "pplcrm";
-
-  constructor(private themeSvc: ThemeService) {
-    effect(() => {
-      this.theme = this.themeSvc.theme;
-    });
-  }
+  constructor(protected themeSvc: ThemeService) {}
 }

@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, Output, effect } from "@angular/core";
+import { Component, EventEmitter, Output } from "@angular/core";
 import { ALERTTYPE, AlertService } from "@services/alert.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
@@ -11,12 +11,9 @@ import { IconsComponent } from "@uxcommon/icons/icons.component";
   styleUrl: "./alert.component.scss",
 })
 export class AlertComponent {
-  protected alerts = this.alertSvc.alerts;
   @Output() btn2Action = new EventEmitter();
 
-  constructor(private alertSvc: AlertService) {
-    effect(() => (this.alerts = this.alertSvc.alerts));
-  }
+  constructor(protected alertSvc: AlertService) {}
 
   icon(type: ALERTTYPE) {
     return type === "success"
