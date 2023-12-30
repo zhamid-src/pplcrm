@@ -120,7 +120,7 @@ export class AuthHelper {
     }
 
     // set the reset code
-    const code = authUsers.addPasswordResetCode(user.id as unknown as bigint);
+    const code = authUsers.addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -159,11 +159,7 @@ export class AuthHelper {
       });
     }
 
-    return this.createTokens(
-      user.id as unknown as bigint,
-      user.tenant_id,
-      user.first_name,
-    );
+    return this.createTokens(user.id, user.tenant_id, user.first_name);
   }
 
   public async signOut(auth: IAuthKeyPayload) {
@@ -231,9 +227,9 @@ export class AuthHelper {
 
     // Finally, add a profile for the user
     const profile = await profiles.add({
-      id: user.id as unknown as number,
+      id: user.id,
       tenant_id,
-      auth_id: user.id as unknown as number,
+      auth_id: user.id,
     } as OperationDataType<"profiles", "insert">);
 
     if (!profile) {
