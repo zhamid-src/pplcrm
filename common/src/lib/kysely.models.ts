@@ -318,7 +318,7 @@ interface AuthUsers extends RecordType {
   role: string | null;
   verified: boolean;
 }
-export type AuthUsersType = AuthUsers;
+export type AuthUsersType = Omit<AuthUsers, "id"> & { id: bigint };
 
 interface Profiles extends RecordType {
   auth_id: bigint;

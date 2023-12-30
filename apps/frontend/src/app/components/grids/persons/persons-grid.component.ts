@@ -58,6 +58,7 @@ export class PersonsGridComponent {
   };
 
   edit = async (id: number, data: Partial<TYPE>) => {
+    // TODO: is this the best way (cast as unknown as UpdatePersonsType)?
     return await this.personsSvc
       .update(id, data as unknown as UpdatePersonsType)
       .then(() => true)
