@@ -47,11 +47,11 @@ export const signInInputObj = z.object({
 });
 export type signInInputType = z.infer<typeof signInInputObj>;
 
-export const addTagObj = z.object({
+export const AddTagObj = z.object({
   name: z.string(),
   description: z.string(),
 });
-export type addTagType = z.infer<typeof addTagObj>;
+export type AddTagType = z.infer<typeof AddTagObj>;
 
 export const UpdatePersonsObj = z.object({
   tenant_id: z.string().optional(),

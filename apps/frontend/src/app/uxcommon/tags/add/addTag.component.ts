@@ -6,7 +6,9 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
-import { TagsManagerService } from "@services/tagsmanager.service";
+import { AddTagType } from "@common";
+import { AlertService } from "@services/alert.service";
+import { TagsService } from "@services/tags.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 @Component({
@@ -26,11 +28,17 @@ export class AddTagComponent {
 
   constructor(
     private fb: FormBuilder,
-    private tagSvc: TagsManagerService,
+    private tagSvc: TagsService,
+    private alertSvc: AlertService,
   ) {}
 
   async add() {
     this.processing.set(true);
-    //await this.tagSvc.add();
+    const formObj = this.form.getRawValue() as AddTagType;
+    await this.tagSvc
+      .add(formObj)
+      .then(() => this.alertSvc.showSuccess("Tag added successfully."))
+      .catch((err) => this.alertSvc.showError(err.message))
+      .finally(() => this.processing.set(false));
   }
 }

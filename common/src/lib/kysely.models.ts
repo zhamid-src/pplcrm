@@ -38,6 +38,8 @@ export interface Models {
 }
 
 // The above interface and the below tables should match
+// TODO: I think I need to figure out how to specify that
+// the enum values are keyof Models
 export enum TableType {
   campaigns = "campaigns",
   households = "households",

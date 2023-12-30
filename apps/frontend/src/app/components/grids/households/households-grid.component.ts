@@ -5,13 +5,13 @@ import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { ColDef } from "ag-grid-community";
 
 @Component({
-  selector: "pc-households",
+  selector: "pc-households-grid",
   standalone: true,
   imports: [CommonModule, DatagridComponent],
-  templateUrl: "./households.component.html",
-  styleUrl: "./households.component.scss",
+  templateUrl: "./households-grid.component.html",
+  styleUrl: "./households-grid.component.scss",
 })
-export class HouseholdsComponent {
+export class HouseholdsGridComponent {
   protected colDefs: ColDef[] = [
     { field: "person_count", headerName: "People in household" },
     { field: "street1", headerName: "Street" },

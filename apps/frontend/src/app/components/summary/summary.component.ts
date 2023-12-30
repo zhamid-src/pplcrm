@@ -14,7 +14,7 @@ import { TagsComponent } from "@uxcommon/tags/tags.component";
 export class SummaryComponent {
   tags = ["hello", "you", "fool"];
   readonly = false;
-  allowDetele = false;
+  allowDetele = true;
 
   constructor(private alert: AlertService) {}
 

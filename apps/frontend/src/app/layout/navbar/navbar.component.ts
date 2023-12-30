@@ -18,13 +18,12 @@ import { SwapComponent } from "@uxcommon/swap/swap.component";
   styleUrl: "./navbar.component.scss",
 })
 export class NavbarComponent {
-  protected initialTheme = this.themeSvc.theme;
   protected searchStr = "";
   protected searchOnMobile = false;
 
   constructor(
     private auth: AuthService,
-    private themeSvc: ThemeService,
+    protected themeSvc: ThemeService,
     private searchSvc: SearchService,
     private sideBarSvc: SidebarService,
     private alertSvc: AlertService,
