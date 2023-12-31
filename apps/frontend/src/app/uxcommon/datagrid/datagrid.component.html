@@ -15,7 +15,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableRefresh"
       [class.disabled]="disableRefresh"
-      (click)="!disableRefresh && refreshGrid(true)"
+      (click)="!disableRefresh && refresh()"
       data-tip="Refresh the grid"
     >
       <a>
@@ -106,7 +106,6 @@
   <ag-grid-angular
     class="flex-1 font-light"
     [class]="getTheme()"
-    [rowData]="rowData"
     [columnDefs]="colDefsWithEdit"
     (gridReady)="onGridReady($event)"
     [gridOptions]="combinedGridOptions"
