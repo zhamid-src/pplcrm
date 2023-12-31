@@ -59,7 +59,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     rowSelection: "multiple",
     animateRows: true,
     autoSizeStrategy: {
-      type: "fitCellContents",
+      type: "fitGridWidth",
     },
     onCellValueChanged: this.onCellValueChanged.bind(this),
     onUndoStarted: this.onUndoStarted.bind(this),

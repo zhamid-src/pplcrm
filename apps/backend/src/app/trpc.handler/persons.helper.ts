@@ -1,8 +1,5 @@
 import { UpdatePersonsType, getAllOptionsType } from "@common";
-import {
-  OperationDataType,
-  TableType,
-} from "../../../../../common/src/lib/kysely.models";
+import { TableType } from "../../../../../common/src/lib/kysely.models";
 import { QueryParams } from "../db.operators/base.operator";
 import { PersonsOperator } from "../db.operators/persons.operator";
 
@@ -31,10 +28,7 @@ export class PersonsHelper {
   }
 
   public async update(id: number, input: UpdatePersonsType) {
-    return persons.update(
-      BigInt(id),
-      input as Partial<OperationDataType<TableType.persons, "update">>,
-    );
+    return persons.update(BigInt(id), input);
   }
 
   public async delete(id: number) {

@@ -1,11 +1,15 @@
-import { ReferenceExpression, SelectQueryBuilder, sql } from "kysely";
+import {
+  ReferenceExpression,
+  SelectQueryBuilder,
+  UpdateObject,
+  sql,
+} from "kysely";
 import { InsertObjectOrList } from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
 import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 import {
   GetOperandType,
   GroupDataType,
   Models,
-  OperationDataType,
   TableColumnsType,
 } from "../../../../../common/src/lib/kysely.models";
 import { db } from "../kyselyinit";
@@ -77,7 +81,11 @@ export class BaseOperator<T extends keyof Models> {
 
   public async update(
     id: GetOperandType<T, "update", "id">,
-    row: Partial<OperationDataType<T, "update">>,
+    row: UpdateObject<
+      Models,
+      ExtractTableAlias<Models, T>,
+      ExtractTableAlias<Models, T>
+    >,
   ) {
     return db
       .updateTable(this.table)

@@ -49,7 +49,7 @@ export type signInInputType = z.infer<typeof signInInputObj>;
 
 export const AddTagObj = z.object({
   name: z.string(),
-  description: z.string(),
+  description: z.string().optional(),
 });
 export const UpdateTagObj = z.object({
   name: z.string().optional(),
@@ -59,10 +59,7 @@ export type AddTagType = z.infer<typeof AddTagObj>;
 export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 
 export const UpdatePersonsObj = z.object({
-  tenant_id: z.string().optional(),
-  campaign_id: z.number().optional(),
   household_id: z.number().optional(),
-  createdby_id: z.number().optional(),
   email: z.string().optional(),
   email2: z.string().optional(),
   first_name: z.string().optional(),
@@ -70,7 +67,6 @@ export const UpdatePersonsObj = z.object({
   last_name: z.string().optional(),
   home_phone: z.string().optional(),
   mobile: z.string().optional(),
-  file_id: z.number().optional(),
   notes: z.string().optional(),
   json: z.string().optional(),
 });
