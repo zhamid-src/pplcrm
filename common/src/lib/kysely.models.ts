@@ -192,6 +192,8 @@ export interface RecordType {
   id: Generated<bigint>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+  createdby_id: bigint | null;
+  updatedby_id: bigint | null;
   tenant_id: bigint;
 }
 
@@ -211,12 +213,11 @@ interface MapPeoplesTags extends RecordType {
 }
 
 interface Tags extends RecordType {
-  createdby_id: bigint;
   name: string;
   description: string | null;
 }
 
-interface Campaigns extends RecordType {
+interface Campaigns extends Omit<RecordType, "createdby_id"> {
   name: string;
   admin_id: bigint;
   createdby_id: bigint;
@@ -227,7 +228,7 @@ interface Campaigns extends RecordType {
   notes: string | null;
 }
 
-interface Persons extends RecordType {
+interface Persons extends Omit<RecordType, "createdby_id"> {
   campaign_id: bigint;
   household_id: bigint;
   createdby_id: bigint;
@@ -243,7 +244,7 @@ interface Persons extends RecordType {
   json: Json | null;
 }
 
-interface Households extends RecordType {
+interface Households extends Omit<RecordType, "createdby_id"> {
   campaign_id: bigint;
   createdby_id: bigint;
   file_id: bigint | null;
@@ -275,7 +276,6 @@ interface Tenants extends Omit<RecordType, "tenant_id"> {
   state: string | null;
   zip: string | null;
   country: string | null;
-  createdby_id: bigint | null;
   email: string | null;
   email2: string | null;
   json: Json | null;

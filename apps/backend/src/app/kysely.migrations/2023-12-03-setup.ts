@@ -349,6 +349,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("id", "bigserial", (col) => col.unique())
     .addColumn("tenant_id", "bigint", (col) => col.notNull())
     .addColumn("createdby_id", "bigint", (col) => col.notNull())
+    .addColumn("updatedby_id", "bigint", (col) => col.notNull())
     .addColumn("name", "text", (col) => col.notNull())
     .addColumn("description", "text", (col) => col.notNull())
     .addColumn("created_at", "timestamp", (col) =>

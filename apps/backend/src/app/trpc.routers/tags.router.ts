@@ -20,7 +20,7 @@ export const tagsRouter = router({
     .mutation(({ input, ctx }) => tags.add(input, ctx.auth)),
   update: authProcedure
     .input(z.object({ id: z.number(), data: UpdateTagObj }))
-    .mutation(({ input }) => tags.update(input.id, input.data)),
+    .mutation(({ input, ctx }) => tags.update(input.id, input.data, ctx.auth)),
   delete: authProcedure
     .input(z.number())
     .mutation(({ input }) => tags.delete(input)),
