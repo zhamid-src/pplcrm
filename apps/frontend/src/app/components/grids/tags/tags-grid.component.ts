@@ -1,10 +1,12 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { AddTagType } from "@common";
+import { AlertService } from "@services/alert.service";
+import { BaseGridService } from "@services/base-grid.service";
+import { SearchService } from "@services/search.service";
 import { TYPE, TagsService } from "@services/tags.service";
+import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
-import { ColDef } from "ag-grid-community";
 
 @Component({
   selector: "pc-tags-grid",
@@ -12,44 +14,21 @@ import { ColDef } from "ag-grid-community";
   imports: [CommonModule, DatagridComponent],
   templateUrl: "./tags-grid.component.html",
   styleUrl: "./tags-grid.component.scss",
+  providers: [{ provide: BaseGridService, useClass: TagsService }],
 })
-export class TagsGridComponent {
-  protected colDefs: ColDef[] = [
+export class TagsGridComponent extends DatagridComponent<TYPE, AddTagType> {
+  protected col = [
     { field: "name", headerName: "Tag Name" },
     { field: "description", headerName: "Description" },
     { field: "count", headerName: "Times Used" },
   ];
-  protected rowData: Partial<TYPE>[] = [];
 
   constructor(
-    private tagsSvc: TagsService,
-    private router: Router,
-    private route: ActivatedRoute,
-  ) {}
-
-  public async refresh() {
-    const data = await this.tagsSvc.getAll();
-    this.rowData = data;
+    themeSvc: ThemeService,
+    serachSvc: SearchService,
+    alertSvc: AlertService,
+    gridSvc: TagsService,
+  ) {
+    super(themeSvc, serachSvc, alertSvc, gridSvc);
   }
-  public abortRefresh() {
-    this.tagsSvc.abort();
-  }
-  protected add() {
-    this.router.navigate(["add"], { relativeTo: this.route });
-  }
-
-  delete = async (rows: (Partial<TYPE> & { id: number })[]) => {
-    const ids = rows.map((row) => Number(row.id));
-    return await this.tagsSvc
-      .deleteMany(ids)
-      .then(() => true)
-      .catch(() => false);
-  };
-
-  edit = async (id: number, data: Partial<TYPE>) => {
-    return await this.tagsSvc
-      .update(id, data as unknown as AddTagType)
-      .then(() => true)
-      .catch(() => false);
-  };
 }

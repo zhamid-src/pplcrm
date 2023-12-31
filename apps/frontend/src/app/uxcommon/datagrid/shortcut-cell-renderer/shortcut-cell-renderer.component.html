@@ -5,10 +5,12 @@
     class="hover:text-primary text-left"
     (click)="open()"
   />
-  <pc-icon
-    name="trash"
-    [size]="4"
-    class="hover:text-error text-left"
-    (click)="delete()"
-  />
+  @if (!disableDelete()) {
+    <pc-icon
+      name="trash"
+      [size]="4"
+      class="hover:text-error text-left"
+      (click)="delete()"
+    />
+  }
 </div>

@@ -1,9 +1,12 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
 import { UpdatePersonsType } from "@common";
+import { AlertService } from "@services/alert.service";
+import { BaseGridService } from "@services/base-grid.service";
 import { PersonsService, TYPE } from "@services/persons.service";
+import { SearchService } from "@services/search.service";
+import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
-import { ColDef } from "ag-grid-community";
 
 @Component({
   selector: "pc-persons-grid",
@@ -11,9 +14,13 @@ import { ColDef } from "ag-grid-community";
   imports: [CommonModule, DatagridComponent],
   templateUrl: "./persons-grid.component.html",
   styleUrl: "./persons-grid.component.scss",
+  providers: [{ provide: BaseGridService, useClass: PersonsService }],
 })
-export class PersonsGridComponent {
-  protected colDefs: ColDef[] = [
+export class PersonsGridComponent extends DatagridComponent<
+  TYPE,
+  UpdatePersonsType
+> {
+  protected col = [
     {
       field: "first_name",
       headerName: "First Name",
@@ -36,32 +43,12 @@ export class PersonsGridComponent {
     { field: "notes", headerName: "Notes", editable: true },
   ];
 
-  protected rowData: Partial<TYPE>[] = [];
-
-  constructor(private personsSvc: PersonsService) {}
-
-  public async refresh(input: { forced: boolean }) {
-    const forced = input?.forced || false;
-    const data = await this.personsSvc.getAllWithHouseholds({}, forced);
-    this.rowData = data;
+  constructor(
+    themeSvc: ThemeService,
+    serachSvc: SearchService,
+    alertSvc: AlertService,
+    gridSvc: PersonsService,
+  ) {
+    super(themeSvc, serachSvc, alertSvc, gridSvc);
   }
-  public abortRefresh() {
-    this.personsSvc.abort();
-  }
-
-  delete = async (rows: (Partial<TYPE> & { id: number })[]) => {
-    const ids = rows.map((row) => Number(row.id));
-    return await this.personsSvc
-      .deleteMany(ids)
-      .then(() => true)
-      .catch(() => false);
-  };
-
-  edit = async (id: number, data: Partial<TYPE>) => {
-    // TODO: is this the best way (cast as unknown as UpdatePersonsType)?
-    return await this.personsSvc
-      .update(id, data as unknown as UpdatePersonsType)
-      .then(() => true)
-      .catch(() => false);
-  };
 }

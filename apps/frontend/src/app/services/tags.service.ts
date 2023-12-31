@@ -1,14 +1,17 @@
 import { Injectable } from "@angular/core";
 import { AddTagType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
-import { TRPCService } from "./trpc.service";
+import { BaseGridService } from "./base-grid.service";
 
 export type TYPE = TableType.tags;
 
 @Injectable({
   providedIn: "root",
 })
-export class TagsService extends TRPCService<TYPE> {
+export class TagsService extends BaseGridService<TYPE, AddTagType> {
+  public refresh() {
+    return this.getAll();
+  }
   public getAll() {
     return this.api.tags.getAll.query(undefined, {
       signal: this.ac.signal,
@@ -20,7 +23,13 @@ export class TagsService extends TRPCService<TYPE> {
   public update(id: number, data: AddTagType) {
     return this.api.tags.update.mutate({ id, data });
   }
-  public deleteMany(ids: number[]) {
-    return this.api.tags.deleteMany.mutate(ids);
+  public getOneById(id: number) {
+    return this.api.tags.getOneById.query(BigInt(id));
+  }
+  public deleteMany(ids: number[]): Promise<boolean> {
+    return this.api.tags.deleteMany
+      .mutate(ids)
+      .then(() => true)
+      .catch(() => false);
   }
 }
