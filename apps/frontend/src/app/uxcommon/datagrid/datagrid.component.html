@@ -2,9 +2,9 @@
   <ul class="menu menu-horizontal flex flex-row pt-0">
     <li
       class="tooltip-accent"
-      [class.tooltip]="!disableAdd"
-      [class.disabled]="disableAdd"
-      (click)="!disableAdd && emitAdd()"
+      [class.tooltip]="addRoute"
+      [class.disabled]="!addRoute"
+      (click)="addRoute && add()"
       data-tip="Add"
     >
       <a>

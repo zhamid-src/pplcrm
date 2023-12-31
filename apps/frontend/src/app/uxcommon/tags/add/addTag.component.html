@@ -35,17 +35,29 @@
           class="input-pplcrm pl-11 text-sm"
         />
       </label>
-      <div>
+      <div class="flex flex-row gap-1">
         <button
           type="submit"
-          class="btn btn-primary w-full"
+          class="btn btn-primary w-1/2"
           (click)="add()"
           [disabled]="processing()"
         >
           @if (processing()) {
             <span class="loading loading-dots loading-lg text-primary"></span>
           } @else {
-            ADD
+            SAVE & GO BACK
+          }
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary w-1/2"
+          (click)="add()"
+          [disabled]="processing()"
+        >
+          @if (processing()) {
+            <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else {
+            SAVE & ADD ANOTHER
           }
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { AddTagObj } from "@common";
+import { AddTagObj, UpdateTagObj } from "@common";
 import { z } from "zod";
 import { authProcedure, router } from "../../trpc";
 import { TagsHelper } from "../trpc.handler/tags.helper";
@@ -15,11 +15,11 @@ export const tagsRouter = router({
   getAll: authProcedure.query(() => {
     return tags.getAll();
   }),
-  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => {
-    return tags.add(input, ctx.auth);
-  }),
+  add: authProcedure
+    .input(AddTagObj)
+    .mutation(({ input, ctx }) => tags.add(input, ctx.auth)),
   update: authProcedure
-    .input(z.object({ id: z.number(), data: AddTagObj }))
+    .input(z.object({ id: z.number(), data: UpdateTagObj }))
     .mutation(({ input }) => tags.update(input.id, input.data)),
   delete: authProcedure
     .input(z.number())
