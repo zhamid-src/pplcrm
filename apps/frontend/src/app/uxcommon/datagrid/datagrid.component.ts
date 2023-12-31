@@ -1,6 +1,7 @@
 import { CommonModule } from "@angular/common";
 import { Component, EventEmitter, Input, Output, effect } from "@angular/core";
 import { AlertService } from "@services/alert.service";
+import { BaseGridService } from "@services/base-grid.service";
 import { SearchService } from "@services/search.service";
 import { ThemeService } from "@services/theme.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
@@ -26,32 +27,23 @@ import { DeleteCellRendererComponent } from "./shortcut-cell-renderer/shortcut-c
   templateUrl: "./datagrid.component.html",
   styleUrl: "./datagrid.component.scss",
 })
-export class DatagridComponent<T extends keyof Models> {
+export class DatagridComponent<T extends keyof Models, U> {
+  @Output() importCSV = new EventEmitter();
+  @Output() filter = new EventEmitter();
+  @Input() colDefs: ColDef[] = [];
+  @Input() disableDelete = true;
+
   protected api: GridApi<Partial<T>> | undefined;
+  protected rowData: Partial<T>[] = [];
+
   protected processing = false;
 
-  @Input({ required: true }) colDefs: ColDef[] = [];
-  @Input({ required: true }) rowData: Partial<T>[] = [];
-  @Input() gridOptions: GridOptions<Partial<T>> = {};
-
-  @Input() disableAdd = false;
+  protected gridOptions: GridOptions<Partial<T>> = {};
+  protected disableAdd = false;
   @Input() disableRefresh = false;
   @Input() disableImport = false;
   @Input() disableExport = false;
   @Input() disableFilter = false;
-  @Input() disableEdit = false;
-
-  @Output() refresh = new EventEmitter<{ forced: boolean }>();
-  @Output() abortRefresh = new EventEmitter<void>();
-  @Output() add = new EventEmitter();
-  @Output() importCSV = new EventEmitter();
-  @Output() filter = new EventEmitter();
-  @Input() onDelete:
-    | ((rows: (Partial<T> & { id: number })[]) => Promise<boolean>)
-    | undefined;
-  @Input() onEdit:
-    | ((id: number, data: Partial<T>) => Promise<boolean>)
-    | undefined;
 
   defaultGridOptions: GridOptions<Partial<T>> = {
     context: this,
@@ -67,7 +59,6 @@ export class DatagridComponent<T extends keyof Models> {
     autoSizeStrategy: {
       type: "fitCellContents",
     },
-    enableFillHandle: true,
     onCellValueChanged: this.onCellValueChanged.bind(this),
     onUndoStarted: this.onUndoStarted.bind(this),
     onUndoEnded: this.onUndoEnded.bind(this),
@@ -109,6 +100,7 @@ export class DatagridComponent<T extends keyof Models> {
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
     private alertSvc: AlertService,
+    protected gridSvc: BaseGridService<T, U>,
   ) {
     effect(() => {
       const quickFilterText = this.serachSvc.search;
@@ -139,7 +131,6 @@ export class DatagridComponent<T extends keyof Models> {
 
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
-
     this.api = params.api;
     this.refreshGrid();
   }
@@ -159,15 +150,12 @@ export class DatagridComponent<T extends keyof Models> {
   }
 
   async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
-    if (!this.onEdit) return;
-
-    // TODO: fix the type
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: number };
     const payload = this.createPayload(row, key);
 
     this.processing = true;
-    const edited = await this.onEdit(Number(row.id), payload);
+    const edited = await this.edit(Number(row.id), payload);
     if (!edited) {
       this.alertSvc.showError(
         "Could not edit the row. Please try again later.",
@@ -208,13 +196,22 @@ export class DatagridComponent<T extends keyof Models> {
 
   public refreshGrid(forced: boolean = false) {
     this.api!.showLoadingOverlay();
-    this.refresh.emit({ forced });
+    this.refresh({ forced });
   }
 
   public sendAbort() {
-    this.abortRefresh.emit();
+    this.abortRefresh();
     this.api!.hideOverlay();
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  protected async refresh(input: { forced: boolean }) {
+    this.rowData = (await this.gridSvc.refresh()) as T[];
+  }
+  protected abortRefresh() {
+    this.gridSvc.abort();
+  }
+  protected add() {}
 
   protected emitAdd() {
     this.api?.applyTransaction({
@@ -222,7 +219,7 @@ export class DatagridComponent<T extends keyof Models> {
       add: [{}],
     });
     this.rowData.push({});
-    this.add.emit();
+    this.add();
   }
 
   protected doImportCSV() {
@@ -238,8 +235,9 @@ export class DatagridComponent<T extends keyof Models> {
   open() {
     console.log("opening");
   }
+
   confirmDelete() {
-    if (!this.onDelete) {
+    if (this.disableDelete) {
       return this.alertSvc.showError(
         "You do not have the permission to delete rows from this table.",
       );
@@ -249,6 +247,14 @@ export class DatagridComponent<T extends keyof Models> {
       "#confirmDelete",
     ) as HTMLDialogElement;
     dialog.showModal();
+  }
+
+  async edit(id: number, data: Partial<T>) {
+    // TODO: is this the best way (cast as unknown as U)?
+    return await this.gridSvc
+      .update(id, data as unknown as U)
+      .then(() => true)
+      .catch(() => false);
   }
 
   protected async deleteSelectedRows() {
@@ -261,11 +267,11 @@ export class DatagridComponent<T extends keyof Models> {
 
     this.processing = true;
 
-    const deleted = await this.onDelete!(rows);
+    const ids = rows.map((row) => Number(row.id));
+    const deleted = this.gridSvc.deleteMany(ids);
+
     if (!deleted) {
-      this.alertSvc.showError(
-        "Could not delete the row. Please try again later.",
-      );
+      this.alertSvc.showError("Could not delete. Please try again later.");
     } else {
       this.api?.applyTransaction({ remove: rows });
       rows.forEach((row) => this.rowData.splice(row.id!, 1));

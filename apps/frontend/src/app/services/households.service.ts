@@ -1,54 +1,33 @@
 import { Injectable } from "@angular/core";
-import { getAllOptionsType } from "@common";
 import { TableType } from "common/src/lib/kysely.models";
-import { TRPCService } from "./trpc.service";
+import { BaseGridService } from "./base-grid.service";
 
 export type TYPE = TableType.households;
 
 @Injectable({
   providedIn: "root",
 })
-export class HouseholdsService extends TRPCService<TYPE> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public getAll(_options?: getAllOptionsType, refresh: boolean = false) {
-    // Disabling cached calls. Enable it if it becomes an issue
-    return this.api.households.getAll.query(undefined, {
-      signal: this.ac.signal,
-    });
-
-    /*
-    return this.runCachedCall(
-      this.api.households.getAll.query(undefined, {
-        signal: this.ac.signal,
-      }),
-      "households.getAll",
-      options,
-      refresh,
-    );
-    */
-  }
-
-  public getAllWithPeopleCount(
-    options?: getAllOptionsType,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    refresh: boolean = false,
-  ) {
+export class HouseholdsService extends BaseGridService<TYPE, never> {
+  private getAllWithPeopleCount() {
     return this.api.households.getAllWithPeopleCount.query(undefined, {
       signal: this.ac.signal,
     });
-    /*
-    return this.runCachedCall(
-      this.api.households.getAllWithPeopleCount.query(undefined, {
-        signal: this.ac.signal,
-      }),
-      "households.getAllWithPeopleCount",
-      options,
-      refresh,
-    );
-    */
   }
 
+  public refresh() {
+    return this.getAllWithPeopleCount();
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+  public update(id: number, data: any) {
+    // TODO implement
+    return Promise.resolve([]);
+  }
   public getOneById(id: number) {
     return this.api.households.getOneById.query(id);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public deleteMany(ids: number[]) {
+    return Promise.resolve(true); // TODO: implement
+    // return this.api.households.deleteMany.mutate(ids);
   }
 }

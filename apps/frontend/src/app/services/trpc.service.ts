@@ -54,10 +54,10 @@ export class TRPCService<T> {
       }),
     );
 
-    return this.get(cacheKey).then((cachedResult) => {
+    return this.getWithExpiry(cacheKey).then((cachedResult) => {
       if (refresh || !cachedResult || cachedResult.length === 0) {
         return apiCall.then((data: Partial<T>[]) => {
-          return this.set(cacheKey, data).then(() => data);
+          return this.setWithExpiry(cacheKey, data).then(() => data);
         });
       }
 
@@ -65,12 +65,12 @@ export class TRPCService<T> {
     });
   }
 
-  private async get(key: string) {
+  private async getWithExpiry(key: string) {
     const payload = await get(key);
     return payload?.expires > Date.now() ? payload.data : null;
   }
 
-  private set(key: string, data: Partial<T>[]) {
+  private setWithExpiry(key: string, data: Partial<T>[]) {
     return set(key, { expires: this.addDays(1), data });
   }
 

@@ -1,8 +1,1 @@
-<pc-datagrid
-  [rowData]="rowData"
-  [colDefs]="colDefs"
-  (refresh)="refresh($event)"
-  (abortRefresh)="abortRefresh()"
-  [onDelete]="delete"
-  [onEdit]="edit"
-></pc-datagrid>
+<pc-datagrid [colDefs]="col" [disableDelete]="false"></pc-datagrid>

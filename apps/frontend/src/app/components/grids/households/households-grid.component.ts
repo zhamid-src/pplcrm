@@ -1,8 +1,11 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
+import { AlertService } from "@services/alert.service";
+import { BaseGridService } from "@services/base-grid.service";
 import { HouseholdsService, TYPE } from "@services/households.service";
+import { SearchService } from "@services/search.service";
+import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
-import { ColDef } from "ag-grid-community";
 
 @Component({
   selector: "pc-households-grid",
@@ -10,9 +13,10 @@ import { ColDef } from "ag-grid-community";
   imports: [CommonModule, DatagridComponent],
   templateUrl: "./households-grid.component.html",
   styleUrl: "./households-grid.component.scss",
+  providers: [{ provide: BaseGridService, useClass: HouseholdsService }],
 })
-export class HouseholdsGridComponent {
-  protected colDefs: ColDef[] = [
+export class HouseholdsGridComponent extends DatagridComponent<TYPE, never> {
+  protected col = [
     { field: "person_count", headerName: "People in household" },
     { field: "street1", headerName: "Street" },
     { field: "street2", headerName: "Street line 2" },
@@ -24,17 +28,12 @@ export class HouseholdsGridComponent {
     { field: "notes", headerName: "Notes" },
   ];
 
-  protected rowData: Partial<TYPE>[] = [];
-
-  constructor(private householdsSvc: HouseholdsService) {}
-
-  public async refresh(input: { forced: boolean }) {
-    const forced = input?.forced || false;
-    const data = await this.householdsSvc.getAllWithPeopleCount({}, forced);
-    this.rowData = data;
-  }
-
-  public abortRefresh() {
-    this.householdsSvc.abort();
+  constructor(
+    themeSvc: ThemeService,
+    serachSvc: SearchService,
+    alertSvc: AlertService,
+    gridSvc: HouseholdsService,
+  ) {
+    super(themeSvc, serachSvc, alertSvc, gridSvc);
   }
 }

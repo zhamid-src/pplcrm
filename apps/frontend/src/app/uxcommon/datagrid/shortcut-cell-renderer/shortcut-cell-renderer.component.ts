@@ -14,10 +14,10 @@ import { DatagridComponent } from "../datagrid.component";
   styleUrl: "./shortcut-cell-renderer.component.scss",
   encapsulation: ViewEncapsulation.None,
 })
-export class DeleteCellRendererComponent<T extends keyof Models>
+export class DeleteCellRendererComponent<T extends keyof Models, U>
   implements ICellRendererAngularComp
 {
-  private parent: DatagridComponent<T> | undefined;
+  private parent: DatagridComponent<T, U> | undefined;
 
   agInit(params: ICellRendererParams<T, number>): void {
     this.parent = params.context;
@@ -33,5 +33,9 @@ export class DeleteCellRendererComponent<T extends keyof Models>
 
   delete() {
     this.parent?.confirmDelete();
+  }
+
+  disableDelete() {
+    return this.parent?.disableDelete;
   }
 }

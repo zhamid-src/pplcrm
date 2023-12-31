@@ -87,7 +87,7 @@
           tabindex="0"
           class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
         >
-          <li [class.disabled]="!onDelete" (click)="deleteSelectedRows()">
+          <li [class.disabled]="disableDelete" (click)="deleteSelectedRows()">
             <a>
               <pc-icon name="trash" />
               Delete
