@@ -22,7 +22,7 @@
   <!-- Sidebar content here -->
   @for (item of items; track item.name; let idx = $index) {
     <div
-      class="flex-none px-2 pb-0.5"
+      class="flex-none px-2"
       [class.bg-base-200]="this.router.url === item['route']"
     >
       @if (item["type"] === "subheading") {

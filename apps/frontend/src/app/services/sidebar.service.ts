@@ -35,9 +35,9 @@ export class SidebarService {
       pathMatchExact: true,
     },
     {
-      name: `My Tasks`,
-      code: "tasks",
-      route: "/console/tasks",
+      name: `MyTasks`,
+      code: "mytasks",
+      route: "/console/mytasks",
       icon: "rectangle-stack",
     },
     {
@@ -126,6 +126,12 @@ export class SidebarService {
       code: "export",
       route: "/console/export",
       icon: "arrow-down-tray",
+    },
+    {
+      name: `Tasks`,
+      code: "tasks",
+      route: "/console/tasks",
+      icon: "square-3-stack-3d",
     },
     {
       name: "Forms",
