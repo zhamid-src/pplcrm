@@ -7,7 +7,7 @@ export type TYPE = TableType.households;
 @Injectable({
   providedIn: "root",
 })
-export class HouseholdsService extends BaseGridService<TYPE, never> {
+export class HouseholdsGridService extends BaseGridService<TYPE, never> {
   private getAllWithPeopleCount() {
     return this.api.households.getAllWithPeopleCount.query(undefined, {
       signal: this.ac.signal,

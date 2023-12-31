@@ -1,9 +1,10 @@
 import { CommonModule } from "@angular/common";
 import { Component } from "@angular/core";
+import { Router } from "@angular/router";
 import { UpdatePersonsType } from "@common";
 import { AlertService } from "@services/alert.service";
 import { BaseGridService } from "@services/base-grid.service";
-import { PersonsService, TYPE } from "@services/persons.service";
+import { PersonsGridService, TYPE } from "@services/persons-grid.service";
 import { SearchService } from "@services/search.service";
 import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
@@ -14,7 +15,7 @@ import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
   imports: [CommonModule, DatagridComponent],
   templateUrl: "./persons-grid.component.html",
   styleUrl: "./persons-grid.component.scss",
-  providers: [{ provide: BaseGridService, useClass: PersonsService }],
+  providers: [{ provide: BaseGridService, useClass: PersonsGridService }],
 })
 export class PersonsGridComponent extends DatagridComponent<
   TYPE,
@@ -44,11 +45,12 @@ export class PersonsGridComponent extends DatagridComponent<
   ];
 
   constructor(
+    router: Router,
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: PersonsService,
+    gridSvc: PersonsGridService,
   ) {
-    super(themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, themeSvc, serachSvc, alertSvc, gridSvc);
   }
 }

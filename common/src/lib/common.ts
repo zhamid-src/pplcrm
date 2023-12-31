@@ -51,7 +51,12 @@ export const AddTagObj = z.object({
   name: z.string(),
   description: z.string(),
 });
+export const UpdateTagObj = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+});
 export type AddTagType = z.infer<typeof AddTagObj>;
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 
 export const UpdatePersonsObj = z.object({
   tenant_id: z.string().optional(),

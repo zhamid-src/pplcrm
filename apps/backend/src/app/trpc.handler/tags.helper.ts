@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { AddTagType, IAuthKeyPayload } from "@common";
+import { AddTagType, IAuthKeyPayload, UpdateTagType } from "@common";
 import { OperationDataType, TableType } from "common/src/lib/kysely.models";
 import { TagsOperator } from "../db.operators/tags.operator";
 
@@ -24,7 +24,8 @@ export class TagsHelper {
       createdby_id: auth.user_id,
     });
   }
-  public async update(id: number, input: AddTagType) {
+  public async update(id: number, input: UpdateTagType) {
+    console.log(">> 1 ************************");
     return tags.update(
       BigInt(id),
       input as Partial<OperationDataType<TableType.tags, "update">>,

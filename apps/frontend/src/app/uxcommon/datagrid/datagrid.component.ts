@@ -1,5 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, EventEmitter, Input, Output, effect } from "@angular/core";
+import { Router } from "@angular/router";
 import { AlertService } from "@services/alert.service";
 import { BaseGridService } from "@services/base-grid.service";
 import { SearchService } from "@services/search.service";
@@ -39,7 +40,7 @@ export class DatagridComponent<T extends keyof Models, U> {
   protected processing = false;
 
   protected gridOptions: GridOptions<Partial<T>> = {};
-  protected disableAdd = false;
+  @Input() addRoute: string | null = null;
   @Input() disableRefresh = false;
   @Input() disableImport = false;
   @Input() disableExport = false;
@@ -97,6 +98,7 @@ export class DatagridComponent<T extends keyof Models, U> {
   ];
 
   constructor(
+    private router: Router,
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
     private alertSvc: AlertService,
@@ -211,15 +213,8 @@ export class DatagridComponent<T extends keyof Models, U> {
   protected abortRefresh() {
     this.gridSvc.abort();
   }
-  protected add() {}
-
-  protected emitAdd() {
-    this.api?.applyTransaction({
-      addIndex: 0,
-      add: [{}],
-    });
-    this.rowData.push({});
-    this.add();
+  protected add() {
+    this.addRoute && this.router.navigate([this.addRoute]);
   }
 
   protected doImportCSV() {

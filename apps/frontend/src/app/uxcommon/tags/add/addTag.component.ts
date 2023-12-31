@@ -6,9 +6,10 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
+import { Router } from "@angular/router";
 import { AddTagType } from "@common";
 import { AlertService } from "@services/alert.service";
-import { TagsService } from "@services/tags.service";
+import { TagsGridService } from "@services/tags-grid.service";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 @Component({
@@ -28,11 +29,12 @@ export class AddTagComponent {
 
   constructor(
     private fb: FormBuilder,
-    private tagSvc: TagsService,
+    private tagSvc: TagsGridService,
     private alertSvc: AlertService,
+    private router: Router,
   ) {}
 
-  async add() {
+  async add(addMore: boolean = false) {
     this.processing.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
     await this.tagSvc
@@ -40,5 +42,10 @@ export class AddTagComponent {
       .then(() => this.alertSvc.showSuccess("Tag added successfully."))
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
+
+    // TODO: create URL tree
+    if (!addMore) {
+      this.router.navigate(["/console/tags"]);
+    }
   }
 }
