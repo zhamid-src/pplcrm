@@ -53,6 +53,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
     enableCellChangeFlash: true,
+    rowData: this.rowData,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: "multiple",
@@ -134,7 +135,7 @@ export class DatagridComponent<T extends keyof Models, U> {
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
     this.api = params.api;
-    this.refreshGrid();
+    this.refresh();
   }
 
   private createPayload<T>(
@@ -196,19 +197,21 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.api?.redoCellEditing();
   }
 
-  public refreshGrid(forced: boolean = false) {
-    this.api!.showLoadingOverlay();
-    this.refresh({ forced });
-  }
-
   public sendAbort() {
     this.abortRefresh();
     this.api!.hideOverlay();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  protected async refresh(input: { forced: boolean }) {
-    this.rowData = (await this.gridSvc.refresh()) as T[];
+  protected async refresh() {
+    this.api!.showLoadingOverlay();
+
+    const rows = (await this.gridSvc.refresh()) as Partial<T>[];
+
+    // Set the grid option because it works around Angular's
+    // ValueChangedAterChecked error
+    this.api!.setGridOption("rowData", this.rowData);
+    this.api!.applyTransaction({ add: rows });
   }
   protected abortRefresh() {
     this.gridSvc.abort();
