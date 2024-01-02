@@ -1,36 +1,45 @@
 import { Injectable, signal } from "@angular/core";
 
 export type ALERTTYPE = "info" | "error" | "warning" | "success";
+
 export interface AlertMessage {
+  OKBtn?: string;
+  OKBtnCallback?: () => void;
+  btn2?: string;
+  btn2Callback?: () => void;
+  duration?: number;
   text: string;
   title?: string;
-  OKBtn?: string;
-  btn2?: string;
   type?: ALERTTYPE;
 }
 
+// TODO: add callback to the alert message?
 @Injectable({
   providedIn: "root",
 })
 export class AlertService {
-  private duration = 2000;
-
   private _alerts = signal<AlertMessage[]>([]);
+
   public get alerts() {
     return this._alerts();
   }
 
-  public showInfo(text: string) {
-    this.show({ text, type: "info" });
+  public OKBtnCallback(text: string) {
+    const alertToRemove = this.alerts.find((m) => m.text === text);
+    if (!alertToRemove) return;
+
+    alertToRemove.OKBtnCallback?.();
   }
-  public showError(text: string) {
-    this.show({ text, type: "error" });
+
+  public btn2Callback(text: string) {
+    const alertToRemove = this.alerts.find((m) => m.text === text);
+    if (!alertToRemove) return;
+
+    alertToRemove.btn2Callback?.();
   }
-  public showWarn(text: string) {
-    this.show({ text, type: "warning" });
-  }
-  public showSuccess(text: string) {
-    this.show({ text, type: "success" });
+
+  public dismiss(text: string) {
+    this.removeAlert({ text });
   }
 
   public show(alert: AlertMessage) {
@@ -48,13 +57,25 @@ export class AlertService {
     // start the timer to remove
     setTimeout(
       () => this.removeAlert(messageWithMeta),
-      this.duration,
+      messageWithMeta.duration || 2000,
       messageWithMeta,
     );
   }
 
-  public dismiss(text: string) {
-    this.removeAlert({ text });
+  public showError(text: string) {
+    this.show({ text, type: "error" });
+  }
+
+  public showInfo(text: string) {
+    this.show({ text, type: "info" });
+  }
+
+  public showSuccess(text: string) {
+    this.show({ text, type: "success" });
+  }
+
+  public showWarn(text: string) {
+    this.show({ text, type: "warning" });
   }
 
   private removeAlert(alert: AlertMessage) {

@@ -4,7 +4,10 @@ import {
   UpdateObject,
   sql,
 } from "kysely";
-import { InsertObjectOrList } from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
+import {
+  InsertObjectOrList,
+  InsertObjectOrListFactory,
+} from "node_modules/kysely/dist/cjs/parser/insert-values-parser";
 import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 import {
   GetOperandType,
@@ -33,6 +36,14 @@ export class BaseOperator<T extends keyof Models> {
     return db
       .insertInto(this.table)
       .values(row)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async addMany(rows: InsertObjectOrListFactory<Models, T>) {
+    return db
+      .insertInto(this.table)
+      .values(rows)
       .returningAll()
       .executeTakeFirst();
   }
@@ -95,12 +106,6 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
-  protected selectFrom() {
-    return db.selectFrom(this.table);
-  }
-  protected updateTable() {
-    return db.updateTable(this.table);
-  }
   protected deleteFrom() {
     return db.deleteFrom(this.table);
   }
@@ -124,5 +129,13 @@ export class BaseOperator<T extends keyof Models> {
     query = options?.groupBy ? query.groupBy(options.groupBy) : query;
 
     return query;
+  }
+
+  protected selectFrom() {
+    return db.selectFrom(this.table);
+  }
+
+  protected updateTable() {
+    return db.updateTable(this.table);
   }
 }

@@ -8,26 +8,33 @@ export type TYPE = TableType.households;
   providedIn: "root",
 })
 export class HouseholdsGridService extends BaseGridService<TYPE, never> {
-  private getAllWithPeopleCount() {
-    return this.api.households.getAllWithPeopleCount.query(undefined, {
-      signal: this.ac.signal,
-    });
+  public override addMany(rows: never[]): Promise<unknown> {
+    return Promise.resolve(rows);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public deleteMany(ids: number[]) {
+    return Promise.resolve(true); // TODO: implement
+    // return this.api.households.deleteMany.mutate(ids);
+  }
+
+  public getOneById(id: number) {
+    return this.api.households.getOneById.query(id);
   }
 
   public refresh() {
     return this.getAllWithPeopleCount();
   }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
   public update(id: number, data: any) {
     // TODO implement
     return Promise.resolve([]);
   }
-  public getOneById(id: number) {
-    return this.api.households.getOneById.query(id);
-  }
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public deleteMany(ids: number[]) {
-    return Promise.resolve(true); // TODO: implement
-    // return this.api.households.deleteMany.mutate(ids);
+
+  private getAllWithPeopleCount() {
+    return this.api.households.getAllWithPeopleCount.query(undefined, {
+      signal: this.ac.signal,
+    });
   }
 }

@@ -12,21 +12,8 @@ export class PersonsGridService extends BaseGridService<
   TYPE,
   UpdatePersonsType
 > {
-  private getAllWithHouseholds(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithHouseholds.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public refresh(options?: getAllOptionsType) {
-    return this.getAllWithHouseholds(options);
-  }
-  public async update(id: number, data: UpdatePersonsType) {
-    return this.api.persons.update.mutate({ id, data });
-  }
-
-  public getOneById(id: number) {
-    return this.api.persons.getOneById.query(id);
+  public addMany(rows: UpdatePersonsType[]) {
+    return Promise.resolve(rows);
   }
 
   public deleteMany(ids: number[]): Promise<boolean> {
@@ -34,5 +21,23 @@ export class PersonsGridService extends BaseGridService<
       .mutate(ids)
       .then(() => true)
       .catch(() => false);
+  }
+
+  public getOneById(id: number) {
+    return this.api.persons.getOneById.query(id);
+  }
+
+  public refresh(options?: getAllOptionsType) {
+    return this.getAllWithHouseholds(options);
+  }
+
+  public async update(id: number, data: UpdatePersonsType) {
+    return this.api.persons.update.mutate({ id, data });
+  }
+
+  private getAllWithHouseholds(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithHouseholds.query(options, {
+      signal: this.ac.signal,
+    });
   }
 }
