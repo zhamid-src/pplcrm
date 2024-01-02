@@ -6,6 +6,12 @@ import { PersonsHelper } from "../trpc.handler/persons.helper";
 const personsHelper = new PersonsHelper();
 
 export const personsRouter = router({
+  add: authProcedure
+    .input(UpdatePersonsObj)
+    .mutation(({ input }) => personsHelper.add(input)),
+  addMany: authProcedure
+    .input(z.array(UpdatePersonsObj))
+    .mutation(({ input }) => personsHelper.addMany(input)),
   getOneById: authProcedure
     .input(z.number())
     .query(({ input }) => personsHelper.getOneById(input)),

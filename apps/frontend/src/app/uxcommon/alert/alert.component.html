@@ -27,14 +27,14 @@
         [class.btn-success]="alert.type === 'success'"
         [class.btn-error]="alert.type === 'error'"
         [class.hidden]="!alert.OKBtn"
-        (click)="dismiss(alert.text)"
+        (click)="OKBtnClick(alert.text)"
       >
         {{ alert.OKBtn }}
       </button>
       <button
         class="btn btn-sm"
         [class.hidden]="!alert.btn2"
-        (click)="btn2Click()"
+        (click)="btn2Click(alert.text)"
       >
         {{ alert.btn2 }}
       </button>

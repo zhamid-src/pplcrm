@@ -14,8 +14,8 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-  RedoStartedEvent,
-  UndoStartedEvent,
+  RowDataUpdatedEvent,
+  RowValueChangedEvent,
 } from "ag-grid-community";
 import { Models } from "common/src/lib/kysely.models";
 import { LoadingOverlayComponent } from "./overlay/loadingOverlay.component";
@@ -29,31 +29,15 @@ import { DeleteCellRendererComponent } from "./shortcut-cell-renderer/shortcut-c
   styleUrl: "./datagrid.component.scss",
 })
 export class DatagridComponent<T extends keyof Models, U> {
-  @Output() importCSV = new EventEmitter();
-  @Output() filter = new EventEmitter();
-  @Input() colDefs: ColDef[] = [];
-  @Input() disableDelete = true;
-
-  protected api: GridApi<Partial<T>> | undefined;
-  protected rowData: Partial<T>[] = [];
-
-  protected processing = false;
-
-  protected gridOptions: GridOptions<Partial<T>> = {};
-  @Input() addRoute: string | null = null;
-  @Input() disableRefresh = false;
-  @Input() disableImport = false;
-  @Input() disableExport = false;
-  @Input() disableFilter = false;
-
-  defaultGridOptions: GridOptions<Partial<T>> = {
+  private _rowData: Partial<T>[] = [];
+  private defaultGridOptions: GridOptions<Partial<T>> = {
     context: this,
     rowStyle: { cursor: "pointer" },
     undoRedoCellEditing: true,
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
     enableCellChangeFlash: true,
-    rowData: this.rowData,
+    rowData: this._rowData,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: "multiple",
@@ -66,14 +50,14 @@ export class DatagridComponent<T extends keyof Models, U> {
     onUndoEnded: this.onUndoEnded.bind(this),
     onRedoStarted: this.onRedoStarted.bind(this),
     onRedoEnded: this.onRedoEnded.bind(this),
+    onRowDataUpdated: this.onRowDataUpdated.bind(this),
+    onRowValueChanged: this.onRowValueChanged.bind(this),
     loadingOverlayComponent: LoadingOverlayComponent,
   };
 
-  protected combinedGridOptions: GridOptions<Partial<T>> = {
-    ...this.defaultGridOptions,
-    ...this.gridOptions,
-  };
-
+  // private undoStack: Partial<T>[] = [];
+  protected _gridOptions: GridOptions<Partial<T>> = {};
+  protected api: GridApi<Partial<T>> | undefined;
   // Checkbox and delete icon columns
   protected colDefsWithEdit: ColDef[] = [
     /*
@@ -91,12 +75,27 @@ export class DatagridComponent<T extends keyof Models, U> {
       sortable: false,
       cellClass: "shortcut-cell",
       resizable: false,
-      minWidth: 50,
+      minWidth: 60,
       maxWidth: 60,
       cellRenderer: DeleteCellRendererComponent,
       suppressCellFlash: true,
     },
   ];
+  protected combinedGridOptions: GridOptions<Partial<T>> = {
+    ...this.defaultGridOptions,
+    ...this._gridOptions,
+  };
+  protected processing = false;
+
+  @Input() public addRoute: string | null = null;
+  @Input() public colDefs: ColDef[] = [];
+  @Input() public disableDelete = true;
+  @Input() public disableExport = false;
+  @Input() public disableFilter = false;
+  @Input() public disableImport = false;
+  @Input() public disableRefresh = false;
+  @Output() public filter = new EventEmitter();
+  @Output() public importCSV = new EventEmitter();
 
   constructor(
     private router: Router,
@@ -111,8 +110,17 @@ export class DatagridComponent<T extends keyof Models, U> {
     });
   }
 
-  protected getRowId(row: GetRowIdParams) {
-    return row.data.id;
+  public confirmDelete() {
+    if (this.disableDelete) {
+      return this.alertSvc.showError(
+        "You do not have the permission to delete rows from this table.",
+      );
+    }
+
+    const dialog = document.querySelector(
+      "#confirmDelete",
+    ) as HTMLDialogElement;
+    dialog.showModal();
   }
 
   public confirmExport() {
@@ -122,8 +130,12 @@ export class DatagridComponent<T extends keyof Models, U> {
     dialog.showModal();
   }
 
-  protected exportToCSV() {
-    this.api!.exportDataAsCsv();
+  public async edit(id: number, data: Partial<T>) {
+    // TODO: is this the best way (cast as unknown as U)?
+    return await this.gridSvc
+      .update(id, data as U)
+      .then(() => true)
+      .catch(() => false);
   }
 
   public getTheme() {
@@ -132,31 +144,12 @@ export class DatagridComponent<T extends keyof Models, U> {
       : "ag-theme-quartz-dark";
   }
 
-  public onGridReady(params: GridReadyEvent) {
-    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
-    this.api = params.api;
-    this.refresh();
-  }
-
-  private createPayload<T>(
-    row: Partial<T>,
-    key: keyof T,
-  ): Partial<Pick<T, typeof key>> {
-    const payload: Partial<Pick<T, typeof key>> = {};
-
-    // Check if the key exists in the row and is not undefined
-    if (key in row && row[key] !== undefined) {
-      payload[key] = row[key];
-    }
-
-    return payload;
-  }
-
-  async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
+  public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: number };
     const payload = this.createPayload(row, key);
 
+    console.log("**************************");
     this.processing = true;
     const edited = await this.edit(Number(row.id), payload);
     if (!edited) {
@@ -173,28 +166,42 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.processing = false;
   }
 
-  public onUndoStarted(event: UndoStartedEvent) {
-    console.log("undoStarted", event);
+  public onGridReady(params: GridReadyEvent) {
+    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
+    this.api = params.api;
+    this.refresh();
   }
 
-  public onUndoEnded(event: UndoStartedEvent) {
-    console.log("undoEnded", event);
+  public onRedoEnded(/*event: RedoEndedEvent*/) {
+    //console.log("redoEnded", event);
   }
 
-  public onRedoStarted(event: RedoStartedEvent) {
-    console.log("redoStarted", event);
+  public onRedoStarted(/*event: RedoStartedEvent*/) {
+    //console.log("redoStarted", event);
   }
 
-  public onRedoEnded(event: RedoStartedEvent) {
-    console.log("redoEnded", event);
+  public onRowDataUpdated(event: RowDataUpdatedEvent) {
+    console.log(event);
   }
 
-  public undo() {
-    this.api?.undoCellEditing();
+  public onRowValueChanged(event: RowValueChangedEvent) {
+    console.log("***", event);
+  }
+
+  public onUndoEnded(/*event: UndoEndedEvent*/) {
+    //console.log("undoEnded", event);
+  }
+
+  public onUndoStarted(/*event: UndoStartedEvent*/) {
+    //console.log("undoStarted", event);
+  }
+
+  public open() {
+    console.log("opening");
   }
 
   public redo() {
-    this.api?.redoCellEditing();
+    this.api?.getCurrentRedoSize() && this.api?.redoCellEditing();
   }
 
   public sendAbort() {
@@ -202,57 +209,20 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.api!.hideOverlay();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  protected async refresh() {
-    this.api!.showLoadingOverlay();
-
-    const rows = (await this.gridSvc.refresh()) as Partial<T>[];
-
-    // Set the grid option because it works around Angular's
-    // ValueChangedAterChecked error
-    this.api!.setGridOption("rowData", this.rowData);
-    this.api!.applyTransaction({ add: rows });
+  public undo() {
+    this.api?.getCurrentUndoSize() && this.api?.undoCellEditing();
   }
+
   protected abortRefresh() {
     this.gridSvc.abort();
   }
+
   protected add() {
     this.addRoute && this.router.navigate([this.addRoute]);
   }
 
-  protected doImportCSV() {
-    // upload the file to storage
-    // pass the link to emit
-    this.importCSV.emit();
-  }
-
   protected applyFilter() {
     this.filter.emit();
-  }
-
-  open() {
-    console.log("opening");
-  }
-
-  confirmDelete() {
-    if (this.disableDelete) {
-      return this.alertSvc.showError(
-        "You do not have the permission to delete rows from this table.",
-      );
-    }
-
-    const dialog = document.querySelector(
-      "#confirmDelete",
-    ) as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  async edit(id: number, data: Partial<T>) {
-    // TODO: is this the best way (cast as unknown as U)?
-    return await this.gridSvc
-      .update(id, data as unknown as U)
-      .then(() => true)
-      .catch(() => false);
   }
 
   protected async deleteSelectedRows() {
@@ -272,11 +242,68 @@ export class DatagridComponent<T extends keyof Models, U> {
       this.alertSvc.showError("Could not delete. Please try again later.");
     } else {
       this.api?.applyTransaction({ remove: rows });
-      rows.forEach((row) => this.rowData.splice(row.id!, 1));
+      rows.forEach((row) => this._rowData.splice(row.id!, 1));
+      // this.undoStack.push(...rows);
+      this.alertSvc.show({
+        text: "Deleted successfully. Click Undo to undo delete",
+        type: "success",
+        OKBtn: "Undo",
+        duration: 3500,
+        OKBtnCallback: () => this.undoDeleteRows(),
+      });
+    }
+    this.processing = false;
+  }
+
+  protected doImportCSV() {
+    // upload the file to storage
+    // pass the link to emit
+    this.importCSV.emit();
+  }
+
+  protected exportToCSV() {
+    this.api!.exportDataAsCsv();
+  }
+
+  protected getRowId(row: GetRowIdParams) {
+    return row.data.id;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  protected async refresh() {
+    this.api!.showLoadingOverlay();
+
+    const rows = (await this.gridSvc.refresh()) as Partial<T>[];
+
+    // Set the grid option because it works around Angular's
+    // ValueChangedAterChecked error
+    this.api!.setGridOption("rowData", this._rowData);
+    this.api!.applyTransaction({ add: rows });
+  }
+
+  protected async undoDeleteRows() {
+    /*
+    this.api?.applyTransaction({ add: this.undoStack });
+
+    this.gridSvc.addMany(this.undoStack as U[]);
+    this._rowData.push(...this.undoStack);
+    this.undoStack = [];
+    this.alertSvc.showSuccess("Undo successful");
+    //this.api?.flashCells();
+    */
+  }
+
+  private createPayload<T>(
+    row: Partial<T>,
+    key: keyof T,
+  ): Partial<Pick<T, typeof key>> {
+    const payload: Partial<Pick<T, typeof key>> = {};
+
+    // Check if the key exists in the row and is not undefined
+    if (key in row && row[key] !== undefined) {
+      payload[key] = row[key];
     }
 
-    // put rows in undo
-    //TODO:
-    this.processing = false;
+    return payload;
   }
 }

@@ -9,27 +9,36 @@ export type TYPE = TableType.tags;
   providedIn: "root",
 })
 export class TagsGridService extends BaseGridService<TYPE, AddTagType> {
-  public refresh() {
-    return this.getAll();
-  }
-  public getAll() {
-    return this.api.tags.getAll.query(undefined, {
-      signal: this.ac.signal,
-    });
-  }
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }
-  public update(id: number, data: UpdateTagType) {
-    return this.api.tags.update.mutate({ id, data });
+
+  public override addMany(rows: never[]): Promise<unknown> {
+    return Promise.resolve(rows);
   }
-  public getOneById(id: number) {
-    return this.api.tags.getOneById.query(BigInt(id));
-  }
+
   public deleteMany(ids: number[]): Promise<boolean> {
     return this.api.tags.deleteMany
       .mutate(ids)
       .then(() => true)
       .catch(() => false);
+  }
+
+  public getAll() {
+    return this.api.tags.getAll.query(undefined, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getOneById(id: number) {
+    return this.api.tags.getOneById.query(BigInt(id));
+  }
+
+  public refresh() {
+    return this.getAll();
+  }
+
+  public update(id: number, data: UpdateTagType) {
+    return this.api.tags.update.mutate({ id, data });
   }
 }
