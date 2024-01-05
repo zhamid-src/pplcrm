@@ -4,7 +4,7 @@ import * as pino from "pino";
 import AutoLoad from "@fastify/autoload";
 
 import * as path from "path";
-import { routes } from "./app/app.route";
+import { routes } from "./app/fastify.routes";
 
 const host = process.env.HOST ?? "localhost";
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;

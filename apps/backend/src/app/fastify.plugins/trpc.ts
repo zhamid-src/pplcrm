@@ -1,8 +1,8 @@
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { trpcRouters } from "../../app/app.router";
 import { createContext } from "../../context";
+import { trpcRouters } from "../trpc.routers";
 
 /**
  * This plugins adds some utilities to handle http errors
