@@ -1,5 +1,7 @@
 import { Injectable } from "@angular/core";
 
+type DrawerStates = "full" | "half";
+
 export interface SidenavItem {
   adminOnly?: boolean;
   badge?: string;
@@ -17,8 +19,6 @@ export interface SidenavItem {
 
   // admin only item
 }
-
-type DrawerStates = "full" | "half";
 
 @Injectable({
   providedIn: "root",
@@ -58,18 +58,6 @@ export class SidebarService {
       icon: "house-modern",
     },
     {
-      name: "Canvassing",
-      code: "canvassing",
-      route: "/console/canvassing",
-      icon: "map",
-    },
-    {
-      name: "Map",
-      code: "map",
-      route: "/console/map",
-      icon: "globe-americas",
-    },
-    {
       name: "Emails",
       code: "emails",
       route: "/console/emails",
@@ -86,6 +74,29 @@ export class SidebarService {
       code: "tags",
       route: "/console/tags",
       icon: "hashtag",
+    },
+    {
+      name: `OUTREACH`,
+      code: "teamsheading",
+      type: "subheading",
+    },
+    {
+      name: "Campaigns",
+      code: "campaigns",
+      route: "/console/campaigns",
+      icon: "megaphone",
+    },
+    {
+      name: "Canvassing",
+      code: "canvassing",
+      route: "/console/canvassing",
+      icon: "map",
+    },
+    {
+      name: "Map",
+      code: "map",
+      route: "/console/map",
+      icon: "globe-americas",
     },
     {
       name: `TEAMS`,
@@ -140,12 +151,6 @@ export class SidebarService {
       icon: "clipboard-document-list",
     },
     {
-      name: "Campaigns",
-      code: "campaigns",
-      route: "/console/campaigns",
-      icon: "megaphone",
-    },
-    {
       name: "Users",
       code: "users",
       route: "/console/users",
@@ -166,16 +171,20 @@ export class SidebarService {
   ];
   private _mobileOpen = false;
 
-  public get mobileOpen() {
-    return this._mobileOpen;
-  }
-
   public get items() {
     return this._items;
   }
 
   public set items(items: SidenavItem[]) {
     this._items = items;
+  }
+
+  public get mobileOpen() {
+    return this._mobileOpen;
+  }
+
+  public closeMobile() {
+    this._mobileOpen = false;
   }
 
   public findRoute(destination: string) {
@@ -203,16 +212,12 @@ export class SidebarService {
     this.setState("half");
   }
 
-  public toggleMobile() {
-    this._mobileOpen = !this._mobileOpen;
-  }
-
-  public closeMobile() {
-    this._mobileOpen = false;
-  }
-
   public toggleDrawer() {
     return this.setState(this._drawerState === "full" ? "half" : "full");
+  }
+
+  public toggleMobile() {
+    this._mobileOpen = !this._mobileOpen;
   }
 
   private getState(): DrawerStates {

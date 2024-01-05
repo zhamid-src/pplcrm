@@ -1,4 +1,3 @@
-// import { CockroachDialect } from '@cubos/kysely-cockroach';
 import { config } from "dotenv";
 import { promises as fs } from "fs";
 import {
@@ -26,13 +25,13 @@ const dialect = new PostgresDialect({
   }),
 });
 
-//TODO: Move to base operator and not export it
+//TODO: Move to base operator and not export it?
 export const db = new Kysely<Models>({
   dialect,
 });
 
+// Run the migrations
 const migrationFolder = path.join(__dirname, "./kysely.migrations");
-
 export const migrator = new Migrator({
   db,
   provider: new FileMigrationProvider({
@@ -42,6 +41,7 @@ export const migrator = new Migrator({
   }),
 });
 
+// Migration function
 async function migrateToLatest() {
   const { error, results } = await migrator.migrateToLatest();
 
@@ -57,10 +57,11 @@ async function migrateToLatest() {
     console.error("failed to migrate up: ", error);
     process.exit(1);
   }
-
-  // await dbLocal.destroy()
 }
 
+/**
+ * Migrate down to the previous version
+ */
 export async function migrateDown() {
   const { error, results } = await migrator.migrateDown();
 

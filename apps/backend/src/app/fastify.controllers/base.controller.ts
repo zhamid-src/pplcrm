@@ -6,6 +6,9 @@ import {
 } from "../../../../../common/src/lib/kysely.models";
 import { BaseOperator } from "../db.operators/base.operator";
 
+/**
+ * Base controller class for fastify controllers
+ */
 export class BaseController<T extends keyof Models> {
   protected readonly operator: BaseOperator<T>;
 

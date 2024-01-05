@@ -6,7 +6,12 @@ export class TagsOperator extends BaseOperator<TableType.tags> {
     super(TableType.tags);
   }
 
-  getOneByName(name: string) {
+  /**
+   * Get the tag by name
+   * @param name
+   * @returns
+   */
+  public getOneByName(name: string) {
     return this.selectFrom().where("name", "=", name).executeTakeFirst();
   }
 }

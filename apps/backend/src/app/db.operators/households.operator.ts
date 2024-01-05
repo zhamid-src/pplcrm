@@ -7,7 +7,12 @@ export class HouseholdOperator extends BaseOperator<TableType.households> {
     super(TableType.households);
   }
 
-  async getAllWithPeopleCount(
+  /**
+   * Get all households with the count of people in them
+   * @param options
+   * @returns
+   */
+  public async getAllWithPeopleCount(
     options: QueryParams<TableType.households> = {},
   ): Promise<Partial<TableType.households>[]> {
     options.columns;

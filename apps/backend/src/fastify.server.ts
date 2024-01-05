@@ -9,6 +9,9 @@ import { routes } from "./app/app.route";
 const host = process.env.HOST ?? "localhost";
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
+/**
+ * Fastify server
+ */
 export class FastifyServer {
   private readonly server;
 
@@ -19,7 +22,7 @@ export class FastifyServer {
       exposeHeadRoutes: false,
     });
 
-    //this.server.setErrorHandler(errorHandler);
+    //TODO: this.server.setErrorHandler(errorHandler);
     this.server.register(routes);
 
     // This loads all plugins defined in the plugins folder

@@ -1,8 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FastifyInstance } from "fastify";
 
-// const controller = new AuthController();
-
+/**
+ * No public HTTP routes for authentication
+ * @param fastify
+ * @param _
+ * @param done
+ */
 async function routes(fastify: FastifyInstance, _: never, done: () => void) {
   done();
 }

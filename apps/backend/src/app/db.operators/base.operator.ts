@@ -25,6 +25,9 @@ export type QueryParams<T extends keyof Models> = {
   groupBy?: GroupDataType<T>[];
 };
 
+/**
+ * The base operator class that implements regular db functions
+ */
 export class BaseOperator<T extends keyof Models> {
   protected readonly table: T;
 
@@ -32,6 +35,11 @@ export class BaseOperator<T extends keyof Models> {
     this.table = tableIn;
   }
 
+  /**
+   * Add a single row
+   * @param row
+   * @returns the row added
+   */
   public async add(row: InsertObjectOrList<Models, T>) {
     return db
       .insertInto(this.table)
@@ -40,6 +48,11 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
+  /**
+   * Add all given rows
+   * @param row
+   * @returns the rows added
+   */
   public async addMany(rows: InsertObjectOrListFactory<Models, T>) {
     return db
       .insertInto(this.table)
@@ -53,6 +66,11 @@ export class BaseOperator<T extends keyof Models> {
     return db.deleteFrom(this.table).where("id", "=", id).execute();
   }
 
+  /**
+   * Delete all rows with the given ids
+   * @param ids
+   * @returns rows
+   */
   public async deleteMany(ids: GetOperandType<T, "update", "id">[]) {
     return db
       .deleteFrom(this.table)
@@ -61,10 +79,19 @@ export class BaseOperator<T extends keyof Models> {
       .execute();
   }
 
+  /**
+   * GEt all the rows that match the given options
+   * @param options
+   * @returns matched rows
+   */
   public getAll(options?: QueryParams<T>) {
     return this.getQuery(options).execute() as Promise<Partial<T>[]>;
   }
 
+  /**
+   * Get the number of rows in the table
+   * @returns The count as number
+   */
   public getCount() {
     return db
       .selectFrom(this.table)
@@ -72,6 +99,12 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
+  /**
+   * Get the row that matches the given ID (there should be only one)
+   * @param id
+   * @param options - typically used to restrict columns
+   * @returns
+   */
   public getOneById(
     id: GetOperandType<T, "select", "id">,
     options?: QueryParams<T>,
@@ -79,6 +112,12 @@ export class BaseOperator<T extends keyof Models> {
     return this.getQuery(options).where("id", "=", id).executeTakeFirst();
   }
 
+  /**
+   * Get the time when the password reset code was created
+   * TODO: move to authuser or something
+   * @param code
+   * @returns
+   */
   public getPasswordResetCodeTime(code: string) {
     const codeColumn = "password_reset_code" as ReferenceExpression<
       Models,
@@ -90,6 +129,12 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirstOrThrow();
   }
 
+  /**
+   * Update the row for the given ID, replacing all values
+   * @param id
+   * @param row
+   * @returns the new row
+   */
   public async update(
     id: GetOperandType<T, "update", "id">,
     row: UpdateObject<
@@ -106,16 +151,30 @@ export class BaseOperator<T extends keyof Models> {
       .executeTakeFirst();
   }
 
+  /**
+   * Get the query builder for the table for delete
+   * @returns
+   */
   protected deleteFrom() {
     return db.deleteFrom(this.table);
   }
 
+  /**
+   * Get the query builder for the table with the given options
+   * @param options
+   * @returns
+   */
   protected getQuery(options?: QueryParams<T>) {
     let query = this.selectFrom();
     query = this.getQueryWithOptions(query, options);
     return query;
   }
 
+  /**
+   * Extend the query builder for the table with the given options
+   * @param options
+   * @returns
+   */
   protected getQueryWithOptions(
     query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
     options?: QueryParams<T>,
@@ -131,10 +190,18 @@ export class BaseOperator<T extends keyof Models> {
     return query;
   }
 
+  /**
+   * Get the query builder for the table for select
+   * @returns
+   */
   protected selectFrom() {
     return db.selectFrom(this.table);
   }
 
+  /**
+   * Get the query builder for the table for update
+   * @returns
+   */
   protected updateTable() {
     return db.updateTable(this.table);
   }

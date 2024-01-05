@@ -2,6 +2,13 @@ import { inferAsyncReturnType } from "@trpc/server";
 import { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { createVerifier } from "fast-jwt";
 
+export type Context = inferAsyncReturnType<typeof createContext>;
+
+/**
+ * Create the fastify context
+ * @param param0
+ * @returns
+ */
 export async function createContext({ req, res }: CreateFastifyContextOptions) {
   if (!req.headers.authorization) {
     return { req, res, auth: null };
@@ -25,5 +32,3 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
   }
   return { req, res, auth: payload };
 }
-
-export type Context = inferAsyncReturnType<typeof createContext>;

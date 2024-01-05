@@ -8,6 +8,11 @@ export class PersonsOperator extends BaseOperator<
     super(TableType.persons);
   }
 
+  /**
+   * Get all persons with their household addresses
+   * @param optionsIn
+   * @returns
+   */
   public async getAllWithHouseholds(
     optionsIn?: QueryParams<TableType.persons | TableType.households>,
   ): Promise<Partial<TableType.persons | TableType.households>[]> {
@@ -38,6 +43,12 @@ export class PersonsOperator extends BaseOperator<
     >[];
   }
 
+  /**
+   * Get the number of people in the given household
+   * @param household_id
+   * @param options
+   * @returns
+   */
   public getPersonsInHousehold(
     household_id: bigint,
     options?: QueryParams<TableType.persons | TableType.households>,

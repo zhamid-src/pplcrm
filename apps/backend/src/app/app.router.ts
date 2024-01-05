@@ -5,6 +5,9 @@ import { personsRouter } from "./trpc.routers/persons.router";
 import { tagsRouter } from "./trpc.routers/tags.router";
 import { userProfilesRouter } from "./trpc.routers/user.router";
 
+/**
+ * Register all trpc routers
+ */
 export const routers = router({
   auth: authRouter,
   userProfiles: userProfilesRouter,
