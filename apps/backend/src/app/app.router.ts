@@ -8,7 +8,7 @@ import { userProfilesRouter } from "./trpc.routers/user.router";
 /**
  * Register all trpc routers
  */
-export const routers = router({
+export const trpcRouters = router({
   auth: authRouter,
   userProfiles: userProfilesRouter,
   households: householdsRouter,
@@ -16,4 +16,4 @@ export const routers = router({
   tags: tagsRouter,
 });
 
-export type Routers = typeof routers;
+export type TRPCRouters = typeof trpcRouters;

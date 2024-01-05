@@ -1,7 +1,7 @@
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { routers } from "../../app/app.router";
+import { trpcRouters } from "../../app/app.router";
 import { createContext } from "../../context";
 
 /**
@@ -12,6 +12,6 @@ import { createContext } from "../../context";
 export default fp(async function (fastify: FastifyInstance) {
   fastify.register(fastifyTRPCPlugin, {
     prefix: "/",
-    trpcOptions: { router: routers, createContext },
+    trpcOptions: { router: trpcRouters, createContext },
   });
 });
