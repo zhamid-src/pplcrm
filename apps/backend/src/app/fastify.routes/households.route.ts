@@ -9,6 +9,12 @@ import * as personsSchema from "../fastify.schema/persons.schema";
 const controller = new HouseholdsController();
 const personsController = new PersonsController();
 
+/**
+ * Supported HTTP routes for the households endpoint
+ * @param fastify
+ * @param _
+ * @param done
+ */
 async function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get("", schema.getAll, (req, reply) => controller.getAll(reply));
 

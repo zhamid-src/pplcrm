@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   IAuthKeyPayload,
   IAuthUser,
@@ -23,7 +22,15 @@ const authUsers: AuthUsersOperator = new AuthUsersOperator();
 const profiles: UserPofilesOperator = new UserPofilesOperator();
 const sessions: SessionsOperator = new SessionsOperator();
 
+/**
+ * The hellper class for TRPC auth endpoint
+ */
 export class AuthHelper {
+  /**
+   * Get the current user
+   * @param auth
+   * @returns user or null
+   */
   public async currentUser(auth: IAuthKeyPayload) {
     if (!auth?.user_id) {
       return null;
@@ -35,6 +42,11 @@ export class AuthHelper {
     return user as IAuthUser;
   }
 
+  /**
+   * Renew the auth token, throw if error
+   * @param input
+   * @returns
+   */
   public async renewAuthToken(input: {
     auth_token: string;
     refresh_token: string;
@@ -56,6 +68,12 @@ export class AuthHelper {
     );
   }
 
+  /**
+   * Reset the password with the given password
+   * @param plaintextPassword
+   * @param code
+   * @returns
+   */
   public async resetPassword(plaintextPassword: string, code: string) {
     const password = await bcrypt.hash(plaintextPassword, 10);
 
@@ -109,6 +127,11 @@ export class AuthHelper {
     return null;
   }
 
+  /**
+   * Send the password reset email, throw if error
+   * @param email
+   * @returns
+   */
   public async sendPasswordResetEmail(email: string) {
     const user = (await authUsers.getOneByEmail(email)) as AuthUsersType;
 
@@ -136,7 +159,7 @@ export class AuthHelper {
         html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (err: any, info: any) => {
+      (err: any) => {
         if (err) {
           throw new TRPCError({
             message: "Something went wrong, please try again",
@@ -148,6 +171,11 @@ export class AuthHelper {
     return true;
   }
 
+  /**
+   * sign in the current user, throw if error
+   * @param input
+   * @returns
+   */
   public async signIn(input: signInInputType) {
     const user = (await authUsers.getOneByEmail(input.email)) as AuthUsersType;
 
@@ -162,6 +190,13 @@ export class AuthHelper {
     return this.createTokens(user.id, user.tenant_id, user.first_name);
   }
 
+  /**
+   * Sign out the current user and invalidate the token
+   * TODO: should check the auth token in session table in other functions so a user
+   * can't use the saved token
+   * @param auth
+   * @returns
+   */
   public async signOut(auth: IAuthKeyPayload) {
     if (!auth?.session_id) {
       return null;
@@ -169,6 +204,11 @@ export class AuthHelper {
     return sessions.deleteBySessionId(auth.session_id);
   }
 
+  /**
+   * Create the new user
+   * @param input
+   * @returns
+   */
   public async signUp(
     input: signUpInputType,
   ): Promise<{ auth_token: string; refresh_token: string } | TRPCError> {
@@ -240,7 +280,7 @@ export class AuthHelper {
     }
 
     // now go back and update the tenant with the profile id
-    const tenantUpdateResult = await tenants.update(tenant_id, {
+    await tenants.update(tenant_id, {
       admin_id: profile.id,
       createdby_id: profile.id,
     } as OperationDataType<"tenants", "update">);
@@ -249,6 +289,14 @@ export class AuthHelper {
     return this.createTokens(profile.id, user.tenant_id, user.first_name);
   }
 
+  /**
+   * Private function to create tokens
+   * @param user_id
+   * @param tenant_id
+   * @param name
+   * @param oldSession
+   * @returns
+   */
   private async createTokens(
     user_id: bigint,
     tenant_id: bigint,

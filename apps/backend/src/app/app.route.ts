@@ -1,10 +1,11 @@
 import { FastifyInstance } from "fastify";
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const personsRoute = require("./fastify.routes/persons.route");
-const householdsRoute = require("./fastify.routes/households.route");
-const authRoute = require("./fastify.routes/auth.route");
-
+/**
+ * Register all app routes
+ * @param fastify
+ * @param _opts
+ * @param done
+ */
 export function routes(
   fastify: FastifyInstance,
   _opts: never,
@@ -17,3 +18,8 @@ export function routes(
   fastify.get("/", (req, res) => res.send({ message: "API healthy." }));
   done();
 }
+
+/* eslint-disable @typescript-eslint/no-var-requires */
+const personsRoute = require("./fastify.routes/persons.route");
+const householdsRoute = require("./fastify.routes/households.route");
+const authRoute = require("./fastify.routes/auth.route");

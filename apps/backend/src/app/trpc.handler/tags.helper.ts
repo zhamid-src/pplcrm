@@ -5,15 +5,6 @@ import { TagsOperator } from "../db.operators/tags.operator";
 const tags: TagsOperator = new TagsOperator();
 
 export class TagsHelper {
-  public getOneById(id: bigint) {
-    return tags.getOneById(id);
-  }
-  public getOneByName(name: string) {
-    return tags.getOneByName(name);
-  }
-  public getAll() {
-    return tags.getAll();
-  }
   public add(payload: AddTagType, auth: IAuthKeyPayload) {
     // get the current user's id and tenant id
     return tags.add({
@@ -23,15 +14,60 @@ export class TagsHelper {
       createdby_id: auth.user_id,
     });
   }
-  public async update(id: number, input: UpdateTagType, auth: IAuthKeyPayload) {
-    const payload = { ...input, updatedby_id: auth.user_id };
-    return tags.update(BigInt(id), payload);
-  }
 
+  /**
+   * Delete the given tag (by ID)
+   * @param id
+   * @returns
+   */
   public async delete(id: number) {
     return tags.delete(BigInt(id));
   }
+
+  /**
+   * Delete all tags that matches all given IDs
+   * @param ids
+   * @returns
+   */
   public async deleteMany(ids: number[]) {
     return tags.deleteMany(ids.map((id) => BigInt(id)));
+  }
+
+  /**
+   * Get all tags
+   * @returns tags
+   */
+  public getAll() {
+    return tags.getAll();
+  }
+
+  /**
+   * Get the tag that matches the given ID
+   * @param id
+   * @returns
+   */
+  public getOneById(id: bigint) {
+    return tags.getOneById(id);
+  }
+
+  /**
+   * Get the tag given the name
+   * @param name
+   * @returns
+   */
+  public getOneByName(name: string) {
+    return tags.getOneByName(name);
+  }
+
+  /**
+   * Update the tag that matches the given ID
+   * @param id
+   * @param input
+   * @param auth
+   * @returns
+   */
+  public async update(id: number, input: UpdateTagType, auth: IAuthKeyPayload) {
+    const payload = { ...input, updatedby_id: auth.user_id };
+    return tags.update(BigInt(id), payload);
   }
 }

@@ -6,11 +6,12 @@ export class UserPofilesOperator extends BaseOperator<TableType.profiles> {
     super(TableType.profiles);
   }
 
-  /*
-  public getOneByEmail(email: string, columns?: QueryParams<TableType.users>) {
-    return this.getQuery(columns).where("email", "=", email).executeTakeFirst();
-  }
-  */
+  /**
+   * Get the profile by auth_id
+   * @param auth_id
+   * @param options
+   * @returns
+   */
   public getOneByAuthId(
     auth_id: bigint,
     options?: QueryParams<TableType.profiles>,
