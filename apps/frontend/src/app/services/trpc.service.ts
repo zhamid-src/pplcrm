@@ -8,10 +8,9 @@ import {
   httpBatchLink,
   loggerLink,
 } from "@trpc/client";
-import { Routers } from "APPS/backend/src/app/app.router";
+import { TRPCRouters } from "APPS/backend/src/app/app.router";
 import { get, set } from "idb-keyval";
 import { TokenService } from "./token.service";
-
 import { TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { TRPC_ERROR_CODES_BY_KEY } from "@trpc/server/rpc";
@@ -20,14 +19,20 @@ import { TRPC_ERROR_CODES_BY_KEY } from "@trpc/server/rpc";
   providedIn: "root",
 })
 export class TRPCService<T> {
-  protected api;
+  private addDays = function (days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  };
+
   protected ac = new AbortController();
+  protected api;
 
   constructor(
     protected tokenService: TokenService,
     protected router: Router,
   ) {
-    this.api = createTRPCProxyClient<Routers>({
+    this.api = createTRPCProxyClient<TRPCRouters>({
       links: [
         loggerLink(),
         refreshLink(this.tokenService, this.router),
@@ -36,6 +41,7 @@ export class TRPCService<T> {
       ],
     });
   }
+
   public abort() {
     this.ac.abort();
   }
@@ -70,16 +76,6 @@ export class TRPCService<T> {
     return payload?.expires > Date.now() ? payload.data : null;
   }
 
-  private setWithExpiry(key: string, data: Partial<T>[]) {
-    return set(key, { expires: this.addDays(1), data });
-  }
-
-  private addDays = function (days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  };
-
   // The hash isn't secure, but it's good enough for our purposes
   // It allows us to not use the entire stringified json as the key
   private hash(str: string) {
@@ -90,12 +86,30 @@ export class TRPCService<T> {
     }
     return (hash >>> 0).toString(36);
   }
+
+  private setWithExpiry(key: string, data: Partial<T>[]) {
+    return set(key, { expires: this.addDays(1), data });
+  }
+}
+
+function httpLink(tokenSvc: TokenService) {
+  return httpBatchLink({
+    url: "http://localhost:3000",
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken
+        ? {
+            Authorization: `Bearer ${authToken}`,
+          }
+        : {};
+    },
+  });
 }
 
 function refreshLink(
   tokenSvc: TokenService,
   router: Router,
-): TRPCLink<Routers> {
+): TRPCLink<TRPCRouters> {
   return refreshTokenLink({
     // Get locally stored refresh token
     getRefreshToken: () => tokenSvc.getRefreshToken() as string | undefined,
@@ -118,21 +132,7 @@ function refreshLink(
   });
 }
 
-function httpLink(tokenSvc: TokenService) {
-  return httpBatchLink({
-    url: "http://localhost:3000",
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken
-        ? {
-            Authorization: `Bearer ${authToken}`,
-          }
-        : {};
-    },
-  });
-}
-
-const errorLink: TRPCLink<Routers> = () => {
+const errorLink: TRPCLink<TRPCRouters> = () => {
   // here we just got initialized in the app - this happens once per app
   // useful for storing cache for instance
   return ({ next, op }) => {
@@ -158,10 +158,9 @@ const errorLink: TRPCLink<Routers> = () => {
     });
   };
 };
-
 // This is a proxy client that skips all the hooks and stuff
 // We use it to refresh the auth token
-const trpcRetryClient = createTRPCProxyClient<Routers>({
+const trpcRetryClient = createTRPCProxyClient<TRPCRouters>({
   links: [
     httpBatchLink({
       url: `http://localhost:3000`,
