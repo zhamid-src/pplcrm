@@ -1,7 +1,14 @@
 # Tech Architecture
 
+We use nx monorepo. Deploy or build by using `npx nx serve frontend` or `npx nx serve backend`. See `nx.dev` for more details.
+
+We use postgresql. You can run the database locally in dev mode. Connect using psql.
+
+Right now there are three main projects in the monorepo:
+
 ## Common
-This is strictly for types that are used by both frontend and backend. Don't put anything else here. 
+
+This is strictly for types that are used by both frontend and backend. Don't put anything else here.
 
 ## Backend
 
