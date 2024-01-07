@@ -1,6 +1,6 @@
-import { TableType } from "common/src/lib/kysely.models";
-import { HouseholdOperator } from "../db.operators/households.operator";
-import { BaseController } from "./base.controller";
+import { TableType } from 'common/src/lib/kysely.models';
+import { HouseholdOperator } from '../db.operators/households.operator';
+import { BaseController } from './base.controller';
 
 /**
  * Households controller

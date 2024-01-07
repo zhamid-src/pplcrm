@@ -1,17 +1,14 @@
-import { Injectable } from "@angular/core";
-import { UpdatePersonsType, getAllOptionsType } from "@common";
-import { TableType } from "common/src/lib/kysely.models";
-import { BaseGridService } from "./base-grid.service";
+import { Injectable } from '@angular/core';
+import { UpdatePersonsType, getAllOptionsType } from '@common';
+import { TableType } from 'common/src/lib/kysely.models';
+import { BaseGridService } from './base-grid.service';
 
 export type TYPE = TableType.persons | TableType.households;
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
-export class PersonsGridService extends BaseGridService<
-  TYPE,
-  UpdatePersonsType
-> {
+export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType> {
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
@@ -23,8 +20,8 @@ export class PersonsGridService extends BaseGridService<
       .catch(() => false);
   }
 
-  public getOneById(id: number) {
-    return this.api.persons.getOneById.query(id);
+  public findOne(id: number) {
+    return this.api.persons.findOne.query(id);
   }
 
   public refresh(options?: getAllOptionsType) {

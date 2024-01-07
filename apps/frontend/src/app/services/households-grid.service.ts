@@ -1,11 +1,11 @@
-import { Injectable } from "@angular/core";
-import { TableType } from "common/src/lib/kysely.models";
-import { BaseGridService } from "./base-grid.service";
+import { Injectable } from '@angular/core';
+import { TableType } from 'common/src/lib/kysely.models';
+import { BaseGridService } from './base-grid.service';
 
 export type TYPE = TableType.households;
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class HouseholdsGridService extends BaseGridService<TYPE, never> {
   public override addMany(rows: never[]): Promise<unknown> {
@@ -18,8 +18,8 @@ export class HouseholdsGridService extends BaseGridService<TYPE, never> {
     // return this.api.households.deleteMany.mutate(ids);
   }
 
-  public getOneById(id: number) {
-    return this.api.households.getOneById.query(id);
+  public findOne(id: number) {
+    return this.api.households.findOne.query(id);
   }
 
   public refresh() {

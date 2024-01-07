@@ -1,9 +1,8 @@
-import { sql } from "kysely";
-import {
-  GetOperandType,
-  TableType,
-} from "../../../../../common/src/lib/kysely.models";
-import { BaseOperator, QueryParams } from "./base.operator";
+import { SelectExpression, sql } from 'kysely';
+import { GetOperandType, Models, TableType } from '../../../../../common/src/lib/kysely.models';
+import { BaseOperator, QueryParams } from './base.operator';
+
+type SelectEmailType = GetOperandType<TableType.authusers, 'select', 'email'>;
 
 /**
  * Handles all the authusers table operations.
@@ -13,66 +12,48 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
     super(TableType.authusers);
   }
 
-  /**
-   * Add a password reset code to the user
-   * @param id
-   * @returns the password reset code
-   */
   public addPasswordResetCode(id: bigint) {
-    return this.updateTable()
+    return this.getUpdate()
       .set({
         password_reset_code: sql<string>`gen_random_uuid()`,
         password_reset_code_created_at: sql`now()`,
       })
-      .where("id", "=", id)
-      .returning(["password_reset_code"])
+      .where('id', '=', id)
+      .returning(['password_reset_code'])
       .executeTakeFirst();
   }
 
-  /**
-   * Get the count of users with the given email. It should always be 0 or 1
-   * @param email
-   * @returns the number
-   */
-  public async getCountByEmail(
-    email: GetOperandType<TableType.authusers, "select", "email">,
-  ): Promise<number> {
-    const { count } = (await this.selectFrom()
-      .select(sql<string>`count(*)`.as("count"))
-      .where("email", "=", email)
-      .executeTakeFirst()) || { count: "0" };
+  public findOneByEmail(email: SelectEmailType, options?: QueryParams<TableType.authusers>) {
+    return this.getSelectWithColumns(options).where('email', '=', email).executeTakeFirst();
+  }
+
+  public async getCountByEmail(email: SelectEmailType): Promise<number> {
+    const { count } = (await this.getSelect()
+      .select(sql<string>`count(*)`.as('count'))
+      .where('email', '=', email)
+      .executeTakeFirst()) || { count: '0' };
 
     return parseInt(count);
   }
 
-  /**
-   * Get the auth user by email
-   * @param email
-   * @param options - mostly used to restrict columns
-   * @returns the auth user
-   */
-  public getOneByEmail(
-    email: GetOperandType<TableType.authusers, "select", "email">,
-    options?: QueryParams<TableType.authusers>,
-  ) {
-    return this.getQuery(options).where("email", "=", email).executeTakeFirst();
+  public getPasswordResetCodeTime(code: string) {
+    const codeColumn = 'password_reset_code';
+    const columns: SelectExpression<Models, TableType.authusers>[] = [
+      'password_reset_code_created_at',
+    ];
+    return this.getSelectWithColumns({ columns })
+      .where(codeColumn, '=', code)
+      .executeTakeFirstOrThrow();
   }
 
-  /**
-   * Update the password given the password reset code. Fails if the code is
-   * wrong
-   * @param password
-   * @param code
-   * @returns
-   */
   public updatePassword(password: string, code: string) {
-    return this.updateTable()
+    return this.getUpdate()
       .set({
         password,
         password_reset_code: null,
         password_reset_code_created_at: null,
       })
-      .where("password_reset_code", "=", code)
+      .where('password_reset_code', '=', code)
       .executeTakeFirst();
   }
 }
