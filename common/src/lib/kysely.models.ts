@@ -5,11 +5,15 @@
 // The only exports are the Database interface and the table type enum
 //
 // ====================================================================
-// When adding a new table, you have to edit three things :-
-// 1. Add a model and add it to the interface Models
-// 3. Add the type in the TablesOperationMap
+// When adding a new table, you have to edit two things :-
+// 1. Add the model interface, and
+// 2. Add it to the Models interface
+// That's it
 // ====================================================================
+// TODO: separete into a types and models files (two files)
 import {
+  OperandValueExpressionOrList,
+  UpdateObject,
   type ColumnType,
   type Insertable,
   type SelectExpression,
@@ -77,10 +81,20 @@ export type TableColumnsType<T extends keyof Models> = T extends keyof Models
   ? SelectExpression<Models, ExtractTableAlias<Models, T>>
   : never;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
-// ====================================================================
-// =====================  GENERATED TYPES BELOW  =====================
-// ====================================================================
-export type TablesOperationMap2 = {
+
+export type TableIdType<T extends keyof Models> = OperandValueExpressionOrList<
+  Models,
+  ExtractTableAlias<Models, T>,
+  'id'
+>;
+
+export type UpdateRow<T extends keyof Models> = UpdateObject<
+  Models,
+  ExtractTableAlias<Models, T>,
+  ExtractTableAlias<Models, T>
+>;
+
+type TablesOperationMap = {
   [K in Keys<Models>]: {
     select: Selectable<Models[K]>;
     insert: Insertable<Models[K]>;
@@ -88,74 +102,6 @@ export type TablesOperationMap2 = {
   };
 };
 
-// TODO: should be automatic (like ^)
-export type TablesOperationMap = {
-  campaigns: {
-    select: Selectable<Campaigns>;
-    insert: Insertable<Campaigns>;
-    update: Updateable<Campaigns>;
-  };
-  households: {
-    select: Selectable<Households>;
-    insert: Insertable<Households>;
-    update: Updateable<Households>;
-  };
-  map_campaigns_users: {
-    select: Selectable<MapCampaignsUsers>;
-    insert: Insertable<MapCampaignsUsers>;
-    update: Updateable<MapCampaignsUsers>;
-  };
-  map_households_tags: {
-    select: Selectable<MapHouseholdsTags>;
-    insert: Insertable<MapHouseholdsTags>;
-    update: Updateable<MapHouseholdsTags>;
-  };
-  map_peoples_tags: {
-    select: Selectable<MapPeoplesTags>;
-    insert: Insertable<MapPeoplesTags>;
-    update: Updateable<MapPeoplesTags>;
-  };
-  persons: {
-    select: Selectable<Persons>;
-    insert: Insertable<Persons>;
-    update: Updateable<Persons>;
-  };
-  tags: {
-    select: Selectable<Tags>;
-    insert: Insertable<Tags>;
-    update: Updateable<Tags>;
-  };
-  tenants: {
-    select: Selectable<Tenants>;
-    insert: Insertable<Tenants>;
-    update: Updateable<Tenants>;
-  };
-  profiles: {
-    select: Selectable<Profiles>;
-    insert: Insertable<Profiles>;
-    update: Updateable<Profiles>;
-  };
-  authusers: {
-    select: Selectable<AuthUsers>;
-    insert: Insertable<AuthUsers>;
-    update: Updateable<AuthUsers>;
-  };
-  sessions: {
-    select: Selectable<Sessions>;
-    insert: Insertable<Sessions>;
-    update: Updateable<Sessions>;
-  };
-  roles: {
-    select: Selectable<Roles>;
-    insert: Insertable<Roles>;
-    update: Updateable<Roles>;
-  };
-  map_roles_users: {
-    select: Selectable<MapRolesUsers>;
-    insert: Insertable<MapRolesUsers>;
-    update: Updateable<MapRolesUsers>;
-  };
-};
 // ====================================================================
 // The following are the type definitions for the database schema
 // Since I use a base controller to handle the CRUD operations, I don't
