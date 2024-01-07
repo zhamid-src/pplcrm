@@ -18,10 +18,6 @@ export class TagsHelper {
     return tags.deleteOne(BigInt(id));
   }
 
-  public async deleteMany(ids: number[]) {
-    return tags.deleteMany(ids.map((id) => BigInt(id)));
-  }
-
   public findAll() {
     return tags.findAll();
   }

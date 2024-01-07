@@ -1,10 +1,9 @@
 import { sql } from 'kysely';
-import { TableType } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator } from './base.operator';
 
-export class HouseholdOperator extends BaseOperator<TableType.households> {
+export class HouseholdOperator extends BaseOperator<'households'> {
   constructor() {
-    super(TableType.households);
+    super('households');
   }
 
   /**

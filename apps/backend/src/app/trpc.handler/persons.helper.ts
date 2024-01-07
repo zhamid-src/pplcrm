@@ -8,25 +8,21 @@ const persons = new PersonsOperator();
 
 export class PersonsHelper {
   public add(row: UpdatePersonsType) {
-    return persons.addOne(row as InsertObjectOrList<Models, TableType.persons>);
+    return persons.addOne(row as InsertObjectOrList<Models, TableType['persons']>);
   }
 
   public addMany(rows: UpdatePersonsType[]) {
     // TODO: add household_id, createdby_id etc.
-    //return persons.addMany(rows as unknown as InsertObjectOrList<Models, TableType.persons>);
+    //return persons.addMany(rows as unknown as InsertObjectOrList<Models, TableType["persons"]>);
   }
 
   public async delete(id: number) {
     return persons.deleteOne(BigInt(id));
   }
 
-  public async deleteMany(ids: number[]) {
-    return persons.deleteMany(ids.map((id) => BigInt(id)));
-  }
-
   public async findAll(options: getAllOptionsType) {
-    const queryOptions: QueryParams<TableType.persons | TableType.households> = {
-      ...(options as QueryParams<TableType.persons>),
+    const queryOptions: QueryParams<TableType['persons'] | TableType['households']> = {
+      ...(options as QueryParams<TableType['persons']>),
     };
     return persons.findAll(queryOptions);
   }
@@ -40,7 +36,7 @@ export class PersonsHelper {
       ...options,
     };
     return persons.getAllWithHouseholds(
-      queryOptions as QueryParams<TableType.persons | TableType.households>,
+      queryOptions as QueryParams<TableType['persons'] | TableType['households']>,
     );
   }
 

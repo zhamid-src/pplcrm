@@ -7,7 +7,7 @@ import { TRPCService } from './trpc.service';
 @Injectable({
   providedIn: 'root',
 })
-export class AuthService extends TRPCService<TableType.authusers> {
+export class AuthService extends TRPCService<TableType['authusers']> {
   private _user = signal<IAuthUser | null>(null);
 
   public init() {

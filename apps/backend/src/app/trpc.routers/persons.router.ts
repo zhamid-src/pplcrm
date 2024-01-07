@@ -19,9 +19,6 @@ export const personsRouter = router({
     .input(z.object({ id: z.number(), data: UpdatePersonsObj }))
     .mutation(({ input }) => personsHelper.update(input.id, input.data)),
   delete: authProcedure.input(z.number()).mutation(({ input }) => personsHelper.delete(input)),
-  deleteMany: authProcedure
-    .input(z.array(z.number()))
-    .mutation(({ input }) => personsHelper.deleteMany(input)),
 });
 
 export type PersonsRouter = typeof personsRouter;

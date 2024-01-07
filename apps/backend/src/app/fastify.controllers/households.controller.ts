@@ -5,7 +5,7 @@ import { BaseController } from './base.controller';
 /**
  * Households controller
  */
-export class HouseholdsController extends BaseController<TableType.households> {
+export class HouseholdsController extends BaseController<TableType['households']> {
   constructor() {
     super(new HouseholdOperator());
   }

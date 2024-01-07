@@ -6,45 +6,60 @@
 //
 // ====================================================================
 // When adding a new table, you have to edit three things :-
-// 1. Add a model and add it to the interfaxe Models
-// 2. Add the enum in TableType
+// 1. Add a model and add it to the interface Models
 // 3. Add the type in the TablesOperationMap
 // ====================================================================
-import type {
-  ColumnType,
-  Insertable,
-  SelectExpression,
-  Selectable,
-  Updateable,
-} from "kysely";
-import { UndirectedOrderByExpression } from "node_modules/kysely/dist/cjs/parser/order-by-parser";
-import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
+import {
+  type ColumnType,
+  type Insertable,
+  type SelectExpression,
+  type Selectable,
+  type Updateable,
+} from 'kysely';
+import { UndirectedOrderByExpression } from 'node_modules/kysely/dist/cjs/parser/order-by-parser';
+import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
 
-export type AuthUsersType = Omit<AuthUsers, "id"> & { id: bigint };
-type DiscriminatedUnionOfRecord<
-  A,
-  B = {
-    [Key in keyof A as "_"]: {
-      [K in Key]: [
-        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
-      ];
-    };
-  }["_"],
-> = Keys<A> extends Keys<B>
-  ? B[Keys<A>] extends Array<any>
-    ? B[Keys<A>][number]
-    : never
-  : never;
-// ====================================================================
-// =====================  GENERATED TYPES BELOW  =====================
-// ====================================================================
+type Keys<T> = keyof T;
+type Json = ColumnType<JsonValue, string, string>;
+type JsonArray = JsonValue[];
+type JsonObject = { [K in string]?: JsonValue };
+type JsonPrimitive = boolean | number | string | null;
+type JsonValue = JsonArray | JsonObject | JsonPrimitive;
+type Timestamp = ColumnType<Date, Date | string, Date | string>;
 type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
+
+export interface Models {
+  authusers: AuthUsers;
+  campaigns: Campaigns;
+  households: Households;
+  map_campaigns_users: MapCampaignsUsers;
+  map_households_tags: MapHouseholdsTags;
+  map_peoples_tags: MapPeoplesTags;
+  map_roles_users: MapRolesUsers;
+  persons: Persons;
+  profiles: Profiles;
+  roles: Roles;
+  sessions: Sessions;
+  tags: Tags;
+  tenants: Tenants;
+}
+
+export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: bigint };
+type DiscriminatedUnionOfRecord<
+  A,
+  B = {
+    [Key in Keys<A> as '_']: {
+      [K in Key]: [{ [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] }];
+    };
+  }['_'],
+> = Keys<A> extends Keys<B> ? (B[Keys<A>] extends Array<any> ? B[Keys<A>][number] : never) : never;
+
 export type GetOperandType<
-  T extends keyof TablesOperationMap,
-  Op extends keyof TablesOperationMap[T],
-  Key extends keyof TablesOperationMap[T][Op],
+  T extends Keys<TablesOperationMap>,
+  Op extends Keys<TablesOperationMap[T]>,
+  Key extends Keys<TablesOperationMap[T][Op]>,
 > = unknown extends TablesOperationMap[T][Op][Key]
   ? never
   : TablesOperationMap[T][Op][Key] extends never
@@ -53,30 +68,30 @@ export type GetOperandType<
 export type GroupDataType<T extends keyof Models> = T extends keyof Models
   ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
   : never;
-type Json = ColumnType<JsonValue, string, string>;
-type JsonArray = JsonValue[];
-type JsonObject = {
-  [K in string]?: JsonValue;
-};
-type JsonPrimitive = boolean | number | string | null;
-type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-type Keys<T> = keyof T;
 export type OperationDataType<
-  T extends keyof Models,
-  Op extends "select" | "update" | "insert",
-> = T extends keyof TableOpsUnion ? TableOpsUnion[T][Op] : never;
-export type SesssionsType = Sessions;
+  T extends Keys<Models>,
+  Op extends 'select' | 'update' | 'insert',
+> = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
 // export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
 export type TableColumnsType<T extends keyof Models> = T extends keyof Models
   ? SelectExpression<Models, ExtractTableAlias<Models, T>>
   : never;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
+export type TableType = {
+  [K in Keys<Models>]: K;
+};
 // ====================================================================
-// The following are the type definitions for the database schema
-// Since I use a base controller to handle the CRUD operations, I don't
-// know the exact type of the table until runtime. So I use the following
-// type definitions to help me out.
+// =====================  GENERATED TYPES BELOW  =====================
 // ====================================================================
+export type TablesOperationMap2 = {
+  [K in Keys<Models>]: {
+    select: Selectable<Models[K]>;
+    insert: Insertable<Models[K]>;
+    update: Updateable<Models[K]>;
+  };
+};
+
+// TODO: should be automatic (like ^)
 export type TablesOperationMap = {
   campaigns: {
     select: Selectable<Campaigns>;
@@ -144,20 +159,33 @@ export type TablesOperationMap = {
     update: Updateable<MapRolesUsers>;
   };
 };
-type Timestamp = ColumnType<Date, Date | string, Date | string>;
+// ====================================================================
+// The following are the type definitions for the database schema
+// Since I use a base controller to handle the CRUD operations, I don't
+// know the exact type of the table until runtime. So I use the following
+// type definitions to help me out.
+// ====================================================================
+interface RecordType {
+  id: Generated<bigint>;
+  tenant_id: bigint;
+  createdby_id: bigint | null;
+  updatedby_id: bigint | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
 
 interface AuthUsers extends RecordType {
   email: string;
   first_name: string;
   password: string;
   password_reset_code: string | null;
-  // move to Sessions
+  // TODO: move to Sessions?
   password_reset_code_created_at: Timestamp | null;
   role: string | null;
   verified: boolean;
 }
 
-interface Campaigns extends Omit<RecordType, "createdby_id"> {
+interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   admin_id: bigint;
   createdby_id: bigint;
   description: string | null;
@@ -168,7 +196,8 @@ interface Campaigns extends Omit<RecordType, "createdby_id"> {
   startdate: string | null;
 }
 
-interface Households extends Omit<RecordType, "createdby_id"> {
+//TODO: add an Address type
+interface Households extends Omit<RecordType, 'createdby_id'> {
   campaign_id: bigint;
   city: string | null;
   country: string | null;
@@ -203,23 +232,7 @@ interface MapRolesUsers extends RecordType {
   user_id: bigint;
 }
 
-export interface Models {
-  authusers: AuthUsers;
-  campaigns: Campaigns;
-  households: Households;
-  map_campaigns_users: MapCampaignsUsers;
-  map_households_tags: MapHouseholdsTags;
-  map_peoples_tags: MapPeoplesTags;
-  map_roles_users: MapRolesUsers;
-  persons: Persons;
-  profiles: Profiles;
-  roles: Roles;
-  sessions: Sessions;
-  tags: Tags;
-  tenants: Tenants;
-}
-
-interface Persons extends Omit<RecordType, "createdby_id"> {
+interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: bigint;
   createdby_id: bigint;
   email: string | null;
@@ -250,15 +263,6 @@ interface Profiles extends RecordType {
   zip: string | null;
 }
 
-export interface RecordType {
-  created_at: Generated<Timestamp>;
-  createdby_id: bigint | null;
-  id: Generated<bigint>;
-  tenant_id: bigint;
-  updated_at: Generated<Timestamp>;
-  updatedby_id: bigint | null;
-}
-
 interface Roles extends RecordType {
   description: string | null;
   name: string;
@@ -283,7 +287,7 @@ interface Tags extends RecordType {
   name: string;
 }
 
-interface Tenants extends Omit<RecordType, "tenant_id"> {
+interface Tenants extends Omit<RecordType, 'tenant_id'> {
   admin_id: bigint | null;
   billing_city: string | null;
   billing_country: string | null;
@@ -303,23 +307,4 @@ interface Tenants extends Omit<RecordType, "tenant_id"> {
   street1: string | null;
   street2: string | null;
   zip: string | null;
-}
-
-// The above interface and the below tables should match
-// TODO: I think I need to figure out how to specify that
-// the enum values are keyof Models
-export enum TableType {
-  campaigns = "campaigns",
-  households = "households",
-  map_campaigns_users = "map_campaigns_users",
-  map_households_tags = "map_households_tags",
-  map_peoples_tags = "map_peoples_tags",
-  persons = "persons",
-  tags = "tags",
-  tenants = "tenants",
-  profiles = "profiles",
-  authusers = "authusers",
-  sessions = "sessions",
-  roles = "roles",
-  map_roles_users = "map_roles_users",
 }
