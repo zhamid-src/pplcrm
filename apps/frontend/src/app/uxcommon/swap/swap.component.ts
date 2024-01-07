@@ -14,8 +14,8 @@ export class SwapComponent {
   @Input() public animation: 'flip' | 'rotate' = 'rotate';
   @Input() public checked: boolean = false;
   @Output() public clickEvent = new EventEmitter();
-  @Input({ required: true }) public swapOffIcon: IconName | undefined;
-  @Input({ required: true }) public swapOnIcon: IconName | undefined;
+  @Input({ required: true }) public swapOffIcon!: IconName;
+  @Input({ required: true }) public swapOnIcon!: IconName;
 
   public emitClick() {
     this.clickEvent.emit();
