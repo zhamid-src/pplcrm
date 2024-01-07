@@ -11,21 +11,15 @@ export class HouseholdsGridService extends BaseGridService<TYPE, never> {
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public deleteMany(ids: number[]) {
-    return Promise.resolve(true); // TODO: implement
-    // return this.api.households.deleteMany.mutate(ids);
-  }
-
   public findOne(id: number) {
     return this.api.households.findOne.query(id);
   }
-
   public refresh() {
     return this.getAllWithPeopleCount();
   }
-
+  public delete(id: number): Promise<boolean> {
+    return this.delete(id);
+  }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
   public update(id: number, data: any) {
     // TODO implement

@@ -45,11 +45,6 @@ export class BaseOperator<T extends keyof Models> {
   public async addOne(row: InsertObjectOrList<Models, T>) {
     return this.getInsert().values(row).returningAll().executeTakeFirst();
   }
-
-  public async deleteMany(ids: GetOperandType<T, 'select', 'id'>) {
-    return this.getDelete().where('id', 'in', ids).execute();
-  }
-
   public async deleteOne(id: GetOperandType<T, 'select', 'id'>) {
     return this.getDelete().where('id', '=', id).execute();
   }

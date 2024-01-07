@@ -13,16 +13,11 @@ export class TagsGridService extends BaseGridService<TYPE, AddTagType> {
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }
-
+  public delete(id: number): Promise<boolean> {
+    return this.delete(id);
+  }
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
-  }
-
-  public deleteMany(ids: number[]): Promise<boolean> {
-    return this.api.tags.deleteMany
-      .mutate(ids)
-      .then(() => true)
-      .catch(() => false);
   }
 
   public findOne(id: number) {

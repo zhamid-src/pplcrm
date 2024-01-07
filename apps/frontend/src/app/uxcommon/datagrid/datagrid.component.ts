@@ -224,7 +224,10 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.processing = true;
 
     const ids = rows.map((row) => Number(row.id));
-    const deleted = this.gridSvc.deleteMany(ids);
+
+    //TODO: use deleteMany
+    const deleted = this.gridSvc.delete(ids[0]);
+    // const deleted = this.gridSvc.deleteMany(ids);
 
     if (!deleted) {
       this.alertSvc.showError('Could not delete. Please try again later.');
