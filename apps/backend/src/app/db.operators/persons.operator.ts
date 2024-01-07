@@ -1,20 +1,14 @@
-import { TableType } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator, QueryParams } from './base.operator';
 
-export class PersonsOperator extends BaseOperator<TableType.persons | TableType.households> {
+type TYPE = 'persons' | 'households';
+
+export class PersonsOperator extends BaseOperator<TYPE> {
   constructor() {
-    super(TableType.persons);
+    super('persons');
   }
 
-  /**
-   * Get all persons with their household addresses
-   * @param optionsIn
-   * @returns
-   */
-  public async getAllWithHouseholds(
-    optionsIn?: QueryParams<TableType.persons | TableType.households>,
-  ): Promise<Partial<TableType.persons | TableType.households>[]> {
-    const options = optionsIn || ({} as QueryParams<TableType.persons | TableType.households>);
+  public async getAllWithHouseholds(optionsIn?: QueryParams<TYPE>): Promise<Partial<TYPE>[]> {
+    const options = optionsIn || ({} as QueryParams<TYPE>);
 
     options!.columns = options?.columns || [
       'persons.id',
@@ -26,23 +20,13 @@ export class PersonsOperator extends BaseOperator<TableType.persons | TableType.
       'households.street1',
       'households.city',
     ];
+
     let query = this.getSelect().innerJoin('households', 'persons.household_id', 'households.id');
-
     query = this.applyOptions(query, options);
-
-    return (await query.execute()) as Partial<TableType.households | TableType.persons>[];
+    return (await query.execute()) as Partial<TYPE>[];
   }
 
-  /**
-   * Get the number of people in the given household
-   * @param household_id
-   * @param options
-   * @returns
-   */
-  public getPersonsInHousehold(
-    household_id: bigint,
-    options?: QueryParams<TableType.persons | TableType.households>,
-  ) {
+  public getPersonsInHousehold(household_id: bigint, options?: QueryParams<TYPE>) {
     return this.getSelectWithColumns(options).where('household_id', '=', household_id).execute();
   }
 }

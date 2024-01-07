@@ -46,7 +46,7 @@ export class BaseOperator<T extends keyof Models> {
     return this.getInsert().values(row).returningAll().executeTakeFirst();
   }
 
-  public async deleteMany(ids: GetOperandType<T, 'select', 'id'>[]) {
+  public async deleteMany(ids: GetOperandType<T, 'select', 'id'>) {
     return this.getDelete().where('id', 'in', ids).execute();
   }
 

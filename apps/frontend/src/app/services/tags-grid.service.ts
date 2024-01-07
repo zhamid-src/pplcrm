@@ -3,7 +3,8 @@ import { AddTagType, UpdateTagType } from '@common';
 import { TableType } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
 
-export type TYPE = TableType.tags;
+type TYPE = TableType['tags'];
+export type TAGTYPE = TYPE;
 
 @Injectable({
   providedIn: 'root',

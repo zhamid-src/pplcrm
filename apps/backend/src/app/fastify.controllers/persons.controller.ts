@@ -6,13 +6,15 @@ import { BaseController } from './base.controller';
 /**
  * Persons controller
  */
-export class PersonsController extends BaseController<TableType.persons | TableType.households> {
+export class PersonsController extends BaseController<
+  TableType['persons'] | TableType['households']
+> {
   constructor() {
     super(new PersonsOperator());
   }
 
   public async getPersonsInHousehold(
-    id: GetOperandType<TableType.persons, 'select', 'id'>,
+    id: GetOperandType<TableType['persons'], 'select', 'id'>,
     reply: FastifyReply,
   ) {
     const persons = await (this.operator as PersonsOperator).getPersonsInHousehold(id);

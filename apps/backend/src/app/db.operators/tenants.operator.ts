@@ -1,8 +1,7 @@
-import { TableType } from "../../../../../common/src/lib/kysely.models";
-import { BaseOperator } from "./base.operator";
+import { BaseOperator } from './base.operator';
 
-export class TenantsOperator extends BaseOperator<TableType.tenants> {
+export class TenantsOperator extends BaseOperator<'tenants'> {
   constructor() {
-    super(TableType.tenants);
+    super('tenants');
   }
 }

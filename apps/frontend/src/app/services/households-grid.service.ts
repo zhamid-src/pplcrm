@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { TableType } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
 
-export type TYPE = TableType.households;
+export type TYPE = TableType['households'];
 
 @Injectable({
   providedIn: 'root',

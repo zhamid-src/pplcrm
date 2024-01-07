@@ -3,7 +3,7 @@ import { UpdatePersonsType, getAllOptionsType } from '@common';
 import { TableType } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
 
-export type TYPE = TableType.persons | TableType.households;
+export type TYPE = TableType['persons'] | TableType['households'];
 
 @Injectable({
   providedIn: 'root',

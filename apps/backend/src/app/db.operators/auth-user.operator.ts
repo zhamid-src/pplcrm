@@ -1,15 +1,15 @@
 import { SelectExpression, sql } from 'kysely';
-import { GetOperandType, Models, TableType } from '../../../../../common/src/lib/kysely.models';
+import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator, QueryParams } from './base.operator';
 
-type SelectEmailType = GetOperandType<TableType.authusers, 'select', 'email'>;
+type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 
 /**
  * Handles all the authusers table operations.
  */
-export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
+export class AuthUsersOperator extends BaseOperator<'authusers'> {
   constructor() {
-    super(TableType.authusers);
+    super('authusers');
   }
 
   public addPasswordResetCode(id: bigint) {
@@ -23,7 +23,7 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
       .executeTakeFirst();
   }
 
-  public findOneByEmail(email: SelectEmailType, options?: QueryParams<TableType.authusers>) {
+  public findOneByEmail(email: SelectEmailType, options?: QueryParams<'authusers'>) {
     return this.getSelectWithColumns(options).where('email', '=', email).executeTakeFirst();
   }
 
@@ -38,9 +38,7 @@ export class AuthUsersOperator extends BaseOperator<TableType.authusers> {
 
   public getPasswordResetCodeTime(code: string) {
     const codeColumn = 'password_reset_code';
-    const columns: SelectExpression<Models, TableType.authusers>[] = [
-      'password_reset_code_created_at',
-    ];
+    const columns: SelectExpression<Models, 'authusers'>[] = ['password_reset_code_created_at'];
     return this.getSelectWithColumns({ columns })
       .where(codeColumn, '=', code)
       .executeTakeFirstOrThrow();

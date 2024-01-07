@@ -20,9 +20,6 @@ export const tagsRouter = router({
     .input(z.object({ id: z.number(), data: UpdateTagObj }))
     .mutation(({ input, ctx }) => tags.update(input.id, input.data, ctx.auth)),
   delete: authProcedure.input(z.number()).mutation(({ input }) => tags.delete(input)),
-  deleteMany: authProcedure
-    .input(z.array(z.number()))
-    .mutation(({ input }) => tags.deleteMany(input)),
 });
 
 export type TagssRouter = typeof tagsRouter;
