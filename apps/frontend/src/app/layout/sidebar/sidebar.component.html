@@ -21,16 +21,13 @@
 
   <!-- Sidebar content here -->
   @for (item of items; track item.name; let idx = $index) {
-    <div
-      class="flex-none px-2"
-      [class.bg-base-200]="this.router.url === item['route']"
-    >
-      @if (item["type"] === "subheading") {
+    <div class="flex-none px-2" [class.bg-base-200]="this.router.url === item['route']">
+      @if (item['type'] === 'subheading') {
         <span
           class="text-base-400 py-2 pl-2 capitalize group-hover:text-xs"
           [class.text-[9px]]="this.isDrawerHalf()"
           [class.text-xs]="this.isDrawerFull()"
-          >{{ item["name"] }}</span
+          >{{ item['name'] }}</span
         >
       } @else {
         <a
@@ -38,15 +35,12 @@
           (click)="this.closeMobile()"
           routerLink="{{ item['route'] }}"
         >
-          <pc-icon
-            class="hover:text-primary text-xs"
-            [name]="item['icon']"
-          ></pc-icon>
+          <pc-icon class="hover:text-primary text-xs" [name]="item['icon']!"></pc-icon>
           <span
             class="pl-3 pt-1 group-hover:md:visible"
             [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
           >
-            {{ item["name"] }}</span
+            {{ item['name'] }}</span
           ></a
         >
       }

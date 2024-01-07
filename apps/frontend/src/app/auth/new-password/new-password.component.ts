@@ -28,11 +28,13 @@ import { firstValueFrom } from 'rxjs';
 })
 export class NewPasswordComponent implements OnInit {
   private code: string | null = null;
+
+  protected success: string | undefined;
+
   private hidePassword = true;
 
   protected error = signal(false);
   protected processing = signal(false);
-  protected success: string | undefined;
 
   public form = this.fb.group({
     password: ['', [Validators.required, Validators.minLength(8)]],
@@ -48,14 +50,6 @@ export class NewPasswordComponent implements OnInit {
 
   public get password() {
     return this.form.get('password');
-  }
-
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
   public async ngOnInit() {
@@ -89,7 +83,25 @@ export class NewPasswordComponent implements OnInit {
     this.router.navigateByUrl('signin');
   }
 
+  protected passwordBreachNumber() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  protected passwordInBreach() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? 'password' : 'text';
+  }
+
   public toggleVisibility() {
     this.hidePassword = !this.hidePassword;
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 }
