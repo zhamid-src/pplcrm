@@ -12,18 +12,12 @@ export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType>
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
-
-  public deleteMany(ids: number[]): Promise<boolean> {
-    return this.api.persons.deleteMany
-      .mutate(ids)
-      .then(() => true)
-      .catch(() => false);
-  }
-
   public findOne(id: number) {
     return this.api.persons.findOne.query(id);
   }
-
+  public delete(id: number): Promise<boolean> {
+    return this.delete(id);
+  }
   public refresh(options?: getAllOptionsType) {
     return this.getAllWithHouseholds(options);
   }
