@@ -77,9 +77,6 @@ export type TableColumnsType<T extends keyof Models> = T extends keyof Models
   ? SelectExpression<Models, ExtractTableAlias<Models, T>>
   : never;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
-export type TableType = {
-  [K in Keys<Models>]: K;
-};
 // ====================================================================
 // =====================  GENERATED TYPES BELOW  =====================
 // ====================================================================

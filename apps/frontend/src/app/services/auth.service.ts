@@ -1,13 +1,12 @@
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
-import { TableType } from 'common/src/lib/kysely.models';
 import { TRPCService } from './trpc.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class AuthService extends TRPCService<TableType['authusers']> {
+export class AuthService extends TRPCService<'authusers'> {
   private _user = signal<IAuthUser | null>(null);
 
   public init() {

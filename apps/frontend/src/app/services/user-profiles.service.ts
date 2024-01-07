@@ -1,15 +1,14 @@
 import { Injectable } from '@angular/core';
-import { TableType } from 'common/src/lib/kysely.models';
 import { TRPCService } from './trpc.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class UserProfilesService extends TRPCService<TableType.profiles> {
+export class UserProfilesService extends TRPCService<'profiles'> {
   // #region Public Methods (2)
 
   public getAll() {
-    return this.api.userProfiles.getAll.query();
+    return this.api.userProfiles.findAll.query();
   }
 
   public findOne(id: number) {

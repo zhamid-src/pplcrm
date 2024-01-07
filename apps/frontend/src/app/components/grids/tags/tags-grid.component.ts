@@ -5,7 +5,7 @@ import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { BaseGridService } from '@services/base-grid.service';
 import { SearchService } from '@services/search.service';
-import { TAGTYPE, TagsGridService } from '@services/tags-grid.service';
+import { TagsGridService } from '@services/tags-grid.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 
@@ -17,7 +17,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
   styleUrl: './tags-grid.component.scss',
   providers: [{ provide: BaseGridService, useClass: TagsGridService }],
 })
-export class TagsGridComponent extends DatagridComponent<TAGTYPE, AddTagType> {
+export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
   protected col = [
     { field: 'name', headerName: 'Tag Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },

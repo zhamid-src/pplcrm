@@ -1,6 +1,6 @@
 import { UpdatePersonsType, getAllOptionsType } from '@common';
 import { InsertObjectOrList } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
-import { Models, TableType } from '../../../../../common/src/lib/kysely.models';
+import { Models } from '../../../../../common/src/lib/kysely.models';
 import { QueryParams } from '../db.operators/base.operator';
 import { PersonsOperator } from '../db.operators/persons.operator';
 
@@ -8,12 +8,12 @@ const persons = new PersonsOperator();
 
 export class PersonsHelper {
   public add(row: UpdatePersonsType) {
-    return persons.addOne(row as InsertObjectOrList<Models, TableType['persons']>);
+    return persons.addOne(row as InsertObjectOrList<Models, 'persons'>);
   }
 
   public addMany(rows: UpdatePersonsType[]) {
     // TODO: add household_id, createdby_id etc.
-    //return persons.addMany(rows as unknown as InsertObjectOrList<Models, TableType["persons"]>);
+    //return persons.addMany(rows as unknown as InsertObjectOrList<Models, "persons"]>);
   }
 
   public async delete(id: number) {
@@ -21,8 +21,8 @@ export class PersonsHelper {
   }
 
   public async findAll(options: getAllOptionsType) {
-    const queryOptions: QueryParams<TableType['persons'] | TableType['households']> = {
-      ...(options as QueryParams<TableType['persons']>),
+    const queryOptions: QueryParams<'persons' | 'households'> = {
+      ...(options as QueryParams<'persons'>),
     };
     return persons.findAll(queryOptions);
   }
@@ -35,9 +35,7 @@ export class PersonsHelper {
     const queryOptions = {
       ...options,
     };
-    return persons.getAllWithHouseholds(
-      queryOptions as QueryParams<TableType['persons'] | TableType['households']>,
-    );
+    return persons.getAllWithHouseholds(queryOptions as QueryParams<'persons' | 'households'>);
   }
 
   public async update(id: number, input: UpdatePersonsType) {
