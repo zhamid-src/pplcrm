@@ -1,3 +1,4 @@
+import { TableIdType } from 'common/src/lib/kysely.models';
 import { BaseOperator, QueryParams } from './base.operator';
 
 export class TagsOperator extends BaseOperator<'tags'> {
@@ -5,7 +6,10 @@ export class TagsOperator extends BaseOperator<'tags'> {
     super('tags');
   }
 
-  public override findOne(param: string | bigint, options?: QueryParams<'tags'>) {
+  public override findOne(
+    param: string | bigint | TableIdType<'tags'>,
+    options?: QueryParams<'tags'>,
+  ) {
     if (typeof param === 'bigint') {
       return super.findOne(param, options);
     } else if (typeof param === 'string') {

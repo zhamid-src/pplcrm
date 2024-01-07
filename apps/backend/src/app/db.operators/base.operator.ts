@@ -1,22 +1,16 @@
 import { INow } from '@common';
-import {
-  InsertQueryBuilder,
-  InsertResult,
-  QueryResult,
-  SelectQueryBuilder,
-  UpdateObject,
-  sql,
-} from 'kysely';
+import { InsertQueryBuilder, InsertResult, QueryResult, SelectQueryBuilder, sql } from 'kysely';
 import {
   InsertObject,
   InsertObjectOrList,
 } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
 import {
-  GetOperandType,
   GroupDataType,
   Models,
   TableColumnsType,
+  TableIdType,
+  UpdateRow,
 } from '../../../../../common/src/lib/kysely.models';
 import { db } from '../kyselyinit';
 
@@ -45,7 +39,7 @@ export class BaseOperator<T extends keyof Models> {
   public async addOne(row: InsertObjectOrList<Models, T>) {
     return this.getInsert().values(row).returningAll().executeTakeFirst();
   }
-  public async deleteOne(id: GetOperandType<T, 'select', 'id'>) {
+  public async deleteOne(id: TableIdType<T>) {
     return this.getDelete().where('id', '=', id).execute();
   }
 
@@ -53,7 +47,7 @@ export class BaseOperator<T extends keyof Models> {
     return this.getSelectWithColumns(options).execute();
   }
 
-  public findOne(id: GetOperandType<T, 'select', 'id'>, options?: QueryParams<T>) {
+  public findOne(id: TableIdType<T>, options?: QueryParams<T>) {
     return this.getSelectWithColumns(options).where('id', '=', id).executeTakeFirst();
   }
 
@@ -66,10 +60,7 @@ export class BaseOperator<T extends keyof Models> {
     return (await sql`select now()::timestamp`.execute(db)) as QueryResult<INow>;
   }
 
-  public async updateOne(
-    id: GetOperandType<T, 'update', 'id'>,
-    row: UpdateObject<Models, ExtractTableAlias<Models, T>, ExtractTableAlias<Models, T>>,
-  ) {
+  public async updateOne(id: TableIdType<T>, row: UpdateRow<T>) {
     return this.getUpdate().set(row).where('id', '=', id).returningAll().executeTakeFirst();
   }
 

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { UpdateRow } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
 
 @Injectable({
@@ -17,8 +18,7 @@ export class HouseholdsGridService extends BaseGridService<'households', never> 
   public delete(id: number): Promise<boolean> {
     return this.delete(id);
   }
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  public update(id: number, data: any) {
+  public update(id: number, data: UpdateRow<'households'>) {
     // TODO implement
     return Promise.resolve([]);
   }

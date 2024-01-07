@@ -1,8 +1,8 @@
 import { FastifyReply } from 'fastify';
 import {
-  GetOperandType,
   Models,
   OperationDataType,
+  TableIdType,
 } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator } from '../db.operators/base.operator';
 
@@ -21,12 +21,12 @@ export class BaseController<T extends keyof Models> {
     return reply.code(201).send(result);
   }
 
-  public async delete(id: GetOperandType<T, 'select', 'id'>, reply: FastifyReply) {
+  public async delete(id: TableIdType<T>, reply: FastifyReply) {
     const result = await this.operator.deleteOne(id);
     return reply.code(204).send(result);
   }
 
-  public async findOne(id: GetOperandType<T, 'select', 'id'>, reply: FastifyReply) {
+  public async findOne(id: TableIdType<T>, reply: FastifyReply) {
     const row = await this.operator.findOne(id);
     return row ? reply.code(200).send(row) : reply.send(404);
   }
@@ -42,7 +42,7 @@ export class BaseController<T extends keyof Models> {
   }
 
   public async update(
-    id: GetOperandType<T, 'update', 'id'>,
+    id: TableIdType<T>,
     row: OperationDataType<T, 'update'>,
     reply: FastifyReply,
   ) {
