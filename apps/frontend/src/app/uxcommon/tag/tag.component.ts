@@ -1,26 +1,25 @@
-import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, Input, Output } from "@angular/core";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
+import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: "pc-tag",
+  selector: 'pc-tag',
   standalone: true,
   imports: [CommonModule, IconsComponent, TagComponent],
-  templateUrl: "./tag.component.html",
-  styleUrl: "./tag.component.scss",
+  templateUrl: './tag.component.html',
+  styleUrl: './tag.component.scss',
 })
 export class TagComponent {
-  @Input({ required: true }) name: string = "";
-  @Input() allowDetele = true;
+  @Input() public allowDetele = true;
+  @Output() public clickEvent = new EventEmitter<string>();
+  @Output() public closeEvent = new EventEmitter<string>();
+  @Input({ required: true }) public name!: string;
 
-  @Output() clickEvent = new EventEmitter<string>();
-  @Output() closeEvent = new EventEmitter<string>();
-
-  emitClick() {
+  public emitClick() {
     this.clickEvent.emit(this.name);
   }
 
-  emitClose() {
+  public emitClose() {
     this.closeEvent.emit(this.name);
   }
 }
