@@ -1,11 +1,11 @@
-import { Injectable, signal } from "@angular/core";
-import { IAuthUser, IToken, signInInputType, signUpInputType } from "@common";
-import { TRPCError } from "@trpc/server";
-import { TableType } from "common/src/lib/kysely.models";
-import { TRPCService } from "./trpc.service";
+import { Injectable, signal } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
+import { TRPCError } from '@trpc/server';
+import { TableType } from 'common/src/lib/kysely.models';
+import { TRPCService } from './trpc.service';
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class AuthService extends TRPCService<TableType.authusers> {
   private _user = signal<IAuthUser | null>(null);
@@ -31,7 +31,7 @@ export class AuthService extends TRPCService<TableType.authusers> {
     const apiReturn = await this.api.auth.signOut.mutate();
     this._user.set(null);
     this.tokenService.clearAll();
-    this.router.navigate(["/signin"]);
+    this.router.navigate(['/signin']);
 
     return apiReturn;
   }
@@ -46,7 +46,7 @@ export class AuthService extends TRPCService<TableType.authusers> {
   }
 
   private async getCurrentUser() {
-    const user = await this.api.auth.currentUser.query().catch(() => null);
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
     this._user.set(user);
     return user;
   }

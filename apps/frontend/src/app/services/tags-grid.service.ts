@@ -1,12 +1,12 @@
-import { Injectable } from "@angular/core";
-import { AddTagType, UpdateTagType } from "@common";
-import { TableType } from "common/src/lib/kysely.models";
-import { BaseGridService } from "./base-grid.service";
+import { Injectable } from '@angular/core';
+import { AddTagType, UpdateTagType } from '@common';
+import { TableType } from 'common/src/lib/kysely.models';
+import { BaseGridService } from './base-grid.service';
 
 export type TYPE = TableType.tags;
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class TagsGridService extends BaseGridService<TYPE, AddTagType> {
   public add(tag: AddTagType) {
@@ -24,14 +24,14 @@ export class TagsGridService extends BaseGridService<TYPE, AddTagType> {
       .catch(() => false);
   }
 
-  public getAll() {
-    return this.api.tags.getAll.query(undefined, {
-      signal: this.ac.signal,
-    });
+  public findOne(id: number) {
+    return this.api.tags.findOne.query(BigInt(id));
   }
 
-  public getOneById(id: number) {
-    return this.api.tags.getOneById.query(BigInt(id));
+  public getAll() {
+    return this.api.tags.findAll.query(undefined, {
+      signal: this.ac.signal,
+    });
   }
 
   public refresh() {

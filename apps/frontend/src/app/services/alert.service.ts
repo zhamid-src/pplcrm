@@ -1,6 +1,6 @@
-import { Injectable, signal } from "@angular/core";
+import { Injectable, signal } from '@angular/core';
 
-export type ALERTTYPE = "info" | "error" | "warning" | "success";
+export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 
 export interface AlertMessage {
   OKBtn?: string;
@@ -13,9 +13,8 @@ export interface AlertMessage {
   type?: ALERTTYPE;
 }
 
-// TODO: add callback to the alert message?
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class AlertService {
   private _alerts = signal<AlertMessage[]>([]);
@@ -63,19 +62,19 @@ export class AlertService {
   }
 
   public showError(text: string) {
-    this.show({ text, type: "error" });
+    this.show({ text, type: 'error' });
   }
 
   public showInfo(text: string) {
-    this.show({ text, type: "info" });
+    this.show({ text, type: 'info' });
   }
 
   public showSuccess(text: string) {
-    this.show({ text, type: "success" });
+    this.show({ text, type: 'success' });
   }
 
   public showWarn(text: string) {
-    this.show({ text, type: "warning" });
+    this.show({ text, type: 'warning' });
   }
 
   private removeAlert(alert: AlertMessage) {

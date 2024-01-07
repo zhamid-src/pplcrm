@@ -10,7 +10,6 @@
 // 2. Add the enum in TableType
 // 3. Add the type in the TablesOperationMap
 // ====================================================================
-
 import type {
   ColumnType,
   Insertable,
@@ -21,48 +20,63 @@ import type {
 import { UndirectedOrderByExpression } from "node_modules/kysely/dist/cjs/parser/order-by-parser";
 import { ExtractTableAlias } from "node_modules/kysely/dist/cjs/parser/table-parser";
 
-export interface Models {
-  authusers: AuthUsers;
-  campaigns: Campaigns;
-  households: Households;
-  map_campaigns_users: MapCampaignsUsers;
-  map_households_tags: MapHouseholdsTags;
-  map_peoples_tags: MapPeoplesTags;
-  map_roles_users: MapRolesUsers;
-  persons: Persons;
-  profiles: Profiles;
-  roles: Roles;
-  sessions: Sessions;
-  tags: Tags;
-  tenants: Tenants;
-}
-
-// The above interface and the below tables should match
-// TODO: I think I need to figure out how to specify that
-// the enum values are keyof Models
-export enum TableType {
-  campaigns = "campaigns",
-  households = "households",
-  map_campaigns_users = "map_campaigns_users",
-  map_households_tags = "map_households_tags",
-  map_peoples_tags = "map_peoples_tags",
-  persons = "persons",
-  tags = "tags",
-  tenants = "tenants",
-  profiles = "profiles",
-  authusers = "authusers",
-  sessions = "sessions",
-  roles = "roles",
-  map_roles_users = "map_roles_users",
-}
-
+export type AuthUsersType = Omit<AuthUsers, "id"> & { id: bigint };
+type DiscriminatedUnionOfRecord<
+  A,
+  B = {
+    [Key in keyof A as "_"]: {
+      [K in Key]: [
+        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
+      ];
+    };
+  }["_"],
+> = Keys<A> extends Keys<B>
+  ? B[Keys<A>] extends Array<any>
+    ? B[Keys<A>][number]
+    : never
+  : never;
+// ====================================================================
+// =====================  GENERATED TYPES BELOW  =====================
+// ====================================================================
+type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S, I | undefined, U>
+  : ColumnType<T, T | undefined, T>;
+export type GetOperandType<
+  T extends keyof TablesOperationMap,
+  Op extends keyof TablesOperationMap[T],
+  Key extends keyof TablesOperationMap[T][Op],
+> = unknown extends TablesOperationMap[T][Op][Key]
+  ? never
+  : TablesOperationMap[T][Op][Key] extends never
+    ? never
+    : TablesOperationMap[T][Op][Key];
+export type GroupDataType<T extends keyof Models> = T extends keyof Models
+  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
+  : never;
+type Json = ColumnType<JsonValue, string, string>;
+type JsonArray = JsonValue[];
+type JsonObject = {
+  [K in string]?: JsonValue;
+};
+type JsonPrimitive = boolean | number | string | null;
+type JsonValue = JsonArray | JsonObject | JsonPrimitive;
+type Keys<T> = keyof T;
+export type OperationDataType<
+  T extends keyof Models,
+  Op extends "select" | "update" | "insert",
+> = T extends keyof TableOpsUnion ? TableOpsUnion[T][Op] : never;
+export type SesssionsType = Sessions;
+// export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
+export type TableColumnsType<T extends keyof Models> = T extends keyof Models
+  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
+  : never;
+type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 // ====================================================================
 // The following are the type definitions for the database schema
 // Since I use a base controller to handle the CRUD operations, I don't
 // know the exact type of the table until runtime. So I use the following
 // type definitions to help me out.
 // ====================================================================
-
 export type TablesOperationMap = {
   campaigns: {
     select: Selectable<Campaigns>;
@@ -130,76 +144,48 @@ export type TablesOperationMap = {
     update: Updateable<MapRolesUsers>;
   };
 };
-
-type Keys<T> = keyof T;
-
-type DiscriminatedUnionOfRecord<
-  A,
-  B = {
-    [Key in keyof A as "_"]: {
-      [K in Key]: [
-        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
-      ];
-    };
-  }["_"],
-> = Keys<A> extends Keys<B>
-  ? B[Keys<A>] extends Array<any>
-    ? B[Keys<A>][number]
-    : never
-  : never;
-
-type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
-// export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
-
-export type TableColumnsType<T extends keyof Models> = T extends keyof Models
-  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
-  : never;
-
-export type GroupDataType<T extends keyof Models> = T extends keyof Models
-  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
-  : never;
-export type OperationDataType<
-  T extends keyof Models,
-  Op extends "select" | "update" | "insert",
-> = T extends keyof TableOpsUnion ? TableOpsUnion[T][Op] : never;
-export type GetOperandType<
-  T extends keyof TablesOperationMap,
-  Op extends keyof TablesOperationMap[T],
-  Key extends keyof TablesOperationMap[T][Op],
-> = unknown extends TablesOperationMap[T][Op][Key]
-  ? never
-  : TablesOperationMap[T][Op][Key] extends never
-    ? never
-    : TablesOperationMap[T][Op][Key];
-
-// ====================================================================
-// =====================  GENERATED TYPES BELOW  =====================
-// ====================================================================
-type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
-  ? ColumnType<S, I | undefined, U>
-  : ColumnType<T, T | undefined, T>;
-
-type Json = ColumnType<JsonValue, string, string>;
-type JsonArray = JsonValue[];
-type JsonObject = {
-  [K in string]?: JsonValue;
-};
-type JsonPrimitive = boolean | number | string | null;
-type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
-export interface RecordType {
-  id: Generated<bigint>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  createdby_id: bigint | null;
-  updatedby_id: bigint | null;
-  tenant_id: bigint;
+interface AuthUsers extends RecordType {
+  email: string;
+  first_name: string;
+  password: string;
+  password_reset_code: string | null;
+  // move to Sessions
+  password_reset_code_created_at: Timestamp | null;
+  role: string | null;
+  verified: boolean;
+}
+
+interface Campaigns extends Omit<RecordType, "createdby_id"> {
+  admin_id: bigint;
+  createdby_id: bigint;
+  description: string | null;
+  enddate: string | null;
+  json: Json | null;
+  name: string;
+  notes: string | null;
+  startdate: string | null;
+}
+
+interface Households extends Omit<RecordType, "createdby_id"> {
+  campaign_id: bigint;
+  city: string | null;
+  country: string | null;
+  createdby_id: bigint;
+  file_id: bigint | null;
+  home_phone: string | null;
+  json: Json | null;
+  notes: string | null;
+  state: string | null;
+  street1: string | null;
+  street2: string | null;
+  zip: string | null;
 }
 
 interface MapCampaignsUsers extends RecordType {
-  user_id: bigint;
   campaign_id: bigint;
+  user_id: bigint;
 }
 
 interface MapHouseholdsTags extends RecordType {
@@ -212,113 +198,42 @@ interface MapPeoplesTags extends RecordType {
   tag_id: bigint;
 }
 
-interface Tags extends RecordType {
-  name: string;
-  description: string | null;
-}
-
-interface Campaigns extends Omit<RecordType, "createdby_id"> {
-  name: string;
-  admin_id: bigint;
-  createdby_id: bigint;
-  description: string | null;
-  startdate: string | null;
-  enddate: string | null;
-  json: Json | null;
-  notes: string | null;
-}
-
-interface Persons extends Omit<RecordType, "createdby_id"> {
-  campaign_id: bigint;
-  household_id: bigint;
-  createdby_id: bigint;
-  email: string | null;
-  email2: string | null;
-  first_name: string | null;
-  middle_names: string | null;
-  last_name: string | null;
-  home_phone: string | null;
-  mobile: string | null;
-  file_id: bigint | null;
-  notes: string | null;
-  json: Json | null;
-}
-
-interface Households extends Omit<RecordType, "createdby_id"> {
-  campaign_id: bigint;
-  createdby_id: bigint;
-  file_id: bigint | null;
-  home_phone: string | null;
-  street1: string | null;
-  street2: string | null;
-  state: string | null;
-  city: string | null;
-  zip: string | null;
-  country: string | null;
-  json: Json | null;
-  notes: string | null;
-
-  people_count: string | null;
-}
-
-interface Tenants extends Omit<RecordType, "tenant_id"> {
-  name: string;
-  admin_id: bigint | null;
-  billing_street1: string | null;
-  billing_street2: string | null;
-  billing_city: string | null;
-  billing_state: string | null;
-  billing_zip: string | null;
-  billing_country: string | null;
-  street1: string | null;
-  street2: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  country: string | null;
-  email: string | null;
-  email2: string | null;
-  json: Json | null;
-  notes: string | null;
-  phone: string | null;
-}
-
-// We use a UUID for the Id here, so we can't extend the recordtype
-interface Sessions extends RecordType {
-  session_id: Generated<string>;
-  ip_address: string;
-  last_accessed: Generated<Timestamp>;
-  other_properties: Json | null;
-  refresh_token: Generated<string>;
-  status: string;
-  tenant_id: bigint;
-  user_agent: string;
-  user_id: bigint;
-}
-export type SesssionsType = Sessions;
-
-interface Roles extends RecordType {
-  name: string;
-  description: string | null;
-  permissions: Json | null;
-}
-
 interface MapRolesUsers extends RecordType {
   role_id: bigint;
   user_id: bigint;
 }
 
-interface AuthUsers extends RecordType {
-  email: string;
-  first_name: string;
-  password: string;
-  password_reset_code: string | null;
-  // move to Sessions
-  password_reset_code_created_at: Timestamp | null;
-  role: string | null;
-  verified: boolean;
+export interface Models {
+  authusers: AuthUsers;
+  campaigns: Campaigns;
+  households: Households;
+  map_campaigns_users: MapCampaignsUsers;
+  map_households_tags: MapHouseholdsTags;
+  map_peoples_tags: MapPeoplesTags;
+  map_roles_users: MapRolesUsers;
+  persons: Persons;
+  profiles: Profiles;
+  roles: Roles;
+  sessions: Sessions;
+  tags: Tags;
+  tenants: Tenants;
 }
-export type AuthUsersType = Omit<AuthUsers, "id"> & { id: bigint };
+
+interface Persons extends Omit<RecordType, "createdby_id"> {
+  campaign_id: bigint;
+  createdby_id: bigint;
+  email: string | null;
+  email2: string | null;
+  file_id: bigint | null;
+  first_name: string | null;
+  home_phone: string | null;
+  household_id: bigint;
+  json: Json | null;
+  last_name: string | null;
+  middle_names: string | null;
+  mobile: string | null;
+  notes: string | null;
+}
 
 interface Profiles extends RecordType {
   auth_id: bigint;
@@ -333,4 +248,78 @@ interface Profiles extends RecordType {
   street1: string | null;
   street2: string | null;
   zip: string | null;
+}
+
+export interface RecordType {
+  created_at: Generated<Timestamp>;
+  createdby_id: bigint | null;
+  id: Generated<bigint>;
+  tenant_id: bigint;
+  updated_at: Generated<Timestamp>;
+  updatedby_id: bigint | null;
+}
+
+interface Roles extends RecordType {
+  description: string | null;
+  name: string;
+  permissions: Json | null;
+}
+
+// We use a UUID for the Id here, so we can't extend the recordtype
+interface Sessions extends RecordType {
+  ip_address: string;
+  last_accessed: Generated<Timestamp>;
+  other_properties: Json | null;
+  refresh_token: Generated<string>;
+  session_id: Generated<string>;
+  status: string;
+  tenant_id: bigint;
+  user_agent: string;
+  user_id: bigint;
+}
+
+interface Tags extends RecordType {
+  description: string | null;
+  name: string;
+}
+
+interface Tenants extends Omit<RecordType, "tenant_id"> {
+  admin_id: bigint | null;
+  billing_city: string | null;
+  billing_country: string | null;
+  billing_state: string | null;
+  billing_street1: string | null;
+  billing_street2: string | null;
+  billing_zip: string | null;
+  city: string | null;
+  country: string | null;
+  email: string | null;
+  email2: string | null;
+  json: Json | null;
+  name: string;
+  notes: string | null;
+  phone: string | null;
+  state: string | null;
+  street1: string | null;
+  street2: string | null;
+  zip: string | null;
+}
+
+// The above interface and the below tables should match
+// TODO: I think I need to figure out how to specify that
+// the enum values are keyof Models
+export enum TableType {
+  campaigns = "campaigns",
+  households = "households",
+  map_campaigns_users = "map_campaigns_users",
+  map_households_tags = "map_households_tags",
+  map_peoples_tags = "map_peoples_tags",
+  persons = "persons",
+  tags = "tags",
+  tenants = "tenants",
+  profiles = "profiles",
+  authusers = "authusers",
+  sessions = "sessions",
+  roles = "roles",
+  map_roles_users = "map_roles_users",
 }
