@@ -12,12 +12,11 @@ export type IconName = keyof typeof icons;
   styleUrl: './icons.component.scss',
 })
 export class IconsComponent {
-  @Input({ required: true }) public name: IconName | undefined;
+  @Input({ required: true }) public name!: IconName;
   @Input() public size: number = 6;
-  public svg = '';
 
   public getSvg() {
-    return icons[this.name!];
+    return icons[this.name];
   }
 }
 
