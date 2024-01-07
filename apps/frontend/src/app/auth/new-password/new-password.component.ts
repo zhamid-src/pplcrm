@@ -84,11 +84,15 @@ export class NewPasswordComponent implements OnInit {
   }
 
   protected passwordBreachNumber() {
+    // This uses an external library. I can't find any exported interface that
+    // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.password?.errors as any)?.pwnedPasswordOccurrence;
   }
 
   protected passwordInBreach() {
+    // This uses an external library. I can't find any exported interface that
+    // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
   }
