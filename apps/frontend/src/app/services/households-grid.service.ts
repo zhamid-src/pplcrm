@@ -1,13 +1,10 @@
 import { Injectable } from '@angular/core';
-import { TableType } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
-
-export type TYPE = TableType['households'];
 
 @Injectable({
   providedIn: 'root',
 })
-export class HouseholdsGridService extends BaseGridService<TYPE, never> {
+export class HouseholdsGridService extends BaseGridService<'households', never> {
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
   }
