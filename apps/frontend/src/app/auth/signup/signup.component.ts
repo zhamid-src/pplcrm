@@ -36,8 +36,9 @@ export class SignUpComponent {
     last_name: [''],
     terms: [''],
   });
-  protected hidePassword = true;
+
   protected processing = signal(false);
+  protected hidePassword = true;
 
   constructor(
     private fb: FormBuilder,
@@ -62,14 +63,6 @@ export class SignUpComponent {
     return this.form.get('password');
   }
 
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
-  }
-
   public async join() {
     if (this.form.invalid)
       return this.alertSvc.showError('Please enter all information before continuing.');
@@ -89,7 +82,25 @@ export class SignUpComponent {
       .finally(() => this.processing.set(false));
   }
 
+  protected passwordBreachNumber() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  protected passwordInBreach() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? 'password' : 'text';
+  }
+
   public toggleVisibility() {
     this.hidePassword = !this.hidePassword;
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 }

@@ -103,12 +103,10 @@
           />
         </label>
 
-        @if (this.password?.errors?.pwnedPasswordOccurrence) {
+        @if (passwordInBreach()) {
           <span class="label-text-alt text-error -my-2 pb-2"
             >This is not a safe password as it has been in
-            <span class="font-bold">{{
-              this.password.errors.pwnedPasswordOccurrence | number: '1.0-0'
-            }}</span>
+            <span class="font-bold">{{ passwordBreachNumber() | number: '1.0-0' }}</span>
             data breaches before. You should select a different password.</span
           >
           <!--
