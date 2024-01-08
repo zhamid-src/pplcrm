@@ -1,51 +1,52 @@
-import { CommonModule } from "@angular/common";
-import { Component } from "@angular/core";
-import { AlertService } from "@services/alert.service";
-import { AlertComponent } from "@uxcommon/alert/alert.component";
-import { TagsComponent } from "@uxcommon/tags/tags.component";
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
+import { AlertService } from '@services/alert.service';
+import { AlertComponent } from '@uxcommon/alert/alert.component';
+import { TagsComponent } from '@uxcommon/tags/tags.component';
 
 @Component({
-  selector: "pc-summary",
+  selector: 'pc-summary',
   standalone: true,
   imports: [CommonModule, TagsComponent, AlertComponent],
-  templateUrl: "./summary.component.html",
-  styleUrl: "./summary.component.scss",
+  templateUrl: './summary.component.html',
+  styleUrl: './summary.component.scss',
 })
 export class SummaryComponent {
-  tags = ["hello", "you", "fool"];
-  readonly = false;
-  allowDetele = true;
+  public allowDetele = true;
+  public readonly = false;
+  public tags = ['hello', 'you', 'fool'];
 
   constructor(private alert: AlertService) {}
 
-  tagsChanged(e: string[]) {
-    console.log(e, this.tags);
+  public Error() {
+    this.alert.show({
+      text: 'This is an error alert',
+      type: 'error',
+    });
   }
 
-  Info() {
-    this.alert.showInfo(
-      "This is an <a href='/console/households' class='link'>info</a> alert",
-    );
+  public Info() {
+    this.alert.showInfo("This is an <a href='/console/households' class='link'>info</a> alert");
   }
-  Success() {
+
+  public Success() {
     this.alert.show({
-      text: "This is an success alert",
-      type: "success",
-      title: "SUCCESS!",
-      OKBtn: "OK",
+      text: 'This is an success alert',
+      type: 'success',
+      title: 'SUCCESS!',
+      OKBtn: 'OK',
     });
   }
-  Warning() {
+
+  public Warning() {
     this.alert.show({
-      text: "This is an warning alert",
-      type: "warning",
-      title: "W!",
+      text: 'This is an warning alert',
+      type: 'warning',
+      title: 'W!',
     });
   }
-  Error() {
-    this.alert.show({
-      text: "This is an error alert",
-      type: "error",
-    });
+
+  public tagsChanged(e: string[]) {
+    console.log(e, this.tags);
   }
 }

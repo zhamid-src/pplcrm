@@ -1,42 +1,40 @@
-import { CommonModule } from "@angular/common";
-import { Component } from "@angular/core";
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
 
-import { FormsModule } from "@angular/forms";
-import { AlertService } from "@services/alert.service";
-import { AuthService } from "@services/auth.service";
-import { SearchService } from "@services/search.service";
-import { SidebarService } from "@services/sidebar.service";
-import { ThemeService } from "@services/theme.service";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
-import { SwapComponent } from "@uxcommon/swap/swap.component";
+import { FormsModule } from '@angular/forms';
+import { AuthService } from '@services/auth.service';
+import { SearchService } from '@services/search.service';
+import { SidebarService } from '@services/sidebar.service';
+import { ThemeService } from '@services/theme.service';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-  selector: "pc-navbar",
+  selector: 'pc-navbar',
   standalone: true,
   imports: [CommonModule, IconsComponent, SwapComponent, FormsModule],
-  templateUrl: "./navbar.component.html",
-  styleUrl: "./navbar.component.scss",
+  templateUrl: './navbar.component.html',
+  styleUrl: './navbar.component.scss',
 })
 export class NavbarComponent {
-  protected searchStr = "";
   protected searchOnMobile = false;
+  protected searchStr = '';
 
   constructor(
     private auth: AuthService,
     protected themeSvc: ThemeService,
     private searchSvc: SearchService,
     private sideBarSvc: SidebarService,
-    private alertSvc: AlertService,
   ) {}
-
-  protected showSearchonMobile() {
-    this.searchOnMobile = true;
-  }
 
   public clearSearch() {
     this.searchOnMobile = false;
-    this.searchStr = "";
+    this.searchStr = '';
     this.searchSvc.clearSearch();
+  }
+
+  public isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
   }
 
   public search() {
@@ -47,14 +45,15 @@ export class NavbarComponent {
     await this.auth.signOut();
   }
 
-  public isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
   public toggleMobile() {
     this.sideBarSvc.toggleMobile();
   }
 
   public toggleTheme() {
     this.themeSvc.toggleTheme();
+  }
+
+  protected showSearchonMobile() {
+    this.searchOnMobile = true;
   }
 }

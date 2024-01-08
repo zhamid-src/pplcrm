@@ -6,8 +6,8 @@ import { PersonsHouseholdsOperator } from '../db.operators/persons-households.op
 import { PersonsOperator } from '../db.operators/persons.operator';
 
 export class PersonsHelper {
-  private personsHouseholds = new PersonsHouseholdsOperator();
   private persons = new PersonsOperator();
+  private personsHouseholds = new PersonsHouseholdsOperator();
 
   public add(row: UpdatePersonsType) {
     return this.persons.addOne(row as InsertObjectOrList<Models, 'persons'>);

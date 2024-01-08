@@ -11,10 +11,10 @@ import { TenantsOperator } from '../db.operators/tenants.operator';
 import { UserPofilesOperator } from '../db.operators/user-profiles.operator';
 
 export class AuthHelper {
-  private tenants: TenantsOperator = new TenantsOperator();
   private authUsers: AuthUsersOperator = new AuthUsersOperator();
   private profiles: UserPofilesOperator = new UserPofilesOperator();
   private sessions: SessionsOperator = new SessionsOperator();
+  private tenants: TenantsOperator = new TenantsOperator();
 
   public async currentUser(auth: IAuthKeyPayload) {
     if (!auth?.user_id) {

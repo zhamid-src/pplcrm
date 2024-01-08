@@ -1,20 +1,18 @@
-import { CommonModule } from "@angular/common";
-import { Component } from "@angular/core";
-import { Router, RouterLink } from "@angular/router";
-import { SidebarService } from "@services/sidebar.service";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
-import { SwapComponent } from "@uxcommon/swap/swap.component";
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+import { SidebarService } from '@services/sidebar.service';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-  selector: "pc-sidebar",
+  selector: 'pc-sidebar',
   standalone: true,
   imports: [CommonModule, IconsComponent, RouterLink, SwapComponent],
-  templateUrl: "./sidebar.component.html",
-  styleUrl: "./sidebar.component.scss",
+  templateUrl: './sidebar.component.html',
+  styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
-  private _mobileOpen = this.sidebarSvc.mobileOpen;
-
   constructor(
     private sidebarSvc: SidebarService,
     protected router: Router,
@@ -22,6 +20,10 @@ export class SidebarComponent {
 
   public get items() {
     return this.sidebarSvc.items;
+  }
+
+  public closeMobile() {
+    this.sidebarSvc.closeMobile();
   }
 
   public isDrawerFull() {
@@ -34,10 +36,6 @@ export class SidebarComponent {
 
   public isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
-  }
-
-  public closeMobile() {
-    this.sidebarSvc.closeMobile();
   }
 
   public toggleDrawer() {

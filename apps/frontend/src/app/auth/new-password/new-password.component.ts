@@ -28,13 +28,11 @@ import { firstValueFrom } from 'rxjs';
 })
 export class NewPasswordComponent implements OnInit {
   private code: string | null = null;
-
-  protected success: string | undefined;
-
   private hidePassword = true;
 
   protected error = signal(false);
   protected processing = signal(false);
+  protected success: string | undefined;
 
   public form = this.fb.group({
     password: ['', [Validators.required, Validators.minLength(8)]],
@@ -50,6 +48,14 @@ export class NewPasswordComponent implements OnInit {
 
   public get password() {
     return this.form.get('password');
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? 'password' : 'text';
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
   public async ngOnInit() {
@@ -83,6 +89,10 @@ export class NewPasswordComponent implements OnInit {
     this.router.navigateByUrl('signin');
   }
 
+  public toggleVisibility() {
+    this.hidePassword = !this.hidePassword;
+  }
+
   protected passwordBreachNumber() {
     // This uses an external library. I can't find any exported interface that
     // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
@@ -95,17 +105,5 @@ export class NewPasswordComponent implements OnInit {
     // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  public toggleVisibility() {
-    this.hidePassword = !this.hidePassword;
-  }
-
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 }
