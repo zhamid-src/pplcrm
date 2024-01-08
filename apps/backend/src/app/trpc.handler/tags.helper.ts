@@ -2,11 +2,11 @@
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 import { TagsOperator } from '../db.operators/tags.operator';
 
-const tags: TagsOperator = new TagsOperator();
-
 export class TagsHelper {
+  private tags: TagsOperator = new TagsOperator();
+
   public add(payload: AddTagType, auth: IAuthKeyPayload) {
-    return tags.addOne({
+    return this.tags.addOne({
       name: payload.name,
       description: payload.description,
       tenant_id: auth.tenant_id,
@@ -15,19 +15,19 @@ export class TagsHelper {
   }
 
   public async delete(id: number) {
-    return tags.deleteOne(BigInt(id));
+    return this.tags.deleteOne(BigInt(id));
   }
 
   public findAll() {
-    return tags.findAll();
+    return this.tags.findAll();
   }
 
   public findOne(param: bigint | string) {
-    return tags.findOne(param);
+    return this.tags.findOne(param);
   }
 
   public async update(id: number, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id };
-    return tags.updateOne(BigInt(id), payload);
+    return this.tags.updateOne(BigInt(id), payload);
   }
 }

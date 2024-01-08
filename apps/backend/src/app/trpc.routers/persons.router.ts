@@ -7,9 +7,11 @@ const personsHelper = new PersonsHelper();
 
 export const personsRouter = router({
   add: authProcedure.input(UpdatePersonsObj).mutation(({ input }) => personsHelper.add(input)),
+  /*
   addMany: authProcedure
     .input(z.array(UpdatePersonsObj))
     .mutation(({ input }) => personsHelper.addMany(input)),
+    */
   findOne: authProcedure.input(z.number()).query(({ input }) => personsHelper.findOne(input)),
   findAll: authProcedure.input(getAllOptions).query(({ input }) => personsHelper.findAll(input)),
   getAllWithHouseholds: authProcedure
