@@ -1,16 +1,16 @@
-import { Injectable } from "@angular/core";
+import { Injectable } from '@angular/core';
 
-const AUTHTOKEN = "ppl-crm-auth-token";
-const REFRESHTOKEN = "ppl-crm-refresh-token";
+const AUTHTOKEN = 'ppl-crm-auth-token';
+const REFRESHTOKEN = 'ppl-crm-refresh-token';
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class TokenService {
   private _persistence: boolean = false;
 
   constructor() {
-    this.persistence = !!localStorage.getItem("pc-persistence");
+    this.persistence = !!localStorage.getItem('pc-persistence');
   }
 
   public get persistence() {
@@ -25,7 +25,7 @@ export class TokenService {
       this.clearSessionStorage();
     }
     this._persistence = persistence;
-    localStorage.setItem("pc-persistence", persistence ? "1" : "0");
+    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
   }
 
   public clearAll() {
@@ -41,9 +41,7 @@ export class TokenService {
   }
 
   public getAuthToken() {
-    return this.persistence
-      ? localStorage.getItem(AUTHTOKEN)
-      : sessionStorage.getItem(AUTHTOKEN);
+    return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
   }
 
   public getRefreshToken() {

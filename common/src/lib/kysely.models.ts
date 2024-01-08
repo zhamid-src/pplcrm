@@ -1,3 +1,4 @@
+// tsco:ignore
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // This file is used to generate the types for the database schema to assist with
 // migration. It also tells kysely the types of the columns in the database.

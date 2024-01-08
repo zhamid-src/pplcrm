@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { DeleteCellRendererComponent } from "./shortcut-cell-renderer.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { DeleteCellRendererComponent } from './shortcut-cell-renderer.component';
 
-describe("DeleteCellRendererComponent", () => {
+describe('DeleteCellRendererComponent', () => {
   let component: DeleteCellRendererComponent;
   let fixture: ComponentFixture<DeleteCellRendererComponent>;
 
@@ -15,7 +15,7 @@ describe("DeleteCellRendererComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

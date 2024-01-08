@@ -29,15 +29,26 @@ import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-c
   styleUrl: './datagrid.component.scss',
 })
 export class DatagridComponent<T extends keyof Models, U> {
-  private _rowData: Partial<T>[] = [];
-  private defaultGridOptions: GridOptions<Partial<T>> = {
+  @Input() public addRoute: string | null = null;
+  @Input() public colDefs: ColDef[] = [];
+  @Input() public disableDelete = true;
+  @Input() public disableExport = false;
+  @Input() public disableFilter = false;
+  @Input() public disableImport = false;
+  @Input() public disableRefresh = false;
+  @Output() public filter = new EventEmitter();
+  @Output() public importCSV = new EventEmitter();
+
+  protected _gridOptions: GridOptions<Partial<T>> = {};
+  protected _gridRowData: Partial<T>[] = [];
+  protected _initialGridOptions: GridOptions<Partial<T>> = {
     context: this,
     rowStyle: { cursor: 'pointer' },
     undoRedoCellEditing: true,
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
     enableCellChangeFlash: true,
-    rowData: this._rowData,
+    rowData: this._gridRowData,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: 'multiple',
@@ -54,11 +65,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     onRowValueChanged: this.onRowValueChanged.bind(this),
     loadingOverlayComponent: LoadingOverlayComponent,
   };
-
-  // private undoStack: Partial<T>[] = [];
-  protected _gridOptions: GridOptions<Partial<T>> = {};
   protected api: GridApi<Partial<T>> | undefined;
-  // Checkbox and delete icon columns
   protected colDefsWithEdit: ColDef[] = [
     /*
     {
@@ -82,20 +89,10 @@ export class DatagridComponent<T extends keyof Models, U> {
     },
   ];
   protected combinedGridOptions: GridOptions<Partial<T>> = {
-    ...this.defaultGridOptions,
+    ...this._initialGridOptions,
     ...this._gridOptions,
   };
   protected processing = false;
-
-  @Input() public addRoute: string | null = null;
-  @Input() public colDefs: ColDef[] = [];
-  @Input() public disableDelete = true;
-  @Input() public disableExport = false;
-  @Input() public disableFilter = false;
-  @Input() public disableImport = false;
-  @Input() public disableRefresh = false;
-  @Output() public filter = new EventEmitter();
-  @Output() public importCSV = new EventEmitter();
 
   constructor(
     private router: Router,
@@ -233,7 +230,7 @@ export class DatagridComponent<T extends keyof Models, U> {
       this.alertSvc.showError('Could not delete. Please try again later.');
     } else {
       this.api?.applyTransaction({ remove: rows });
-      rows.forEach((row) => this._rowData.splice(row.id!, 1));
+      rows.forEach((row) => this._gridRowData.splice(row.id!, 1));
       // this.undoStack.push(...rows);
       this.alertSvc.show({
         text: 'Deleted successfully. Click Undo to undo delete',
@@ -268,7 +265,7 @@ export class DatagridComponent<T extends keyof Models, U> {
 
     // Set the grid option because it works around Angular's
     // ValueChangedAterChecked error
-    this.api!.setGridOption('rowData', this._rowData);
+    this.api!.setGridOption('rowData', this._gridRowData);
     this.api!.applyTransaction({ add: rows });
   }
 

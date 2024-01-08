@@ -15,13 +15,13 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
   styleUrl: './reset-password.component.scss',
 })
 export class ResetPasswordComponent {
-  protected emailSent = signal(false);
-  protected processing = signal(false);
-  protected success: string | undefined;
-
   public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
   });
+
+  protected emailSent = signal(false);
+  protected processing = signal(false);
+  protected success: string | undefined;
 
   constructor(
     private fb: FormBuilder,

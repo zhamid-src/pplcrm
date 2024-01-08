@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { AlertComponent } from "./alert.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { AlertComponent } from './alert.component';
 
-describe("AlertComponent", () => {
+describe('AlertComponent', () => {
   let component: AlertComponent;
   let fixture: ComponentFixture<AlertComponent>;
 
@@ -15,7 +15,7 @@ describe("AlertComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

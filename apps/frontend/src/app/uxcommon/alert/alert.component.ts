@@ -1,14 +1,14 @@
-import { CommonModule } from "@angular/common";
-import { Component } from "@angular/core";
-import { ALERTTYPE, AlertService } from "@services/alert.service";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
+import { ALERTTYPE, AlertService } from '@services/alert.service';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: "pc-alert",
+  selector: 'pc-alert',
   standalone: true,
   imports: [CommonModule, IconsComponent],
-  templateUrl: "./alert.component.html",
-  styleUrl: "./alert.component.scss",
+  templateUrl: './alert.component.html',
+  styleUrl: './alert.component.scss',
 })
 export class AlertComponent {
   constructor(protected alertSvc: AlertService) {}
@@ -24,12 +24,12 @@ export class AlertComponent {
   }
 
   public icon(type: ALERTTYPE) {
-    return type === "success"
-      ? "check-circle"
-      : type === "warning"
-        ? "exclamation-triangle"
-        : type === "error"
-          ? "x-circle"
-          : "exclamation-circle";
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'x-circle'
+          : 'exclamation-circle';
   }
 }

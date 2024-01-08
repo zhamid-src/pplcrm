@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { NewPasswordComponent } from "./new-password.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NewPasswordComponent } from './new-password.component';
 
-describe("NewPasswordComponent", () => {
+describe('NewPasswordComponent', () => {
   let component: NewPasswordComponent;
   let fixture: ComponentFixture<NewPasswordComponent>;
 
@@ -15,7 +15,7 @@ describe("NewPasswordComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

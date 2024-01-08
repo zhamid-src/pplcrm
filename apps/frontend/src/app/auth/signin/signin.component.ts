@@ -25,14 +25,14 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
   styleUrl: './signin.component.scss',
 })
 export class SignInComponent {
-  protected hidePassword = true;
-  protected persistence = this.tokenService.persistence;
-  protected processing = signal(false);
-
   public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
+
+  protected hidePassword = true;
+  protected persistence = this.tokenService.persistence;
+  protected processing = signal(false);
 
   constructor(
     private fb: FormBuilder,

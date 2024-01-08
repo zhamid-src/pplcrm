@@ -27,16 +27,16 @@ import { firstValueFrom } from 'rxjs';
   styleUrl: './new-password.component.scss',
 })
 export class NewPasswordComponent implements OnInit {
-  private code: string | null = null;
-  private hidePassword = true;
+  public form = this.fb.group({
+    password: ['', [Validators.required, Validators.minLength(8)]],
+  });
 
   protected error = signal(false);
   protected processing = signal(false);
   protected success: string | undefined;
 
-  public form = this.fb.group({
-    password: ['', [Validators.required, Validators.minLength(8)]],
-  });
+  private code: string | null = null;
+  private hidePassword = true;
 
   constructor(
     private fb: FormBuilder,
@@ -50,14 +50,6 @@ export class NewPasswordComponent implements OnInit {
     return this.form.get('password');
   }
 
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
-  }
-
   public async ngOnInit() {
     const params: Params = await firstValueFrom(this.route.queryParams);
 
@@ -66,6 +58,14 @@ export class NewPasswordComponent implements OnInit {
     }
 
     this.code = params['code'];
+  }
+
+  public getVisibility() {
+    return this.hidePassword ? 'password' : 'text';
+  }
+
+  public getVisibilityIcon() {
+    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
   public async submit() {

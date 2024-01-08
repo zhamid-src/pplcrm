@@ -1,17 +1,17 @@
-import { CommonModule } from "@angular/common";
-import { Component, ViewEncapsulation } from "@angular/core";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
-import { ICellRendererAngularComp } from "ag-grid-angular";
-import { ICellRendererParams } from "ag-grid-community";
-import { Models } from "common/src/lib/kysely.models";
-import { DatagridComponent } from "../datagrid.component";
+import { CommonModule } from '@angular/common';
+import { Component, ViewEncapsulation } from '@angular/core';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { ICellRendererAngularComp } from 'ag-grid-angular';
+import { ICellRendererParams } from 'ag-grid-community';
+import { Models } from 'common/src/lib/kysely.models';
+import { DatagridComponent } from '../datagrid.component';
 
 @Component({
-  selector: "pc-shortcut-cell-renderer",
+  selector: 'pc-shortcut-cell-renderer',
   standalone: true,
   imports: [CommonModule, IconsComponent],
-  templateUrl: "./shortcut-cell-renderer.component.html",
-  styleUrl: "./shortcut-cell-renderer.component.scss",
+  templateUrl: './shortcut-cell-renderer.component.html',
+  styleUrl: './shortcut-cell-renderer.component.scss',
   encapsulation: ViewEncapsulation.None,
 })
 export class DeleteCellRendererComponent<T extends keyof Models, U>
@@ -19,23 +19,23 @@ export class DeleteCellRendererComponent<T extends keyof Models, U>
 {
   private parent: DatagridComponent<T, U> | undefined;
 
-  agInit(params: ICellRendererParams<T, number>): void {
+  public agInit(params: ICellRendererParams<T, number>): void {
     this.parent = params.context;
   }
 
-  refresh(/*params: ICellRendererParams*/) {
-    return false;
-  }
-
-  open() {
-    this.parent?.open();
-  }
-
-  delete() {
+  public delete() {
     this.parent?.confirmDelete();
   }
 
-  disableDelete() {
+  public disableDelete() {
     return this.parent?.disableDelete;
+  }
+
+  public open() {
+    this.parent?.open();
+  }
+
+  public refresh(/*params: ICellRendererParams*/) {
+    return false;
   }
 }

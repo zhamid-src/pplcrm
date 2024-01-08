@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { IconName, IconsComponent } from '../icons/icons.component';
+import { IconName } from '../icons/icons';
+import { IconsComponent } from '../icons/icons.component';
 
 @Component({
   selector: 'pc-swap',

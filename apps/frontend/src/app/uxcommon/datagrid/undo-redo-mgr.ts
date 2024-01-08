@@ -1,19 +1,84 @@
-import { GridApi } from "ag-grid-community";
+import { GridApi } from 'ag-grid-community';
 
-type UNDOTYPE = "aggrid" | "custom";
+type UNDOTYPE = 'aggrid' | 'custom';
 
 interface UndoElement<T> {
-  type: UNDOTYPE;
   rows: Partial<T>[];
+  type: UNDOTYPE;
 }
 
 /**
  * An undo/redo manager for ag-grid.
  */
 export class UndoManager<T> {
-  private undoStack: UndoElement<T>[] = [];
-  private redoStack: UndoElement<T>[] = [];
   private api: GridApi<Partial<T>> | undefined;
+  private redoStack: UndoElement<T>[] = [];
+  private undoStack: UndoElement<T>[] = [];
+
+  /**
+   * @description Add the current action to the undo stack.
+   *
+   * @param {UNDOTYPE} type - The type of action.
+   * @param {Partial<T>[]} [rows=[]]
+   */
+  public pushRedo(type: UNDOTYPE, rows: Partial<T>[] = []) {
+    this.redoStack.push({ type, rows });
+    console.log('pushRedo ***');
+    console.log(this.undoStack);
+    console.log(this.redoStack);
+  }
+
+  /**
+   * Add the current action to the undo stack.
+   *
+   * @param {UNDOTYPE} type - The type of action.
+   * @param {Partial<T>[]} [rows=[]]
+   */
+  public pushUndo(type: UNDOTYPE, rows: Partial<T>[] = []) {
+    this.undoStack.push({ type, rows });
+    console.log('pushUndo ***');
+    console.log(this.undoStack);
+    console.log(this.redoStack);
+  }
+
+  /**
+   * Redoes the last undone action
+   */
+  public redo() {
+    if (!this.redoLength()) {
+      return;
+    }
+
+    const redoElement = this.redoStack.pop()!;
+    if (redoElement.type === 'aggrid') {
+      this.api?.redoCellEditing();
+    } else {
+      const rows = redoElement.rows;
+      this.api?.applyTransaction({ remove: rows });
+    }
+    this.pushUndo(redoElement.type, redoElement.rows);
+
+    if (this.api?.getCurrentRedoSize() === 0) {
+      this.removeAgGridRedo();
+    }
+  }
+
+  /**
+   * @description Get the length of the redo stack
+   *
+   * @returns {boolean} - Length of the redo stack
+   */
+  public redoLength() {
+    return this.redoStack.length;
+  }
+
+  public reset() {
+    this.undoStack = [];
+    this.redoStack = [];
+    console.log('reset ***');
+    console.log(this.undoStack);
+    console.log(this.redoStack);
+  }
 
   /**
    * Creates an instance of UndoManager. Should be called before using the undo manager.
@@ -31,7 +96,7 @@ export class UndoManager<T> {
     }
 
     const undoElement = this.undoStack.pop()!;
-    if (undoElement.type === "aggrid") {
+    if (undoElement.type === 'aggrid') {
       this.api?.undoCellEditing();
     } else {
       const rows = undoElement.rows;
@@ -46,74 +111,6 @@ export class UndoManager<T> {
   }
 
   /**
-   * Redoes the last undone action
-   */
-  public redo() {
-    if (!this.redoLength()) {
-      return;
-    }
-
-    const redoElement = this.redoStack.pop()!;
-    if (redoElement.type === "aggrid") {
-      this.api?.redoCellEditing();
-    } else {
-      const rows = redoElement.rows;
-      this.api?.applyTransaction({ remove: rows });
-    }
-    this.pushUndo(redoElement.type, redoElement.rows);
-
-    if (this.api?.getCurrentRedoSize() === 0) {
-      this.removeAgGridRedo();
-    }
-  }
-
-  /**
-   * Add the current action to the undo stack.
-   *
-   * @param {UNDOTYPE} type - The type of action.
-   * @param {Partial<T>[]} [rows=[]]
-   */
-  public pushUndo(type: UNDOTYPE, rows: Partial<T>[] = []) {
-    this.undoStack.push({ type, rows });
-    console.log("pushUndo ***");
-    console.log(this.undoStack);
-    console.log(this.redoStack);
-  }
-
-  private removeAgGridUndo() {
-    this.undoStack = this.undoStack.filter(
-      (element) => element.type !== "aggrid",
-    );
-  }
-
-  private removeAgGridRedo() {
-    this.redoStack = this.redoStack.filter(
-      (element) => element.type !== "aggrid",
-    );
-  }
-
-  /**
-   * @description Add the current action to the undo stack.
-   *
-   * @param {UNDOTYPE} type - The type of action.
-   * @param {Partial<T>[]} [rows=[]]
-   */
-  public pushRedo(type: UNDOTYPE, rows: Partial<T>[] = []) {
-    this.redoStack.push({ type, rows });
-    console.log("pushRedo ***");
-    console.log(this.undoStack);
-    console.log(this.redoStack);
-  }
-
-  public reset() {
-    this.undoStack = [];
-    this.redoStack = [];
-    console.log("reset ***");
-    console.log(this.undoStack);
-    console.log(this.redoStack);
-  }
-
-  /**
    * @description Get the length of the undo stack
    *
    * @returns {boolean} - Length of the undo stack
@@ -122,12 +119,11 @@ export class UndoManager<T> {
     return this.undoStack.length;
   }
 
-  /**
-   * @description Get the length of the redo stack
-   *
-   * @returns {boolean} - Length of the redo stack
-   */
-  public redoLength() {
-    return this.redoStack.length;
+  private removeAgGridRedo() {
+    this.redoStack = this.redoStack.filter((element) => element.type !== 'aggrid');
+  }
+
+  private removeAgGridUndo() {
+    this.undoStack = this.undoStack.filter((element) => element.type !== 'aggrid');
   }
 }

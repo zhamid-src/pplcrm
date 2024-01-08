@@ -1,12 +1,12 @@
-import { default as fastify } from "fastify";
-import * as pino from "pino";
+import { default as fastify } from 'fastify';
+import * as pino from 'pino';
 // import { errorHandler } from "./utils/error";
-import AutoLoad from "@fastify/autoload";
+import AutoLoad from '@fastify/autoload';
 
-import * as path from "path";
-import { routes } from "./app/fastify.routes";
+import * as path from 'path';
+import { routes } from './app/fastify.routes';
 
-const host = process.env.HOST ?? "localhost";
+const host = process.env.HOST ?? 'localhost';
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 /**
@@ -27,7 +27,7 @@ export class FastifyServer {
 
     // This loads all plugins defined in the plugins folder
     this.server.register(AutoLoad, {
-      dir: path.join(__dirname, "app/fastify.plugins"),
+      dir: path.join(__dirname, 'app/fastify.plugins'),
       options: { ...opts },
     });
   }
