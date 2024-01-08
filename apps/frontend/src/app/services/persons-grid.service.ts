@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
 import { BaseGridService } from './base-grid.service';
+
 export type TYPE = 'persons' | 'households';
 
 @Injectable({
@@ -10,12 +11,15 @@ export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType>
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
-  public findOne(id: number) {
-    return this.api.persons.findOne.query(id);
-  }
+
   public async delete(id: number): Promise<boolean> {
     return (await this.api.persons.delete.mutate(id)) !== null;
   }
+
+  public findOne(id: number) {
+    return this.api.persons.findOne.query(id);
+  }
+
   public refresh(options?: getAllOptionsType) {
     return this.getAllWithHouseholds(options);
   }

@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { LoadingOverlayComponent } from "./loadingOverlay.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { LoadingOverlayComponent } from './loadingOverlay.component';
 
-describe("LoadingOverlayComponent", () => {
+describe('LoadingOverlayComponent', () => {
   let component: LoadingOverlayComponent;
   let fixture: ComponentFixture<LoadingOverlayComponent>;
 
@@ -15,7 +15,7 @@ describe("LoadingOverlayComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

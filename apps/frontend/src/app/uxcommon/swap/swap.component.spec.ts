@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { SwapComponent } from "./swap.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { SwapComponent } from './swap.component';
 
-describe("SwapComponent", () => {
+describe('SwapComponent', () => {
   let component: SwapComponent;
   let fixture: ComponentFixture<SwapComponent>;
 
@@ -15,7 +15,7 @@ describe("SwapComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

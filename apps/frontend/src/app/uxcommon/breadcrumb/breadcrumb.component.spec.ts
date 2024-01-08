@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { BreadcrumbComponent } from "./breadcrumb.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { BreadcrumbComponent } from './breadcrumb.component';
 
-describe("BreadcrumbComponent", () => {
+describe('BreadcrumbComponent', () => {
   let component: BreadcrumbComponent;
   let fixture: ComponentFixture<BreadcrumbComponent>;
 
@@ -15,7 +15,7 @@ describe("BreadcrumbComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

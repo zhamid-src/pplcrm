@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { IconName } from '@uxcommon/icons/icons.component';
+import { IconName } from '@uxcommon/icons/icons';
 
 type DrawerStates = 'full' | 'half';
 

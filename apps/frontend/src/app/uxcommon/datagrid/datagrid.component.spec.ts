@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { DatagridComponent } from "./datagrid.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { DatagridComponent } from './datagrid.component';
 
-describe("DatagridComponent", () => {
+describe('DatagridComponent', () => {
   let component: DatagridComponent;
   let fixture: ComponentFixture<DatagridComponent>;
 
@@ -15,7 +15,7 @@ describe("DatagridComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

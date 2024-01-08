@@ -1,32 +1,32 @@
-import { Injectable } from "@angular/core";
-import { Router } from "@angular/router";
-import { getAllOptionsType } from "@common";
-import { refreshTokenLink } from "@pyncz/trpc-refresh-token-link";
+import { Injectable } from '@angular/core';
+import { Router } from '@angular/router';
+import { getAllOptionsType } from '@common';
+import { refreshTokenLink } from '@pyncz/trpc-refresh-token-link';
 import {
   TRPCClientError,
   TRPCLink,
   createTRPCProxyClient,
   httpBatchLink,
   loggerLink,
-} from "@trpc/client";
-import { observable } from "@trpc/server/observable";
-import { TRPC_ERROR_CODES_BY_KEY } from "@trpc/server/rpc";
-import { TRPCRouters } from "APPS/backend/src/app/trpc.routers";
-import { get, set } from "idb-keyval";
-import { TokenService } from "./token.service";
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
+import { TRPC_ERROR_CODES_BY_KEY } from '@trpc/server/rpc';
+import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
+import { get, set } from 'idb-keyval';
+import { TokenService } from './token.service';
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class TRPCService<T> {
+  protected ac = new AbortController();
+  protected api;
+
   private addDays = function (days: number) {
     const date = new Date(Date.now());
     date.setDate(date.getDate() + days);
     return date;
   };
-
-  protected ac = new AbortController();
-  protected api;
 
   constructor(
     protected tokenService: TokenService,
@@ -94,7 +94,7 @@ export class TRPCService<T> {
 
 function httpLink(tokenSvc: TokenService) {
   return httpBatchLink({
-    url: "http://localhost:3000",
+    url: 'http://localhost:3000',
     headers() {
       const authToken = tokenSvc.getAuthToken();
       return authToken
@@ -106,15 +106,12 @@ function httpLink(tokenSvc: TokenService) {
   });
 }
 
-function refreshLink(
-  tokenSvc: TokenService,
-  router: Router,
-): TRPCLink<TRPCRouters> {
+function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouters> {
   return refreshTokenLink({
     // Get locally stored refresh token
     getRefreshToken: () => tokenSvc.getRefreshToken() as string | undefined,
     fetchJwtPairByRefreshToken: async (refreshToken) => {
-      const auth_token = tokenSvc.getAuthToken() || "";
+      const auth_token = tokenSvc.getAuthToken() || '';
       const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
         auth_token,
         refresh_token: refreshToken,
@@ -125,10 +122,9 @@ function refreshLink(
         refresh: payload.refresh_token,
       };
     },
-    onJwtPairFetched: (payload) =>
-      tokenSvc.set(payload.access, payload.refresh),
+    onJwtPairFetched: (payload) => tokenSvc.set(payload.access, payload.refresh),
     onRefreshFailed: () => tokenSvc.clearAll(),
-    onUnauthorized: () => router.navigate(["/signin"]),
+    onUnauthorized: () => router.navigate(['/signin']),
   });
 }
 
@@ -145,7 +141,7 @@ const errorLink: TRPCLink<TRPCRouters> = () => {
         error(err) {
           if (err instanceof TRPCClientError) {
             if (err.shape?.code === TRPC_ERROR_CODES_BY_KEY.BAD_REQUEST) {
-              err.message = "Please check your input and try again";
+              err.message = 'Please check your input and try again';
             }
           }
           observer.error(err);

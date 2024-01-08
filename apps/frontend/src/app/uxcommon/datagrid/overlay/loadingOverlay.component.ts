@@ -1,20 +1,20 @@
-import { Component } from "@angular/core";
-import { ILoadingOverlayAngularComp } from "ag-grid-angular";
-import { ILoadingOverlayParams } from "ag-grid-community";
+import { Component } from '@angular/core';
+import { ILoadingOverlayAngularComp } from 'ag-grid-angular';
+import { ILoadingOverlayParams } from 'ag-grid-community';
 
 @Component({
-  selector: "pc-loading-overlay",
-  templateUrl: "./loadingOverlay.component.html",
-  styleUrls: ["./loadingOverlay.component.scss"],
+  selector: 'pc-loading-overlay',
+  templateUrl: './loadingOverlay.component.html',
+  styleUrls: ['./loadingOverlay.component.scss'],
 })
 export class LoadingOverlayComponent implements ILoadingOverlayAngularComp {
-  params: ILoadingOverlayParams | undefined;
+  public params: ILoadingOverlayParams | undefined;
 
-  agInit(params: ILoadingOverlayParams): void {
+  public agInit(params: ILoadingOverlayParams): void {
     this.params = params;
   }
 
-  sendAbort() {
+  public sendAbort() {
     this.params?.context?.sendAbort();
   }
 }
