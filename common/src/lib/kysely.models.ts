@@ -5,20 +5,18 @@
 // The only exports are the Database interface and the table type enum
 //
 // ====================================================================
-// When adding a new table, you have to edit two things :-
-// 1. Add the model interface, and
-// 2. Add it to the Models interface
-// That's it
+// When adding a new table, you have to  :-
+// 1. Add a model and add it to the interfaxe Models
+
 // ====================================================================
-// TODO: separete into a types and models files (two files)
-import {
+import type {
+  ColumnType,
+  Insertable,
   OperandValueExpressionOrList,
+  SelectExpression,
+  Selectable,
   UpdateObject,
-  type ColumnType,
-  type Insertable,
-  type SelectExpression,
-  type Selectable,
-  type Updateable,
+  Updateable,
 } from 'kysely';
 import { UndirectedOrderByExpression } from 'node_modules/kysely/dist/cjs/parser/order-by-parser';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
@@ -102,6 +100,10 @@ type TablesOperationMap = {
   };
 };
 
+type TableType = {
+  [K in Keys<Models>]: K;
+};
+
 // ====================================================================
 // The following are the type definitions for the database schema
 // Since I use a base controller to handle the CRUD operations, I don't
@@ -122,7 +124,7 @@ interface AuthUsers extends RecordType {
   first_name: string;
   password: string;
   password_reset_code: string | null;
-  // TODO: move to Sessions?
+  // TODO: move to Sessions
   password_reset_code_created_at: Timestamp | null;
   role: string | null;
   verified: boolean;

@@ -13,8 +13,8 @@ export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType>
   public findOne(id: number) {
     return this.api.persons.findOne.query(id);
   }
-  public delete(id: number): Promise<boolean> {
-    return this.delete(id);
+  public async delete(id: number): Promise<boolean> {
+    return (await this.api.persons.delete.mutate(id)) !== null;
   }
   public refresh(options?: getAllOptionsType) {
     return this.getAllWithHouseholds(options);

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FastifyInstance } from 'fastify';
 import { PersonsController } from '../fastify.controllers/persons.controller';
 import { IdParam } from '../fastify.schema/fastify.types';

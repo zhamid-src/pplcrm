@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export type AddTagType = z.infer<typeof AddTagObj>;
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
@@ -57,7 +57,7 @@ export const UpdateTagObj = z.object({
   description: z.string().optional(),
 });
 export const UpdatePersonsObj = z.object({
-  household_id: z.number().optional(),
+  household_id: z.bigint().optional(),
   email: z.string().optional(),
   email2: z.string().optional(),
   first_name: z.string().optional(),

@@ -2,43 +2,34 @@ import { UpdatePersonsType, getAllOptionsType } from '@common';
 import { InsertObjectOrList } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { Models } from '../../../../../common/src/lib/kysely.models';
 import { QueryParams } from '../db.operators/base.operator';
+import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
 import { PersonsOperator } from '../db.operators/persons.operator';
 
-const persons = new PersonsOperator();
-
 export class PersonsHelper {
-  public add(row: UpdatePersonsType) {
-    return persons.addOne(row as InsertObjectOrList<Models, 'persons'>);
-  }
+  private personsHouseholds = new PersonsHouseholdsOperator();
+  private persons = new PersonsOperator();
 
-  public addMany(rows: UpdatePersonsType[]) {
-    // TODO: add household_id, createdby_id etc.
-    //return persons.addMany(rows as unknown as InsertObjectOrList<Models, "persons"]>);
+  public add(row: UpdatePersonsType) {
+    return this.persons.addOne(row as InsertObjectOrList<Models, 'persons'>);
   }
 
   public async delete(id: number) {
-    return persons.deleteOne(BigInt(id));
+    return this.persons.deleteOne(BigInt(id));
   }
 
   public async findAll(options: getAllOptionsType) {
-    const queryOptions: QueryParams<'persons' | 'households'> = {
-      ...(options as QueryParams<'persons'>),
-    };
-    return persons.findAll(queryOptions);
+    return this.persons.findAll(options as QueryParams<'persons'>);
   }
 
   public async findOne(id: number) {
-    return persons.findOne(BigInt(id));
+    return this.personsHouseholds.findOne(BigInt(id));
   }
 
   public getAllWithHouseholds(options: getAllOptionsType) {
-    const queryOptions = {
-      ...options,
-    };
-    return persons.getAllWithHouseholds(queryOptions as QueryParams<'persons' | 'households'>);
+    return this.personsHouseholds.findAll(options as QueryParams<'persons' | 'households'>);
   }
 
   public async update(id: number, input: UpdatePersonsType) {
-    return persons.updateOne(BigInt(id), input);
+    return this.persons.updateOne(BigInt(id), input);
   }
 }

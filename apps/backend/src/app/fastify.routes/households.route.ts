@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FastifyInstance } from 'fastify';
 import { HouseholdsController } from '../fastify.controllers/households.controller';
 import { PersonsController } from '../fastify.controllers/persons.controller';

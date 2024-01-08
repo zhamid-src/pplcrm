@@ -10,20 +10,17 @@ import { SessionsOperator } from '../db.operators/sessions.operator';
 import { TenantsOperator } from '../db.operators/tenants.operator';
 import { UserPofilesOperator } from '../db.operators/user-profiles.operator';
 
-const tenants: TenantsOperator = new TenantsOperator();
-const authUsers: AuthUsersOperator = new AuthUsersOperator();
-const profiles: UserPofilesOperator = new UserPofilesOperator();
-const sessions: SessionsOperator = new SessionsOperator();
-
-/**
- * The hellper class for TRPC auth endpoint
- */
 export class AuthHelper {
+  private tenants: TenantsOperator = new TenantsOperator();
+  private authUsers: AuthUsersOperator = new AuthUsersOperator();
+  private profiles: UserPofilesOperator = new UserPofilesOperator();
+  private sessions: SessionsOperator = new SessionsOperator();
+
   public async currentUser(auth: IAuthKeyPayload) {
     if (!auth?.user_id) {
       return null;
     }
-    const user = await authUsers
+    const user = await this.authUsers
       .findOne(auth.user_id, {
         columns: ['id', 'email', 'first_name'],
       })
@@ -55,7 +52,7 @@ export class AuthHelper {
     }
 
     // Check if the code is valid
-    const nowData: QueryResult<INow> = await authUsers.nowTime();
+    const nowData: QueryResult<INow> = await this.authUsers.nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -63,7 +60,7 @@ export class AuthHelper {
       });
     }
 
-    const data: Partial<AuthUsersType> = await authUsers.getPasswordResetCodeTime(code);
+    const data: Partial<AuthUsersType> = await this.authUsers.getPasswordResetCodeTime(code);
     const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
     const nowTimestamp = (nowData?.rows[0]?.now || new Date().toString()) as string;
 
@@ -80,7 +77,7 @@ export class AuthHelper {
       });
     }
 
-    const result = await authUsers.updatePassword(password, code);
+    const result = await this.authUsers.updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
       throw new TRPCError({
         message: 'Wrong code, please try again',
@@ -92,7 +89,7 @@ export class AuthHelper {
   }
 
   public async sendPasswordResetEmail(email: string) {
-    const user = (await authUsers.findOneByEmail(email)) as AuthUsersType;
+    const user = (await this.authUsers.findOneByEmail(email)) as AuthUsersType;
 
     if (!user) {
       throw new TRPCError({
@@ -102,7 +99,7 @@ export class AuthHelper {
     }
 
     // set the reset code
-    const code = authUsers.addPasswordResetCode(user.id);
+    const code = this.authUsers.addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -131,7 +128,7 @@ export class AuthHelper {
   }
 
   public async signIn(input: signInInputType) {
-    const user = (await authUsers.findOneByEmail(input.email)) as AuthUsersType;
+    const user = (await this.authUsers.findOneByEmail(input.email)) as AuthUsersType;
 
     if (!user || !bcrypt.compareSync(input.password, user.password)) {
       throw new TRPCError({
@@ -155,7 +152,7 @@ export class AuthHelper {
     if (!auth?.session_id) {
       return null;
     }
-    return sessions.deleteBySessionId(auth.session_id);
+    return this.sessions.deleteBySessionId(auth.session_id);
   }
 
   /**
@@ -171,7 +168,7 @@ export class AuthHelper {
     // TODO: should be a transaction
 
     // *** 1- check if the user already exists:
-    const count = await authUsers.getCountByEmail(email);
+    const count = await this.authUsers.getCountByEmail(email);
     if (count > 0) {
       throw new TRPCError({
         message: 'This email already exists. Did you want to sign in?',
@@ -192,7 +189,7 @@ export class AuthHelper {
     // *** 3- add tenant
     //const tenantAddResult = await tenants.add({ name: input.organization });
 
-    const tenantAddResult = await tenants.addOne({ name: input.organization });
+    const tenantAddResult = await this.tenants.addOne({ name: input.organization });
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -202,7 +199,7 @@ export class AuthHelper {
     const tenant_id = tenantAddResult.id;
 
     // Now create a new user in auth
-    const user = await authUsers.addOne({
+    const user = await this.authUsers.addOne({
       tenant_id,
       password,
       email,
@@ -218,7 +215,7 @@ export class AuthHelper {
     }
 
     // Finally, add a profile for the user
-    const profile = await profiles.addOne({
+    const profile = await this.profiles.addOne({
       id: user.id,
       tenant_id,
       auth_id: user.id,
@@ -232,7 +229,7 @@ export class AuthHelper {
     }
 
     // now go back and update the tenant with the profile id
-    await tenants.updateOne(tenant_id, {
+    await this.tenants.updateOne(tenant_id, {
       admin_id: profile.id,
       createdby_id: profile.id,
     } as OperationDataType<'tenants', 'update'>);
@@ -256,9 +253,9 @@ export class AuthHelper {
     oldSession?: string,
   ) {
     // Delete the old session
-    oldSession && (await sessions.deleteBySessionId(oldSession));
+    oldSession && (await this.sessions.deleteBySessionId(oldSession));
 
-    const currentSession = await sessions.addOne({
+    const currentSession = await this.sessions.addOne({
       user_id,
       tenant_id,
       ip_address: '',
