@@ -3,9 +3,7 @@
     <li>home</li>
     @for (crumb of crumbs; track crumb) {
       <li>
-        <span class="cursor-pointer" (click)="navigate(crumb)">{{
-          crumb
-        }}</span>
+        <span class="cursor-pointer" (click)="navigate(crumb)">{{ crumb }}</span>
       </li>
     }
   </ul>

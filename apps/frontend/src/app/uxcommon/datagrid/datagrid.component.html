@@ -118,14 +118,11 @@
   <div class="modal-box">
     <h3 class="text-lg font-bold">Export limitation</h3>
     <p class="py-2 font-light">
-      This only exports the columns visible in the grid. If you'd like to export
-      everything then please use the Export component from the sidebar.
+      This only exports the columns visible in the grid. If you'd like to export everything then
+      please use the Export component from the sidebar.
     </p>
 
-    <form
-      method="dialog"
-      class="modal-backdrop float-right flex flex-row gap-2"
-    >
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
       <button class="btn btn-primary" (click)="exportToCSV()">Accept</button>
       <button class="btn">Cancel</button>
     </form>
@@ -135,14 +132,9 @@
 <dialog id="confirmDelete" class="modal">
   <div class="modal-box">
     <h3 class="text-lg font-bold">Are you sure?</h3>
-    <p class="py-2 font-light">
-      The data will be deleted permanantly. You cannot undo this.
-    </p>
+    <p class="py-2 font-light">The data will be deleted permanantly. You cannot undo this.</p>
 
-    <form
-      method="dialog"
-      class="modal-backdrop float-right flex flex-row gap-2"
-    >
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
       <button class="btn btn-error" (click)="deleteSelectedRows()">Yes</button>
       <button class="btn">Cancel</button>
     </form>

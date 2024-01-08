@@ -26,11 +26,7 @@
       />
     </label>
   </div>
-  <div
-    class="flex-none gap-4"
-    [class.hidden]="isMobileOpen()"
-    (click)="this.showSearchonMobile()"
-  >
+  <div class="flex-none gap-4" [class.hidden]="isMobileOpen()" (click)="this.showSearchonMobile()">
     <!-- Search icon -->
     <pc-icon
       class="hover:text-primary text-base-400 cursor-pointer sm:hidden"
@@ -46,10 +42,7 @@
     ></pc-swap>
 
     <!-- notifications -->
-    <pc-icon
-      class="hover:text-primary text-base-400 cursor-pointer"
-      name="bell"
-    />
+    <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
 
     <!-- profile drop down -->
     <div class="dropdown dropdown-end">

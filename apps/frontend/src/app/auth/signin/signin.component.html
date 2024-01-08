@@ -28,9 +28,7 @@
           </label>
 
           @if (email?.dirty && email?.invalid) {
-            <span class="label-text-alt text-error"
-              >Please enter a valid email</span
-            >
+            <span class="label-text-alt text-error">Please enter a valid email</span>
           }
 
           <label class="group relative block">
@@ -72,18 +70,12 @@
                 [checked]="persistence"
                 (change)="togglePersistence($event.target)"
               />
-              <label
-                for="remember_me"
-                class="ml-2 block text-sm text-neutral-600"
-              >
+              <label for="remember_me" class="ml-2 block text-sm text-neutral-600">
                 Remember me
               </label>
             </div>
             <div class="text-sm">
-              <a
-                routerLink="/resetpassword"
-                class="link link-hover text-neutral-600"
-              >
+              <a routerLink="/resetpassword" class="link link-hover text-neutral-600">
                 Forgot your password?
               </a>
             </div>
@@ -96,9 +88,7 @@
               [disabled]="processing() || (form.dirty && form.invalid)"
             >
               @if (processing()) {
-                <span
-                  class="loading loading-dots loading-lg text-primary"
-                ></span>
+                <span class="loading loading-dots loading-lg text-primary"></span>
               } @else {
                 SIGN IN
               }
@@ -107,19 +97,12 @@
         </div>
       </form>
       <div class="py-3 text-center">
-        <a routerLink="/signup" class="link link-hover text-neutral-600"
-          >SIGN UP</a
-        >
+        <a routerLink="/signup" class="link link-hover text-neutral-600">SIGN UP</a>
       </div>
       <div class="text-center text-xs text-neutral-500">
         <span>
           Copyright © 2024
-          <a
-            href=""
-            rel=""
-            target="_blank"
-            title="CampaignRaven"
-            class="link link-hover"
+          <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover"
             >CampaignRaven</a
           ></span
         >
