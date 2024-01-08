@@ -13,11 +13,7 @@
         <h4 class="text-base font-normal" [class.hidden]="!alert.title">
           {{ alert.title }}
         </h4>
-        <div
-          class="font-light"
-          [class.text-sm]="!!alert.title"
-          [innerHTML]="alert.text"
-        ></div>
+        <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
       </div>
       <button
         class="btn btn-sm"
@@ -31,11 +27,7 @@
       >
         {{ alert.OKBtn }}
       </button>
-      <button
-        class="btn btn-sm"
-        [class.hidden]="!alert.btn2"
-        (click)="btn2Click(alert.text)"
-      >
+      <button class="btn btn-sm" [class.hidden]="!alert.btn2" (click)="btn2Click(alert.text)">
         {{ alert.btn2 }}
       </button>
     </div>

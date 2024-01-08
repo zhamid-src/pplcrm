@@ -6,11 +6,6 @@
     (click)="open()"
   />
   @if (!disableDelete()) {
-    <pc-icon
-      name="trash"
-      [size]="4"
-      class="hover:text-error text-left"
-      (click)="delete()"
-    />
+    <pc-icon name="trash" [size]="4" class="hover:text-error text-left" (click)="delete()" />
   }
 </div>
