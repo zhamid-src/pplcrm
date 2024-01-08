@@ -17,7 +17,7 @@ export interface IAuthKeyPayload {
 export interface IAuthUser {
   email: string;
   first_name: string;
-  id: number;
+  id: bigint;
 }
 
 export interface INow {
