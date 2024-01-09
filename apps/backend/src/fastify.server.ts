@@ -22,7 +22,6 @@ export class FastifyServer {
       exposeHeadRoutes: false,
     });
 
-    //TODO: this.server.setErrorHandler(errorHandler);
     this.server.register(routes);
 
     // This loads all plugins defined in the plugins folder

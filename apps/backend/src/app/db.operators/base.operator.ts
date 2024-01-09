@@ -12,7 +12,7 @@ import {
   TableIdType,
   UpdateRow,
 } from '../../../../../common/src/lib/kysely.models';
-import { db } from '../kyselyinit';
+import { db } from '../kyselyInit';
 
 export type QueryParams<T extends keyof Models> = {
   columns?: TableColumnsType<T>[];
