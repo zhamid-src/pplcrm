@@ -195,8 +195,10 @@ export class AuthHelper {
     }
 
     const session_id = currentSession.id!;
+    const key = process.env['SHARED_SECRET'];
     const signer = createSigner({
-      key: 'supersecretkey',
+      algorithm: 'HS256',
+      key,
       clockTimestamp: Date.now(),
       expiresIn: '30m',
     });
