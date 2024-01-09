@@ -1,7 +1,7 @@
 import { IAuthKeyPayload, INow, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
-import { AuthUsersType, OperationDataType } from 'common/src/lib/kysely.models';
+import { AuthUsersType, OperationDataType, TableIdType } from 'common/src/lib/kysely.models';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult } from 'kysely';
 import nodemailer from 'nodemailer';
@@ -42,34 +42,10 @@ export class AuthHelper {
   }
 
   public async resetPassword(plaintextPassword: string, code: string) {
-    const password = await bcrypt.hash(plaintextPassword, 10);
-
-    if (!password) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
+    const password = await this.hashPassword(plaintextPassword);
 
     // Check if the code is valid
-    const nowData: QueryResult<INow> = await this.authUsers.nowTime();
-    if (!nowData || !nowData?.rows[0]?.now) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    const data: Partial<AuthUsersType> = await this.authUsers.getPasswordResetCodeTime(code);
-    const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
-    const nowTimestamp = (nowData?.rows[0]?.now || new Date().toString()) as string;
-
-    // See if codeTime is less than 15 minutes ago
-    const then = new Date(thenTimestamp);
-    const now = new Date(nowTimestamp);
-    const diff = now.getTime() - then.getTime();
-    const minutes = Math.floor(diff / 60000);
-
+    const minutes = await this.getCodeAge(code);
     if (minutes > 15) {
       throw new TRPCError({
         message: 'The code is expired. Please request a new code',
@@ -84,21 +60,10 @@ export class AuthHelper {
         code: 'UNAUTHORIZED',
       });
     }
-
-    return null;
   }
 
   public async sendPasswordResetEmail(email: string) {
-    const user = (await this.authUsers.findOneByEmail(email)) as AuthUsersType;
-
-    if (!user) {
-      throw new TRPCError({
-        message: 'User not found',
-        code: 'NOT_FOUND',
-      });
-    }
-
-    // set the reset code
+    const user = await this.getUserByEmail(email);
     const code = this.authUsers.addPasswordResetCode(user.id);
 
     // send the reset email
@@ -128,9 +93,9 @@ export class AuthHelper {
   }
 
   public async signIn(input: signInInputType) {
-    const user = (await this.authUsers.findOneByEmail(input.email)) as AuthUsersType;
+    const user = await this.getUserByEmail(input.email);
 
-    if (!user || !bcrypt.compareSync(input.password, user.password)) {
+    if (!bcrypt.compareSync(input.password, user.password)) {
       throw new TRPCError({
         message:
           'Sorry this email or password is not valid. If you forgot your password, you can reset it.',
@@ -155,97 +120,56 @@ export class AuthHelper {
     return this.sessions.deleteBySessionId(auth.session_id);
   }
 
-  /**
-   * Create the new user
-   * @param input
-   * @returns
-   */
   public async signUp(
     input: signUpInputType,
   ): Promise<{ auth_token: string; refresh_token: string } | TRPCError> {
     const email = input.email.toLowerCase();
 
+    await this.verifyUserDoesNotExist(email);
+    const password = await this.hashPassword(input.password);
+
     // TODO: should be a transaction
+    const tenant_id = await this.createTenant(input.organization);
+    const user = await this.createUser(tenant_id, password, email, input);
+    const profile = await this.createProfile(user.id, tenant_id, user.id);
+    await this.addTenantIdToProfile(tenant_id, user.id, user.id);
 
-    // *** 1- check if the user already exists:
-    const count = await this.authUsers.getCountByEmail(email);
-    if (count > 0) {
-      throw new TRPCError({
-        message: 'This email already exists. Did you want to sign in?',
-        code: 'CONFLICT',
-      });
-    }
+    return this.createTokens(profile.id, user.tenant_id, user.first_name);
+  }
 
-    // *** 2 - encrypt password
-    const password = await bcrypt.hash(input.password, 10);
+  private async addTenantIdToProfile(
+    tenant_id: TableIdType<'tenants'>,
+    admin_id: bigint,
+    createdby_id: bigint,
+  ) {
+    await this.tenants.updateOne(tenant_id, {
+      admin_id,
+      createdby_id,
+    } as OperationDataType<'tenants', 'update'>);
+  }
 
-    if (!password) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    // *** 3- add tenant
-    //const tenantAddResult = await tenants.add({ name: input.organization });
-
-    const tenantAddResult = await this.tenants.addOne({ name: input.organization });
-    if (!tenantAddResult) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-    const tenant_id = tenantAddResult.id;
-
-    // Now create a new user in auth
-    const user = await this.authUsers.addOne({
-      tenant_id,
-      password,
-      email,
-      first_name: input.first_name,
-      verified: false,
-    });
-
-    if (!user) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    // Finally, add a profile for the user
-    const profile = await this.profiles.addOne({
-      id: user.id,
-      tenant_id,
-      auth_id: user.id,
-    });
-
+  private async createProfile(id: bigint, tenant_id: bigint, auth_id: bigint) {
+    const profile = await this.profiles.addOne({ id, tenant_id, auth_id });
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
         code: 'INTERNAL_SERVER_ERROR',
       });
     }
-
-    // now go back and update the tenant with the profile id
-    await this.tenants.updateOne(tenant_id, {
-      admin_id: profile.id,
-      createdby_id: profile.id,
-    } as OperationDataType<'tenants', 'update'>);
-
-    // TODO: make the hash a secret
-    return this.createTokens(profile.id, user.tenant_id, user.first_name);
+    return profile;
   }
 
-  /**
-   * Private function to create tokens
-   * @param user_id
-   * @param tenant_id
-   * @param name
-   * @param oldSession
-   * @returns
-   */
+  private async createTenant(name: string) {
+    const tenantAddResult = await this.tenants.addOne({ name });
+    if (!tenantAddResult) {
+      throw new TRPCError({
+        message: 'Something went wrong, please try again',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+    return tenantAddResult.id;
+  }
+
   private async createTokens(
     user_id: bigint,
     tenant_id: bigint,
@@ -278,5 +202,79 @@ export class AuthHelper {
     });
     const auth_token = signer({ user_id, tenant_id, name, session_id });
     return { auth_token, refresh_token: currentSession.refresh_token };
+  }
+
+  private async createUser(
+    tenant_id: bigint,
+    password: string,
+    email: string,
+    input: { email: string; first_name: string; password: string; organization: string },
+  ) {
+    const user = await this.authUsers.addOne({
+      tenant_id,
+      password,
+      email,
+      first_name: input.first_name,
+      verified: false,
+    });
+
+    if (!user) {
+      throw new TRPCError({
+        message: 'Something went wrong, please try again',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+    return user;
+  }
+
+  private async getCodeAge(code: string): Promise<number> {
+    const nowData: QueryResult<INow> = await this.authUsers.nowTime();
+    if (!nowData || !nowData?.rows[0]?.now) {
+      throw new TRPCError({
+        message: 'Something went wrong, please try again',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    const data: Partial<AuthUsersType> = await this.authUsers.getPasswordResetCodeTime(code);
+    const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
+    const then = new Date(thenTimestamp);
+
+    const now = new Date(nowData?.rows[0]?.now || new Date().toString());
+
+    return now.getTime() - then.getTime();
+  }
+
+  private async getUserByEmail(email: string) {
+    const user = (await this.authUsers.findOneByEmail(email)) as AuthUsersType;
+
+    if (!user) {
+      throw new TRPCError({
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+    return user;
+  }
+
+  private async hashPassword(password: string) {
+    await bcrypt.hash(password, 10);
+    if (!password) {
+      throw new TRPCError({
+        message: 'Something went wrong, please try again',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+    return password;
+  }
+
+  private async verifyUserDoesNotExist(email: string) {
+    const count = await this.authUsers.getCountByEmail(email);
+    if (count > 0) {
+      throw new TRPCError({
+        message: 'This email already exists. Did you want to sign in?',
+        code: 'CONFLICT',
+      });
+    }
   }
 }

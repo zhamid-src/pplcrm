@@ -23,7 +23,8 @@ export type QueryParams<T extends keyof Models> = {
 };
 
 /**
- * The base operator class that implements regular db functions
+ * The base operator class that implements regular db functions.
+ * Other tables should extend this class.
  */
 export class BaseOperator<T extends keyof Models> {
   protected readonly table: T;
