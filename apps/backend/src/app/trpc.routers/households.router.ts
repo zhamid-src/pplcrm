@@ -1,20 +1,11 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { HouseholdOperator } from '../db.operators/households.operator';
+import { HouseholdsHelper } from '../trpc.helper/households.helper';
 
-const operator = new HouseholdOperator();
+const households = new HouseholdsHelper();
 
-export const householdsRouter = router({
-  findOne: authProcedure.input(z.number()).query((input) => {
-    const id = input as never;
-    return operator.findOne(id);
-  }),
-  findAll: authProcedure.query(() => {
-    return operator.findAll();
-  }),
-  getAllWithPeopleCount: authProcedure.query(() => {
-    return operator.getAllWithPeopleCount();
-  }),
+export const HouseholdsRouter = router({
+  findOne: authProcedure.input(z.bigint()).query(({ input }) => households.findOne(input)),
+  findAll: authProcedure.query(() => households.findAll()),
+  getAllWithPeopleCount: authProcedure.query(() => households.getAllWithPeopleCount()),
 });
-
-export type HouseholdsRouter = typeof householdsRouter;
