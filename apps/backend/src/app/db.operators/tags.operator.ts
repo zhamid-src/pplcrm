@@ -7,13 +7,13 @@ export class TagsOperator extends BaseOperator<'tags'> {
   }
 
   public override findOne(
-    param: string | bigint | TableIdType<'tags'>,
+    IdOrName: string | bigint | TableIdType<'tags'>,
     options?: QueryParams<'tags'>,
   ) {
-    if (typeof param === 'bigint') {
-      return super.findOne(param, options);
-    } else if (typeof param === 'string') {
-      return this.getSelect().where('name', '=', param).executeTakeFirst();
+    if (typeof IdOrName === 'bigint') {
+      return super.findOne(IdOrName, options);
+    } else if (typeof IdOrName === 'string') {
+      return this.getSelect().where('name', '=', IdOrName).executeTakeFirst();
     } else {
       throw Error('Invalid param type');
     }
