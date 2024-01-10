@@ -7,8 +7,8 @@ import { TRPCService } from './trpc.service';
 })
 export abstract class BaseGridService<T, U> extends TRPCService<T> {
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
-  public abstract delete(id: number): Promise<boolean>;
-  public abstract findOne(id: number): Promise<Record<never, never> | undefined>;
+  public abstract delete(id: bigint): Promise<boolean>;
+  public abstract findOne(id: bigint): Promise<Record<never, never> | undefined>;
   public abstract refresh(options?: getAllOptionsType): Promise<T | unknown>;
-  public abstract update(id: number, data: U): Promise<Partial<T>[] | unknown>;
+  public abstract update(id: bigint, data: U): Promise<Partial<T>[] | unknown>;
 }

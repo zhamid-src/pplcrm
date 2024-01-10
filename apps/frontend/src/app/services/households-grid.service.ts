@@ -10,11 +10,11 @@ export class HouseholdsGridService extends BaseGridService<'households', never> 
     return Promise.resolve(rows);
   }
 
-  public delete(id: number): Promise<boolean> {
+  public delete(id: bigint): Promise<boolean> {
     return this.delete(id);
   }
 
-  public findOne(id: number) {
+  public findOne(id: bigint) {
     return this.api.households.findOne.query(id);
   }
 
@@ -22,7 +22,7 @@ export class HouseholdsGridService extends BaseGridService<'households', never> 
     return this.getAllWithPeopleCount();
   }
 
-  public update(id: number, data: UpdateRow<'households'>) {
+  public update(id: bigint, data: UpdateRow<'households'>) {
     // TODO implement
     return Promise.resolve([]);
   }

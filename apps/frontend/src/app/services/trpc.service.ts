@@ -122,7 +122,8 @@ function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRoute
         refresh: payload.refresh_token,
       };
     },
-    onJwtPairFetched: (payload) => tokenSvc.set(payload.access, payload.refresh),
+    onJwtPairFetched: (payload) =>
+      tokenSvc.set({ auth_token: payload.access, refresh_token: payload.refresh }),
     onRefreshFailed: () => tokenSvc.clearAll(),
     onUnauthorized: () => router.navigate(['/signin']),
   });

@@ -123,7 +123,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     dialog.showModal();
   }
 
-  public async edit(id: number, data: Partial<T>) {
+  public async edit(id: bigint, data: Partial<T>) {
     return await this.gridSvc
       .update(id, data as U)
       .then(() => true)
@@ -136,11 +136,11 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     const key = event.colDef.field as keyof T;
-    const row = event.data as Partial<T> & { id: number };
+    const row = event.data as Partial<T> & { id: bigint };
     const payload = this.createPayload(row, key);
 
     this.processing = true;
-    const edited = await this.edit(Number(row.id), payload);
+    const edited = await this.edit(row.id, payload);
     if (!edited) {
       this.alertSvc.showError('Could not edit the row. Please try again later.');
       this.undo();
@@ -213,14 +213,14 @@ export class DatagridComponent<T extends keyof Models, U> {
   }
 
   protected async deleteSelectedRows() {
-    const rows = this.api?.getSelectedRows() as (Partial<T> & { id: number })[];
+    const rows = this.api?.getSelectedRows() as (Partial<T> & { id: bigint })[];
     if (!rows?.length) {
       return this.alertSvc.showError('Please select at least one row to delete.');
     }
 
     this.processing = true;
 
-    const ids = rows.map((row) => Number(row.id));
+    const ids = rows.map((row) => row.id);
 
     //TODO: use deleteMany
     const deleted = this.gridSvc.delete(ids[0]);
@@ -230,8 +230,10 @@ export class DatagridComponent<T extends keyof Models, U> {
       this.alertSvc.showError('Could not delete. Please try again later.');
     } else {
       this.api?.applyTransaction({ remove: rows });
-      rows.forEach((row) => this._gridRowData.splice(row.id!, 1));
-      // this.undoStack.push(...rows);
+
+      // We will never load more rows than the number can handle, so we don't need bigint here
+      rows.forEach((row) => this._gridRowData.splice(Number(row.id!), 1));
+
       this.alertSvc.show({
         text: 'Deleted successfully. Click Undo to undo delete',
         type: 'success',

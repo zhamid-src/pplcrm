@@ -14,7 +14,7 @@ export class TagsHelper {
     });
   }
 
-  public async delete(id: number) {
+  public async delete(id: bigint) {
     return this.tags.deleteOne(BigInt(id));
   }
 
@@ -26,7 +26,7 @@ export class TagsHelper {
     return this.tags.findOne(param);
   }
 
-  public async update(id: number, input: UpdateTagType, auth: IAuthKeyPayload) {
+  public async update(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id };
     return this.tags.updateOne(BigInt(id), payload);
   }

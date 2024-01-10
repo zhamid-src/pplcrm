@@ -13,7 +13,7 @@ export class PersonsHelper {
     return this.persons.addOne(row as InsertObjectOrList<Models, 'persons'>);
   }
 
-  public async delete(id: number) {
+  public async delete(id: bigint) {
     return this.persons.deleteOne(BigInt(id));
   }
 
@@ -21,7 +21,7 @@ export class PersonsHelper {
     return this.persons.findAll(options as QueryParams<'persons'>);
   }
 
-  public async findOne(id: number) {
+  public async findOne(id: bigint) {
     return this.personsHouseholds.findOne(BigInt(id));
   }
 
@@ -29,7 +29,7 @@ export class PersonsHelper {
     return this.personsHouseholds.findAll(options as QueryParams<'persons' | 'households'>);
   }
 
-  public async update(id: number, input: UpdatePersonsType) {
+  public async update(id: bigint, input: UpdatePersonsType) {
     return this.persons.updateOne(BigInt(id), input);
   }
 }

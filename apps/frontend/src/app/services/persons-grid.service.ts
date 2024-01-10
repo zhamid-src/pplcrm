@@ -12,11 +12,11 @@ export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType>
     return Promise.resolve(rows);
   }
 
-  public async delete(id: number): Promise<boolean> {
+  public async delete(id: bigint): Promise<boolean> {
     return (await this.api.persons.delete.mutate(id)) !== null;
   }
 
-  public findOne(id: number) {
+  public findOne(id: bigint) {
     return this.api.persons.findOne.query(id);
   }
 
@@ -24,7 +24,7 @@ export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType>
     return this.getAllWithHouseholds(options);
   }
 
-  public async update(id: number, data: UpdatePersonsType) {
+  public async update(id: bigint, data: UpdatePersonsType) {
     return this.api.persons.update.mutate({ id, data });
   }
 
