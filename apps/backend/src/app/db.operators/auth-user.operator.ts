@@ -1,4 +1,4 @@
-import { SelectExpression, sql } from 'kysely';
+import { SelectExpression, Transaction, sql } from 'kysely';
 import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator, QueryParams } from './base.operator';
 
@@ -12,8 +12,8 @@ export class AuthUsersOperator extends BaseOperator<'authusers'> {
     super('authusers');
   }
 
-  public addPasswordResetCode(id: bigint) {
-    return this.getUpdate()
+  public addPasswordResetCode(id: bigint, trx?: Transaction<Models>) {
+    return this.getUpdate(trx)
       .set({
         password_reset_code: sql<string>`gen_random_uuid()`,
         password_reset_code_created_at: sql`now()`,
@@ -23,8 +23,12 @@ export class AuthUsersOperator extends BaseOperator<'authusers'> {
       .executeTakeFirst();
   }
 
-  public findOneByEmail(email: SelectEmailType, options?: QueryParams<'authusers'>) {
-    return this.getSelectWithColumns(options).where('email', '=', email).executeTakeFirst();
+  public findOneByEmail(
+    email: SelectEmailType,
+    options?: QueryParams<'authusers'>,
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(options, trx).where('email', '=', email).executeTakeFirst();
   }
 
   public async getCountByEmail(email: SelectEmailType): Promise<number> {
@@ -36,16 +40,16 @@ export class AuthUsersOperator extends BaseOperator<'authusers'> {
     return parseInt(count);
   }
 
-  public getPasswordResetCodeTime(code: string) {
+  public getPasswordResetCodeTime(code: string, trx?: Transaction<Models>) {
     const codeColumn = 'password_reset_code';
     const columns: SelectExpression<Models, 'authusers'>[] = ['password_reset_code_created_at'];
-    return this.getSelectWithColumns({ columns })
+    return this.getSelectWithColumns({ columns }, trx)
       .where(codeColumn, '=', code)
       .executeTakeFirstOrThrow();
   }
 
-  public updatePassword(password: string, code: string) {
-    return this.getUpdate()
+  public updatePassword(password: string, code: string, trx?: Transaction<Models>) {
+    return this.getUpdate(trx)
       .set({
         password,
         password_reset_code: null,

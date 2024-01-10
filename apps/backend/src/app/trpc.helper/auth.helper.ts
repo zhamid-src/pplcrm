@@ -1,9 +1,14 @@
 import { IAuthKeyPayload, INow, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
-import { AuthUsersType, OperationDataType, TableIdType } from 'common/src/lib/kysely.models';
+import {
+  AuthUsersType,
+  Models,
+  OperationDataType,
+  TableIdType,
+} from 'common/src/lib/kysely.models';
 import { createDecoder, createSigner } from 'fast-jwt';
-import { QueryResult } from 'kysely';
+import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
 import { AuthUsersOperator } from '../db.operators/auth-user.operator';
 import { SessionsOperator } from '../db.operators/sessions.operator';
@@ -124,32 +129,39 @@ export class AuthHelper {
     input: signUpInputType,
   ): Promise<{ auth_token: string; refresh_token: string } | TRPCError> {
     const email = input.email.toLowerCase();
+    let token = { auth_token: '', refresh_token: '' };
 
     await this.verifyUserDoesNotExist(email);
     const password = await this.hashPassword(input.password);
 
-    // TODO: should be a transaction
-    const tenant_id = await this.createTenant(input.organization);
-    const user = await this.createUser(tenant_id, password, email, input);
-    const profile = await this.createProfile(user.id, tenant_id, user.id);
-    await this.addTenantIdToProfile(tenant_id, user.id, user.id);
+    this.tenants.transaction().execute(async (trx) => {
+      const tenant_id = await this.createTenant(trx, input.organization);
+      const user = await this.createUser(trx, tenant_id, password, email, input);
+      const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
+      await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
+      token = await this.createTokens(profile.id, user.tenant_id, user.first_name);
+    });
 
-    return this.createTokens(profile.id, user.tenant_id, user.first_name);
+    return token;
   }
 
-  private async addTenantIdToProfile(
+  private async updateTenantWithAdmin(
+    trx: Transaction<Models>,
     tenant_id: TableIdType<'tenants'>,
     admin_id: bigint,
     createdby_id: bigint,
   ) {
-    await this.tenants.updateOne(tenant_id, {
-      admin_id,
-      createdby_id,
-    } as OperationDataType<'tenants', 'update'>);
+    const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
+    await this.tenants.updateOne(tenant_id, row, trx);
   }
 
-  private async createProfile(id: bigint, tenant_id: bigint, auth_id: bigint) {
-    const profile = await this.profiles.addOne({ id, tenant_id, auth_id });
+  private async createProfile(
+    trx: Transaction<Models>,
+    id: bigint,
+    tenant_id: bigint,
+    auth_id: bigint,
+  ) {
+    const profile = await this.profiles.addOne({ id, tenant_id, auth_id }, trx);
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -159,8 +171,8 @@ export class AuthHelper {
     return profile;
   }
 
-  private async createTenant(name: string) {
-    const tenantAddResult = await this.tenants.addOne({ name });
+  private async createTenant(trx: Transaction<Models>, name: string) {
+    const tenantAddResult = await this.tenants.addOne({ name }, trx);
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -207,18 +219,14 @@ export class AuthHelper {
   }
 
   private async createUser(
+    trx: Transaction<Models>,
     tenant_id: bigint,
     password: string,
     email: string,
     input: { email: string; first_name: string; password: string; organization: string },
   ) {
-    const user = await this.authUsers.addOne({
-      tenant_id,
-      password,
-      email,
-      first_name: input.first_name,
-      verified: false,
-    });
+    const row = { tenant_id, password, email, first_name: input.first_name, verified: false };
+    const user = await this.authUsers.addOne(row, trx);
 
     if (!user) {
       throw new TRPCError({

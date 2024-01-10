@@ -1,5 +1,5 @@
-import { UpdateResult } from 'kysely';
-import { GetOperandType } from '../../../../../common/src/lib/kysely.models';
+import { Transaction, UpdateResult } from 'kysely';
+import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
 import { BaseOperator } from './base.operator';
 
 export class SessionsOperator extends BaseOperator<'sessions'> {
@@ -7,21 +7,25 @@ export class SessionsOperator extends BaseOperator<'sessions'> {
     super('sessions');
   }
 
-  public deleteBySessionId(session_id: string) {
-    return this.getDelete().where('session_id', '=', session_id).execute();
+  public deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
+    return this.getDelete(trx).where('session_id', '=', session_id).execute();
   }
 
-  public findOneByAuthUserId(user_id: GetOperandType<'sessions', 'select', 'user_id'>) {
+  public findOneByAuthUserId(
+    user_id: GetOperandType<'sessions', 'select', 'user_id'>,
+    trx?: Transaction<Models>,
+  ) {
     if (!user_id) return Promise.resolve(undefined);
-    return this.getSelect().where('user_id', '=', user_id).executeTakeFirst();
+    return this.getSelect(trx).where('user_id', '=', user_id).executeTakeFirst();
   }
 
   public updateRefreshToken(
     user_id: GetOperandType<'sessions', 'update', 'user_id'>,
     refresh_token: string,
+    trx?: Transaction<Models>,
   ): Promise<UpdateResult> {
     if (!user_id) return Promise.resolve({ numUpdatedRows: BigInt(0) });
-    return this.getUpdate()
+    return this.getUpdate(trx)
       .set({ refresh_token })
       .where('user_id', '=', user_id)
       .executeTakeFirst();

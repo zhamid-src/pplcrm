@@ -1,4 +1,5 @@
-import { sql } from 'kysely';
+import { Models } from 'common/src/lib/kysely.models';
+import { Transaction, sql } from 'kysely';
 import { BaseOperator } from './base.operator';
 
 export class HouseholdOperator extends BaseOperator<'households'> {
@@ -9,8 +10,8 @@ export class HouseholdOperator extends BaseOperator<'households'> {
   /**
    * Get all households with the count of people in them
    */
-  public getAllWithPeopleCount() {
-    return this.getSelect()
+  public getAllWithPeopleCount(trx?: Transaction<Models>) {
+    return this.getSelect(trx)
       .select(sql<string>`households.*`.as('households'))
       .select(sql<string>`count(persons)`.as('person_count'))
       .leftJoin('persons', 'households.id', 'persons.household_id')
