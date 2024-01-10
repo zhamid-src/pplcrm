@@ -25,8 +25,8 @@ export interface INow {
 }
 
 export interface IToken {
-  auth_token: string;
-  refresh_token: string;
+  auth_token: string | null;
+  refresh_token: string | null;
 }
 
 export const getAllOptions = z

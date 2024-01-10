@@ -55,7 +55,7 @@ export class AuthService extends TRPCService<'authusers'> {
       throw token;
     }
 
-    this.tokenService.set(token.auth_token, token.refresh_token);
+    this.tokenService.set(token);
     return this.getCurrentUser();
   }
 }

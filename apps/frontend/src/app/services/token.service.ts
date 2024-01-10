@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { IToken } from '@common';
 
 const AUTHTOKEN = 'ppl-crm-auth-token';
 const REFRESHTOKEN = 'ppl-crm-refresh-token';
@@ -33,7 +34,7 @@ export class TokenService {
     this.clearSessionStorage();
   }
 
-  public get() {
+  public get(): IToken {
     return {
       auth_token: this.getAuthToken(),
       refresh_token: this.getRefreshToken(),
@@ -50,25 +51,25 @@ export class TokenService {
       : sessionStorage.getItem(REFRESHTOKEN);
   }
 
-  public set(auth_token: string, refresh_token: string) {
-    this.setAuthToken(auth_token);
-    this.setRefreshToken(refresh_token);
+  public removeAuthToken() {
+    this.removeToken(AUTHTOKEN);
+  }
+
+  public removeRefreshToken() {
+    this.removeToken(REFRESHTOKEN);
+  }
+
+  public set(token: IToken) {
+    token.auth_token ? this.setAuthToken(token.auth_token) : this.removeAuthToken();
+    token.refresh_token ? this.setRefreshToken(token.refresh_token) : this.removeRefreshToken();
   }
 
   public setAuthToken(token: string) {
-    if (this.persistence) {
-      localStorage.setItem(AUTHTOKEN, token);
-    } else {
-      sessionStorage.setItem(AUTHTOKEN, token);
-    }
+    this.setToken(AUTHTOKEN, token);
   }
 
   public setRefreshToken(token: string) {
-    if (this.persistence) {
-      localStorage.setItem(REFRESHTOKEN, token);
-    } else {
-      sessionStorage.setItem(REFRESHTOKEN, token);
-    }
+    this.setToken(REFRESHTOKEN, token);
   }
 
   private clearPersistentStorage() {
@@ -79,5 +80,13 @@ export class TokenService {
   private clearSessionStorage() {
     sessionStorage.removeItem(AUTHTOKEN);
     sessionStorage.removeItem(REFRESHTOKEN);
+  }
+
+  private removeToken(item: string) {
+    this.persistence ? localStorage.removeItem(item) : sessionStorage.removeItem(item);
+  }
+
+  private setToken(item: string, token: string) {
+    this.persistence ? localStorage.setItem(item, token) : sessionStorage.setItem(item, token);
   }
 }
