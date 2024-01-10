@@ -7,11 +7,7 @@ import { TRPCService } from './trpc.service';
 export class UserProfilesService extends TRPCService<'profiles'> {
   // #region Public Methods (2)
 
-  public getAll() {
-    return this.api.userProfiles.findAll.query();
-  }
-
-  public findOne(id: number) {
+  public findOne(id: bigint) {
     return this.api.userProfiles.findOne.query(id);
   }
 }

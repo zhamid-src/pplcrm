@@ -14,11 +14,11 @@ export class TagsGridService extends BaseGridService<'tags', AddTagType> {
     return Promise.resolve(rows);
   }
 
-  public delete(id: number): Promise<boolean> {
+  public delete(id: bigint): Promise<boolean> {
     return this.delete(id);
   }
 
-  public findOne(id: number) {
+  public findOne(id: bigint) {
     return this.api.tags.findOne.query(BigInt(id));
   }
 
@@ -32,7 +32,7 @@ export class TagsGridService extends BaseGridService<'tags', AddTagType> {
     return this.getAll();
   }
 
-  public update(id: number, data: UpdateTagType) {
+  public update(id: bigint, data: UpdateTagType) {
     return this.api.tags.update.mutate({ id, data });
   }
 }

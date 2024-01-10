@@ -10,8 +10,8 @@ export const TagsRouter = router({
   findOne: authProcedure.input(z.bigint()).query(({ input }) => tags.findOne(input)),
   findAll: authProcedure.query(() => tags.findAll()),
   add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.add(input, ctx.auth)),
-  delete: authProcedure.input(z.number()).mutation(({ input }) => tags.delete(input)),
+  delete: authProcedure.input(z.bigint()).mutation(({ input }) => tags.delete(input)),
   update: authProcedure
-    .input(z.object({ id: z.number(), data: UpdateTagObj }))
+    .input(z.object({ id: z.bigint(), data: UpdateTagObj }))
     .mutation(({ input, ctx }) => tags.update(input.id, input.data, ctx.auth)),
 });
