@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, INow, signInInputType, signUpInputType } from '@common';
+import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
 import {
@@ -33,7 +33,7 @@ export class AuthHelper {
     return user || null;
   }
 
-  public async renewAuthToken(input: { auth_token: string; refresh_token: string }) {
+  public async renewAuthToken(input: IToken) {
     if (!input?.auth_token || !input?.refresh_token) {
       throw new TRPCError({
         message: 'Missing auth token',
@@ -125,9 +125,7 @@ export class AuthHelper {
     return this.sessions.deleteBySessionId(auth.session_id);
   }
 
-  public async signUp(
-    input: signUpInputType,
-  ): Promise<{ auth_token: string; refresh_token: string } | TRPCError> {
+  public async signUp(input: signUpInputType): Promise<IToken | TRPCError> {
     const email = input.email.toLowerCase();
     let token = { auth_token: '', refresh_token: '' };
 
