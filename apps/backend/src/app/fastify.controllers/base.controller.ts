@@ -17,36 +17,26 @@ export class BaseController<T extends keyof Models> {
   }
 
   public async add(row: OperationDataType<T, 'insert'>, reply: FastifyReply) {
-    const result = await this.operator.addOne(row);
-    return reply.code(201).send(result);
+    return this.operator.addOne(row);
   }
 
-  public async delete(id: TableIdType<T>, reply: FastifyReply) {
-    const result = await this.operator.deleteOne(id);
-    return reply.code(204).send(result);
+  public delete(id: TableIdType<T>, reply: FastifyReply) {
+    return this.operator.deleteOne(id);
   }
 
-  public async findOne(id: TableIdType<T>, reply: FastifyReply) {
-    const row = await this.operator.findOne(id);
-    return row ? reply.code(200).send(row) : reply.send(404);
+  public findOne(id: TableIdType<T>, reply: FastifyReply) {
+    return this.operator.findOne(id);
   }
 
-  public async getAll(reply: FastifyReply) {
-    const result = await this.operator.findAll();
-    return result ? reply.code(200).send(result) : reply.send(404);
+  public getAll(reply: FastifyReply) {
+    return this.operator.findAll();
   }
 
   public async getCount(reply: FastifyReply) {
-    const { count } = (await this.operator.getCount()) || { count: '0' };
-    return reply.code(200).send(count);
+    return this.operator.getCount();
   }
 
-  public async update(
-    id: TableIdType<T>,
-    row: OperationDataType<T, 'update'>,
-    reply: FastifyReply,
-  ) {
-    const result = await this.operator.updateOne(id, row);
-    return reply.code(200).send(result);
+  public update(id: TableIdType<T>, row: OperationDataType<T, 'update'>, reply: FastifyReply) {
+    return this.operator.updateOne(id, row);
   }
 }
