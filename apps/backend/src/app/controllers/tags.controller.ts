@@ -19,6 +19,6 @@ export class TagsController extends BaseController<'tags', TagsRepository> {
 
   public async updateTag(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id };
-    return this.update(BigInt(id), payload);
+    return this.update(id, payload);
   }
 }
