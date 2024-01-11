@@ -15,7 +15,7 @@ export class HouseholdsGridService extends BaseGridService<'households', never> 
   }
 
   public findOne(id: bigint) {
-    return this.api.households.findOne.query(id);
+    return this.api.households.findOne.query(id.toString());
   }
 
   public refresh() {
