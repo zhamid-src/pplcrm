@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { getAllOptionsType } from '@common';
-import { TRPCService } from './trpc.service';
+import { TRPCService } from '../trpc.service';
 
 @Injectable({
   providedIn: 'root',

@@ -4,7 +4,7 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 import { Router } from '@angular/router';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { TagsGridService } from '@services/tags-grid.service';
+import { TagsGridService } from '@services/grid/tags-grid.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
