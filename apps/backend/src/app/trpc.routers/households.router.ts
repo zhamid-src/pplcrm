@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { HouseholdsHelper } from '../trpc.helper/households.helper';
+import { HouseholdsHelper } from '../controllers/households.controller';
 
 const households = new HouseholdsHelper();
 

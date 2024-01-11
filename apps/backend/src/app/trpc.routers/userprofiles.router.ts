@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { UserProfilesHelper } from '../trpc.helper/usersprofiles.helpers';
+import { UserProfilesHelper } from '../controllers/usersprofiles.controller';
 
 const user = new UserProfilesHelper();
 

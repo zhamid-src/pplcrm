@@ -1,8 +1,8 @@
 import { UpdatePersonsType } from '@common';
 import { FastifyInstance } from 'fastify';
+import { PersonsHelper } from '../controllers/persons.controller';
 import { IdParam } from '../fastify.schema/fastify.types';
 import * as schema from '../fastify.schema/households.schema';
-import { PersonsHelper } from '../trpc.helper/persons.helper';
 
 const persons = new PersonsHelper();
 
