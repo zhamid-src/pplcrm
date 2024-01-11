@@ -4,13 +4,15 @@ import { HouseholdOperator } from '../db.operators/households.operator';
 export class HouseholdsHelper {
   private household = new HouseholdOperator();
 
-  public getAllWithPeopleCount() {
-    this.household.getAllWithPeopleCount();
-  }
-  public findOne(id: bigint) {
-    this.household.findOne(id);
-  }
   public findAll() {
-    this.household.findAll();
+    return this.household.findAll();
+  }
+
+  public findOne(id: bigint) {
+    return this.household.findOne(id);
+  }
+
+  public getAllWithPeopleCount() {
+    return this.household.getAllWithPeopleCount();
   }
 }
