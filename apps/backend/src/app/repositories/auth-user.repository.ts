@@ -1,13 +1,13 @@
 import { SelectExpression, Transaction, sql } from 'kysely';
 import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
-import { BaseOperator, QueryParams } from './base.operator';
+import { BaseRepository, QueryParams } from './base.repository';
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 
 /**
  * Handles all the authusers table operations.
  */
-export class AuthUsersOperator extends BaseOperator<'authusers'> {
+export class AuthUsersRepository extends BaseRepository<'authusers'> {
   constructor() {
     super('authusers');
   }

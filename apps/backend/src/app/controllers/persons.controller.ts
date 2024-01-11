@@ -1,8 +1,8 @@
-import { PersonsOperator } from '../db.operators/persons.operator';
+import { PersonsRepository } from '../repositories/persons.repository';
 import { BaseController } from './base.controller';
 
-export class PersonsController extends BaseController<'persons', PersonsOperator> {
+export class PersonsController extends BaseController<'persons', PersonsRepository> {
   constructor() {
-    super(new PersonsOperator());
+    super(new PersonsRepository());
   }
 }

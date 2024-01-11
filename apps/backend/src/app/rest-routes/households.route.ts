@@ -1,14 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { HouseholdsController } from '../controllers/households.controller';
 import { PersonsController } from '../controllers/persons.controller';
-import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
-import { IdParam } from '../fastify.schema/fastify.types';
-import * as schema from '../fastify.schema/households.schema';
-import * as personsSchema from '../fastify.schema/persons.schema';
+import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
+import { IdParam } from '../rest-schema/fastify.types';
+import * as schema from '../rest-schema/households.schema';
+import * as personsSchema from '../rest-schema/persons.schema';
 
 const households = new HouseholdsController();
 const persons = new PersonsController();
-const personsHouseholds = new PersonsHouseholdsOperator();
+const personsHouseholds = new PersonsHouseholdsRepository();
 
 /**
  * Supported HTTP routes for the households endpoint

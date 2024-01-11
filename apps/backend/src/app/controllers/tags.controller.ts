@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
-import { TagsOperator } from '../db.operators/tags.operator';
+import { TagsRepository } from '../repositories/tags.repository';
 import { BaseController } from './base.controller';
 
-export class TagsController extends BaseController<'tags', TagsOperator> {
+export class TagsController extends BaseController<'tags', TagsRepository> {
   constructor() {
-    super(new TagsOperator());
+    super(new TagsRepository());
   }
 
   public addTag(payload: AddTagType, auth: IAuthKeyPayload) {

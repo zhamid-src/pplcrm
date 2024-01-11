@@ -1,11 +1,11 @@
 import { Models, TableIdType } from 'common/src/lib/kysely.models';
 import { DeleteResult, InsertObject, Selectable, Transaction } from 'kysely';
 import { SimplifyResult } from 'node_modules/kysely/dist/cjs/util/type-utils';
-import { BaseOperator, QueryParams } from './base.operator';
+import { BaseRepository, QueryParams } from './base.repository';
 
 type TYPE = 'persons' | 'households';
 
-export class PersonsHouseholdsOperator extends BaseOperator<TYPE> {
+export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
   constructor() {
     super('persons');
   }

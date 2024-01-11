@@ -1,8 +1,8 @@
 import { Models } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
-import { BaseOperator, QueryParams } from './base.operator';
+import { BaseRepository, QueryParams } from './base.repository';
 
-export class UserPofilesOperator extends BaseOperator<'profiles'> {
+export class UserPofilesRepository extends BaseRepository<'profiles'> {
   constructor() {
     super('profiles');
   }

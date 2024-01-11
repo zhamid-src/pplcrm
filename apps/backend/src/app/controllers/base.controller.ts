@@ -4,9 +4,9 @@ import {
   InsertObjectOrList,
 } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { Models, TableIdType, UpdateRow } from '../../../../../common/src/lib/kysely.models';
-import { BaseOperator, QueryParams } from '../db.operators/base.operator';
+import { BaseRepository, QueryParams } from '../repositories/base.repository';
 
-export class BaseController<T extends keyof Models, O extends BaseOperator<T>> {
+export class BaseController<T extends keyof Models, O extends BaseRepository<T>> {
   constructor(protected operator: O) {}
 
   public addMany(row: ReadonlyArray<InsertObject<Models, T>>) {

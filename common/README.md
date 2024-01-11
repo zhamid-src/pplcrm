@@ -16,18 +16,17 @@ We use _trpc_ to communicate with the backend privately, but we also use _Fastif
 
 The backend uses a directory structure that clarifies what the files in the directory do:
 
-- db.operators - all database operators
-- fastify.controllers - All fastify controllers. There's a 1:1 mapping between fastify routes and controllers
-- fastify.plugins - all fastify plugins. Every plugin is loaded automatically
-- fastify.routes - Each route has a controller
+- repositories - all database repository classes. Generally a 1:1 mapping between db tables and reposotiryclasses.
+- controllers - All controllers, shared between fastify and trpc. Used by fastify routes and trpc routers.
+- \_fastify.plugins - all fastify plugins. Every plugin is loaded automatically
+- rest- - Each route has a controller
 - fastify.schema - used by the route for type checking
-- trpc.handler - helper classes used by trpc routers
-- trpc.routers - Similar to fastify.routes, these define trpc routes
+- trpc-routers - Similar to rest-, these define trpc routes
 
 Other main files:
 
-- fastify.routes - This collects and exports all fastify routes
-- trpc.routers - This collects and exports all trpc routers
+- rest-routers - This collects and exports all fastify routes
+- trpc-routers - This collects and exports all trpc routers
 - context.ts - Creates the context that's used by trpc routers
 
 ## Frontend

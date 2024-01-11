@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { UserPofilesOperator } from '../db.operators/user-profiles.operator';
+import { UserPofilesRepository } from '../repositories/user-profiles.repository';
 import { BaseController } from './base.controller';
 
-export class UserProfilesController extends BaseController<'profiles', UserPofilesOperator> {
+export class UserProfilesController extends BaseController<'profiles', UserPofilesRepository> {
   constructor() {
-    super(new UserPofilesOperator());
+    super(new UserPofilesRepository());
   }
 }
