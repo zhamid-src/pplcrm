@@ -1,26 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { HouseholdOperator } from '../db.operators/households.operator';
+import { BaseController } from './base.controller';
 
-export class HouseholdsHelper {
-  private household = new HouseholdOperator();
-
-  public delete(id: bigint) {
-    return this.household.deleteOne(id);
-  }
-
-  public findAll() {
-    return this.household.findAll();
-  }
-
-  public findOne(id: bigint) {
-    return this.household.findOne(id);
+export class HouseholdsController extends BaseController<'households', HouseholdOperator> {
+  constructor() {
+    super(new HouseholdOperator());
   }
 
   public getAllWithPeopleCount() {
-    return this.household.getAllWithPeopleCount();
-  }
-
-  public async getCount() {
-    return this.household.getCount();
+    return this.getOperator().getAllWithPeopleCount();
   }
 }

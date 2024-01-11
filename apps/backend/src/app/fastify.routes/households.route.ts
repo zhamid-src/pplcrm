@@ -1,20 +1,17 @@
 import { FastifyInstance } from 'fastify';
-import { HouseholdsHelper } from '../controllers/households.controller';
-import { PersonsHelper } from '../controllers/persons.controller';
+import { HouseholdsController } from '../controllers/households.controller';
+import { PersonsController } from '../controllers/persons.controller';
 import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
 import { IdParam } from '../fastify.schema/fastify.types';
 import * as schema from '../fastify.schema/households.schema';
 import * as personsSchema from '../fastify.schema/persons.schema';
 
-const households = new HouseholdsHelper();
-const persons = new PersonsHelper();
+const households = new HouseholdsController();
+const persons = new PersonsController();
 const personsHouseholds = new PersonsHouseholdsOperator();
 
 /**
  * Supported HTTP routes for the households endpoint
- * @param fastify
- * @param _
- * @param done
  */
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get('', schema.getAll, () => households.findAll());

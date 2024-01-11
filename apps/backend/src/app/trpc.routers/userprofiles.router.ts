@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { UserProfilesHelper } from '../controllers/usersprofiles.controller';
+import { UserProfilesController } from '../controllers/usersprofiles.controller';
 
-const user = new UserProfilesHelper();
+const user = new UserProfilesController();
 
 export const UserProfilesRouter = router({
   findOne: authProcedure.input(z.bigint()).query(({ input }) => {

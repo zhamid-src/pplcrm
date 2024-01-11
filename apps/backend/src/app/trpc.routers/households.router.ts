@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { HouseholdsHelper } from '../controllers/households.controller';
+import { HouseholdsController } from '../controllers/households.controller';
 
-const households = new HouseholdsHelper();
+const households = new HouseholdsController();
 
 export const HouseholdsRouter = router({
   findOne: authProcedure.input(z.bigint()).query(({ input }) => households.findOne(input)),

@@ -1,12 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 import { TagsOperator } from '../db.operators/tags.operator';
+import { BaseController } from './base.controller';
 
-export class TagsHelper {
-  private tags: TagsOperator = new TagsOperator();
+export class TagsController extends BaseController<'tags', TagsOperator> {
+  constructor() {
+    super(new TagsOperator());
+  }
 
-  public add(payload: AddTagType, auth: IAuthKeyPayload) {
-    return this.tags.addOne({
+  public addTag(payload: AddTagType, auth: IAuthKeyPayload) {
+    return this.addOne({
       name: payload.name,
       description: payload.description,
       tenant_id: auth.tenant_id,
@@ -14,20 +17,8 @@ export class TagsHelper {
     });
   }
 
-  public async delete(id: bigint) {
-    return this.tags.deleteOne(BigInt(id));
-  }
-
-  public findAll() {
-    return this.tags.findAll();
-  }
-
-  public findOne(param: bigint | string) {
-    return this.tags.findOne(param);
-  }
-
-  public async update(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
+  public async updateTag(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id };
-    return this.tags.updateOne(BigInt(id), payload);
+    return this.update(BigInt(id), payload);
   }
 }
