@@ -3,9 +3,9 @@ import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { BaseGridService } from '@services/base-grid.service';
+import { BaseGridService } from '@services/grid/base-grid.service';
+import { TagsGridService } from '@services/grid/tags-grid.service';
 import { SearchService } from '@services/search.service';
-import { TagsGridService } from '@services/tags-grid.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 

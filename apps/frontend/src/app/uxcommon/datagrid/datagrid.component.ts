@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output, effect } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { BaseGridService } from '@services/base-grid.service';
+import { BaseGridService } from '@services/grid/base-grid.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
