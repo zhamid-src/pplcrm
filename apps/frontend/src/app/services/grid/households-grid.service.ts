@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { UpdateRow } from 'common/src/lib/kysely.models';
+import { OperationDataType } from 'common/src/lib/kysely.models';
 import { BaseGridService } from './base-grid.service';
 
 @Injectable({
@@ -22,7 +22,7 @@ export class HouseholdsGridService extends BaseGridService<'households', never> 
     return this.getAllWithPeopleCount();
   }
 
-  public update(id: bigint, data: UpdateRow<'households'>) {
+  public update(id: bigint, data: OperationDataType<'households', 'insert'>) {
     // TODO implement
     return Promise.resolve([]);
   }

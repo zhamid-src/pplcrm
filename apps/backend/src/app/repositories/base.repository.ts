@@ -7,33 +7,31 @@ import {
   InsertResult,
   Kysely,
   Migrator,
+  OrderByExpression,
   PostgresDialect,
   QueryResult,
   SelectQueryBuilder,
   Transaction,
   sql,
 } from 'kysely';
-import {
-  InsertObject,
-  InsertObjectOrList,
-} from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
+import { From, FromTables } from 'node_modules/kysely/dist/esm/parser/table-parser';
 import path from 'path';
 import { Pool } from 'pg';
 import {
-  GroupDataType,
+  GetOperandType,
   Models,
+  OperationDataType,
   TableColumnsType,
   TableIdType,
-  UpdateRow,
 } from '../../../../../common/src/lib/kysely.models';
 
 export type QueryParams<T extends keyof Models> = {
   columns?: TableColumnsType<T>[];
   limit?: number;
   offset?: number;
-  orderBy?: GroupDataType<T>[];
-  groupBy?: GroupDataType<T>[];
+  orderBy?: string | string[];
+  groupBy?: string | string[];
 };
 
 const dialect = new PostgresDialect({
@@ -47,6 +45,20 @@ const dialect = new PostgresDialect({
     ssl: false,
   }),
 });
+
+type SelectQueryType<T extends keyof Models> =
+  | SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>
+  | SelectQueryBuilder<
+      From<Models, ExtractTableAlias<Models, T>>,
+      FromTables<Models, never, ExtractTableAlias<Models, T>>,
+      {}
+    >
+  | SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>
+  | SelectQueryBuilder<
+      From<Models, ExtractTableAlias<Models, T>>,
+      FromTables<Models, never, ExtractTableAlias<Models, T>>,
+      {}
+    >;
 
 /**
  * The base operator class that implements regular db functions.
@@ -74,15 +86,16 @@ export class BaseRepository<T extends keyof Models> {
     this.table = tableIn;
   }
 
-  public async addMany(rows: ReadonlyArray<InsertObject<Models, T>>, trx?: Transaction<Models>) {
+  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
     return this.getInsert(trx).values(rows).returningAll().execute();
   }
 
-  public async addOne(row: InsertObjectOrList<Models, T>, trx?: Transaction<Models>) {
+  public async addOne(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
     return this.getInsert(trx).values(row).returningAll().executeTakeFirst();
   }
 
-  public async deleteOne(id: TableIdType<T>, trx?: Transaction<Models>) {
+  //TODO: remove any
+  public async deleteOne(id: GetOperandType<T, 'select', any>, trx?: Transaction<Models>) {
     return this.getDelete(trx).where('id', '=', id).execute();
   }
 
@@ -106,7 +119,12 @@ export class BaseRepository<T extends keyof Models> {
     return (await sql`select now()::timestamp`.execute(BaseRepository.db)) as QueryResult<INow>;
   }
 
-  public async updateOne(id: TableIdType<T>, row: UpdateRow<T>, trx?: Transaction<Models>) {
+  // TODO: remove any
+  public async updateOne(
+    id: GetOperandType<T, 'update', any>,
+    row: OperationDataType<T, 'update'>,
+    trx?: Transaction<Models>,
+  ) {
     return this.getUpdate(trx).set(row).where('id', '=', id).returningAll().executeTakeFirst();
   }
 
@@ -115,14 +133,21 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected applyOptions(
-    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
+    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>,
     options?: QueryParams<T>,
   ) {
+    const orderBy = options?.orderBy as OrderByExpression<
+      Models,
+      ExtractTableAlias<Models, T>,
+      object
+    >[];
+
+    // const groupBy = options?.groupBy as GroupByArg<Models, ExtractTableAlias<Models, T>, {}>;
     query = options?.columns ? query.select(options.columns) : query.selectAll();
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
-    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy) : query;
+    query = options?.orderBy ? query.orderBy(orderBy) : query;
+    // query = options?.groupBy ? query.groupBy(groupBy) : query;
 
     return query;
   }
@@ -140,7 +165,11 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
-    const query = this.getSelect(trx);
+    const query = this.getSelect(trx) as SelectQueryBuilder<
+      Models,
+      ExtractTableAlias<Models, T>,
+      {}
+    >;
     return this.applyOptions(query, options);
   }
 

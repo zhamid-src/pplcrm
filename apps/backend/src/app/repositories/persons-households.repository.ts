@@ -1,6 +1,5 @@
 import { Models, TableIdType } from 'common/src/lib/kysely.models';
-import { DeleteResult, InsertObject, Selectable, Transaction } from 'kysely';
-import { SimplifyResult } from 'node_modules/kysely/dist/cjs/util/type-utils';
+import { DeleteResult, Transaction } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repository';
 
 type TYPE = 'persons' | 'households';
@@ -8,20 +7,6 @@ type TYPE = 'persons' | 'households';
 export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
   constructor() {
     super('persons');
-  }
-
-  public override addMany(
-    rows: readonly InsertObject<Models, TYPE>[],
-    trx?: Transaction<Models>,
-  ): Promise<SimplifyResult<Selectable<Models[TYPE]>>[]> {
-    throw Error('Not supported');
-  }
-
-  public override addOne(
-    rows: readonly InsertObject<Models, TYPE>[],
-    trx?: Transaction<Models>,
-  ): Promise<SimplifyResult<Selectable<Models[TYPE]>>> {
-    throw Error('Not supported');
   }
 
   public override async deleteOne(

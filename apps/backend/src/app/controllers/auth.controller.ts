@@ -3,9 +3,9 @@ import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
 import {
   AuthUsersType,
+  GetOperandType,
   Models,
   OperationDataType,
-  TableIdType,
 } from 'common/src/lib/kysely.models';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
@@ -151,7 +151,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     tenant_id: bigint,
     auth_id: bigint,
   ) {
-    const profile = await this.profiles.addOne({ id, tenant_id, auth_id }, trx);
+    const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
+    const profile = await this.profiles.addOne(row, trx);
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -162,7 +163,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async createTenant(trx: Transaction<Models>, name: string) {
-    const tenantAddResult = await this.tenants.addOne({ name }, trx);
+    const row = { name } as OperationDataType<'tenants', 'insert'>;
+    const tenantAddResult = await this.tenants.addOne(row, trx);
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -181,13 +183,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     // Delete the old session
     oldSession && (await this.sessions.deleteBySessionId(oldSession));
 
-    const currentSession = await this.sessions.addOne({
+    const row = {
       user_id,
       tenant_id,
       ip_address: '',
       user_agent: '',
       status: 'active',
-    });
+    } as OperationDataType<'sessions', 'insert'>;
+    const currentSession = await this.sessions.addOne(row);
 
     if (!currentSession) {
       throw new TRPCError({
@@ -215,7 +218,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     email: string,
     input: { email: string; first_name: string; password: string; organization: string },
   ) {
-    const row = { tenant_id, password, email, first_name: input.first_name, verified: false };
+    const row = {
+      tenant_id,
+      password,
+      email,
+      first_name: input.first_name,
+      verified: false,
+    } as OperationDataType<'authusers', 'insert'>;
     const user = await this.getOperator().addOne(row, trx);
 
     if (!user) {
@@ -268,14 +277,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     return password;
   }
 
+  // TODO: remove any
   private async updateTenantWithAdmin(
     trx: Transaction<Models>,
-    tenant_id: TableIdType<'tenants'>,
+    tenant_id: bigint,
     admin_id: bigint,
     createdby_id: bigint,
   ) {
     const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
-    await this.tenants.updateOne(tenant_id, row, trx);
+    await this.tenants.updateOne(tenant_id as GetOperandType<'authusers', 'update', any>, row, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {

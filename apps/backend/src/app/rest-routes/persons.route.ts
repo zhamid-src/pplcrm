@@ -1,7 +1,5 @@
-import { UpdatePersonsType } from '@common';
-import { Models } from 'common/src/lib/kysely.models';
+import { OperationDataType } from 'common/src/lib/kysely.models';
 import { FastifyInstance } from 'fastify';
-import { InsertObjectOrList } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { PersonsController } from '../controllers/persons.controller';
 import { IdParam } from '../rest-schema/fastify.types';
 import * as schema from '../rest-schema/households.schema';
@@ -17,10 +15,10 @@ function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get('/:id', schema.findFromId, (req: IdParam) => persons.findOne(BigInt(req.params.id)));
   fastify.get('/count', schema.count, (_req) => persons.getCount());
   fastify.post('', schema.update, (req) =>
-    persons.addOne(req.body as InsertObjectOrList<Models, 'persons'>),
+    persons.addOne(req.body as OperationDataType<'persons', 'insert'>),
   );
   fastify.patch('/:id', schema.findFromId, (req: IdParam) =>
-    persons.update(BigInt(req.params.id), req.body as UpdatePersonsType),
+    persons.update(BigInt(req.params.id), req.body as OperationDataType<'persons', 'insert'>),
   );
   fastify.delete('/:id', schema.findFromId, (req: IdParam) =>
     persons.delete(BigInt(req.params.id)),
