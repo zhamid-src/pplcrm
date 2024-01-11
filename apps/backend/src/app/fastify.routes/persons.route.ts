@@ -14,14 +14,14 @@ const controller = new PersonsController();
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get('', schema.getAll, (req, reply) => controller.getAll(reply));
 
-  fastify.get('/:id', schema.findFromId, (req: IdParam, reply) => {
-    return controller.findOne(+req.params.id as never, reply);
-  });
+  fastify.get('/:id', schema.findFromId, (req: IdParam, reply) =>
+    controller.findOne(+req.params.id as never, reply),
+  );
+  fastify.get('/count', schema.count, (_req, reply) => controller.getCount(reply));
   fastify.post('', schema.update, (req, reply) => controller.add(req.body as never, reply));
   fastify.patch('/:id', schema.findFromId, (req: IdParam, reply) =>
     controller.update(BigInt(+req.params.id), req.body as never, reply),
   );
-  fastify.get('/count', schema.count, (_req, reply) => controller.getCount(reply));
   fastify.delete('/:id', schema.findFromId, (req: IdParam, reply) =>
     controller.delete(BigInt(+req.params.id), reply),
   );
