@@ -2,7 +2,7 @@
 import { signInInputObj, signUpInputObj } from '@common';
 import z from 'zod';
 import { authProcedure, publicProcedure, router } from '../../trpc';
-import { AuthHelper } from '../trpc.helper/auth.helper';
+import { AuthHelper } from '../controllers/auth.controller';
 
 const helper = new AuthHelper();
 

@@ -1,7 +1,7 @@
 import { UpdatePersonsObj, getAllOptions } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { PersonsHelper } from '../trpc.helper/persons.helper';
+import { PersonsHelper } from '../controllers/persons.controller';
 
 const persons = new PersonsHelper();
 

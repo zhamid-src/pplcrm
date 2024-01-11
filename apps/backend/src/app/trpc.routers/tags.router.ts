@@ -1,7 +1,7 @@
 import { AddTagObj, UpdateTagObj } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
-import { TagsHelper } from '../trpc.helper/tags.helper';
+import { TagsHelper } from '../controllers/tags.controller';
 
 const tags = new TagsHelper();
 

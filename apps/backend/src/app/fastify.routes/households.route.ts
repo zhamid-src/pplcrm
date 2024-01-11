@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
+import { HouseholdsHelper } from '../controllers/households.controller';
+import { PersonsHelper } from '../controllers/persons.controller';
 import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
 import { IdParam } from '../fastify.schema/fastify.types';
 import * as schema from '../fastify.schema/households.schema';
 import * as personsSchema from '../fastify.schema/persons.schema';
-import { HouseholdsHelper } from '../trpc.helper/households.helper';
-import { PersonsHelper } from '../trpc.helper/persons.helper';
 
 const households = new HouseholdsHelper();
 const persons = new PersonsHelper();
