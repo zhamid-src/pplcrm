@@ -1,8 +1,8 @@
 import { Models } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
-import { BaseOperator } from './base.operator';
+import { BaseRepository } from './base.repository';
 
-export class HouseholdOperator extends BaseOperator<'households'> {
+export class HouseholdRepository extends BaseRepository<'households'> {
   constructor() {
     super('households');
   }

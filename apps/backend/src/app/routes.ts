@@ -12,6 +12,6 @@ export function routes(fastify: FastifyInstance, _opts: never, done: () => void)
   done();
 }
 
-const personsRoute = require('./fastify.routes/persons.route');
-const householdsRoute = require('./fastify.routes/households.route');
-const authRoute = require('./fastify.routes/auth.route');
+const personsRoute = require('./rest-routes/persons.route');
+const householdsRoute = require('./rest-routes/households.route');
+const authRoute = require('./rest-routes/auth.route');

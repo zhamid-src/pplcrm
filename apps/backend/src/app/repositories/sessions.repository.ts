@@ -1,8 +1,8 @@
 import { Transaction, UpdateResult } from 'kysely';
 import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
-import { BaseOperator } from './base.operator';
+import { BaseRepository } from './base.repository';
 
-export class SessionsOperator extends BaseOperator<'sessions'> {
+export class SessionsRepository extends BaseRepository<'sessions'> {
   constructor() {
     super('sessions');
   }

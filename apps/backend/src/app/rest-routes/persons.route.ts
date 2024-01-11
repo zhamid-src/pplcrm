@@ -3,8 +3,8 @@ import { Models } from 'common/src/lib/kysely.models';
 import { FastifyInstance } from 'fastify';
 import { InsertObjectOrList } from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
 import { PersonsController } from '../controllers/persons.controller';
-import { IdParam } from '../fastify.schema/fastify.types';
-import * as schema from '../fastify.schema/households.schema';
+import { IdParam } from '../rest-schema/fastify.types';
+import * as schema from '../rest-schema/households.schema';
 
 const persons = new PersonsController();
 

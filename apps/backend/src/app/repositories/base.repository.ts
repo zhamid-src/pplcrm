@@ -52,7 +52,7 @@ const dialect = new PostgresDialect({
  * The base operator class that implements regular db functions.
  * Other tables should extend this class.
  */
-export class BaseOperator<T extends keyof Models> {
+export class BaseRepository<T extends keyof Models> {
   protected readonly table: T;
   // All dB operations should happen through this class,
   // so keep this private
@@ -60,13 +60,13 @@ export class BaseOperator<T extends keyof Models> {
     dialect,
   });
 
-  private static migrationFolder = path.join(__dirname, './kysely.migrations');
+  private static migrationFolder = path.join(__dirname, './_migrations');
   public static migrator = new Migrator({
-    db: BaseOperator.db,
+    db: BaseRepository.db,
     provider: new FileMigrationProvider({
       fs,
       path,
-      migrationFolder: BaseOperator.migrationFolder,
+      migrationFolder: BaseRepository.migrationFolder,
     }),
   });
 
@@ -103,7 +103,7 @@ export class BaseOperator<T extends keyof Models> {
   }
 
   public async nowTime(): Promise<QueryResult<INow>> {
-    return (await sql`select now()::timestamp`.execute(BaseOperator.db)) as QueryResult<INow>;
+    return (await sql`select now()::timestamp`.execute(BaseRepository.db)) as QueryResult<INow>;
   }
 
   public async updateOne(id: TableIdType<T>, row: UpdateRow<T>, trx?: Transaction<Models>) {
@@ -111,7 +111,7 @@ export class BaseOperator<T extends keyof Models> {
   }
 
   public transaction() {
-    return BaseOperator.db.transaction();
+    return BaseRepository.db.transaction();
   }
 
   protected applyOptions(
@@ -128,15 +128,15 @@ export class BaseOperator<T extends keyof Models> {
   }
 
   protected getDelete(trx?: Transaction<Models>) {
-    return trx ? trx.deleteFrom(this.table) : BaseOperator.db.deleteFrom(this.table);
+    return trx ? trx.deleteFrom(this.table) : BaseRepository.db.deleteFrom(this.table);
   }
 
   protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
-    return trx ? trx.insertInto(this.table) : BaseOperator.db.insertInto(this.table);
+    return trx ? trx.insertInto(this.table) : BaseRepository.db.insertInto(this.table);
   }
 
   protected getSelect(trx?: Transaction<Models>) {
-    return trx ? trx.selectFrom(this.table) : BaseOperator.db.selectFrom(this.table);
+    return trx ? trx.selectFrom(this.table) : BaseRepository.db.selectFrom(this.table);
   }
 
   protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
@@ -145,6 +145,6 @@ export class BaseOperator<T extends keyof Models> {
   }
 
   protected getUpdate(trx?: Transaction<Models>) {
-    return trx ? trx.updateTable(this.table) : BaseOperator.db.updateTable(this.table);
+    return trx ? trx.updateTable(this.table) : BaseRepository.db.updateTable(this.table);
   }
 }

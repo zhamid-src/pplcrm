@@ -10,19 +10,19 @@ import {
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
-import { AuthUsersOperator } from '../db.operators/auth-user.operator';
-import { SessionsOperator } from '../db.operators/sessions.operator';
-import { TenantsOperator } from '../db.operators/tenants.operator';
-import { UserPofilesOperator } from '../db.operators/user-profiles.operator';
+import { AuthUsersRepository } from '../repositories/auth-user.repository';
+import { SessionsRepository } from '../repositories/sessions.repository';
+import { TenantsRepository } from '../repositories/tenants.repository';
+import { UserPofilesRepository } from '../repositories/user-profiles.repository';
 import { BaseController } from './base.controller';
 
-export class AuthController extends BaseController<'authusers', AuthUsersOperator> {
-  private profiles: UserPofilesOperator = new UserPofilesOperator();
-  private sessions: SessionsOperator = new SessionsOperator();
-  private tenants: TenantsOperator = new TenantsOperator();
+export class AuthController extends BaseController<'authusers', AuthUsersRepository> {
+  private profiles: UserPofilesRepository = new UserPofilesRepository();
+  private sessions: SessionsRepository = new SessionsRepository();
+  private tenants: TenantsRepository = new TenantsRepository();
 
   constructor() {
-    super(new AuthUsersOperator());
+    super(new AuthUsersRepository());
   }
 
   public async currentUser(auth: IAuthKeyPayload) {

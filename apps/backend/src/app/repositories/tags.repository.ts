@@ -1,8 +1,8 @@
 import { Models, TableIdType } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
-import { BaseOperator, QueryParams } from './base.operator';
+import { BaseRepository, QueryParams } from './base.repository';
 
-export class TagsOperator extends BaseOperator<'tags'> {
+export class TagsRepository extends BaseRepository<'tags'> {
   constructor() {
     super('tags');
   }

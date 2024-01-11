@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { BaseOperator } from './db.operators/base.operator';
+import { BaseRepository } from './repositories/base.repository';
 
 // import configs from env via dotenv
 config();
@@ -8,7 +8,7 @@ config();
 
 // Migration function
 async function migrateToLatest() {
-  const { error, results } = await BaseOperator.migrator.migrateToLatest();
+  const { error, results } = await BaseRepository.migrator.migrateToLatest();
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
@@ -28,7 +28,7 @@ async function migrateToLatest() {
  * Migrate down to the previous version
  */
 export async function migrateDown() {
-  const { error, results } = await BaseOperator.migrator.migrateDown();
+  const { error, results } = await BaseRepository.migrator.migrateDown();
 
   results?.forEach((it) => {
     if (it.status === 'Success') {

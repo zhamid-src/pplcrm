@@ -4,7 +4,7 @@ import * as pino from 'pino';
 import AutoLoad from '@fastify/autoload';
 
 import * as path from 'path';
-import { routes } from './app/fastify.routes';
+import { routes } from './app/routes';
 
 const host = process.env.HOST ?? 'localhost';
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -26,7 +26,7 @@ export class FastifyServer {
 
     // This loads all plugins defined in the plugins folder
     this.server.register(AutoLoad, {
-      dir: path.join(__dirname, 'app/fastify.plugins'),
+      dir: path.join(__dirname, 'app/_fastify.plugins'),
       options: { ...opts },
     });
   }

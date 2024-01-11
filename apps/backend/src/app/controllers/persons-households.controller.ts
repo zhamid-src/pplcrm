@@ -1,14 +1,14 @@
 import { getAllOptionsType } from '@common';
-import { QueryParams } from '../db.operators/base.operator';
-import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
+import { QueryParams } from '../repositories/base.repository';
+import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
 import { BaseController } from './base.controller';
 
 export class PersonsHouseholdsController extends BaseController<
   'persons' | 'households',
-  PersonsHouseholdsOperator
+  PersonsHouseholdsRepository
 > {
   constructor() {
-    super(new PersonsHouseholdsOperator());
+    super(new PersonsHouseholdsRepository());
   }
 
   public override findAll(options?: getAllOptionsType) {
