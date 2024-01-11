@@ -14,18 +14,22 @@ import { AuthUsersOperator } from '../db.operators/auth-user.operator';
 import { SessionsOperator } from '../db.operators/sessions.operator';
 import { TenantsOperator } from '../db.operators/tenants.operator';
 import { UserPofilesOperator } from '../db.operators/user-profiles.operator';
+import { BaseController } from './base.controller';
 
-export class AuthHelper {
-  private authUsers: AuthUsersOperator = new AuthUsersOperator();
+export class AuthController extends BaseController<'authusers', AuthUsersOperator> {
   private profiles: UserPofilesOperator = new UserPofilesOperator();
   private sessions: SessionsOperator = new SessionsOperator();
   private tenants: TenantsOperator = new TenantsOperator();
+
+  constructor() {
+    super(new AuthUsersOperator());
+  }
 
   public async currentUser(auth: IAuthKeyPayload) {
     if (!auth?.user_id) {
       return null;
     }
-    const user = await this.authUsers
+    const user = await this.getOperator()
       .findOne(auth.user_id, {
         columns: ['id', 'email', 'first_name'],
       })
@@ -58,7 +62,7 @@ export class AuthHelper {
       });
     }
 
-    const result = await this.authUsers.updatePassword(password, code);
+    const result = await this.getOperator().updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
       throw new TRPCError({
         message: 'Wrong code, please try again',
@@ -69,7 +73,7 @@ export class AuthHelper {
 
   public async sendPasswordResetEmail(email: string) {
     const user = await this.getUserByEmail(email);
-    const code = this.authUsers.addPasswordResetCode(user.id);
+    const code = this.getOperator().addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -115,8 +119,6 @@ export class AuthHelper {
    * Sign out the current user and invalidate the token
    * TODO: should check the auth token in session table in other functions so a user
    * can't use the saved token
-   * @param auth
-   * @returns
    */
   public async signOut(auth: IAuthKeyPayload) {
     if (!auth?.session_id) {
@@ -141,16 +143,6 @@ export class AuthHelper {
     });
 
     return token;
-  }
-
-  private async updateTenantWithAdmin(
-    trx: Transaction<Models>,
-    tenant_id: TableIdType<'tenants'>,
-    admin_id: bigint,
-    createdby_id: bigint,
-  ) {
-    const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
-    await this.tenants.updateOne(tenant_id, row, trx);
   }
 
   private async createProfile(
@@ -224,7 +216,7 @@ export class AuthHelper {
     input: { email: string; first_name: string; password: string; organization: string },
   ) {
     const row = { tenant_id, password, email, first_name: input.first_name, verified: false };
-    const user = await this.authUsers.addOne(row, trx);
+    const user = await this.getOperator().addOne(row, trx);
 
     if (!user) {
       throw new TRPCError({
@@ -236,7 +228,7 @@ export class AuthHelper {
   }
 
   private async getCodeAge(code: string): Promise<number> {
-    const nowData: QueryResult<INow> = await this.authUsers.nowTime();
+    const nowData: QueryResult<INow> = await this.getOperator().nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -244,7 +236,7 @@ export class AuthHelper {
       });
     }
 
-    const data: Partial<AuthUsersType> = await this.authUsers.getPasswordResetCodeTime(code);
+    const data: Partial<AuthUsersType> = await this.getOperator().getPasswordResetCodeTime(code);
     const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
     const then = new Date(thenTimestamp);
 
@@ -254,7 +246,7 @@ export class AuthHelper {
   }
 
   private async getUserByEmail(email: string) {
-    const user = (await this.authUsers.findOneByEmail(email)) as AuthUsersType;
+    const user = (await this.getOperator().findOneByEmail(email)) as AuthUsersType;
 
     if (!user) {
       throw new TRPCError({
@@ -276,8 +268,18 @@ export class AuthHelper {
     return password;
   }
 
+  private async updateTenantWithAdmin(
+    trx: Transaction<Models>,
+    tenant_id: TableIdType<'tenants'>,
+    admin_id: bigint,
+    createdby_id: bigint,
+  ) {
+    const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
+    await this.tenants.updateOne(tenant_id, row, trx);
+  }
+
   private async verifyUserDoesNotExist(email: string) {
-    const count = await this.authUsers.getCountByEmail(email);
+    const count = await this.getOperator().getCountByEmail(email);
     if (count > 0) {
       throw new TRPCError({
         message: 'This email already exists. Did you want to sign in?',
