@@ -11,7 +11,7 @@ const controller = new PersonsController();
  * @param _
  * @param done
  */
-async function routes(fastify: FastifyInstance, _: never, done: () => void) {
+function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get('', schema.getAll, (req, reply) => controller.getAll(reply));
 
   fastify.get('/:id', schema.findFromId, (req: IdParam, reply) => {

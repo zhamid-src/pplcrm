@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance } from 'fastify';
 
 /**
  * No public HTTP routes for authentication
@@ -6,7 +6,7 @@ import { FastifyInstance } from "fastify";
  * @param _
  * @param done
  */
-async function routes(fastify: FastifyInstance, _: never, done: () => void) {
+function routes(fastify: FastifyInstance, _: never, done: () => void) {
   done();
 }
 
