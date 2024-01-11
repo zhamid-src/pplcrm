@@ -10,12 +10,16 @@ export class HouseholdOperator extends BaseOperator<'households'> {
   /**
    * Get all households with the count of people in them
    */
-  public getAllWithPeopleCount(trx?: Transaction<Models>) {
-    return this.getSelect(trx)
+  public async getAllWithPeopleCount(trx?: Transaction<Models>) {
+    console.log('*************');
+    const payload = await this.getSelect(trx)
       .select(sql<string>`households.*`.as('households'))
       .select(sql<string>`count(persons)`.as('person_count'))
       .leftJoin('persons', 'households.id', 'persons.household_id')
       .groupBy(['households.id', 'households.tenant_id'])
       .execute();
+
+    console.log(payload);
+    return payload;
   }
 }
