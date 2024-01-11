@@ -1,24 +1,26 @@
 import { getAllOptionsType } from '@common';
 import {
-  InsertObject,
-  InsertObjectOrList,
-} from 'node_modules/kysely/dist/cjs/parser/insert-values-parser';
-import { Models, TableIdType, UpdateRow } from '../../../../../common/src/lib/kysely.models';
+  GetOperandType,
+  Models,
+  OperationDataType,
+  TableIdType,
+} from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from '../repositories/base.repository';
 
 export class BaseController<T extends keyof Models, O extends BaseRepository<T>> {
   constructor(protected operator: O) {}
 
-  public addMany(row: ReadonlyArray<InsertObject<Models, T>>) {
-    return this.operator.addMany(row);
+  public addMany(rows: OperationDataType<T, 'insert'>[]) {
+    return this.operator.addMany(rows);
   }
 
-  public addOne(row: InsertObjectOrList<Models, T>) {
+  public addOne(row: OperationDataType<T, 'insert'>) {
     return this.operator.addOne(row);
   }
 
   public async delete(id: bigint) {
-    return this.operator.deleteOne(id as TableIdType<T>);
+    // remove any
+    return this.operator.deleteOne(id as GetOperandType<T, 'select', any>);
   }
 
   public async findAll(options?: getAllOptionsType) {
@@ -33,8 +35,9 @@ export class BaseController<T extends keyof Models, O extends BaseRepository<T>>
     return this.operator.getCount();
   }
 
-  public async update(id: bigint, input: UpdateRow<T>) {
-    return this.operator.updateOne(id as TableIdType<T>, input);
+  public async update(id: bigint, input: OperationDataType<T, 'update'>) {
+    // remove any
+    return this.operator.updateOne(id as GetOperandType<T, 'update', any>, input);
   }
 
   protected getOperator() {

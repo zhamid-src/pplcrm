@@ -12,7 +12,6 @@ import type {
   OperandValueExpressionOrList,
   SelectExpression,
   Selectable,
-  UpdateObject,
   Updateable,
 } from 'kysely';
 import { UndirectedOrderByExpression } from 'node_modules/kysely/dist/cjs/parser/order-by-parser';
@@ -83,13 +82,7 @@ export type TableIdType<T extends keyof Models> = OperandValueExpressionOrList<
   'id'
 >;
 
-export type UpdateRow<T extends keyof Models> = UpdateObject<
-  Models,
-  ExtractTableAlias<Models, T>,
-  ExtractTableAlias<Models, T>
->;
-
-type TablesOperationMap = {
+export type TablesOperationMap = {
   [K in Keys<Models>]: {
     select: Selectable<Models[K]>;
     insert: Insertable<Models[K]>;
