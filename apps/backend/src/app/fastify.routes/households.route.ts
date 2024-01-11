@@ -1,12 +1,14 @@
 import { FastifyInstance } from 'fastify';
-import { HouseholdsController } from '../fastify.controllers/households.controller';
-import { PersonsController } from '../fastify.controllers/persons.controller';
+import { PersonsHouseholdsOperator } from '../db.operators/persons-households.operator';
 import { IdParam } from '../fastify.schema/fastify.types';
 import * as schema from '../fastify.schema/households.schema';
 import * as personsSchema from '../fastify.schema/persons.schema';
+import { HouseholdsHelper } from '../trpc.helper/households.helper';
+import { PersonsHelper } from '../trpc.helper/persons.helper';
 
-const controller = new HouseholdsController();
-const personsController = new PersonsController();
+const households = new HouseholdsHelper();
+const persons = new PersonsHelper();
+const personsHouseholds = new PersonsHouseholdsOperator();
 
 /**
  * Supported HTTP routes for the households endpoint
@@ -15,21 +17,17 @@ const personsController = new PersonsController();
  * @param done
  */
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
-  fastify.get('', schema.getAll, () => controller.getAll());
+  fastify.get('', schema.getAll, () => households.findAll());
 
   fastify.get('/:id', schema.findFromId, (req: IdParam) =>
-    controller.findOne(+req.params.id as never),
+    households.findOne(BigInt(req.params.id)),
   );
   fastify.get('/:id/persons', personsSchema.getAll, (req: IdParam) =>
-    personsController.getPersonsInHousehold(BigInt(+req.params.id)),
+    personsHouseholds.getPersonsInHousehold(BigInt(req.params.id)),
   );
-  fastify.get('/count', schema.count, (_req) => controller.getCount());
-  fastify.post('', schema.update, (req) => controller.add(req.body as never));
-  fastify.patch('/:id', schema.findFromId, (req: IdParam) =>
-    controller.update(BigInt(+req.params.id), req.body as never),
-  );
+  fastify.get('/count', schema.count, (_req) => households.getCount());
   fastify.delete('/:id', schema.findFromId, (req: IdParam) =>
-    controller.delete(BigInt(+req.params.id)),
+    households.delete(BigInt(req.params.id)),
   );
 
   done();

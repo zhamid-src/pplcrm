@@ -17,7 +17,7 @@ export class PersonsHelper {
     return this.persons.deleteOne(BigInt(id));
   }
 
-  public async findAll(options: getAllOptionsType) {
+  public async findAll(options?: getAllOptionsType) {
     return this.persons.findAll(options as QueryParams<'persons'>);
   }
 
@@ -27,6 +27,10 @@ export class PersonsHelper {
 
   public getAllWithHouseholds(options: getAllOptionsType) {
     return this.personsHouseholds.findAll(options as QueryParams<'persons' | 'households'>);
+  }
+
+  public async getCount() {
+    return this.persons.getCount();
   }
 
   public async update(id: bigint, input: UpdatePersonsType) {

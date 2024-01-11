@@ -4,6 +4,10 @@ import { HouseholdOperator } from '../db.operators/households.operator';
 export class HouseholdsHelper {
   private household = new HouseholdOperator();
 
+  public delete(id: bigint) {
+    return this.household.deleteOne(id);
+  }
+
   public findAll() {
     return this.household.findAll();
   }
@@ -14,5 +18,9 @@ export class HouseholdsHelper {
 
   public getAllWithPeopleCount() {
     return this.household.getAllWithPeopleCount();
+  }
+
+  public async getCount() {
+    return this.household.getCount();
   }
 }

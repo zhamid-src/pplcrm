@@ -1,9 +1,10 @@
+import { UpdatePersonsType } from '@common';
 import { FastifyInstance } from 'fastify';
-import { PersonsController } from '../fastify.controllers/persons.controller';
 import { IdParam } from '../fastify.schema/fastify.types';
 import * as schema from '../fastify.schema/households.schema';
+import { PersonsHelper } from '../trpc.helper/persons.helper';
 
-const controller = new PersonsController();
+const persons = new PersonsHelper();
 
 /**
  * Supported HTTP routes for the persons endpoint
@@ -12,18 +13,16 @@ const controller = new PersonsController();
  * @param done
  */
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
-  fastify.get('', schema.getAll, () => controller.getAll());
+  fastify.get('', schema.getAll, () => persons.findAll());
 
-  fastify.get('/:id', schema.findFromId, (req: IdParam) =>
-    controller.findOne(+req.params.id as never),
-  );
-  fastify.get('/count', schema.count, (_req) => controller.getCount());
-  fastify.post('', schema.update, (req) => controller.add(req.body as never));
+  fastify.get('/:id', schema.findFromId, (req: IdParam) => persons.findOne(BigInt(req.params.id)));
+  fastify.get('/count', schema.count, (_req) => persons.getCount());
+  fastify.post('', schema.update, (req) => persons.add(req.body as UpdatePersonsType));
   fastify.patch('/:id', schema.findFromId, (req: IdParam) =>
-    controller.update(BigInt(+req.params.id), req.body as never),
+    persons.update(BigInt(req.params.id), req.body as UpdatePersonsType),
   );
   fastify.delete('/:id', schema.findFromId, (req: IdParam) =>
-    controller.delete(BigInt(+req.params.id)),
+    persons.delete(BigInt(req.params.id)),
   );
 
   done();
