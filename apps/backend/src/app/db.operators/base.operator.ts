@@ -1,3 +1,4 @@
+// tsco:ignore
 import { INow } from '@common';
 import { promises as fs } from 'fs';
 import {
@@ -93,9 +94,12 @@ export class BaseOperator<T extends keyof Models> {
     return this.getSelectWithColumns(options, trx).where('id', '=', id).executeTakeFirst();
   }
 
-  public getCount(trx?: Transaction<Models>) {
+  public async getCount(trx?: Transaction<Models>) {
     const query = sql<string>`count(*)`.as('count');
-    return this.getSelect(trx).select(query).executeTakeFirst();
+    const { count } = (await this.getSelect(trx).select(query).executeTakeFirst()) || {
+      count: '0',
+    };
+    return count;
   }
 
   public async nowTime(): Promise<QueryResult<INow>> {

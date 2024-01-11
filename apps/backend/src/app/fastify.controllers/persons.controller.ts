@@ -11,11 +11,7 @@ export class PersonsController extends BaseController<'persons' | 'households'> 
     super(new PersonsHouseholdsOperator());
   }
 
-  public async getPersonsInHousehold(
-    id: GetOperandType<'persons', 'select', 'id'>,
-    reply: FastifyReply,
-  ) {
-    const persons = await (this.operator as PersonsHouseholdsOperator).getPersonsInHousehold(id);
-    return persons ? reply.code(200).send(persons) : reply.send(404);
+  public getPersonsInHousehold(id: GetOperandType<'persons', 'select', 'id'>, reply: FastifyReply) {
+    return (this.operator as PersonsHouseholdsOperator).getPersonsInHousehold(id);
   }
 }
