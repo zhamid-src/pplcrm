@@ -28,7 +28,6 @@ function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.patch('/:id', schema.findFromId, (req: IdParam, reply) =>
     controller.update(BigInt(+req.params.id), req.body as never, reply),
   );
-
   fastify.delete('/:id', schema.findFromId, (req: IdParam, reply) =>
     controller.delete(BigInt(+req.params.id), reply),
   );
