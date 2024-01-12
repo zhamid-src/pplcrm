@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { BaseGridService } from '@services/grid/base-grid.service';
+import { AbstractGridService } from '@services/grid/base-grid.service';
 import { HouseholdsGridService } from '@services/grid/households-grid.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
@@ -14,7 +14,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
   imports: [CommonModule, DatagridComponent],
   templateUrl: './households-grid.component.html',
   styleUrl: './households-grid.component.scss',
-  providers: [{ provide: BaseGridService, useClass: HouseholdsGridService }],
+  providers: [{ provide: AbstractGridService, useClass: HouseholdsGridService }],
 })
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
