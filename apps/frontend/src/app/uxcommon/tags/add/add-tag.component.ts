@@ -11,8 +11,8 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   selector: 'pc-add-tag',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule, IconsComponent],
-  templateUrl: './addTag.component.html',
-  styleUrl: './addTag.component.scss',
+  templateUrl: './add-tag.component.html',
+  styleUrl: './add-tag.component.scss',
 })
 export class AddTagComponent {
   protected form = this.fb.group({
@@ -28,7 +28,7 @@ export class AddTagComponent {
     private router: Router,
   ) {}
 
-  public async add(addMore: boolean = false) {
+  protected async add(addMore: boolean = false) {
     this.processing.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
     await this.tagSvc
@@ -37,9 +37,15 @@ export class AddTagComponent {
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
 
-    // TODO: create URL tree
     if (!addMore) {
-      this.router.navigate(['/console/tags']);
+      this.cancel();
+    } else {
+      this.form.reset({ name: '', description: '' });
     }
+  }
+
+  protected cancel() {
+    // TODO: create URL tree
+    this.router.navigate(['/console/tags']);
   }
 }
