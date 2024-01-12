@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, Input } from '@angular/core';
 import { ALERTTYPE, AlertService } from '@services/alert.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
@@ -11,6 +11,11 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   styleUrl: './alert.component.scss',
 })
 export class AlertComponent {
+  @Input() position: 'top' | 'bottom' | 'relative' = 'relative';
+  protected alerts() {
+    return this.position === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
+  }
+
   constructor(protected alertSvc: AlertService) {}
 
   public OKBtnClick(text: string) {
