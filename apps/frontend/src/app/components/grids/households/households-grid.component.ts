@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AbstractGridService } from '@services/grid/base-grid.service';
+import { AbstractGridService } from '@services/grid/abstract-grid.service';
 import { HouseholdsGridService } from '@services/grid/households-grid.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
