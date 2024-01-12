@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
-import { BaseGridService } from './base-grid.service';
+import { AbstractGridService } from './base-grid.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class TagsGridService extends BaseGridService<'tags', AddTagType> {
+export class TagsGridService extends AbstractGridService<'tags', AddTagType> {
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }

@@ -5,7 +5,7 @@ import { TRPCService } from '../trpc.service';
 @Injectable({
   providedIn: 'root',
 })
-export abstract class BaseGridService<T, U> extends TRPCService<T> {
+export abstract class AbstractGridService<T, U> extends TRPCService<T> {
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
   public abstract delete(id: bigint): Promise<boolean>;
   public abstract findOne(id: bigint): Promise<Record<never, never> | undefined>;

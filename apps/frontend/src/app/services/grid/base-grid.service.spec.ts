@@ -1,16 +1,16 @@
-import { TestBed } from "@angular/core/testing";
+import { TestBed } from '@angular/core/testing';
 
-import { BaseGridService } from "./base-grid.service";
+import { AbstractGridService } from './base-grid.service';
 
-describe("PplCRMBaseServiceService", () => {
-  let service: BaseGridService;
+describe('PplCRMBaseServiceService', () => {
+  let service: AbstractGridService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({});
-    service = TestBed.inject(BaseGridService);
+    service = TestBed.inject(AbstractGridService);
   });
 
-  it("should be created", () => {
+  it('should be created', () => {
     expect(service).toBeTruthy();
   });
 });

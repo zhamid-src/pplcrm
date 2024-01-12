@@ -1,13 +1,13 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
-import { BaseGridService } from './base-grid.service';
+import { AbstractGridService } from './base-grid.service';
 
 export type TYPE = 'persons' | 'households';
 
 @Injectable({
   providedIn: 'root',
 })
-export class PersonsGridService extends BaseGridService<TYPE, UpdatePersonsType> {
+export class PersonsGridService extends AbstractGridService<TYPE, UpdatePersonsType> {
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
