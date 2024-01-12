@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
-import { AbstractGridService } from './base-grid.service';
+import { AbstractGridService } from './abstract-grid.service';
 
 export type TYPE = 'persons' | 'households';
 

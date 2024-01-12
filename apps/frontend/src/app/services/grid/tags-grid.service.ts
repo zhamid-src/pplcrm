@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
-import { AbstractGridService } from './base-grid.service';
+import { AbstractGridService } from './abstract-grid.service';
 
 @Injectable({
   providedIn: 'root',

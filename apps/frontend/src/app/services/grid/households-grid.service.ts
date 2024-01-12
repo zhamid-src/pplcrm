@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { OperationDataType } from 'common/src/lib/kysely.models';
-import { AbstractGridService } from './base-grid.service';
+import { AbstractGridService } from './abstract-grid.service';
 
 @Injectable({
   providedIn: 'root',
