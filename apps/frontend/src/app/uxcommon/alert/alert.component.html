@@ -1,8 +1,18 @@
-<div class="sticky z-50">
-  @for (alert of alertSvc.alerts; track alert) {
+<div
+  class="z-50 top-0 absolute w-full"
+  [class.absolute]="position !== 'relative'"
+  [class.top-0]="position === 'top'"
+  [class.bottom-0]="position === 'bottom'"
+>
+  @for (alert of alerts(); track alert) {
     <div
-      class="alert hidden rounded-none"
-      [class.hidden]="!alert.text"
+      class="alert rounded-none"
+      [class.only-of-type:rounded-b-2xl]="position === 'top'"
+      [class.last-of-type:rounded-b-2xl]="position === 'top'"
+      [class.only-of-type:rounded-t-2xl]="position === 'bottom'"
+      [class.first-of-type:rounded-t-2xl]="position === 'bottom'"
+      [class.animate-up]="position === 'bottom'"
+      [class.animate-down]="position === 'top'"
       [class.alert-info]="alert.type === 'info'"
       [class.alert-warning]="alert.type === 'warning'"
       [class.alert-success]="alert.type === 'success'"
