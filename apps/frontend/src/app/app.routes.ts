@@ -1,6 +1,6 @@
 import { Route } from '@angular/router';
 import { NotFoundComponent } from '@uxcommon/not-found/not-found.component';
-import { AddTagComponent } from '@uxcommon/tags/add/addTag.component';
+import { AddTagComponent } from '@uxcommon/tags/add/add-tag.component';
 import { NewPasswordComponent } from './auth/new-password/new-password.component';
 import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
 import { SignInComponent } from './auth/signin/signin.component';
