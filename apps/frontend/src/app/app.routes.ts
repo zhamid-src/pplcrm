@@ -35,6 +35,7 @@ export const appRoutes: Route[] = [
           {
             path: '',
             component: PersonsGridComponent,
+            data: { shouldReuse: true, key: 'persongridroot' },
           },
           {
             path: 'add',
@@ -48,6 +49,7 @@ export const appRoutes: Route[] = [
           {
             path: '',
             component: HouseholdsGridComponent,
+            data: { shouldReuse: true, key: 'householdsgridroot' },
           },
         ],
       },
@@ -57,6 +59,7 @@ export const appRoutes: Route[] = [
           {
             path: '',
             component: TagsGridComponent,
+            data: { shouldReuse: true, key: 'tagsgridroot' },
           },
           {
             path: 'add',
