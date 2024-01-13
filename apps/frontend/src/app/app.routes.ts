@@ -6,6 +6,7 @@ import { ResetPasswordComponent } from './auth/reset-password/reset-password.com
 import { SignInComponent } from './auth/signin/signin.component';
 import { SignUpComponent } from './auth/signup/signup.component';
 import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
+import { AddPersonComponent } from './components/grids/persons/add-person/add-person.component';
 import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
 import { TagsGridComponent } from './components/grids/tags/tags-grid.component';
 import { SummaryComponent } from './components/summary/summary.component';
@@ -30,11 +31,25 @@ export const appRoutes: Route[] = [
       },
       {
         path: 'people',
-        component: PersonsGridComponent,
+        children: [
+          {
+            path: '',
+            component: PersonsGridComponent,
+          },
+          {
+            path: 'add',
+            component: AddPersonComponent,
+          },
+        ],
       },
       {
         path: 'households',
-        component: HouseholdsGridComponent,
+        children: [
+          {
+            path: '',
+            component: HouseholdsGridComponent,
+          },
+        ],
       },
       {
         path: 'tags',
