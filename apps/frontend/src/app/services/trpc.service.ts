@@ -22,12 +22,9 @@ export class TRPCService<T> {
   protected ac = new AbortController();
   protected api;
 
-  private addDays = function (days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  };
-
+  /**
+   * Create the TRPC proxy client that's used by the derived classes
+   */
   constructor(
     protected tokenService: TokenService,
     protected router: Router,
@@ -42,38 +39,52 @@ export class TRPCService<T> {
     });
   }
 
+  /**
+   * Public function to abort the TRPC call
+   */
   public abort() {
     this.ac.abort();
   }
 
-  protected runCachedCall(
+  /**
+   * Instead of directly calling the API, the derived classes can make
+   * a cached call. It creates a hash from the API name and options
+   * and saves the result in the local storage. Next time someone
+   * runs the cache call with the same options, it'll grab the
+   * data from the cache instead of the backend
+   * @param apiCall
+   * @param apiName
+   * @param options
+   * @param refresh - Boolean to indicate if we should refresh the cache
+   * @returns
+   */
+  protected async runCachedCall(
     apiCall: Promise<Partial<T>[]>,
     apiName: string,
     options: getAllOptionsType,
     refresh: boolean,
   ) {
-    // Create a cache key from the api name and the options
-    const cacheKey = this.hash(
-      JSON.stringify({
-        apiName,
-        ...options,
-      }),
-    );
+    const keyToHash = JSON.stringify({ apiName, ...options });
+    const hashedKey = this.hash(keyToHash);
+    const payload = await get(hashedKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
 
-    return this.getWithExpiry(cacheKey).then((cachedResult) => {
-      if (refresh || !cachedResult || cachedResult.length === 0) {
-        return apiCall.then((data: Partial<T>[]) => {
-          return this.setWithExpiry(cacheKey, data).then(() => data);
-        });
-      }
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(hashedKey, { expires: this.addDays(1), data });
+    }
 
-      return cachedResult;
-    });
+    return data;
   }
 
-  private async getWithExpiry(key: string) {
-    const payload = await get(key);
-    return payload?.expires > Date.now() ? payload.data : null;
+  /**
+   * Private function that takes the number of days and returns the
+   * expiry date. It's used to add expiry to the cache
+   */
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
   }
 
   // The hash isn't secure, but it's good enough for our purposes
@@ -85,10 +96,6 @@ export class TRPCService<T> {
       hash &= hash; // Convert to 32bit integer
     }
     return (hash >>> 0).toString(36);
-  }
-
-  private setWithExpiry(key: string, data: Partial<T>[]) {
-    return set(key, { expires: this.addDays(1), data });
   }
 }
 
@@ -125,7 +132,7 @@ function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRoute
     onJwtPairFetched: (payload) =>
       tokenSvc.set({ auth_token: payload.access, refresh_token: payload.refresh }),
     onRefreshFailed: () => tokenSvc.clearAll(),
-    onUnauthorized: () => router.navigate(['/signin']),
+    onUnauthorized: () => router.navigate([router.url]),
   });
 }
 

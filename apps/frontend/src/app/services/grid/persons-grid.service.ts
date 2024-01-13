@@ -8,6 +8,9 @@ export type TYPE = 'persons' | 'households';
   providedIn: 'root',
 })
 export class PersonsGridService extends AbstractGridService<TYPE, UpdatePersonsType> {
+  public add(row: UpdatePersonsType) {
+    return this.api.persons.add.mutate(row);
+  }
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
