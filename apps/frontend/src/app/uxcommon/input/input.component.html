@@ -1,0 +1,21 @@
+<div [formGroup]="form">
+  <label class="relative block">
+    @if (icon) {
+      <pc-icon
+        [size]="5"
+        class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform pt-0.5 text-sm text-gray-300"
+        [name]="icon"
+      />
+    }
+
+    <input
+      [type]="type"
+      [placeholder]="placeholder"
+      [formControlName]="control"
+      [attr.aria-placeholder]="control"
+      class="input-pplcrm text-sm"
+      [pattern]="pattern"
+      [class.pl-11]="icon"
+    />
+  </label>
+</div>
