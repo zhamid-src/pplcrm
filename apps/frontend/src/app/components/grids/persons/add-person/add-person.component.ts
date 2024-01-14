@@ -3,12 +3,12 @@ import {
   NgxGpAutocompleteOptions,
 } from '@angular-magic/ngx-gp-autocomplete';
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
+import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { PersonsGridService } from '@services/grid/persons-grid.service';
+import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { InputComponent } from '@uxcommon/input/input.component';
 
@@ -22,11 +22,13 @@ import { InputComponent } from '@uxcommon/input/input.component';
     IconsComponent,
     InputComponent,
     NgxGpAutocompleteModule,
+    AddBtnRowComponent,
   ],
   templateUrl: './add-person.component.html',
   styleUrl: './add-person.component.scss',
 })
 export class AddPersonComponent {
+  @ViewChild(AddBtnRowComponent) addBtnRow!: AddBtnRowComponent;
   options: NgxGpAutocompleteOptions = {
     componentRestrictions: { country: ['CA'] },
     types: ['geocode'],
@@ -50,23 +52,22 @@ export class AddPersonComponent {
     private fb: FormBuilder,
     private personSvc: PersonsGridService,
     private alertSvc: AlertService,
-    private router: Router,
   ) {}
 
-  protected async add(addMore: boolean = false) {
-    this.processing.set(false);
+  protected async add() {
+    this.processing.set(true);
     const formObj = this.form.getRawValue() as UpdatePersonsType;
-    console.log(formObj);
-    await this.personSvc
-      .add(formObj)
-      .then(() => this.alertSvc.showSuccess('Person added successfully.'))
-      .catch((err) => this.alertSvc.showError(err.message))
-      .finally(() => this.processing.set(false));
+    await new Promise((f) => setTimeout(f, 2000));
+    try {
+      await this.personSvc.add(formObj);
+      this.alertSvc.showSuccess('Person added successfully.');
+      this.addBtnRow.stayOrCancel();
+    } catch (err: any) {
+      this.alertSvc.showError(err.message);
+    }
+    this.processing.set(false);
   }
-  protected cancel() {
-    // TODO: create URL tree
-    this.router.navigate(['/console/people']);
-  }
+
   handleAddressChange(place: google.maps.places.PlaceResult) {
     if (!place?.address_components?.length) {
       this.alertSvc.showError('Please select the correct address from the list or leave it blank');
