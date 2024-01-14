@@ -6,11 +6,12 @@ import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { TagsGridService } from '@services/grid/tags-grid.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { InputComponent } from '@uxcommon/input/input.component';
 
 @Component({
   selector: 'pc-add-tag',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, IconsComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, IconsComponent, InputComponent],
   templateUrl: './add-tag.component.html',
   styleUrl: './add-tag.component.scss',
 })
