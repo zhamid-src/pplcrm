@@ -1,3 +1,7 @@
+import {
+  NgxGpAutocompleteModule,
+  NgxGpAutocompleteOptions,
+} from '@angular-magic/ngx-gp-autocomplete';
 import { CommonModule } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -11,11 +15,23 @@ import { InputComponent } from '@uxcommon/input/input.component';
 @Component({
   selector: 'pplcrm-add-person',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, IconsComponent, InputComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    IconsComponent,
+    InputComponent,
+    NgxGpAutocompleteModule,
+  ],
   templateUrl: './add-person.component.html',
   styleUrl: './add-person.component.scss',
 })
 export class AddPersonComponent {
+  options: NgxGpAutocompleteOptions = {
+    componentRestrictions: { country: ['CA'] },
+    types: ['geocode'],
+  };
+
   protected phonePattern = '[- +()0-9]+';
   protected form = this.fb.group({
     first_name: [''],
@@ -50,5 +66,13 @@ export class AddPersonComponent {
   protected cancel() {
     // TODO: create URL tree
     this.router.navigate(['/console/people']);
+  }
+  handleAddressChange(place: google.maps.places.PlaceResult) {
+    if (!place?.address_components?.length) {
+      this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+      return;
+    }
+    this.processing.set(true);
+    console.log(place);
   }
 }

@@ -56,7 +56,7 @@ export class AlertService {
     // start the timer to remove
     setTimeout(
       () => this.removeAlert(messageWithMeta),
-      messageWithMeta.duration || 2000,
+      messageWithMeta.duration || 3000,
       messageWithMeta,
     );
   }
