@@ -48,7 +48,7 @@ module.exports = {
           info: '#38bdf8',
           success: '#2dd4bf',
           warning: '#e5c963',
-          error: '#ef4444',
+          error: '#f37373',
         },
       },
       {

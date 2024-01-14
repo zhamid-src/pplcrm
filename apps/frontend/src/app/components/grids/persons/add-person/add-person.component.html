@@ -1,7 +1,7 @@
-<div class="flex min-h-full flex-col bg-white">
+<div class="flex min-h-full flex-col bg-base-100">
   <form [formGroup]="form" class="mx-5 my-10 sm:mx-10">
     <div class="flex flex-col gap-2">
-      <label class="label text-base text-neutral-600"
+      <label class="label text-base"
         >All fields are optional, but try to add as much as possible
       </label>
 
@@ -24,6 +24,14 @@
         />
         <pc-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
       </div>
+      <input
+        class="input-pplcrm placeholder:text-sm"
+        placeholder="Enter the address"
+        [options]="options"
+        ngx-gp-autocomplete
+        autocomplete="off"
+        (onAddressChange)="handleAddressChange($event)"
+      />
       <textarea class="textarea textarea-bordered" placeholder="Notes"></textarea>
       <div class="flex flex-col sm:flex-row gap-2 sm:pr-3">
         <button

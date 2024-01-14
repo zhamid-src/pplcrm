@@ -7,6 +7,7 @@ import {
 import { APP_INITIALIZER, ApplicationConfig } from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
 import { AuthService } from '@services/auth.service';
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route.reuse.strategy';
@@ -25,6 +26,13 @@ export function tokenGetter() {
 
 export const appConfig: ApplicationConfig = {
   providers: [
+    {
+      provide: Loader,
+      useValue: new Loader({
+        apiKey: 'AIzaSyDgTt8H7-BgZ05pW9G74fGcvBjAf2QN6WY',
+        libraries: ['places'],
+      }),
+    },
     provideRouter(appRoutes),
     {
       provide: RouteReuseStrategy,

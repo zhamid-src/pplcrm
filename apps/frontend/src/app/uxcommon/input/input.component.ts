@@ -22,6 +22,5 @@ export class InputComponent implements OnInit {
   constructor(private rootFormGroup: FormGroupDirective) {}
   ngOnInit() {
     this.form = this.rootFormGroup.control;
-    console.log(this.form);
   }
 }
