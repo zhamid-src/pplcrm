@@ -10,6 +10,7 @@ import {
   OrderByExpression,
   PostgresDialect,
   QueryResult,
+  ReferenceExpression,
   SelectQueryBuilder,
   Transaction,
   sql,
@@ -117,6 +118,22 @@ export class BaseRepository<T extends keyof Models> {
 
   public async nowTime(): Promise<QueryResult<INow>> {
     return (await sql`select now()::timestamp`.execute(BaseRepository.db)) as QueryResult<INow>;
+  }
+
+  public async match(
+    key: string,
+    column: TableColumnsType<T>,
+    lhs: ReferenceExpression<Models, ExtractTableAlias<Models, T>>,
+    tenant_id: bigint,
+  ) {
+    const tenant_id_lhs = 'tenant_id' as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+    const rhs = key + '%';
+    return this.getSelect()
+      .select([column])
+      .limit(3)
+      .where(lhs, 'ilike', rhs)
+      .where(tenant_id_lhs, '=', tenant_id)
+      .execute();
   }
 
   // TODO: remove any

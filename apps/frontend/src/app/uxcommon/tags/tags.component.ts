@@ -13,6 +13,7 @@ export class TagsComponent {
   @Input() public allowDetele = true;
   @Input() public readonly = false;
   @Input() public tags: string[] = [];
+  @Input() public placeholder: string = '';
   @Output() public tagsChange = new EventEmitter<string[]>();
 
   private _tags = signal(this.tags);
@@ -20,7 +21,7 @@ export class TagsComponent {
   public add(tag: string) {
     if (!this.tags.includes(tag)) {
       this.tags.push(tag);
-      this.tagsChange.emit(this.tags);
+      this.tagsChange && this.tagsChange.emit(this.tags);
     }
   }
 

@@ -167,13 +167,9 @@ export class DatagridComponent<T extends keyof Models, U> {
     //console.log("redoStarted", event);
   }
 
-  public onRowDataUpdated(event: RowDataUpdatedEvent) {
-    console.log(event);
-  }
+  public onRowDataUpdated(event: RowDataUpdatedEvent) {}
 
-  public onRowValueChanged(event: RowValueChangedEvent) {
-    console.log('***', event);
-  }
+  public onRowValueChanged(event: RowValueChangedEvent) {}
 
   public onUndoEnded(/*event: UndoEndedEvent*/) {
     //console.log("undoEnded", event);

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
@@ -17,10 +17,17 @@ export class InputComponent implements OnInit {
   @Input({ required: true }) control!: string;
   @Input() icon: IconName | null = null;
   @Input() pattern: string | RegExp = '';
+
+  @Output() keyup = new EventEmitter<string>();
+
   protected form!: FormGroup;
+  protected inputValue: string = '';
 
   constructor(private rootFormGroup: FormGroupDirective) {}
   ngOnInit() {
     this.form = this.rootFormGroup.control;
+  }
+  handleKeyup() {
+    this.keyup?.emit(this.inputValue);
   }
 }

@@ -25,13 +25,14 @@
         <pc-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
       </div>
       <input
-        class="input-pplcrm placeholder:text-sm"
+        class="input-pplcrm"
         placeholder="Enter the address"
         [options]="options"
         ngx-gp-autocomplete
         autocomplete="off"
         (onAddressChange)="handleAddressChange($event)"
       />
+      <pc-tags [(tags)]="this.tags" placeholder="Enter tags separated by comma"></pc-tags>
       <textarea class="textarea textarea-bordered" placeholder="Notes"></textarea>
       <pc-add-btn-row [processing]="processing" (add)="add()"></pc-add-btn-row>
     </div>
