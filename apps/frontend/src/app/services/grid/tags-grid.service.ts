@@ -35,4 +35,8 @@ export class TagsGridService extends AbstractGridService<'tags', AddTagType> {
   public update(id: bigint, data: UpdateTagType) {
     return this.api.tags.update.mutate({ id: id.toString(), data });
   }
+
+  public match(key: string) {
+    return this.api.tags.match.query(key);
+  }
 }

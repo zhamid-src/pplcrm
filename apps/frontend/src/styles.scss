@@ -1,7 +1,7 @@
 /* Core Grid CSS */
-@import "ag-grid-community/styles/ag-grid.css";
+@import 'ag-grid-community/styles/ag-grid.css';
 /* Quartz Theme Specific CSS */
-@import "ag-grid-community/styles/ag-theme-quartz.css";
+@import 'ag-grid-community/styles/ag-theme-quartz.css';
 
 @tailwind base;
 @tailwind components;
@@ -15,20 +15,20 @@ body {
   height: 100vh;
 }
 body {
-  font-family: "Roboto", sans-serif;
+  font-family: 'Roboto', sans-serif;
 }
 .bg-image {
-  background-image: url("assets/bg.jpg");
+  background-image: url('assets/bg.jpg');
 }
 
 @layer components {
   .input-pplcrm {
-    @apply input input-bordered focus:input-primary invalid:input-error caret-primary w-full;
+    @apply input input-bordered focus:input-primary invalid:input-error caret-primary w-full placeholder:text-sm;
   }
 }
 
 .ag-theme-quartz {
-  --ag-font-family: "Roboto", sans-serif;
+  --ag-font-family: 'Roboto', sans-serif;
   --ag-modal-overlay-background-color: rgba(255, 255, 255, 0.9);
 }
 

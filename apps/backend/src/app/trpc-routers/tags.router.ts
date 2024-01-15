@@ -14,4 +14,5 @@ export const TagsRouter = router({
   update: authProcedure
     .input(z.object({ id: z.string(), data: UpdateTagObj }))
     .mutation(({ input, ctx }) => tags.updateTag(BigInt(input.id), input.data, ctx.auth)),
+  match: authProcedure.input(z.string()).query(({ input, ctx }) => tags.matchTag(input, ctx.auth)),
 });

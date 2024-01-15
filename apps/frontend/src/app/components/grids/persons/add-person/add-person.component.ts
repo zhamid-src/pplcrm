@@ -11,6 +11,7 @@ import { PersonsGridService } from '@services/grid/persons-grid.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { InputComponent } from '@uxcommon/input/input.component';
+import { TagsComponent } from '@uxcommon/tags/tags.component';
 
 @Component({
   selector: 'pplcrm-add-person',
@@ -23,6 +24,7 @@ import { InputComponent } from '@uxcommon/input/input.component';
     InputComponent,
     NgxGpAutocompleteModule,
     AddBtnRowComponent,
+    TagsComponent,
   ],
   templateUrl: './add-person.component.html',
   styleUrl: './add-person.component.scss',
@@ -34,17 +36,18 @@ export class AddPersonComponent {
     types: ['geocode'],
   };
 
+  protected tags: string[] = [];
   protected phonePattern = '[- +()0-9]+';
   protected form = this.fb.group({
     first_name: [''],
     middle_name: [''],
     last_name: [''],
-    email: ['', [Validators.email]],
+    email: ['', Validators.email],
     email2: ['', Validators.email],
     home_phone: ['', Validators.pattern(this.phonePattern)],
     mobile: ['', Validators.pattern(this.phonePattern)],
     notes: [''],
-    description: [''],
+    tags: [[]],
   });
   protected processing = signal(false);
 

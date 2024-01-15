@@ -9,6 +9,7 @@
     }
 
     <input
+      [(ngModel)]="inputValue"
       [type]="type"
       [placeholder]="placeholder"
       [formControlName]="control"
@@ -16,6 +17,7 @@
       class="input-pplcrm text-sm"
       [pattern]="pattern"
       [class.pl-11]="icon"
+      (keyup)="handleKeyup()"
     />
   </label>
 </div>

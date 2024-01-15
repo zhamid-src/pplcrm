@@ -19,8 +19,12 @@ export class TagsController extends BaseController<'tags', TagsRepository> {
     return this.addOne(row);
   }
 
-  public async updateTag(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
+  public updateTag(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id } as OperationDataType<'tags', 'insert'>;
     return this.update(id, payload);
+  }
+
+  public matchTag(key: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
+    return this.match(key, 'name', 'name', auth.tenant_id);
   }
 }

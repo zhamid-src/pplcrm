@@ -29,6 +29,7 @@ export class AddTagComponent {
     description: [''],
   });
   protected processing = signal(false);
+  protected matches: string[] = [];
 
   constructor(
     private fb: FormBuilder,
@@ -36,7 +37,7 @@ export class AddTagComponent {
     private alertSvc: AlertService,
   ) {}
 
-  protected async add(addMore: boolean = false) {
+  protected async add() {
     this.processing.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
     try {
@@ -47,5 +48,17 @@ export class AddTagComponent {
       this.alertSvc.showError(err.message);
     }
     this.processing.set(false);
+  }
+
+  protected async keyup(key: string) {
+    if (key && key.length > 0) {
+      const payload = (await this.tagSvc.match(key)) as { name: string }[];
+      this.matches = payload.map((m) => m.name);
+    } else {
+      this.matches = [];
+    }
+  }
+  finishTag(tag: string) {
+    console.log(tag);
   }
 }
