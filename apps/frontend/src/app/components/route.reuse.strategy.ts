@@ -15,7 +15,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     return !!route.data['shouldReuse'];
   }
 
-  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
+  public shouldReuseRoute(future: ActivatedRouteSnapshot): boolean {
     return !!future.data['shouldReuse'];
   }
 

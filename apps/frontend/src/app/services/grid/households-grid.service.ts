@@ -23,6 +23,7 @@ export class HouseholdsGridService extends AbstractGridService<'households', nev
   }
 
   public update(id: bigint, data: OperationDataType<'households', 'insert'>) {
+    console.log(id, data);
     // TODO implement
     return Promise.resolve([]);
   }

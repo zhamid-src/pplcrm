@@ -1,12 +1,7 @@
 import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
-import {
-  AuthUsersType,
-  GetOperandType,
-  Models,
-  OperationDataType,
-} from 'common/src/lib/kysely.models';
+import { AuthUsersType, Models, OperationDataType } from 'common/src/lib/kysely.models';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
@@ -88,8 +83,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
         text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
         html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (err: any) => {
+      (err: Error | null) => {
         if (err) {
           throw new TRPCError({
             message: 'Something went wrong, please try again',
@@ -277,7 +271,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     return password;
   }
 
-  // TODO: remove any
   private async updateTenantWithAdmin(
     trx: Transaction<Models>,
     tenant_id: bigint,
@@ -285,7 +278,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     createdby_id: bigint,
   ) {
     const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
-    await this.tenants.updateOne(tenant_id as GetOperandType<'authusers', 'update', any>, row, trx);
+    await this.tenants.updateOne(tenant_id, row, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {

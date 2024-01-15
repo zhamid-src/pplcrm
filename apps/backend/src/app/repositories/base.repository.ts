@@ -16,15 +16,16 @@ import {
   sql,
 } from 'kysely';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
-import { From, FromTables } from 'node_modules/kysely/dist/esm/parser/table-parser';
 import path from 'path';
 import { Pool } from 'pg';
 import {
   GetOperandType,
+  Keys,
   Models,
   OperationDataType,
   TableColumnsType,
   TableIdType,
+  TablesOperationMap,
 } from '../../../../../common/src/lib/kysely.models';
 
 export type QueryParams<T extends keyof Models> = {
@@ -46,20 +47,6 @@ const dialect = new PostgresDialect({
     ssl: false,
   }),
 });
-
-type SelectQueryType<T extends keyof Models> =
-  | SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>
-  | SelectQueryBuilder<
-      From<Models, ExtractTableAlias<Models, T>>,
-      FromTables<Models, never, ExtractTableAlias<Models, T>>,
-      {}
-    >
-  | SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>
-  | SelectQueryBuilder<
-      From<Models, ExtractTableAlias<Models, T>>,
-      FromTables<Models, never, ExtractTableAlias<Models, T>>,
-      {}
-    >;
 
 /**
  * The base operator class that implements regular db functions.
@@ -95,8 +82,10 @@ export class BaseRepository<T extends keyof Models> {
     return this.getInsert(trx).values(row).returningAll().executeTakeFirst();
   }
 
-  //TODO: remove any
-  public async deleteOne(id: GetOperandType<T, 'select', any>, trx?: Transaction<Models>) {
+  public async deleteOne(
+    id: GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
+    trx?: Transaction<Models>,
+  ) {
     return this.getDelete(trx).where('id', '=', id).execute();
   }
 
@@ -136,9 +125,8 @@ export class BaseRepository<T extends keyof Models> {
       .execute();
   }
 
-  // TODO: remove any
   public async updateOne(
-    id: GetOperandType<T, 'update', any>,
+    id: GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
     row: OperationDataType<T, 'update'>,
     trx?: Transaction<Models>,
   ) {
@@ -150,7 +138,7 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected applyOptions(
-    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, {}>,
+    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
     options?: QueryParams<T>,
   ) {
     const orderBy = options?.orderBy as OrderByExpression<
@@ -185,7 +173,7 @@ export class BaseRepository<T extends keyof Models> {
     const query = this.getSelect(trx) as SelectQueryBuilder<
       Models,
       ExtractTableAlias<Models, T>,
-      {}
+      object
     >;
     return this.applyOptions(query, options);
   }

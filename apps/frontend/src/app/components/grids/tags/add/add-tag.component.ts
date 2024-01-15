@@ -4,6 +4,7 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { TagsGridService } from '@services/grid/tags-grid.service';
+import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { InputComponent } from '@uxcommon/input/input.component';
@@ -23,19 +24,24 @@ import { InputComponent } from '@uxcommon/input/input.component';
   styleUrl: './add-tag.component.scss',
 })
 export class AddTagComponent {
-  @ViewChild(AddBtnRowComponent) addBtnRow!: AddBtnRowComponent;
+  @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;
+
   protected form = this.fb.group({
     name: ['', [Validators.required]],
     description: [''],
   });
-  protected processing = signal(false);
   protected matches: string[] = [];
+  protected processing = signal(false);
 
   constructor(
     private fb: FormBuilder,
     private tagSvc: TagsGridService,
     private alertSvc: AlertService,
   ) {}
+
+  public finishTag(tag: string) {
+    console.log(tag);
+  }
 
   protected async add() {
     this.processing.set(true);
@@ -44,21 +50,22 @@ export class AddTagComponent {
       await this.tagSvc.add(formObj);
       this.alertSvc.showSuccess('Tag added successfully.');
       this.addBtnRow.stayOrCancel();
-    } catch (err: any) {
-      this.alertSvc.showError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof TRPCError) {
+        this.alertSvc.showError(err.message);
+      } else {
+        this.alertSvc.showError("We've hit an unknown error. Please try again.");
+      }
     }
     this.processing.set(false);
   }
 
-  protected async keyup(key: string) {
+  protected async handleValueChange(key: string) {
     if (key && key.length > 0) {
       const payload = (await this.tagSvc.match(key)) as { name: string }[];
       this.matches = payload.map((m) => m.name);
     } else {
       this.matches = [];
     }
-  }
-  finishTag(tag: string) {
-    console.log(tag);
   }
 }
