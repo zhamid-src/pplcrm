@@ -15,6 +15,7 @@ import {
   Transaction,
   sql,
 } from 'kysely';
+import { GroupByArg } from 'kysely/dist/cjs/parser/group-by-parser';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
 import path from 'path';
 import { Pool } from 'pg';
@@ -32,8 +33,8 @@ export type QueryParams<T extends keyof Models> = {
   columns?: TableColumnsType<T>[];
   limit?: number;
   offset?: number;
-  orderBy?: string | string[];
-  groupBy?: string | string[];
+  orderBy?: OrderByExpression<Models, ExtractTableAlias<Models, T>, object>[];
+  groupBy?: GroupByArg<Models, ExtractTableAlias<Models, T>, object>;
 };
 
 const dialect = new PostgresDialect({
@@ -141,18 +142,11 @@ export class BaseRepository<T extends keyof Models> {
     query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
     options?: QueryParams<T>,
   ) {
-    const orderBy = options?.orderBy as OrderByExpression<
-      Models,
-      ExtractTableAlias<Models, T>,
-      object
-    >[];
-
-    // const groupBy = options?.groupBy as GroupByArg<Models, ExtractTableAlias<Models, T>, {}>;
     query = options?.columns ? query.select(options.columns) : query.selectAll();
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
-    query = options?.orderBy ? query.orderBy(orderBy) : query;
-    // query = options?.groupBy ? query.groupBy(groupBy) : query;
+    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
+    query = options?.groupBy ? query.groupBy(options.groupBy) : query;
 
     return query;
   }

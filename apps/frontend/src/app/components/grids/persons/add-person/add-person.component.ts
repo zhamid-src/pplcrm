@@ -62,8 +62,7 @@ export class AddPersonComponent {
       this.alertSvc.showError('Please select the correct address from the list or leave it blank');
       return;
     }
-    this.processing.set(true);
-    console.log(place);
+    // Save the address by creating the household or updating
   }
 
   protected async add() {
