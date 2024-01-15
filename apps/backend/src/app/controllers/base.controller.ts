@@ -3,10 +3,12 @@ import { ReferenceExpression } from 'kysely';
 import { ExtractTableAlias } from 'kysely/dist/cjs/parser/table-parser';
 import {
   GetOperandType,
+  Keys,
   Models,
   OperationDataType,
   TableColumnsType,
   TableIdType,
+  TablesOperationMap,
 } from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from '../repositories/base.repository';
 
@@ -22,8 +24,9 @@ export class BaseController<T extends keyof Models, O extends BaseRepository<T>>
   }
 
   public delete(id: bigint) {
-    // remove any
-    return this.operator.deleteOne(id as GetOperandType<T, 'select', any>);
+    return this.operator.deleteOne(
+      id as GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
+    );
   }
 
   public findAll(options?: getAllOptionsType) {
@@ -38,11 +41,6 @@ export class BaseController<T extends keyof Models, O extends BaseRepository<T>>
     return this.operator.getCount();
   }
 
-  public update(id: bigint, input: OperationDataType<T, 'update'>) {
-    //TODO: remove any
-    return this.operator.updateOne(id as GetOperandType<T, 'update', any>, input);
-  }
-
   public async match(
     key: string,
     column: TableColumnsType<T>,
@@ -50,6 +48,13 @@ export class BaseController<T extends keyof Models, O extends BaseRepository<T>>
     tenant_id: bigint,
   ) {
     return await this.operator.match(key, column, lhs, tenant_id);
+  }
+
+  public update(id: bigint, input: OperationDataType<T, 'update'>) {
+    return this.operator.updateOne(
+      id as GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
+      input,
+    );
   }
 
   protected getOperator() {

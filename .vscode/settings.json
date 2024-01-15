@@ -4,5 +4,6 @@
   "editor.formatOnType": true,
   "files.associations": {
     "*.scss": "postcss"
-  }
+  },
+  "eslint.workingDirectories": ["."]
 }

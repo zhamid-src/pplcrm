@@ -1,5 +1,5 @@
-import { Models, TableIdType } from 'common/src/lib/kysely.models';
-import { DeleteResult, Transaction } from 'kysely';
+import { Models } from 'common/src/lib/kysely.models';
+import { Transaction } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repository';
 
 type TYPE = 'persons' | 'households';
@@ -7,13 +7,6 @@ type TYPE = 'persons' | 'households';
 export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
   constructor() {
     super('persons');
-  }
-
-  public override async deleteOne(
-    id: TableIdType<TYPE>,
-    trx?: Transaction<Models>,
-  ): Promise<DeleteResult[]> {
-    throw Error('Not supported');
   }
 
   public override async findAll(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {

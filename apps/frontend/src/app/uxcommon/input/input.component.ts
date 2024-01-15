@@ -12,22 +12,23 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   styleUrl: './input.component.scss',
 })
 export class InputComponent implements OnInit {
-  @Input() type: string = 'name';
-  @Input() placeholder: string = '';
-  @Input({ required: true }) control!: string;
-  @Input() icon: IconName | null = null;
-  @Input() pattern: string | RegExp = '';
-
-  @Output() keyup = new EventEmitter<string>();
+  @Input({ required: true }) public control!: string;
+  @Input() public icon: IconName | null = null;
+  @Input() public pattern: string | RegExp = '';
+  @Input() public placeholder: string = '';
+  @Input() public type: string = 'name';
+  @Output() public valueChange = new EventEmitter<string>();
 
   protected form!: FormGroup;
   protected inputValue: string = '';
 
   constructor(private rootFormGroup: FormGroupDirective) {}
-  ngOnInit() {
+
+  public ngOnInit() {
     this.form = this.rootFormGroup.control;
   }
-  handleKeyup() {
-    this.keyup?.emit(this.inputValue);
+
+  public handleKeyup() {
+    this.valueChange?.emit(this.inputValue);
   }
 }

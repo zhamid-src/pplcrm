@@ -5,7 +5,12 @@
         Enter a unique tag name (and optionally, give it a description)
       </label>
       <div>
-        <pc-input control="name" placeholder="Tag Name" icon="hashtag" (keyup)="keyup($event)" />
+        <pc-input
+          control="name"
+          placeholder="Tag Name"
+          icon="hashtag"
+          (valueChange)="handleValueChange($event)"
+        />
         <span class="card bordered rounded-none font-light">
           @for (match of matches; track match) {
             <span class="pl-10 cursor-pointer hover:bg-slate-300" (click)="finishTag(match)">

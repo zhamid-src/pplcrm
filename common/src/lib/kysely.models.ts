@@ -17,7 +17,7 @@ import type {
 import { UndirectedOrderByExpression } from 'node_modules/kysely/dist/cjs/parser/order-by-parser';
 import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
 
-type Keys<T> = keyof T;
+export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
 type JsonArray = JsonValue[];
 type JsonObject = { [K in string]?: JsonValue };
@@ -90,9 +90,11 @@ export type TablesOperationMap = {
   };
 };
 
+/*
 type TableType = {
   [K in Keys<Models>]: K;
 };
+*/
 
 // ====================================================================
 // The following are the type definitions for the database schema
