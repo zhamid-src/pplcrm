@@ -33,6 +33,7 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
 })
 export class AddPersonComponent {
   @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;
+  protected addressVerified = false;
   public options: NgxGpAutocompleteOptions = {
     componentRestrictions: { country: ['CA'] },
     types: ['geocode'],
@@ -46,6 +47,16 @@ export class AddPersonComponent {
     email2: ['', Validators.email],
     home_phone: ['', Validators.pattern('[- +()0-9]+')],
     mobile: ['', Validators.pattern('[- +()0-9]+')],
+    lat: [''],
+    lng: [''],
+    formatted_address: [''],
+    type: [''],
+    street_num: [''],
+    street: [''],
+    city: [''],
+    state: [''],
+    country: [''],
+    zip: [''],
     notes: [''],
     tags: [[]],
   });
@@ -59,13 +70,16 @@ export class AddPersonComponent {
   ) {}
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
+    this.processing.set(true);
     if (!place?.address_components?.length) {
       this.alertSvc.showError('Please select the correct address from the list or leave it blank');
       return;
     }
     // Save the address by creating the household or updating
     const address = parseAddress(place);
+    this.addressVerified = true;
     console.log(address);
+    this.processing.set(false);
   }
 
   protected async add() {
