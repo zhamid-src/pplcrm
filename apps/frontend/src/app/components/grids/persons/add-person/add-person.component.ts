@@ -13,6 +13,7 @@ import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { InputComponent } from '@uxcommon/input/input.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
+import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 
 @Component({
   selector: 'pc-add-person',
@@ -63,6 +64,8 @@ export class AddPersonComponent {
       return;
     }
     // Save the address by creating the household or updating
+    const address = parseAddress(place);
+    console.log(address);
   }
 
   protected async add() {
