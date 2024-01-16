@@ -16,7 +16,7 @@ export class InputComponent implements OnInit {
   @Input() public icon: IconName | null = null;
   @Input() public pattern: string | RegExp = '';
   @Input() public placeholder: string = '';
-  @Input() public type: string = 'name';
+  @Input() public type: string = 'text';
   @Output() public valueChange = new EventEmitter<string>();
 
   protected form!: FormGroup;
