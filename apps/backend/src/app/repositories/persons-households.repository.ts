@@ -1,4 +1,4 @@
-import { Models } from 'common/src/lib/kysely.models';
+import { Models, TableColumnsType } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repository';
 
@@ -12,16 +12,19 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
   public override async findAll(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {
     const options = optionsIn || ({} as QueryParams<TYPE>);
 
-    options!.columns = options?.columns || [
-      'persons.id',
-      'persons.first_name',
-      'persons.last_name',
-      'persons.email',
-      'persons.mobile',
-      'persons.notes',
-      'households.street1',
-      'households.city',
-    ];
+    options!.columns =
+      options?.columns ||
+      ([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'households.street_num',
+        'households.street',
+        'households.city',
+      ] as TableColumnsType<'persons' | 'households'>[]);
 
     let query = this.getSelect(trx).innerJoin(
       'households',

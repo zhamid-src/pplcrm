@@ -1,7 +1,14 @@
 import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 import * as bcrypt from 'bcrypt';
-import { AuthUsersType, Models, OperationDataType } from 'common/src/lib/kysely.models';
+import {
+  AuthUsersType,
+  GetOperandType,
+  Keys,
+  Models,
+  OperationDataType,
+  TablesOperationMap,
+} from 'common/src/lib/kysely.models';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
@@ -278,7 +285,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     createdby_id: bigint,
   ) {
     const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
-    await this.tenants.updateOne(tenant_id, row, trx);
+    const id = tenant_id as GetOperandType<
+      'tenants',
+      'update',
+      Keys<TablesOperationMap['tenants']['update']>
+    >;
+    await this.tenants.updateOne(id, row, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {

@@ -105,10 +105,23 @@ type TableType = {
 interface RecordType {
   id: Generated<bigint>;
   tenant_id: bigint;
-  createdby_id: bigint | null;
-  updatedby_id: bigint | null;
+  createdby_id: bigint;
+  updatedby_id: bigint;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+export interface AddressType {
+  lat?: number;
+  lng?: number;
+  formatted_address?: string;
+  type?: string;
+  apt?: string;
+  street_num?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  zip?: string;
 }
 
 interface AuthUsers extends RecordType {
@@ -126,27 +139,20 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   admin_id: bigint;
   createdby_id: bigint;
   description: string | null;
-  enddate: string | null;
-  json: Json | null;
-  name: string;
-  notes: string | null;
   startdate: string | null;
+  enddate: string | null;
+  name: string;
+  json: Json | null;
+  notes: string | null;
 }
 
-//TODO: add an Address type
-interface Households extends Omit<RecordType, 'createdby_id'> {
+interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
   campaign_id: bigint;
-  city: string | null;
-  country: string | null;
   createdby_id: bigint;
   file_id: bigint | null;
   home_phone: string | null;
   json: Json | null;
   notes: string | null;
-  state: string | null;
-  street1: string | null;
-  street2: string | null;
-  zip: string | null;
 }
 
 interface MapCampaignsUsers extends RecordType {
@@ -171,77 +177,58 @@ interface MapRolesUsers extends RecordType {
 
 interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: bigint;
+  household_id: bigint;
   createdby_id: bigint;
+  first_name: string | null;
+  middle_names: string | null;
+  last_name: string | null;
   email: string | null;
   email2: string | null;
-  file_id: bigint | null;
-  first_name: string | null;
-  home_phone: string | null;
-  household_id: bigint;
-  json: Json | null;
-  last_name: string | null;
-  middle_names: string | null;
   mobile: string | null;
+  home_phone: string | null;
+  file_id: bigint | null;
+  json: Json | null;
   notes: string | null;
 }
 
-interface Profiles extends RecordType {
+interface Profiles extends RecordType, AddressType {
   auth_id: bigint;
-  city: string | null;
-  country: string | null;
-  created_at: Generated<Timestamp>;
+  email: string | null;
   email2: string | null;
+  mobile: string | null;
   home_phone: string | null;
   json: Json | null;
-  mobile: string | null;
-  state: string | null;
-  street1: string | null;
-  street2: string | null;
-  zip: string | null;
 }
 
 interface Roles extends RecordType {
-  description: string | null;
   name: string;
+  description: string | null;
   permissions: Json | null;
 }
 
 // We use a UUID for the Id here, so we can't extend the recordtype
 interface Sessions extends RecordType {
+  session_id: Generated<string>;
+  user_id: bigint;
   ip_address: string;
   last_accessed: Generated<Timestamp>;
   other_properties: Json | null;
   refresh_token: Generated<string>;
-  session_id: Generated<string>;
   status: string;
-  tenant_id: bigint;
   user_agent: string;
-  user_id: bigint;
 }
 
 interface Tags extends RecordType {
-  description: string | null;
   name: string;
+  description: string | null;
 }
 
-interface Tenants extends Omit<RecordType, 'tenant_id'> {
+interface Tenants extends Omit<RecordType, 'tenant_id'>, AddressType {
+  name: string;
   admin_id: bigint | null;
-  billing_city: string | null;
-  billing_country: string | null;
-  billing_state: string | null;
-  billing_street1: string | null;
-  billing_street2: string | null;
-  billing_zip: string | null;
-  city: string | null;
-  country: string | null;
   email: string | null;
   email2: string | null;
-  json: Json | null;
-  name: string;
-  notes: string | null;
   phone: string | null;
-  state: string | null;
-  street1: string | null;
-  street2: string | null;
-  zip: string | null;
+  json: Json | null;
+  notes: string | null;
 }
