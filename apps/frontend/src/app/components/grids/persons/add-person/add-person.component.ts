@@ -10,8 +10,8 @@ import { AlertService } from '@services/alert.service';
 import { PersonsGridService } from '@services/grid/persons-grid.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
+import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
-import { InputComponent } from '@uxcommon/input/input.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 
@@ -23,7 +23,7 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
     FormsModule,
     ReactiveFormsModule,
     IconsComponent,
-    InputComponent,
+    FormInputComponent,
     NgxGpAutocompleteModule,
     AddBtnRowComponent,
     TagsComponent,

@@ -6,8 +6,8 @@ import { AlertService } from '@services/alert.service';
 import { TagsGridService } from '@services/grid/tags-grid.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
+import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
-import { InputComponent } from '@uxcommon/input/input.component';
 
 @Component({
   selector: 'pc-add-tag',
@@ -17,7 +17,7 @@ import { InputComponent } from '@uxcommon/input/input.component';
     FormsModule,
     ReactiveFormsModule,
     IconsComponent,
-    InputComponent,
+    FormInputComponent,
     AddBtnRowComponent,
   ],
   templateUrl: './add-tag.component.html',

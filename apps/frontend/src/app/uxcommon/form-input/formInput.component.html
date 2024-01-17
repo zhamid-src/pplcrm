@@ -1,4 +1,4 @@
-<div [formGroup]="form">
+<div>
   <label class="relative block">
     @if (icon) {
       <pc-icon
@@ -7,8 +7,12 @@
         [name]="icon"
       />
     }
-
-    <div class="relative w-full min-w-[200px] h-10">
+    <!-- **** IMPORTANT ****-->
+    <!-- IF YOU CHANGE A CLASS HERE, ALSO CHANGE IT IN Input.Component.
+         I shouldn't duplicate the code but I couldn't figure out how
+         to make the formgroup optional 
+        TODO: figure it out -->
+    <div class="relative w-full min-w-[200px] h-10" [formGroup]="form">
       <input
         placeholder=" "
         [(ngModel)]="inputValue"
