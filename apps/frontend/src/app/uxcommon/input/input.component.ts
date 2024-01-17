@@ -14,7 +14,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 export class InputComponent implements OnInit {
   @Input({ required: true }) public control!: string;
   @Input() public icon: IconName | null = null;
-  @Input() public pattern: string | RegExp = '';
+  @Input() public pattern: string | RegExp = '.*';
   @Input() public placeholder: string = '';
   @Input() public type: string = 'text';
   @Output() public valueChange = new EventEmitter<string>();
