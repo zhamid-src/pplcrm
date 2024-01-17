@@ -9,8 +9,9 @@
           control="name"
           placeholder="Tag Name"
           icon="hashtag"
-          (valueChange)="handleValueChange($event)"
+          [disallowedChars]="[',']"
         />
+        <!--
         <span class="card bordered rounded-none font-light">
           @for (match of matches; track match) {
             <span class="pl-10 cursor-pointer hover:bg-slate-300" (click)="finishTag(match)">
@@ -18,9 +19,10 @@
             </span>
           }
         </span>
+        -->
       </div>
       <pc-form-input control="description" placeholder="Optional description" icon="hashtag" />
+      <pc-add-btn-row [processing]="processing" (add)="add()"></pc-add-btn-row>
     </div>
-    <pc-add-btn-row [processing]="processing" (add)="add()"></pc-add-btn-row>
   </form>
 </div>
