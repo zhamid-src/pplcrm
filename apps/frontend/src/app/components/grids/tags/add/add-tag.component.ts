@@ -30,7 +30,6 @@ export class AddTagComponent {
     name: ['', [Validators.required]],
     description: [''],
   });
-  protected matches: string[] = [];
   protected processing = signal(false);
 
   constructor(
