@@ -1,11 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { InputComponent } from '@uxcommon/input/input.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
 
 @Component({
   selector: 'pc-tags',
   standalone: true,
-  imports: [CommonModule, TagComponent],
+  imports: [CommonModule, TagComponent, InputComponent],
   templateUrl: './tags.component.html',
   styleUrl: './tags.component.scss',
 })
@@ -13,10 +14,8 @@ export class TagsComponent {
   @Input() public allowDetele = true;
   @Input() public readonly = false;
   @Input() public tags: string[] = [];
-  @Input() public placeholder: string = '';
+  @Input() public placeholder: string = 'Enter tags, separated by comma';
   @Output() public tagsChange = new EventEmitter<string[]>();
-
-  private _tags = signal(this.tags);
 
   public add(tag: string) {
     if (!this.tags.includes(tag)) {

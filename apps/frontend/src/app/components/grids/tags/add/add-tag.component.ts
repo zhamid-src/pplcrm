@@ -59,13 +59,4 @@ export class AddTagComponent {
     }
     this.processing.set(false);
   }
-
-  protected async handleValueChange(key: string) {
-    if (key && key.length > 0) {
-      const payload = (await this.tagSvc.match(key)) as { name: string }[];
-      this.matches = payload.map((m) => m.name);
-    } else {
-      this.matches = [];
-    }
-  }
 }

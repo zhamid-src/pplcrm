@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { AlertService } from '@services/alert.service';
 import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
@@ -16,19 +17,38 @@ export class FormInputComponent implements OnInit {
   @Input() public icon: IconName | null = null;
   @Input() public pattern: string | RegExp = '.*';
   @Input() public placeholder: string = '';
+  @Input() public disallowedChars: string[] = [];
   @Input() public type: string = 'text';
   @Output() public valueChange = new EventEmitter<string>();
 
   protected form!: FormGroup;
   protected inputValue: string = '';
 
-  constructor(private rootFormGroup: FormGroupDirective) {}
+  constructor(
+    private rootFormGroup: FormGroupDirective,
+    private alertSvc: AlertService,
+  ) {}
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;
   }
 
-  public handleKeyup() {
+  public handleKeyup(event: KeyboardEvent) {
+    // First make sure nothing is disallowed
+    if (this.checkLastAddedChar(event?.key)) {
+      return;
+    }
+    this.inputValue = this.form.get(this.control)?.value;
     this.valueChange?.emit(this.inputValue);
+  }
+
+  private checkLastAddedChar(char: string): boolean {
+    if (char && this.disallowedChars.find((ch) => ch == char)) {
+      this.alertSvc.showError(`Sorry, cannot add "${char}" here.`);
+      const newStr = (this.inputValue = this.form.get(this.control)?.value);
+      this.form.get(this.control)?.setValue(newStr.slice(0, -1));
+      return true;
+    }
+    return false;
   }
 }
