@@ -5,7 +5,7 @@
         Enter a unique tag name (and optionally, give it a description)
       </label>
       <div>
-        <pc-input
+        <pc-form-input
           control="name"
           placeholder="Tag Name"
           icon="hashtag"
@@ -19,7 +19,7 @@
           }
         </span>
       </div>
-      <pc-input control="description" placeholder="Optional description" icon="hashtag" />
+      <pc-form-input control="description" placeholder="Optional description" icon="hashtag" />
     </div>
     <pc-add-btn-row [processing]="processing" (add)="add()"></pc-add-btn-row>
   </form>

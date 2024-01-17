@@ -5,13 +5,13 @@ import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-input',
+  selector: 'pc-form-input',
   standalone: true,
   imports: [CommonModule, IconsComponent, FormsModule, ReactiveFormsModule],
-  templateUrl: './input.component.html',
-  styleUrl: './input.component.scss',
+  templateUrl: './formInput.component.html',
+  styleUrl: './formInput.component.scss',
 })
-export class InputComponent implements OnInit {
+export class FormInputComponent implements OnInit {
   @Input({ required: true }) public control!: string;
   @Input() public icon: IconName | null = null;
   @Input() public pattern: string | RegExp = '.*';
