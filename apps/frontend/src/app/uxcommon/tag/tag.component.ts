@@ -15,11 +15,14 @@ export class TagComponent {
   @Output() public closeEvent = new EventEmitter<string>();
   @Input({ required: true }) public name!: string;
 
+  protected destroy: boolean = false;
+
   public emitClick() {
     this.clickEvent.emit(this.name);
   }
 
   public emitClose() {
+    this.destroy = true;
     this.closeEvent.emit(this.name);
   }
 }

@@ -12,6 +12,9 @@ module.exports = {
       animation: {
         down: 'down 0.2s ease-in-out',
         up: 'up 0.2s ease-in-out',
+        right: 'right 0.2s ease-in-out',
+        flash: 'flash 0.3s ease-in-out',
+        drop: 'drop 0.4s ease-in-out',
       },
       keyframes: {
         down: {
@@ -28,6 +31,41 @@ module.exports = {
           },
           '100%': {
             transform: 'translateY(0)',
+          },
+        },
+        right: {
+          '0%': {
+            transform: 'translateX(-100%)',
+          },
+          '100%': {
+            transform: 'translateX(0)',
+          },
+        },
+        flash: {
+          '0%': {
+            'background-color': '#afcea8',
+          },
+          '25%': {
+            'background-color': '#bcd6b7',
+          },
+          '50%': {
+            'background-color': '#c9dec5',
+          },
+          '75%': {
+            'background-color': '#d7e6d4',
+          },
+          '100%': {
+            'background-color': '#f2f7f1',
+          },
+        },
+        drop: {
+          '0%': {
+            transform: 'translateY(-50%)',
+            opacity: 0,
+          },
+          '100%': {
+            transform: 'translateY(0)',
+            opacity: 1,
           },
         },
       },
