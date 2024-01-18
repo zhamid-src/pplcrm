@@ -24,9 +24,10 @@ export class TagsComponent {
   protected matches: string[] = [];
   constructor(private tagSvc: TagsGridService) {}
 
-  public add(tag: string) {
-    if (!this.tags.includes(tag)) {
-      this.tags.push(tag);
+  public add(rawTag: string) {
+    const tag = rawTag.trim();
+    if (tag.length > 0 && !this.tags.includes(tag)) {
+      this.tags.unshift(tag);
       this.tagsChange && this.tagsChange.emit(this.tags);
     }
     this.matches = [];
@@ -37,15 +38,17 @@ export class TagsComponent {
   }
 
   public closed(tag: string) {
-    this.remove(tag);
+    setTimeout(() => {
+      this.remove(tag);
+    }, 500);
   }
 
   public onKey(event: KeyboardEvent) {
     const target = event.target as HTMLInputElement;
     let value = target.value;
     if (event.key === 'Enter' || event.key === ',') {
-      if (value.endsWith(',')) {
-        value = value.slice(0, -1);
+      if (value.indexOf(',') >= 0) {
+        value = value.replace(',', '');
       }
       this.add(value);
       target.value = '';
@@ -69,7 +72,6 @@ export class TagsComponent {
     if (key && key.length > 0) {
       const payload = (await this.tagSvc.match(key)) as { name: string }[];
       this.matches = payload.map((m) => m.name);
-      console.log(this.matches);
     } else {
       this.matches = [];
     }

@@ -1,4 +1,7 @@
-<div class="badge text-neutral-content rounded-lg px-0 gap-1 pl-2 h-6 bordered border-gray-300">
+<div
+  class="badge text-neutral-content rounded-lg px-0 gap-1 pl-2 h-6 bordered border-gray-300 animate-drop transition-opacity duration-500"
+  [class.opacity-0]="destroy"
+>
   <span
     (click)="emitClick()"
     class="hover:text-primary cursor-pointer font-light pr-1"
