@@ -1,231 +1,100 @@
 import { Injectable } from '@angular/core';
-import { IconName } from '@uxcommon/icons/icons';
+import { ISidebarItem, SidebarItems } from '../layout/sidebar.items';
 
 type DrawerStates = 'full' | 'half';
-
-export interface SidenavItem {
-  adminOnly?: boolean;
-  badge?: string;
-  badgeColor?: string;
-  code: string;
-  customClass?: string;
-  hidden?: boolean;
-  icon?: IconName;
-  name: string;
-  parent?: SidenavItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  subItems?: SidenavItem[];
-  type?: 'item' | 'subheading';
-
-  // admin only item
-}
 
 @Injectable({
   providedIn: 'root',
 })
 export class SidebarService {
   private _drawerState: DrawerStates = this.getState();
-  // Add all the sidebar items here. They go in the order they're added
-  private _items: SidenavItem[] = [
-    {
-      name: `Summary`,
-      code: 'summary',
-      route: '/console/summary',
-      icon: 'presentation-chart-line',
-      pathMatchExact: true,
-    },
-    {
-      name: `MyTasks`,
-      code: 'mytasks',
-      route: '/console/mytasks',
-      icon: 'rectangle-stack',
-    },
-    {
-      name: `PEOPLE`,
-      code: 'peopleheading',
-      type: 'subheading',
-    },
-    {
-      name: `People`,
-      code: 'people',
-      route: '/console/people',
-      icon: 'identification',
-    },
-    {
-      name: `Households`,
-      code: 'households',
-      route: '/console/households',
-      icon: 'house-modern',
-    },
-    {
-      name: 'Emails',
-      code: 'emails',
-      route: '/console/emails',
-      icon: 'envelope',
-    },
-    {
-      name: 'Lists',
-      code: 'lists',
-      route: '/console/lists',
-      icon: 'queue-list',
-    },
-    {
-      name: 'Tags',
-      code: 'tags',
-      route: '/console/tags',
-      icon: 'hashtag',
-    },
-    {
-      name: `OUTREACH`,
-      code: 'teamsheading',
-      type: 'subheading',
-    },
-    {
-      name: 'Campaigns',
-      code: 'campaigns',
-      route: '/console/campaigns',
-      icon: 'megaphone',
-    },
-    {
-      name: 'Canvassing',
-      code: 'canvassing',
-      route: '/console/canvassing',
-      icon: 'map',
-    },
-    {
-      name: 'Map',
-      code: 'map',
-      route: '/console/map',
-      icon: 'globe-americas',
-    },
-    {
-      name: `TEAMS`,
-      code: 'teamsheading',
-      type: 'subheading',
-    },
-    {
-      name: 'Volunteers',
-      code: 'volunteers',
-      route: '/console/volunteers',
-      icon: 'briefcase',
-    },
-    {
-      name: 'Teams',
-      code: 'teams',
-      route: '/console/teams',
-      icon: 'user-group',
-    },
-    {
-      name: 'Donors',
-      code: 'donors',
-      route: '/console/donors',
-      icon: 'banknotes',
-    },
-    {
-      name: 'Donations',
-      code: 'donations',
-      route: '/console/donations',
-      icon: 'currency-dollar',
-    },
-    {
-      name: `ADMIN`,
-      code: 'teamsheading',
-      type: 'subheading',
-    },
-    {
-      name: 'Export',
-      code: 'export',
-      route: '/console/export',
-      icon: 'arrow-down-tray',
-    },
-    {
-      name: `Tasks`,
-      code: 'tasks',
-      route: '/console/tasks',
-      icon: 'square-3-stack-3d',
-    },
-    {
-      name: 'Forms',
-      code: 'forms',
-      route: '/console/forms',
-      icon: 'clipboard-document-list',
-    },
-    {
-      name: 'Users',
-      code: 'users',
-      route: '/console/users',
-      icon: 'users',
-    },
-    {
-      name: 'Billing',
-      code: 'billing',
-      route: '/console/billing',
-      icon: 'credit-card',
-    },
-    {
-      name: 'Settings',
-      code: 'settings',
-      route: '/console/settings',
-      icon: 'cog-6-tooth',
-    },
-  ];
+  private _items = SidebarItems;
   private _mobileOpen = false;
 
+  /**
+   * Get all the sidebar items.
+   */
   public get items() {
     return this._items;
   }
 
-  public set items(items: SidenavItem[]) {
+  /**
+   * Set all the sidebar items. Typically it'll be used to update the sidebar,
+   * for instance by adding badges to the sidebar items.
+   */
+  public set items(items: ISidebarItem[]) {
     this._items = items;
   }
 
-  public get mobileOpen() {
-    return this._mobileOpen;
-  }
-
+  /**
+   * Close the sidebar on mobile
+   */
   public closeMobile() {
     this._mobileOpen = false;
   }
 
-  public findRoute(destination: string) {
+  /**
+   * Given the name of the final destination in the route, return the route
+   *
+   * Generally used by breadcrumb to navigate.
+   *
+   * @example - getRoute('persons') => '/console/persons'
+   *
+   * @param destination
+   * @returns
+   */
+  public getRoute(destination: string) {
     const target = this.items.find((item) => item.route?.endsWith(destination));
     return target?.route;
   }
 
+  /**
+   * Is the drawer fully open
+   */
   public isFull() {
     return this._drawerState === 'full';
   }
 
+  /**
+   * is the drawer half open, showing only the icons
+   */
   public isHalf() {
     return this._drawerState === 'half';
   }
 
+  /**
+   * Is the drawer open on mobile
+   */
   public isMobileOpen() {
     return this._mobileOpen;
   }
 
-  public setFull() {
-    this.setState('full');
-  }
-
-  public setHalf() {
-    this.setState('half');
-  }
-
+  /**
+   * Togger the drawer state between full and half
+   */
   public toggleDrawer() {
     return this.setState(this._drawerState === 'full' ? 'half' : 'full');
   }
 
+  /**
+   * Toggle the drawer on mobile
+   */
   public toggleMobile() {
     this._mobileOpen = !this._mobileOpen;
   }
 
+  /**
+   * Get the currrent drawer state (full or half)
+   */
   private getState(): DrawerStates {
     const state = localStorage.getItem('pc-drawerState');
     return state === 'full' ? 'full' : 'half';
   }
 
+  /**
+   * Save the drawer state so that it can be restored on page reload
+   *
+   */
   private setState(state: DrawerStates) {
     this._drawerState = state;
     localStorage.setItem('pc-drawerState', this._drawerState);

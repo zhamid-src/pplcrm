@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
-import { TRPCService } from './trpc.service';
+import { TRPCService } from '../trpc.service';
 
 @Injectable({
   providedIn: 'root',

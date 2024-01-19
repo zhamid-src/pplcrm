@@ -2,6 +2,9 @@ import { Injectable } from '@angular/core';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { AbstractBackendService } from './abstract.service';
 
+/**
+ * @see @link{AbstractBackendService} for more information about this class.
+ */
 @Injectable({
   providedIn: 'root',
 })
@@ -14,12 +17,12 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return this.delete(id);
   }
 
-  public findAll() {
+  public getAll() {
     return this.getAllWithPeopleCount();
   }
 
-  public findOne(id: bigint) {
-    return this.api.households.findOne.query(id.toString());
+  public getById(id: bigint) {
+    return this.api.households.getById.query(id.toString());
   }
 
   public update(id: bigint, data: OperationDataType<'households', 'insert'>) {

@@ -6,7 +6,7 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 
 import { Router, RouterLink } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/auth.service.js';
+import { AuthService } from '@services/backend/auth.service.js';
 import { TokenService } from '@services/token.service.js';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 

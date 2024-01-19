@@ -4,7 +4,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/auth.service.js';
+import { AuthService } from '@services/backend/auth.service.js';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { TRPCError } from '@trpc/server';
 import { AlertComponent } from '@uxcommon/alert/alert.component';

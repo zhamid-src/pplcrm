@@ -7,7 +7,10 @@ export class HouseholdsController extends BaseController<'households', Household
     super(new HouseholdRepository());
   }
 
+  /**
+   * @returns All households with the number of people in each household
+   */
   public getAllWithPeopleCount() {
-    return this.getOperator().getAllWithPeopleCount();
+    return this.getRepository().getAllWithPeopleCount();
   }
 }

@@ -4,6 +4,9 @@ import { AbstractBackendService } from './abstract.service';
 
 export type TYPE = 'persons' | 'households';
 
+/**
+ * @see @link{AbstractBackendService} for more information about this class.
+ */
 @Injectable({
   providedIn: 'root',
 })
@@ -20,12 +23,12 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return (await this.api.persons.delete.mutate(id.toString())) !== null;
   }
 
-  public findOne(id: bigint) {
-    return this.api.persons.findOne.query(id.toString());
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithHouseholds(options);
   }
 
-  public findAll(options?: getAllOptionsType) {
-    return this.getAllWithHouseholds(options);
+  public getById(id: bigint) {
+    return this.api.persons.getById.query(id.toString());
   }
 
   public async update(id: bigint, data: UpdatePersonsType) {

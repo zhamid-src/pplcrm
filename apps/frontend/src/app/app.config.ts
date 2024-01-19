@@ -8,7 +8,7 @@ import { APP_INITIALIZER, ApplicationConfig } from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
-import { AuthService } from '@services/auth.service';
+import { AuthService } from '@services/backend/auth.service';
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route.reuse.strategy';
 import { httpInterceptor } from './interceptors/http.interceptor';

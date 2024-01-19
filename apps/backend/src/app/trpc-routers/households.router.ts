@@ -5,7 +5,7 @@ import { HouseholdsController } from '../controllers/households.controller';
 const households = new HouseholdsController();
 
 export const HouseholdsRouter = router({
-  findOne: authProcedure.input(z.string()).query(({ input }) => households.findOne(BigInt(input))),
-  findAll: authProcedure.query(() => households.findAll()),
+  getById: authProcedure.input(z.string()).query(({ input }) => households.getById(BigInt(input))),
+  getAll: authProcedure.query(() => households.getAll()),
   getAllWithPeopleCount: authProcedure.query(() => households.getAllWithPeopleCount()),
 });

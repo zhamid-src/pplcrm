@@ -11,7 +11,7 @@ export class SessionsRepository extends BaseRepository<'sessions'> {
     return this.getDelete(trx).where('session_id', '=', session_id).execute();
   }
 
-  public findOneByAuthUserId(
+  public getOneByAuthUserId(
     user_id: GetOperandType<'sessions', 'select', 'user_id'>,
     trx?: Transaction<Models>,
   ) {

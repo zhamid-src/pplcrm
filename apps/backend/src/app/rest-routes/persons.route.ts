@@ -10,12 +10,12 @@ const persons = new PersonsController();
  * Supported HTTP routes for the persons endpoint
  */
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
-  fastify.get('', schema.getAll, () => persons.findAll());
+  fastify.get('', schema.getAll, () => persons.getAll());
 
-  fastify.get('/:id', schema.findFromId, (req: IdParam) => persons.findOne(BigInt(req.params.id)));
-  fastify.get('/count', schema.count, (_req) => persons.getCount());
+  fastify.get('/:id', schema.findFromId, (req: IdParam) => persons.getById(BigInt(req.params.id)));
+  fastify.get('/count', schema.count, () => persons.getCount());
   fastify.post('', schema.update, (req) =>
-    persons.addOne(req.body as OperationDataType<'persons', 'insert'>),
+    persons.add(req.body as OperationDataType<'persons', 'insert'>),
   );
   fastify.patch('/:id', schema.findFromId, (req: IdParam) =>
     persons.update(BigInt(req.params.id), req.body as OperationDataType<'persons', 'insert'>),

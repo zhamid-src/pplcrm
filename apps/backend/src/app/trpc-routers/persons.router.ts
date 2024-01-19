@@ -11,13 +11,13 @@ const personsHouseholds = new PersonsHouseholdsController();
 export const PersonsRouter = router({
   add: authProcedure
     .input(UpdatePersonsObj)
-    .mutation(({ input }) => persons.addOne(input as OperationDataType<'persons', 'insert'>)),
+    .mutation(({ input }) => persons.add(input as OperationDataType<'persons', 'insert'>)),
   delete: authProcedure.input(z.string()).mutation(({ input }) => persons.delete(BigInt(input))),
-  findOne: authProcedure.input(z.string()).query(({ input }) => persons.findOne(BigInt(input))),
-  findAll: authProcedure.input(getAllOptions).query(({ input }) => persons.findAll(input)),
+  getById: authProcedure.input(z.string()).query(({ input }) => persons.getById(BigInt(input))),
+  getAll: authProcedure.input(getAllOptions).query(({ input }) => persons.getAll(input)),
   getAllWithHouseholds: authProcedure
     .input(getAllOptions)
-    .query(({ input }) => personsHouseholds.findAll(input)),
+    .query(({ input }) => personsHouseholds.getAll(input)),
   update: authProcedure
     .input(z.object({ id: z.string(), data: UpdatePersonsObj }))
     .mutation(({ input }) =>

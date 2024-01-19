@@ -23,6 +23,10 @@ export class AuthUsersRepository extends BaseRepository<'authusers'> {
       .executeTakeFirst();
   }
 
+  public existsByEmail(email: string): Promise<boolean> {
+    return this.exists(email, 'email');
+  }
+
   public findOneByEmail(
     email: SelectEmailType,
     options?: QueryParams<'authusers'>,
