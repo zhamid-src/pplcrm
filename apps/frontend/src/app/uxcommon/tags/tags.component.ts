@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { TagsBackendService } from '@services/backend/tags-be.service';
+import { TagsBackendService } from '@services/backend/tags.service';
 import { InputComponent } from '@uxcommon/input/input.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
 

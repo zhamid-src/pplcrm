@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
-import { AbstractBackendService } from './abstract-be.service';
+import { AbstractBackendService } from './abstract.service';
 
 export type TYPE = 'persons' | 'households';
 

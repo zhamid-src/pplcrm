@@ -7,7 +7,7 @@ import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { PersonsBackendService } from '@services/backend/persons-be.service';
+import { PersonsBackendService } from '@services/backend/persons.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';

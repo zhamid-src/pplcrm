@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
-import { AbstractBackendService } from './abstract-be.service';
+import { AbstractBackendService } from './abstract.service';
 
 @Injectable({
   providedIn: 'root',
