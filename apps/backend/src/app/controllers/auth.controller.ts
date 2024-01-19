@@ -31,8 +31,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     if (!auth?.user_id) {
       return null;
     }
-    const user = await this.getOperator()
-      .findOne(auth.user_id, {
+    const user = await this.getRepository()
+      .getById(auth.user_id, {
         columns: ['id', 'email', 'first_name'],
       })
       .catch(() => null);
@@ -64,7 +64,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       });
     }
 
-    const result = await this.getOperator().updatePassword(password, code);
+    const result = await this.getRepository().updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
       throw new TRPCError({
         message: 'Wrong code, please try again',
@@ -75,7 +75,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
 
   public async sendPasswordResetEmail(email: string) {
     const user = await this.getUserByEmail(email);
-    const code = this.getOperator().addPasswordResetCode(user.id);
+    const code = this.getRepository().addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -153,7 +153,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
     auth_id: bigint,
   ) {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
-    const profile = await this.profiles.addOne(row, trx);
+    const profile = await this.profiles.add(row, trx);
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -165,7 +165,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
 
   private async createTenant(trx: Transaction<Models>, name: string) {
     const row = { name } as OperationDataType<'tenants', 'insert'>;
-    const tenantAddResult = await this.tenants.addOne(row, trx);
+    const tenantAddResult = await this.tenants.add(row, trx);
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -191,7 +191,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       user_agent: '',
       status: 'active',
     } as OperationDataType<'sessions', 'insert'>;
-    const currentSession = await this.sessions.addOne(row);
+    const currentSession = await this.sessions.add(row);
 
     if (!currentSession) {
       throw new TRPCError({
@@ -226,7 +226,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       first_name: input.first_name,
       verified: false,
     } as OperationDataType<'authusers', 'insert'>;
-    const user = await this.getOperator().addOne(row, trx);
+    const user = await this.getRepository().add(row, trx);
 
     if (!user) {
       throw new TRPCError({
@@ -238,7 +238,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async getCodeAge(code: string): Promise<number> {
-    const nowData: QueryResult<INow> = await this.getOperator().nowTime();
+    const nowData: QueryResult<INow> = await this.getRepository().nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -246,7 +246,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       });
     }
 
-    const data: Partial<AuthUsersType> = await this.getOperator().getPasswordResetCodeTime(code);
+    const data: Partial<AuthUsersType> = await this.getRepository().getPasswordResetCodeTime(code);
     const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
     const then = new Date(thenTimestamp);
 
@@ -256,7 +256,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async getUserByEmail(email: string) {
-    const user = (await this.getOperator().findOneByEmail(email)) as AuthUsersType;
+    const user = (await this.getRepository().findOneByEmail(email)) as AuthUsersType;
 
     if (!user) {
       throw new TRPCError({
@@ -290,12 +290,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       'update',
       Keys<TablesOperationMap['tenants']['update']>
     >;
-    await this.tenants.updateOne(id, row, trx);
+    await this.tenants.update(id, row, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {
-    const count = await this.getOperator().getCountByEmail(email);
-    if (count > 0) {
+    const exists = await this.getRepository().existsByEmail(email);
+    if (exists) {
       throw new TRPCError({
         message: 'This email already exists. Did you want to sign in?',
         code: 'CONFLICT',

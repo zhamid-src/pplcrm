@@ -9,7 +9,14 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
     super('persons');
   }
 
-  public override async findAll(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {
+  /**
+   * Get all the people with their households information.
+   *
+   * @param optionsIn - query options @see {@link QueryParams} for more information about the options.
+   * @param trx
+   * @returns
+   */
+  public override async getAll(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {
     const options = optionsIn || ({} as QueryParams<TYPE>);
 
     options!.columns =
@@ -35,6 +42,17 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
     return await query.execute();
   }
 
+  /**
+   * Get the list of people in the given household.
+   *
+   * @param household_id - the household ID to limit the search to
+   * @param options - query options
+   * @see {@link QueryParams} for more information about the options.
+   *
+   * @param trx - optionally, pass the transaction
+   *
+   * @returns
+   */
   public getPersonsInHousehold(
     household_id: bigint,
     options?: QueryParams<TYPE>,

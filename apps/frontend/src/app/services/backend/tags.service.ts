@@ -2,6 +2,9 @@ import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
 import { AbstractBackendService } from './abstract.service';
 
+/**
+ * @see @link{AbstractBackendService} for more information about this class.
+ */
 @Injectable({
   providedIn: 'root',
 })
@@ -18,22 +21,18 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     return (await this.api.tags.delete.mutate(id.toString())) !== null;
   }
 
-  public findOne(id: bigint) {
-    return this.api.tags.findOne.query(id.toString());
+  public findByName(name: string) {
+    return this.api.tags.findByName.query(name);
   }
 
   public getAll() {
-    return this.api.tags.findAll.query(undefined, {
+    return this.api.tags.getAll.query(undefined, {
       signal: this.ac.signal,
     });
   }
 
-  public match(key: string) {
-    return this.api.tags.match.query(key);
-  }
-
-  public findAll() {
-    return this.getAll();
+  public getById(id: bigint) {
+    return this.api.tags.getById.query(id.toString());
   }
 
   public update(id: bigint, data: UpdateTagType) {

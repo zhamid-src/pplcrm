@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
-import { AuthService } from '@services/auth.service';
+import { AuthService } from '@services/backend/auth.service';
 import { SearchService } from '@services/search.service';
 import { SidebarService } from '@services/sidebar.service';
 import { ThemeService } from '@services/theme.service';

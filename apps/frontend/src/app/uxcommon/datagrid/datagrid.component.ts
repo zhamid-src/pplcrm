@@ -394,7 +394,7 @@ export class DatagridComponent<T extends keyof Models, U> {
   protected async refresh() {
     this.api!.showLoadingOverlay();
 
-    const rows = (await this.gridSvc.findAll()) as Partial<T>[];
+    const rows = (await this.gridSvc.getAll()) as Partial<T>[];
 
     // Set the grid option because it works around Angular's
     // ValueChangedAterChecked error
