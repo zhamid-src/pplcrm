@@ -3,7 +3,7 @@ import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { TagsGridService } from '@services/grid/tags-grid.service';
+import { TagsBackendService } from '@services/backend/tags-be.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
@@ -34,7 +34,7 @@ export class AddTagComponent {
 
   constructor(
     private fb: FormBuilder,
-    private tagSvc: TagsGridService,
+    private tagSvc: TagsBackendService,
     private alertSvc: AlertService,
   ) {}
 

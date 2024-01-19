@@ -69,7 +69,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableFilter"
       [class.disabled]="disableFilter"
-      (click)="!disableFilter && applyFilter()"
+      (click)="!disableFilter && filterByTag()"
       data-tip="Filter by tag"
     >
       <a>

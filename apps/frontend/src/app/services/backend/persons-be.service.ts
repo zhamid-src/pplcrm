@@ -1,16 +1,17 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
-import { AbstractGridService } from './abstract-grid.service';
+import { AbstractBackendService } from './abstract-be.service';
 
 export type TYPE = 'persons' | 'households';
 
 @Injectable({
   providedIn: 'root',
 })
-export class PersonsGridService extends AbstractGridService<TYPE, UpdatePersonsType> {
+export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePersonsType> {
   public add(row: UpdatePersonsType) {
     return this.api.persons.add.mutate(row);
   }
+
   public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
@@ -23,7 +24,7 @@ export class PersonsGridService extends AbstractGridService<TYPE, UpdatePersonsT
     return this.api.persons.findOne.query(id.toString());
   }
 
-  public refresh(options?: getAllOptionsType) {
+  public findAll(options?: getAllOptionsType) {
     return this.getAllWithHouseholds(options);
   }
 

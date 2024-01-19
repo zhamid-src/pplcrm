@@ -2,8 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AbstractGridService } from '@services/grid/abstract-grid.service';
-import { HouseholdsGridService } from '@services/grid/households-grid.service';
+import { AbstractBackendService } from '@services/backend/abstract-be.service';
+import { HouseholdsBackendService } from '@services/backend/households-be.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
@@ -14,8 +14,15 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
   imports: [CommonModule, DatagridComponent],
   templateUrl: './households-grid.component.html',
   styleUrl: './households-grid.component.scss',
-  providers: [{ provide: AbstractGridService, useClass: HouseholdsGridService }],
+  providers: [{ provide: AbstractBackendService, useClass: HouseholdsBackendService }],
 })
+
+/**
+ * This is the households grid component used to display the list of households.
+ * It also gets the number of people that belong to each household.
+ *
+ * @see {@link DatagridComponent}
+ */
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
     { field: 'person_count', headerName: 'People in household' },
@@ -34,7 +41,7 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: HouseholdsGridService,
+    gridSvc: HouseholdsBackendService,
   ) {
     super(router, themeSvc, serachSvc, alertSvc, gridSvc);
   }
