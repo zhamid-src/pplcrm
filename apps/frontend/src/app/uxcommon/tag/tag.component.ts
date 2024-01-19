@@ -22,6 +22,9 @@ export class TagComponent {
   }
 
   public emitClose() {
+    // Destroy here sets the animation by adding the class 'destroy' to the tag
+    // It does mean that the tag should be removed from the array in the parent component
+    // after some delay, so that the animation can complete
     this.destroy = true;
     this.closeEvent.emit(this.name);
   }

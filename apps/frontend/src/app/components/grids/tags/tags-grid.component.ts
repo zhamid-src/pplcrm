@@ -3,8 +3,8 @@ import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { AbstractGridService } from '@services/grid/abstract-grid.service';
-import { TagsGridService } from '@services/grid/tags-grid.service';
+import { AbstractBackendService } from '@services/backend/abstract-be.service';
+import { TagsBackendService } from '@services/backend/tags-be.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
@@ -15,7 +15,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
   imports: [CommonModule, DatagridComponent],
   templateUrl: './tags-grid.component.html',
   styleUrl: './tags-grid.component.scss',
-  providers: [{ provide: AbstractGridService, useClass: TagsGridService }],
+  providers: [{ provide: AbstractBackendService, useClass: TagsBackendService }],
 })
 export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
   protected col = [
@@ -29,7 +29,7 @@ export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: TagsGridService,
+    gridSvc: TagsBackendService,
   ) {
     super(router, themeSvc, serachSvc, alertSvc, gridSvc);
   }

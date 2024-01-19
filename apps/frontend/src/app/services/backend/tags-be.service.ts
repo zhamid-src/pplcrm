@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
-import { AbstractGridService } from './abstract-grid.service';
+import { AbstractBackendService } from './abstract-be.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class TagsGridService extends AbstractGridService<'tags', AddTagType> {
+export class TagsBackendService extends AbstractBackendService<'tags', AddTagType> {
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }
@@ -28,15 +28,15 @@ export class TagsGridService extends AbstractGridService<'tags', AddTagType> {
     });
   }
 
-  public refresh() {
+  public match(key: string) {
+    return this.api.tags.match.query(key);
+  }
+
+  public findAll() {
     return this.getAll();
   }
 
   public update(id: bigint, data: UpdateTagType) {
     return this.api.tags.update.mutate({ id: id.toString(), data });
-  }
-
-  public match(key: string) {
-    return this.api.tags.match.query(key);
   }
 }

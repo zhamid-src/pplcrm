@@ -3,8 +3,8 @@ import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { AbstractGridService } from '@services/grid/abstract-grid.service';
-import { PersonsGridService, TYPE } from '@services/grid/persons-grid.service';
+import { AbstractBackendService } from '@services/backend/abstract-be.service';
+import { PersonsBackendService, TYPE } from '@services/backend/persons-be.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
@@ -15,7 +15,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
   imports: [CommonModule, DatagridComponent],
   templateUrl: './persons-grid.component.html',
   styleUrl: './persons-grid.component.scss',
-  providers: [{ provide: AbstractGridService, useClass: PersonsGridService }],
+  providers: [{ provide: AbstractBackendService, useClass: PersonsBackendService }],
 })
 export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {
   protected col = [
@@ -46,7 +46,7 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: PersonsGridService,
+    gridSvc: PersonsBackendService,
   ) {
     super(router, themeSvc, serachSvc, alertSvc, gridSvc);
   }

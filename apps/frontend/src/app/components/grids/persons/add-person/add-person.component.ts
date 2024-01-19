@@ -7,7 +7,7 @@ import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { PersonsGridService } from '@services/grid/persons-grid.service';
+import { PersonsBackendService } from '@services/backend/persons-be.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
@@ -65,7 +65,7 @@ export class AddPersonComponent {
 
   constructor(
     private fb: FormBuilder,
-    private personSvc: PersonsGridService,
+    private personSvc: PersonsBackendService,
     private alertSvc: AlertService,
   ) {}
 

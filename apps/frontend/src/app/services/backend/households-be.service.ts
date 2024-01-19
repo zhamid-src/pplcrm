@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { OperationDataType } from 'common/src/lib/kysely.models';
-import { AbstractGridService } from './abstract-grid.service';
+import { AbstractBackendService } from './abstract-be.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class HouseholdsGridService extends AbstractGridService<'households', never> {
+export class HouseholdsBackendService extends AbstractBackendService<'households', never> {
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
   }
@@ -18,7 +18,7 @@ export class HouseholdsGridService extends AbstractGridService<'households', nev
     return this.api.households.findOne.query(id.toString());
   }
 
-  public refresh() {
+  public findAll() {
     return this.getAllWithPeopleCount();
   }
 
