@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { HouseholdsBackendService } from '@services/backend/households.service';
@@ -38,11 +38,12 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
 
   constructor(
     router: Router,
+    route: ActivatedRoute,
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
     gridSvc: HouseholdsBackendService,
   ) {
-    super(router, themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
   }
 }

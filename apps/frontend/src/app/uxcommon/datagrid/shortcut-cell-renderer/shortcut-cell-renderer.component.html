@@ -1,11 +1,13 @@
 <div class="shortcut-cell w- invisible flex flex-row gap-2 pt-3">
-  <pc-icon
-    name="arrow-top-right-on-square"
-    [size]="4"
-    class="hover:text-primary text-left"
-    (click)="open()"
-  />
-  @if (!disableDelete()) {
+  @if (showView()) {
+    <pc-icon
+      name="arrow-top-right-on-square"
+      [size]="4"
+      class="hover:text-primary text-left"
+      (click)="view()"
+    />
+  }
+  @if (showDelete()) {
     <pc-icon name="trash" [size]="4" class="hover:text-error text-left" (click)="delete()" />
   }
 </div>

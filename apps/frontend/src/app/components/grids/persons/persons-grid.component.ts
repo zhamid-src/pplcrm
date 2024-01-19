@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
@@ -43,11 +43,12 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
 
   constructor(
     router: Router,
+    route: ActivatedRoute,
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
     gridSvc: PersonsBackendService,
   ) {
-    super(router, themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
   }
 }
