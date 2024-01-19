@@ -3,7 +3,7 @@ import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { TagsBackendService } from '@services/backend/tags-be.service';
+import { TagsBackendService } from '@services/backend/tags.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
