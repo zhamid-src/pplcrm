@@ -1,7 +1,3 @@
-import {
-  NgxGpAutocompleteModule,
-  NgxGpAutocompleteOptions,
-} from '@angular-magic/ngx-gp-autocomplete';
 import { CommonModule } from '@angular/common';
 import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -12,6 +8,7 @@ import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { InputComponent } from '@uxcommon/input/input.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 
@@ -23,8 +20,8 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
     FormsModule,
     ReactiveFormsModule,
     IconsComponent,
+    InputComponent,
     FormInputComponent,
-    NgxGpAutocompleteModule,
     AddBtnRowComponent,
     TagsComponent,
   ],
@@ -34,10 +31,6 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
 export class AddPersonComponent {
   @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;
   protected addressVerified = false;
-  public options: NgxGpAutocompleteOptions = {
-    componentRestrictions: { country: ['CA'] },
-    types: ['geocode'],
-  };
 
   protected form = this.fb.group({
     first_name: [''],

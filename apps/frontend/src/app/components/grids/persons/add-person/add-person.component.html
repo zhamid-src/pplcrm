@@ -24,13 +24,10 @@
         />
         <pc-form-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
       </div>
-      <input
-        class="input-pplcrm"
+      <pc-input
         placeholder="Enter the address"
-        [options]="options"
-        ngx-gp-autocomplete
-        autocomplete="off"
-        (onAddressChange)="handleAddressChange($event)"
+        [googlePlaces]="true"
+        (googlePlacesAddressChange)="handleAddressChange($event)"
       />
       <pc-tags [(tags)]="this.tags" [enableAutoComplete]="true"></pc-tags>
       <textarea class="textarea textarea-bordered" placeholder="Notes"></textarea>

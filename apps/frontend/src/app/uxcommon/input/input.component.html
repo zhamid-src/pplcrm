@@ -13,18 +13,36 @@
          to make the formgroup optional 
         TODO: figure it out -->
     <div class="relative w-full min-w-[200px] h-10">
-      <input
-        placeholder=" "
-        [(ngModel)]="inputValue"
-        (blur)="handleChange()"
-        [ngModelOptions]="{ standalone: true }"
-        [type]="type"
-        [attr.aria-placeholder]="placeholder"
-        [class.pl-8]="icon"
-        (keyup)="handleKeyup()"
-        [class.border-t-transparent]="inputValue.length > 0"
-        class="peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px] border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2 focus:border-t-transparent invalid:border-error invalid:border-t-transparent disabled:bg-gray-200 disabled:cursor-not-allowed transition-all placeholder-shown:border placeholder-shown:border-blue-gray-200 placeholder-shown:border-t-blue-gray-200 border"
-      /><label
+      @if (googlePlaces) {
+        <input
+          placeholder=" "
+          [(ngModel)]="inputValue"
+          (blur)="handleChange()"
+          [ngModelOptions]="{ standalone: true }"
+          [type]="type"
+          [attr.aria-placeholder]="placeholder"
+          [class.pl-8]="icon"
+          [options]="options"
+          ngx-gp-autocomplete
+          (onAddressChange)="handleAddressChange($event)"
+          [class.border-t-transparent]="inputValue.length > 0"
+          [class]="inputClass"
+        />
+      } @else {
+        <input
+          placeholder=" "
+          [(ngModel)]="inputValue"
+          (blur)="handleChange()"
+          [ngModelOptions]="{ standalone: true }"
+          [type]="type"
+          [attr.aria-placeholder]="placeholder"
+          [class.pl-8]="icon"
+          (keyup)="handleKeyup()"
+          [class.border-t-transparent]="inputValue.length > 0"
+          [class]="inputClass"
+        />
+      }
+      <label
         [class.pl-8]="icon"
         [class.pl-0]="inputValue.length > 0"
         class="flex w-full h-full select-none pointer-events-none absolute left-0 font-normal !overflow-visible truncate leading-tight transition-all -top-1.5 text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 before:rounded-tl-md before:border-t before:border-l before:pointer-events-none before:transition-all after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 after:rounded-tr-md after:border-t after:border-r after:pointer-events-none after:transition-all text-gray-400 peer-invalid:text-error before:border-blue-gray-200 before:peer-invalid:border-error after:border-blue-gray-200 after:peer-invalid:border-error peer-disabled:after:border-transparent peer-disabled:before:border-transparent peer-focus:leading-tight peer-focus:text-primary peer-focus:text-[11px] peer-focus:pl-0 peer-focus:before:border-t-2 peer-focus:before:!border-primary peer-focus:before:border-l-2 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:!border-primary peer-placeholder-shown:text-sm peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-placeholder-shown:leading-[3.75]"
