@@ -27,12 +27,16 @@ export class DeleteCellRendererComponent<T extends keyof Models, U>
     this.parent?.confirmDelete();
   }
 
-  public disableDelete() {
-    return this.parent?.disableDelete;
+  public showDelete() {
+    return !this.parent?.disableDelete;
   }
 
-  public open() {
-    this.parent?.open();
+  public showView() {
+    return !this.parent?.disableView;
+  }
+
+  public view() {
+    this.parent?.view();
   }
 
   public refresh(/*params: ICellRendererParams*/) {

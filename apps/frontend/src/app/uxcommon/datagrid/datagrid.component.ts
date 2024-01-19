@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output, effect } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { SearchService } from '@services/search.service';
@@ -8,6 +8,7 @@ import { ThemeService } from '@services/theme.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { AgGridModule } from 'ag-grid-angular';
 import {
+  CellMouseOverEvent,
   CellValueChangedEvent,
   ColDef,
   GetRowIdParams,
@@ -66,6 +67,13 @@ export class DatagridComponent<T extends keyof Models, U> {
    * The component in that route is responsible for adding.
    */
   @Input() public addRoute: string | null = null;
+
+  /**
+   * Whether the view route is disabled or not.
+   *
+   * Default: true
+   */
+  @Input() public disableView = true;
   /**
    * The list of columns to display in the grid. Without anything given,
    * the list of columns will be empty.
@@ -144,6 +152,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     onRedoEnded: this.onRedoEnded.bind(this),
     onRowDataUpdated: this.onRowDataUpdated.bind(this),
     onRowValueChanged: this.onRowValueChanged.bind(this),
+    onCellMouseOver: this.onCellMouseOver.bind(this),
     loadingOverlayComponent: LoadingOverlayComponent,
   };
   /**
@@ -183,6 +192,7 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   constructor(
     private router: Router,
+    private route: ActivatedRoute,
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
     private alertSvc: AlertService,
@@ -265,6 +275,12 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   public onRowDataUpdated(/*event: RowDataUpdatedEvent*/) {}
 
+  private lastRowHovered: string | undefined;
+
+  public onCellMouseOver(event: CellMouseOverEvent) {
+    this.lastRowHovered = event?.data?.id;
+  }
+
   public onRowValueChanged(/*event: RowValueChangedEvent*/) {}
 
   public onUndoEnded(/*event: UndoEndedEvent*/) {
@@ -273,14 +289,6 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   public onUndoStarted(/*event: UndoStartedEvent*/) {
     //console.log("undoStarted", event);
-  }
-
-  /**
-   * Called when the user clicks the row. We route to the component that
-   * opens the row.
-   */
-  public open() {
-    console.log('opening');
   }
 
   /**
@@ -310,7 +318,14 @@ export class DatagridComponent<T extends keyof Models, U> {
    * If an addRoute is given then go there to add a new row.
    */
   protected add() {
-    this.addRoute && this.router.navigate([this.addRoute]);
+    this.addRoute && this.router.navigate([this.addRoute], { relativeTo: this.route });
+  }
+
+  /**
+   * If a view is not disabled then go there to view the row.
+   */
+  public view() {
+    !this.disableView && this.router.navigate([this.lastRowHovered], { relativeTo: this.route });
   }
 
   /**
@@ -323,13 +338,16 @@ export class DatagridComponent<T extends keyof Models, U> {
     dialog.showModal();
   }
 
+  protected getSelectedRows() {
+    return this.api?.getSelectedRows() as (Partial<T> & { id: bigint })[];
+  }
   /**
    * Delete the selected rows.
    * There is no undo as it is called by the confirm delete dialog.
    *
    */
   protected async deleteSelectedRows() {
-    const rows = this.api?.getSelectedRows() as (Partial<T> & { id: bigint })[];
+    const rows = this.getSelectedRows();
     if (!rows?.length) {
       return this.alertSvc.showError('Please select at least one row to delete.');
     }

@@ -6,8 +6,10 @@ import { ResetPasswordComponent } from './auth/reset-password/reset-password.com
 import { SignInComponent } from './auth/signin/signin.component';
 import { SignUpComponent } from './auth/signup/signup.component';
 import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
+import { ViewHouseholdComponent } from './components/grids/households/view-household/ViewHousehold.component';
 import { AddPersonComponent } from './components/grids/persons/add-person/add-person.component';
 import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
+import { ViewPersonComponent } from './components/grids/persons/view-person/ViewPerson.component';
 import { TagsGridComponent } from './components/grids/tags/tags-grid.component';
 import { SummaryComponent } from './components/summary/summary.component';
 import { authGuard } from './guards/auth.guard';
@@ -41,6 +43,10 @@ export const appRoutes: Route[] = [
             path: 'add',
             component: AddPersonComponent,
           },
+          {
+            path: ':id',
+            component: ViewPersonComponent,
+          },
         ],
       },
       {
@@ -50,6 +56,10 @@ export const appRoutes: Route[] = [
             path: '',
             component: HouseholdsGridComponent,
             data: { shouldReuse: true, key: 'householdsgridroot' },
+          },
+          {
+            path: ':id',
+            component: ViewHouseholdComponent,
           },
         ],
       },
