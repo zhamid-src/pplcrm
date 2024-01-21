@@ -31,8 +31,6 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
         sql<string>`concat(households.street_num, ' ', households.street)`.as('address'),
       ] as TableColumnsType<'persons' | 'households'>[]);
 
-    console.log('options set');
-
     let query = this.getSelect(trx).innerJoin(
       'households',
       'persons.household_id',
