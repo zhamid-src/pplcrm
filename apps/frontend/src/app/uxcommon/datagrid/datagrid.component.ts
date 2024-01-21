@@ -411,8 +411,12 @@ export class DatagridComponent<T extends keyof Models, U> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected async refresh() {
     this.api!.showLoadingOverlay();
-
-    const rows = (await this.gridSvc.getAll()) as Partial<T>[];
+    let rows = [] as Partial<T>[];
+    try {
+      rows = (await this.gridSvc.getAll()) as Partial<T>[];
+    } catch {
+      this.alertSvc.showError('Could not load the data. Please try again later.');
+    }
 
     // Set the grid option because it works around Angular's
     // ValueChangedAterChecked error
