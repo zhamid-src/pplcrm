@@ -69,11 +69,14 @@
           <pc-form-input class="basis-1/2" type="tel" control="mobile" placeholder="Mobile Phone" />
           <pc-form-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
         </div>
-        <pc-input
-          placeholder="Enter the address"
-          [googlePlaces]="true"
-          (googlePlacesAddressChange)="handleAddressChange($event)"
-        />
+        <div class="text-sm pl-1">
+          Address: <span class="font-light">{{ addressString() }}</span>
+          <span
+            (click)="navigateToHousehold()"
+            class="link text-primary font-light hover:no-underline pl-2"
+            >Edit</span
+          >
+        </div>
         <pc-tags [(tags)]="this.tags" [enableAutoComplete]="true"></pc-tags>
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>

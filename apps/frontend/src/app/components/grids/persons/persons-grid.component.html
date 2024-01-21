@@ -14,8 +14,14 @@
     </p>
 
     <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-success" (click)="routeToHouseholds()">Yes</button>
-      <button class="btn">Cancel</button>
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
     </form>
   </div>
 </dialog>

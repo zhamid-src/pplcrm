@@ -3,8 +3,12 @@ import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { TagsRepository } from '../repositories/tags.repository';
 import { BaseController } from './base.controller';
+import { HouseholdsController } from './households.controller';
+import { PersonsController } from './persons.controller';
 
 export class TagsController extends BaseController<'tags', TagsRepository> {
+  private persons: PersonsController = new PersonsController();
+  private households: HouseholdsController = new HouseholdsController();
   constructor() {
     super(new TagsRepository());
   }
@@ -27,6 +31,14 @@ export class TagsController extends BaseController<'tags', TagsRepository> {
    */
   public findByName(name: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
     return this.find(name, 'name', auth.tenant_id);
+  }
+
+  public getByPersonId(id: bigint, auth: IAuthKeyPayload) {
+    return this.persons.getTags(id, auth.tenant_id);
+  }
+
+  public getByHouseholdId(id: bigint, auth: IAuthKeyPayload) {
+    return this.households.getTags(id, auth.tenant_id);
   }
 
   /**

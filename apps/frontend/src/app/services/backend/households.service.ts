@@ -21,7 +21,7 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return this.getAllWithPeopleCount();
   }
 
-  public getById(id: bigint) {
+  public getById(id: bigint | string) {
     return this.api.households.getById.query(id.toString());
   }
 

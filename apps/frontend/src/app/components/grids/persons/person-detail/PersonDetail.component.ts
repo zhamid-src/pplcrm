@@ -1,17 +1,18 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
+import { HouseholdsBackendService } from '@services/backend/households.service';
 import { PersonsBackendService } from '@services/backend/persons.service';
+import { TagsBackendService } from '@services/backend/tags.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
-import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
-import { Persons } from 'common/src/lib/kysely.models';
+import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-person-detail',
@@ -32,7 +33,6 @@ import { Persons } from 'common/src/lib/kysely.models';
 export class PersonDetailComponent implements OnInit {
   @Input() public mode: 'new' | 'edit' = 'edit';
 
-  protected addressVerified = false;
   protected form = this.fb.group({
     first_name: [''],
     middle_names: [''],
@@ -42,18 +42,6 @@ export class PersonDetailComponent implements OnInit {
     home_phone: [''],
     mobile: [''],
     notes: [''],
-    address: this.fb.group({
-      formatted_address: [''],
-      type: [''],
-      lat: [''],
-      lng: [''],
-      street_num: [''],
-      street: [''],
-      city: [''],
-      state: [''],
-      country: [''],
-      zip: [''],
-    }),
     metadata: this.fb.group({
       tenant_id: [''],
       createdby_id: [''],
@@ -70,8 +58,11 @@ export class PersonDetailComponent implements OnInit {
 
   constructor(
     private fb: FormBuilder,
+    private router: Router,
     private route: ActivatedRoute,
-    private persons: PersonsBackendService,
+    private personsSvc: PersonsBackendService,
+    private householdsSvc: HouseholdsBackendService,
+    private tagsSvc: TagsBackendService,
     private alertSvc: AlertService,
   ) {
     if (this.mode === 'edit') {
@@ -94,7 +85,7 @@ export class PersonDetailComponent implements OnInit {
     const data = this.form.getRawValue() as UpdatePersonsType;
 
     this.processing.set(true);
-    this.persons
+    this.personsSvc
       .update(this.id, data)
       .then(() => this.alertSvc.showSuccess('Person updated'))
       .catch((err) => this.alertSvc.showError(err))
@@ -104,39 +95,41 @@ export class PersonDetailComponent implements OnInit {
     const data = this.form.getRawValue() as UpdatePersonsType;
 
     this.processing.set(true);
-    this.persons
+    this.personsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Person added'))
       .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
 
-  public handleAddressChange(place: google.maps.places.PlaceResult) {
-    this.processing.set(true);
-    if (!place?.address_components?.length) {
-      this.alertSvc.showError('Please select the correct address from the list or leave it blank');
-      return;
+  protected navigateToHousehold() {
+    if (this.person?.household_id) {
+      this.router.navigate(['console', 'households', this.person.household_id]);
     }
-    // Save the address by creating the household or updating
-    const address = parseAddress(place);
-    this.addressVerified = true;
-    console.log(address);
-    this.processing.set(false);
   }
-
   private async loadPerson() {
     if (!this.id) {
       return;
     }
     this.processing.set(true);
 
-    this.person = (await this.persons.getById(this.id!)) as Persons;
+    this.person = (await this.personsSvc.getById(this.id!)) as Persons;
     console.log(this.person);
+    this.getAddressString();
+    this.getTags();
     this.refreshForm();
 
     this.processing.set(false);
   }
 
+  private async getTags() {
+    if (!this.person) {
+      return;
+    }
+    const tags = await this.tagsSvc.getByPersonId(this.id!);
+    this.tags = tags.map((tag: { name: string }) => tag.name);
+    console.log(this.tags);
+  }
   private refreshForm() {
     if (!this.person) {
       return;
@@ -154,5 +147,14 @@ export class PersonDetailComponent implements OnInit {
   protected getFormName() {
     return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')
       ?.value}  ${this.form.get('last_name')?.value}`;
+  }
+
+  protected addressString = signal<string | null>(null);
+
+  protected async getAddressString() {
+    if (this.person?.household_id) {
+      const address = (await this.householdsSvc.getById(this.person.household_id)) as AddressType;
+      this.addressString.set(address.formatted_address || null);
+    }
   }
 }

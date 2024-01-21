@@ -16,7 +16,7 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
    * @param trx
    * @returns
    */
-  public override async getAll(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {
+  public async getAllWithAddress(optionsIn?: QueryParams<TYPE>, trx?: Transaction<Models>) {
     const options = optionsIn || ({} as QueryParams<TYPE>);
 
     options!.columns =
@@ -52,13 +52,15 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
    *
    * @returns
    */
-  public getPersonsInHousehold(
+  public getByHouseholdId(
     household_id: bigint,
+    tenant_id: bigint,
     options?: QueryParams<TYPE>,
     trx?: Transaction<Models>,
   ) {
     return this.getSelectWithColumns(options, trx)
       .where('household_id', '=', household_id)
+      .where('tenant_id', '=', tenant_id)
       .execute();
   }
 }

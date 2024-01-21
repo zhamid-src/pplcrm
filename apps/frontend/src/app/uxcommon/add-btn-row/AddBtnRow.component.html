@@ -7,6 +7,7 @@
     @if (processing()) {
       <span class="loading loading-dots loading-lg text-primary"></span>
     } @else {
+      <pc-icon name="arrow-down-tray" />
       SAVE
     }
   </button>
@@ -25,5 +26,8 @@
     </button>
   }
 
-  <button class="btn btn-accent" (click)="cancel()" [disabled]="processing()">CANCEL</button>
+  <button class="btn btn-accent" (click)="cancel()" [disabled]="processing()">
+    <pc-icon name="x-circle" />
+    CANCEL
+  </button>
 </div>

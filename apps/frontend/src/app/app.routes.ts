@@ -5,8 +5,8 @@ import { NewPasswordComponent } from './auth/new-password/new-password.component
 import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
 import { SignInComponent } from './auth/signin/signin.component';
 import { SignUpComponent } from './auth/signup/signup.component';
+import { HouseholdDetailComponent } from './components/grids/households/household-detail/HouseholdDetail.component';
 import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
-import { ViewHouseholdComponent } from './components/grids/households/view-household/ViewHousehold.component';
 import { AddPersonComponent } from './components/grids/persons/add-person/add-person.component';
 import { PersonDetailComponent } from './components/grids/persons/person-detail/PersonDetail.component';
 import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
@@ -59,7 +59,7 @@ export const appRoutes: Route[] = [
           },
           {
             path: ':id',
-            component: ViewHouseholdComponent,
+            component: HouseholdDetailComponent,
           },
         ],
       },
