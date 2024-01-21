@@ -39,13 +39,8 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
       'households.id',
     );
 
-    console.log('created query');
     query = this.applyOptions(query, options);
-    console.log('applied options', options);
-    const r = await query.execute();
-    console.log('executed query');
-    console.log(r);
-    return r;
+    return await query.execute();
   }
 
   /**
