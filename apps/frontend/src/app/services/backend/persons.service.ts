@@ -24,19 +24,22 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.getAllWithHouseholds(options);
+    return this.getAllWithAddress(options);
   }
 
   public getById(id: bigint | string) {
     return this.api.persons.getById.query(id.toString());
+  }
+  public getByHouseholdId(id: bigint | string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id.toString(), options });
   }
 
   public async update(id: bigint | string, data: UpdatePersonsType) {
     return this.api.persons.update.mutate({ id: id.toString(), data });
   }
 
-  private getAllWithHouseholds(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithHouseholds.query(options, {
+  private getAllWithAddress(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithAddress.query(options, {
       signal: this.ac.signal,
     });
   }

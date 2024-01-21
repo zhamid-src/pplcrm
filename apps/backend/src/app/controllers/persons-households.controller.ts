@@ -1,4 +1,4 @@
-import { getAllOptionsType } from '@common';
+import { IAuthKeyPayload, getAllOptionsType } from '@common';
 import { QueryParams } from '../repositories/base.repository';
 import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
 import { BaseController } from './base.controller';
@@ -19,18 +19,23 @@ export class PersonsHouseholdsController extends BaseController<
    * @param options
    * @returns
    */
-  public override getAll(options?: getAllOptionsType) {
-    return this.getRepository().getAll(options as QueryParams<'persons' | 'households'>);
+  public getAllWithAddress(options?: getAllOptionsType) {
+    return this.getRepository().getAllWithAddress(options as QueryParams<'persons' | 'households'>);
   }
 
   /**
    * Get all the people in the given household
    *
    */
-  public getPersonsInHouseholds(
+  public getByHouseholdId(
     household_id: bigint,
-    options?: QueryParams<'persons' | 'households'>,
+    auth: IAuthKeyPayload,
+    options?: getAllOptionsType,
   ) {
-    return this.getRepository().getPersonsInHousehold(household_id, options);
+    return this.getRepository().getByHouseholdId(
+      household_id,
+      auth.tenant_id,
+      options as QueryParams<'persons' | 'households'>,
+    );
   }
 }

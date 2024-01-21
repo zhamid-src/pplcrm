@@ -31,6 +31,13 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     });
   }
 
+  public getByPersonId(id: bigint | string) {
+    return this.api.tags.getByPersonId.query(id.toString());
+  }
+  public getByHouseholdId(id: bigint | string) {
+    return this.api.tags.getbyHouseholdId.query(id.toString());
+  }
+
   public getById(id: bigint) {
     return this.api.tags.getById.query(id.toString());
   }

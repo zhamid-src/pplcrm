@@ -9,12 +9,18 @@ export const TagsRouter = router({
   getByName: authProcedure.input(z.string()).query(({ input }) => tags.getById(BigInt(input))),
   getById: authProcedure.input(z.string()).query(({ input }) => tags.getById(BigInt(input))),
   getAll: authProcedure.query(() => tags.getAll()),
-  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth)),
+  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth!)),
   delete: authProcedure.input(z.string()).mutation(({ input }) => tags.delete(BigInt(input))),
   update: authProcedure
     .input(z.object({ id: z.string(), data: UpdateTagObj }))
-    .mutation(({ input, ctx }) => tags.updateTag(BigInt(input.id), input.data, ctx.auth)),
+    .mutation(({ input, ctx }) => tags.updateTag(BigInt(input.id), input.data, ctx.auth!)),
   findByName: authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
+    .query(({ input, ctx }) => tags.findByName(input, ctx.auth!)),
+  getByPersonId: authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => tags.getByPersonId(BigInt(input), ctx.auth!)),
+  getbyHouseholdId: authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => tags.getByHouseholdId(BigInt(input), ctx.auth!)),
 });

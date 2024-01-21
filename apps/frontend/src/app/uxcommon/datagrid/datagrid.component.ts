@@ -322,7 +322,9 @@ export class DatagridComponent<T extends keyof Models, U> {
    * If a view is not disabled then go there to view the row.
    */
   public view() {
-    !this.disableView && this.router.navigate([this.lastRowHovered], { relativeTo: this.route });
+    if (this.lastRowHovered && !this.disableView) {
+      this.router.navigate([this.lastRowHovered], { relativeTo: this.route });
+    }
   }
 
   /**

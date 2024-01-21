@@ -1,3 +1,4 @@
+import { IAuthKeyPayload } from '@common';
 import { inferAsyncReturnType } from '@trpc/server';
 import { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
 import { createVerifier } from 'fast-jwt';
@@ -18,7 +19,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
     return { req, res, auth: null };
   }
 
-  let payload = null;
+  let payload: IAuthKeyPayload | null = null;
   const key = process.env['SHARED_SECRET'];
   try {
     const verifier = createVerifier({
@@ -27,7 +28,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
       clockTimestamp: Date.now(),
       ignoreExpiration: false,
     });
-    payload = await verifier(token);
+    payload = (await verifier(token)) as IAuthKeyPayload;
   } catch (e) {
     /* empty */
   }

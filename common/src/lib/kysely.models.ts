@@ -146,7 +146,7 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   notes: string | null;
 }
 
-interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
+export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
   campaign_id: bigint;
   createdby_id: bigint;
   file_id: bigint | null;
