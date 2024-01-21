@@ -29,15 +29,11 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
     {
-      field: 'street1',
-      headerName: 'Street',
+      field: 'address',
+      headerName: 'Address',
       cellClass: 'text-gray-500 cursor-auto',
     },
-    {
-      field: 'city',
-      headerName: 'City',
-      cellClass: 'text-gray-500 cursor-auto',
-    },
+
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 

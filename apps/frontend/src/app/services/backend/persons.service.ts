@@ -27,11 +27,11 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return this.getAllWithHouseholds(options);
   }
 
-  public getById(id: bigint) {
+  public getById(id: bigint | string) {
     return this.api.persons.getById.query(id.toString());
   }
 
-  public async update(id: bigint, data: UpdatePersonsType) {
+  public async update(id: bigint | string, data: UpdatePersonsType) {
     return this.api.persons.update.mutate({ id: id.toString(), data });
   }
 

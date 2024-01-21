@@ -1,5 +1,5 @@
 import { Models, TableColumnsType } from 'common/src/lib/kysely.models';
-import { Transaction } from 'kysely';
+import { Transaction, sql } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repository';
 
 type TYPE = 'persons' | 'households';
@@ -28,18 +28,24 @@ export class PersonsHouseholdsRepository extends BaseRepository<TYPE> {
         'persons.email',
         'persons.mobile',
         'persons.notes',
-        'households.street_num',
-        'households.street',
-        'households.city',
+        sql<string>`concat(households.street_num, ' ', households.street)`.as('address'),
       ] as TableColumnsType<'persons' | 'households'>[]);
+
+    console.log('options set');
 
     let query = this.getSelect(trx).innerJoin(
       'households',
       'persons.household_id',
       'households.id',
     );
+
+    console.log('created query');
     query = this.applyOptions(query, options);
-    return await query.execute();
+    console.log('applied options', options);
+    const r = await query.execute();
+    console.log('executed query');
+    console.log(r);
+    return r;
   }
 
   /**

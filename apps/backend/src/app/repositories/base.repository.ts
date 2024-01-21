@@ -239,6 +239,7 @@ export class BaseRepository<T extends keyof Models> {
     options?: QueryParams<T>,
   ) {
     query = options?.columns ? query.select(options.columns) : query.selectAll();
+    console.log('selected');
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
