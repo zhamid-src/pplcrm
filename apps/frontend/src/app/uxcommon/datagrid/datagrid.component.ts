@@ -130,7 +130,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    * by the parent component providing gridOptions.
    * @see gridOptions
    */
-  protected _initialGridOptions: GridOptions<Partial<T>> = {
+  protected defaultGridOptions: GridOptions<Partial<T>> = {
     context: this,
     rowStyle: { cursor: 'pointer' },
     undoRedoCellEditing: true,
@@ -184,18 +184,14 @@ export class DatagridComponent<T extends keyof Models, U> {
       suppressCellFlash: true,
     },
   ];
-  protected combinedGridOptions: GridOptions<Partial<T>> = {
-    ...this._initialGridOptions,
-    ...this.gridOptions,
-  };
   protected processing = false;
 
   constructor(
-    private router: Router,
+    protected router: Router,
     private route: ActivatedRoute,
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
-    private alertSvc: AlertService,
+    protected alertSvc: AlertService,
     protected gridSvc: AbstractBackendService<T, U>,
   ) {
     /**
@@ -266,6 +262,7 @@ export class DatagridComponent<T extends keyof Models, U> {
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
     this.api = params.api;
+    this.api.updateGridOptions(this.gridOptions);
     this.refresh();
   }
 

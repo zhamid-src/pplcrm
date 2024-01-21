@@ -3,4 +3,19 @@
   [disableDelete]="false"
   addRoute="add"
   [disableView]="false"
+  [gridOptions]="myGridOptions"
 ></pc-datagrid>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-success" (click)="routeToHouseholds()">Yes</button>
+      <button class="btn">Cancel</button>
+    </form>
+  </div>
+</dialog>

@@ -8,6 +8,7 @@ import { PersonsBackendService, TYPE } from '@services/backend/persons.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
+import { CellDoubleClickedEvent, GridOptions } from 'ag-grid-community';
 
 @Component({
   selector: 'pc-persons-grid',
@@ -37,6 +38,14 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  private addressChangeModalId: string | null = null;
+
+  /**
+   * Hook into the double click so we can open the address change modal
+   */
+  protected myGridOptions: GridOptions<Partial<TYPE>> = {
+    onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
+  };
   constructor(
     router: Router,
     route: ActivatedRoute,
@@ -46,5 +55,27 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     gridSvc: PersonsBackendService,
   ) {
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
+  }
+
+  protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
+    if (event.colDef.field === 'address') {
+      this.addressChangeModalId = event.data.id;
+      this.confirmAddressChange();
+    }
+  }
+
+  protected routeToHouseholds() {
+    if (this.addressChangeModalId !== null) {
+      this.router.navigate(['console', 'households', this.addressChangeModalId]);
+    }
+  }
+
+  /**
+   * Confirm if the user actually wants to change the address
+   *
+   */
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
   }
 }
