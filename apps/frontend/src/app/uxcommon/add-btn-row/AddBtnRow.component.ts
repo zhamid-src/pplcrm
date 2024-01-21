@@ -13,6 +13,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 export class AddBtnRowComponent implements OnInit {
   @Output() add = new EventEmitter();
   @Input({ required: true }) processing!: WritableSignal<boolean>;
+  @Input() buttonsToShow: 'two' | 'three' = 'three';
 
   protected form!: FormGroup;
   constructor(

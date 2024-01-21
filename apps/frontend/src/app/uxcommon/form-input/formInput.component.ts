@@ -33,20 +33,23 @@ export class FormInputComponent implements OnInit {
     this.form = this.rootFormGroup.control;
   }
 
-  public handleKeyup(event: KeyboardEvent) {
+  protected getControlValue() {
+    return this.form.get(this.control)?.value;
+  }
+
+  protected handleKeyup(event: KeyboardEvent) {
     // First make sure nothing is disallowed
     if (this.checkLastAddedChar(event?.key)) {
       return;
     }
-    this.inputValue = this.form.get(this.control)?.value;
-    this.valueChange?.emit(this.inputValue);
+    this.valueChange?.emit(this.getControlValue());
   }
 
   private checkLastAddedChar(char: string): boolean {
     if (char && this.disallowedChars.find((ch) => ch == char)) {
       this.alertSvc.showError(`Sorry, cannot add "${char}" here.`);
-      const newStr = (this.inputValue = this.form.get(this.control)?.value);
-      this.form.get(this.control)?.setValue(newStr.slice(0, -1));
+      const newStr = this.getControlValue();
+      newStr && this.form.get(this.control)?.setValue(newStr.slice(0, -1));
       return true;
     }
     return false;

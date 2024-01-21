@@ -7,6 +7,10 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 export type signInInputType = z.infer<typeof signInInputObj>;
 export type signUpInputType = z.infer<typeof signUpInputObj>;
 
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * The interface for the data that builds the authkey JWT token.
  * All fields are required

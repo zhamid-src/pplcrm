@@ -26,8 +26,8 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
     { field: 'person_count', headerName: 'People in household' },
-    { field: 'street1', headerName: 'Street' },
-    { field: 'street2', headerName: 'Street line 2' },
+    { field: 'street_num', headerName: 'Street' },
+    { field: 'street', headerName: 'Street line 2' },
     { field: 'city', headerName: 'City' },
     { field: 'state', headerName: 'State/Province' },
     { field: 'zip', headerName: 'Zip/Province' },

@@ -1,27 +1,29 @@
-<div class="flex flex-col sm:flex-row gap-2 sm:pr-3">
+<div class="flex flex-col sm:flex-row gap-2 sm:pr-3 justify-end">
   <button
-    class="btn btn-primary basis-1/3"
+    class="btn btn-primary"
     (click)="emitAdd()"
     [disabled]="processing() || form.invalid || !form.dirty"
   >
     @if (processing()) {
       <span class="loading loading-dots loading-lg text-primary"></span>
     } @else {
-      SAVE & GO BACK
+      SAVE
     }
   </button>
-  <button
-    class="btn btn-primary basis-1/3"
-    (click)="emitAdd(true)"
-    [disabled]="processing() || form.invalid || !form.dirty"
-  >
-    @if (processing()) {
-      <span class="loading loading-dots loading-lg text-primary"></span>
-    } @else {
-      SAVE & ADD ANOTHER
-    }
-  </button>
-  <button class="btn btn-accent basis-1/3" (click)="cancel()" [disabled]="processing()">
-    CANCEL
-  </button>
+
+  @if (buttonsToShow === 'three') {
+    <button
+      class="btn btn-primary"
+      (click)="emitAdd(true)"
+      [disabled]="processing() || form.invalid || !form.dirty"
+    >
+      @if (processing()) {
+        <span class="loading loading-dots loading-lg text-primary"></span>
+      } @else {
+        SAVE & ADD ANOTHER
+      }
+    </button>
+  }
+
+  <button class="btn btn-accent" (click)="cancel()" [disabled]="processing()">CANCEL</button>
 </div>

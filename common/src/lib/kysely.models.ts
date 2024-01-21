@@ -175,7 +175,7 @@ interface MapRolesUsers extends RecordType {
   user_id: bigint;
 }
 
-interface Persons extends Omit<RecordType, 'createdby_id'> {
+export interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: bigint;
   household_id: bigint;
   createdby_id: bigint;
