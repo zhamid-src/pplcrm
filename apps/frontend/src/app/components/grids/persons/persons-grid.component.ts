@@ -10,6 +10,7 @@ import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { CellDoubleClickedEvent, GridOptions } from 'ag-grid-community';
+import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
 @Component({
   selector: 'pc-persons-grid',
@@ -30,6 +31,12 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     { field: 'last_name', headerName: 'Last Name', editable: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      filter: false,
+      cellRenderer: TagsCellRendererComponent,
+    },
     {
       field: 'address',
       headerName: 'Address',
@@ -59,9 +66,12 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
   }
 
   protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
+    console.log(event.colDef.field);
     if (event.colDef.field === 'address') {
       this.addressChangeModalId = event.data.id;
       this.confirmAddressChange();
+    } else if (event.colDef.field === 'tags') {
+      this.openEdit(event.data.id);
     }
   }
 

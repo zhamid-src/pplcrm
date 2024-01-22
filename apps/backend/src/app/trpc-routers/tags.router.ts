@@ -17,10 +17,4 @@ export const TagsRouter = router({
   findByName: authProcedure
     .input(z.string())
     .query(({ input, ctx }) => tags.findByName(input, ctx.auth!)),
-  getByPersonId: authProcedure
-    .input(z.string())
-    .query(({ input, ctx }) => tags.getByPersonId(BigInt(input), ctx.auth!)),
-  getbyHouseholdId: authProcedure
-    .input(z.string())
-    .query(({ input, ctx }) => tags.getByHouseholdId(BigInt(input), ctx.auth!)),
 });

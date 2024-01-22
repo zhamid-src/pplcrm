@@ -143,7 +143,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     rowSelection: 'multiple',
     animateRows: true,
     autoSizeStrategy: {
-      type: 'fitGridWidth',
+      type: 'fitCellContents',
     },
     onCellValueChanged: this.onCellValueChanged.bind(this),
     onUndoStarted: this.onUndoStarted.bind(this),
@@ -239,7 +239,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     const payload = this.createPayload(row, key);
 
     this.processing = true;
-    const edited = await this.edit(row.id, payload);
+    const edited = await this.applyEdit(row.id, payload);
     if (!edited) {
       this.alertSvc.showError('Could not edit the row. Please try again later.');
       this.undo();
@@ -321,10 +321,20 @@ export class DatagridComponent<T extends keyof Models, U> {
   /**
    * If a view is not disabled then go there to view the row.
    */
-  public view() {
-    if (this.lastRowHovered && !this.disableView) {
-      this.router.navigate([this.lastRowHovered], { relativeTo: this.route });
+  public view(id?: string | bigint) {
+    // If an ID is explicitly given then we route to that ID
+    // But if it's not given then we route to the last hovered
+    // row provided that viewing isn't disabled
+    if (id || !this.disableView) {
+      const rowId = id || this.lastRowHovered;
+      if (rowId) {
+        this.router.navigate([rowId], { relativeTo: this.route });
+      }
     }
+  }
+
+  public openEdit(id: string | bigint) {
+    return this.view(id);
   }
 
   /**
@@ -391,7 +401,8 @@ export class DatagridComponent<T extends keyof Models, U> {
   /**
    * Apply the label filter and emit the filter event.
    */
-  protected filterByTag() {
+  protected filterByTag(tag: string) {
+    console.log(tag);
     this.filter.emit();
   }
 
@@ -407,6 +418,8 @@ export class DatagridComponent<T extends keyof Models, U> {
     return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
   }
 
+  protected distinctTags: string[] = [];
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected async refresh() {
     this.api!.showLoadingOverlay();
@@ -416,6 +429,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     } catch {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }
+    this.distinctTags = await this.gridSvc.getDistinctTags();
 
     // Set the grid option because it works around Angular's
     // ValueChangedAterChecked error
@@ -468,7 +482,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    * @param data
    * @returns Boolean indicating whether the edit was successful or not
    */
-  private async edit(id: bigint, data: Partial<T>): Promise<boolean> {
+  private async applyEdit(id: bigint, data: Partial<T>): Promise<boolean> {
     return this.gridSvc
       .update(id, data as U)
       .then(() => true)

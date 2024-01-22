@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
+import { Tags } from 'common/src/lib/kysely.models';
 import { AbstractBackendService } from './abstract.service';
 
 /**
@@ -31,15 +32,22 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     });
   }
 
-  public getByPersonId(id: bigint | string) {
-    return this.api.tags.getByPersonId.query(id.toString());
-  }
-  public getByHouseholdId(id: bigint | string) {
-    return this.api.tags.getbyHouseholdId.query(id.toString());
+  public getById(id: bigint | string) {
+    return this.api.tags.getById.query(id.toString());
   }
 
-  public getById(id: bigint) {
-    return this.api.tags.getById.query(id.toString());
+  public async getTags(id: bigint | string) {
+    const tag = (await this.getById(id)) as Tags;
+    return [tag.name];
+  }
+
+  /**
+   * For tags, this is the same as getAll.
+   * @returns
+   */
+  public async getDistinctTags() {
+    const tags = (await this.getAll()) as Tags[];
+    return tags.map((tag: Tags) => tag.name);
   }
 
   public update(id: bigint, data: UpdateTagType) {
