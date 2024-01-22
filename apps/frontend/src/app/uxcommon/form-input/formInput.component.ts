@@ -46,7 +46,7 @@ export class FormInputComponent implements OnInit {
   }
 
   private checkLastAddedChar(value: string): string {
-    const newValue = this.removeDisallowedChars(value);
+    const newValue = value && this.removeDisallowedChars(value);
     if (newValue !== value) {
       this.alertSvc.showError(
         `Sorry, you cannot use these character(s): ${this.disallowedChars.join(', ')}`,
@@ -58,7 +58,6 @@ export class FormInputComponent implements OnInit {
   protected handleBlur() {
     const value = this.getControlValue() || '';
     const changed = this.form.get(this.control)?.dirty || false;
-    this.form.get(this.control)?.markAsPristine();
     this.lostFocus.emit({ key: this.control, value, changed });
   }
 

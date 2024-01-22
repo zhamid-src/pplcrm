@@ -38,13 +38,10 @@ export class AddTagComponent {
     private alertSvc: AlertService,
   ) {}
 
-  public finishTag(tag: string) {
-    console.log(tag);
-  }
-
   protected async add() {
     this.processing.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
+    console.log(formObj);
     try {
       await this.tagSvc.add(formObj);
       this.alertSvc.showSuccess('Tag added successfully.');
