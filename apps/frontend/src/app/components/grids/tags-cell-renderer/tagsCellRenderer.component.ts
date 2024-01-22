@@ -37,7 +37,6 @@ export class TagsCellRendererComponent implements ICellRendererAngularComp {
     } else {
       this.tags = params.value;
     }
-    console.log(this.tags);
     return params.value;
   }
 }
