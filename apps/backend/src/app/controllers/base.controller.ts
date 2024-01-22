@@ -11,7 +11,10 @@ import {
 import { BaseRepository, QueryParams } from '../repositories/base.repository';
 
 /**
- * Base class for all controllers that provides basic CRUD operations.
+ * Base class for all controllers that provides basic CRUD operations. There is a controller for each
+ * "concept", eg: persons, households, tags, profiles, etc.  Each controller is responsible for a single
+ * table or a set of tables.  The controller is responsible for validating the input and output of the
+ * repository.  It also provides a common interface for all controllers.
  *
  * It makes adding new controllers easier for each table.
  *
