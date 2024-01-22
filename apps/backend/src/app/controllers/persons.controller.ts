@@ -1,15 +1,15 @@
 import { IAuthKeyPayload, getAllOptionsType } from '@common';
 import { QueryParams } from '../repositories/base.repository';
 import { PersonsHouseholdsTagsRepository } from '../repositories/persons-households-tags.repository';
+import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
 import { PersonsTagsRepository } from '../repositories/persons-tags-map.repository';
 import { PersonsRepository } from '../repositories/persons.repository';
 import { BaseController } from './base.controller';
-import { PersonsHouseholdsController } from './persons-households.controller';
 
 export class PersonsController extends BaseController<'persons', PersonsRepository> {
-  private personsHouseholdsController = new PersonsHouseholdsController();
   private personsTagsRepo = new PersonsTagsRepository();
   private personHouseholdTagsRepo = new PersonsHouseholdsTagsRepository();
+  private personHouseholdRepo = new PersonsHouseholdsRepository();
 
   constructor() {
     super(new PersonsRepository());
@@ -26,7 +26,11 @@ export class PersonsController extends BaseController<'persons', PersonsReposito
     auth: IAuthKeyPayload,
     options?: getAllOptionsType,
   ) {
-    return this.personsHouseholdsController.getByHouseholdId(household_id, auth, options);
+    return this.personHouseholdRepo.getByHouseholdId(
+      household_id,
+      auth.tenant_id,
+      options as QueryParams<'persons' | 'households'>,
+    );
   }
 
   public getDistinctTags(auth: IAuthKeyPayload) {
