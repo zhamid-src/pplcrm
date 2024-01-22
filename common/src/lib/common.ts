@@ -145,7 +145,7 @@ export const AddTagObj = z.object({
   /**
    * The optional field that describes the tag.
    */
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 });
 /**
  * The parameter for updating a tag.

@@ -142,15 +142,15 @@ export class PersonDetailComponent implements OnInit {
   }
 
   private update(data: Partial<UpdatePersonsType>) {
-    console.log(data);
     if (!this.id) {
       return;
     }
+    console.log(data);
 
     this.processing.set(true);
     this.personsSvc
       .update(this.id, data)
-      .then(() => this.alertSvc.showSuccess('Person updated'))
+      .then(() => this.alertSvc.showSuccess('Person updated successfully.'))
       .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
@@ -166,7 +166,6 @@ export class PersonDetailComponent implements OnInit {
   protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
     if (input.changed) {
       const row = { [input.key]: input.value };
-      console.log(row);
       this.update(row);
     }
   }
