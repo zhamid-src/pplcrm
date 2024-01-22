@@ -6,7 +6,6 @@ import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsBackendService } from '@services/backend/households.service';
 import { PersonsBackendService } from '@services/backend/persons.service';
-import { TagsBackendService } from '@services/backend/tags.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
@@ -33,6 +32,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
 export class PersonDetailComponent implements OnInit {
   @Input() public mode: 'new' | 'edit' = 'edit';
 
+  protected addressString = signal<string | null>(null);
   protected form = this.fb.group({
     first_name: [''],
     middle_names: [''],
@@ -62,7 +62,6 @@ export class PersonDetailComponent implements OnInit {
     private route: ActivatedRoute,
     private personsSvc: PersonsBackendService,
     private householdsSvc: HouseholdsBackendService,
-    private tagsSvc: TagsBackendService,
     private alertSvc: AlertService,
   ) {
     if (this.mode === 'edit') {
@@ -75,25 +74,37 @@ export class PersonDetailComponent implements OnInit {
   }
 
   public save() {
-    return this.id ? this.update() : this.add();
+    const data = this.form.getRawValue() as UpdatePersonsType;
+    return this.id ? this.update(data) : this.add(data);
   }
 
-  private update() {
-    if (!this.id) {
-      return;
+  protected async getAddressString() {
+    if (this.person?.household_id) {
+      const address = (await this.householdsSvc.getById(this.person.household_id)) as AddressType;
+      this.addressString.set(address.formatted_address || null);
     }
-    const data = this.form.getRawValue() as UpdatePersonsType;
-
-    this.processing.set(true);
-    this.personsSvc
-      .update(this.id, data)
-      .then(() => this.alertSvc.showSuccess('Person updated'))
-      .catch((err) => this.alertSvc.showError(err))
-      .finally(() => this.processing.set(false));
   }
-  private add() {
-    const data = this.form.getRawValue() as UpdatePersonsType;
 
+  protected getCreatedAt() {
+    return this.person?.created_at;
+  }
+
+  protected getFormName() {
+    return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')
+      ?.value}  ${this.form.get('last_name')?.value}`;
+  }
+
+  protected getUpdatedAt() {
+    return this.person?.updated_at;
+  }
+
+  protected navigateToHousehold() {
+    if (this.person?.household_id) {
+      this.router.navigate(['console', 'households', this.person.household_id]);
+    }
+  }
+
+  private add(data: UpdatePersonsType) {
     this.processing.set(true);
     this.personsSvc
       .add(data)
@@ -102,11 +113,13 @@ export class PersonDetailComponent implements OnInit {
       .finally(() => this.processing.set(false));
   }
 
-  protected navigateToHousehold() {
-    if (this.person?.household_id) {
-      this.router.navigate(['console', 'households', this.person.household_id]);
+  private async getTags() {
+    if (!this.person) {
+      return;
     }
+    this.tags = await this.personsSvc.getTags(this.id!);
   }
+
   private async loadPerson() {
     if (!this.id) {
       return;
@@ -114,7 +127,6 @@ export class PersonDetailComponent implements OnInit {
     this.processing.set(true);
 
     this.person = (await this.personsSvc.getById(this.id!)) as Persons;
-    console.log(this.person);
     this.getAddressString();
     this.getTags();
     this.refreshForm();
@@ -122,14 +134,6 @@ export class PersonDetailComponent implements OnInit {
     this.processing.set(false);
   }
 
-  private async getTags() {
-    if (!this.person) {
-      return;
-    }
-    const tags = await this.tagsSvc.getByPersonId(this.id!);
-    this.tags = tags.map((tag: { name: string }) => tag.name);
-    console.log(this.tags);
-  }
   private refreshForm() {
     if (!this.person) {
       return;
@@ -137,24 +141,33 @@ export class PersonDetailComponent implements OnInit {
     this.form.patchValue(this.person);
   }
 
-  protected getCreatedAt() {
-    return this.person?.created_at;
-  }
-  protected getUpdatedAt() {
-    return this.person?.updated_at;
+  private update(data: Partial<UpdatePersonsType>) {
+    console.log(data);
+    if (!this.id) {
+      return;
+    }
+
+    this.processing.set(true);
+    this.personsSvc
+      .update(this.id, data)
+      .then(() => this.alertSvc.showSuccess('Person updated'))
+      .catch((err) => this.alertSvc.showError(err))
+      .finally(() => this.processing.set(false));
   }
 
-  protected getFormName() {
-    return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')
-      ?.value}  ${this.form.get('last_name')?.value}`;
-  }
-
-  protected addressString = signal<string | null>(null);
-
-  protected async getAddressString() {
-    if (this.person?.household_id) {
-      const address = (await this.householdsSvc.getById(this.person.household_id)) as AddressType;
-      this.addressString.set(address.formatted_address || null);
+  /**
+   * Apply the edits the user did on the grid. This is done by calling the
+   * backend service to update the row in the database.
+   *
+   * @param id
+   * @param data
+   * @returns Boolean indicating whether the edit was successful or not
+   */
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      console.log(row);
+      this.update(row);
     }
   }
 }

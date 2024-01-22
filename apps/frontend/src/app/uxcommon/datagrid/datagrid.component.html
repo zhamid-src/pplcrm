@@ -65,16 +65,26 @@
       </a>
     </li>
 
-    <li
-      class="tooltip-accent"
-      [class.tooltip]="!disableFilter"
-      [class.disabled]="disableFilter"
-      (click)="!disableFilter && filterByTag()"
-      data-tip="Filter by tag"
-    >
-      <a>
-        <pc-icon name="tag"></pc-icon>
-      </a>
+    <li>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button">
+          <pc-icon name="tag"></pc-icon>
+        </div>
+
+        <!-- Menu -->
+        <ul
+          tabindex="0"
+          class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
+        >
+          @for (tag of distinctTags; track tag) {
+            <li>
+              <a (click)="filterByTag(tag)">
+                {{ tag }}
+              </a>
+            </li>
+          }
+        </ul>
+      </div>
     </li>
     <li>
       <div class="dropdown dropdown-end">

@@ -26,4 +26,8 @@ export const PersonsRouter = router({
     .mutation(({ input }) =>
       persons.update(BigInt(input.id), input.data as OperationDataType<'persons', 'update'>),
     ),
+  getTags: authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => persons.getTags(BigInt(input), ctx.auth!)),
+  getDistinctTags: authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth!)),
 });

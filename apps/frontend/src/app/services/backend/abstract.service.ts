@@ -48,7 +48,7 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    *
    * @param options
    */
-  public abstract getAll(options?: getAllOptionsType): Promise<T | unknown>;
+  public abstract getAll(options?: getAllOptionsType): Promise<T[] | unknown>;
   /**
    * Return the first row that matches the given ID. Typically the ID is the primary key,
    * so this should match only one row.
@@ -59,6 +59,8 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    * @param id - The id of the row to find
    */
   public abstract getById(id: bigint): Promise<Record<never, never> | undefined>;
+  public abstract getDistinctTags(): Promise<string[]>;
+  public abstract getTags(id: bigint | string): Promise<string[]>;
   /**
    * Update the row with the given ID with the given data.
    *

@@ -1,15 +1,21 @@
-<pc-input (keyup)="onKey($event)" [class.hidden]="readonly" [placeholder]="placeholder" />
-<ul
-  class="w-full rounded-none bordered card shadow-md text-gray-500 font-light"
-  [class.hidden]="matches.length === 0"
->
-  @for (match of matches; track match) {
-    <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="add(match)">{{ match }}</li>
-  }
-</ul>
+@if (!readonly) {
+  <pc-input (keyup)="onKey($event)" [placeholder]="placeholder" />
+}
+
+@if (matches.length) {
+  <ul class="w-full rounded-none bordered card shadow-md text-gray-500 font-light">
+    @for (match of matches; track match) {
+      <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="add(match)">{{ match }}</li>
+    }
+  </ul>
+}
+
 @if (tags.length) {
-  <div class="mt-2">
-    <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
+  <div class="contents" [class.mt-2]="!readonly">
+    @if (!readonly) {
+      <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
+    }
+
     @for (tag of tags; track tag) {
       <pc-tag
         class="mr-1"

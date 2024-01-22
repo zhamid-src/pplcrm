@@ -218,7 +218,7 @@ interface Sessions extends RecordType {
   user_agent: string;
 }
 
-interface Tags extends RecordType {
+export interface Tags extends RecordType {
   name: string;
   description: string | null;
 }

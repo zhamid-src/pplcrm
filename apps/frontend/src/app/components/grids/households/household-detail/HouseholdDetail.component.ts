@@ -5,7 +5,6 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsBackendService } from '@services/backend/households.service';
 import { PersonsBackendService } from '@services/backend/persons.service';
-import { TagsBackendService } from '@services/backend/tags.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
@@ -60,18 +59,16 @@ export class HouseholdDetailComponent implements OnInit {
   });
   protected household: Households | undefined;
   protected id: string | null = null;
-  protected processing = signal(false);
-  protected tags: string[] = [];
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   protected peopleInHousehold: any[] = [];
+  protected processing = signal(false);
+  protected tags: string[] = [];
 
   constructor(
     private fb: FormBuilder,
     private route: ActivatedRoute,
     private householdsSvc: HouseholdsBackendService,
     private personsSvc: PersonsBackendService,
-    private tagsSvc: TagsBackendService,
     private alertSvc: AlertService,
   ) {
     if (this.mode === 'edit') {
@@ -143,6 +140,14 @@ export class HouseholdDetailComponent implements OnInit {
     console.log(this.peopleInHousehold);
   }
 
+  private async getTags() {
+    if (!this.household) {
+      return;
+    }
+    this.tags = await this.householdsSvc.getTags(this.id!);
+    console.log(this.tags);
+  }
+
   private async loadHousehold() {
     if (!this.id) {
       return;
@@ -156,15 +161,6 @@ export class HouseholdDetailComponent implements OnInit {
     this.refreshForm();
 
     this.processing.set(false);
-  }
-
-  private async getTags() {
-    if (!this.household) {
-      return;
-    }
-    const tags = await this.tagsSvc.getByHouseholdId(this.id!);
-    this.tags = tags.map((tag: { name: string }) => tag.name);
-    console.log(this.tags);
   }
 
   private refreshForm() {

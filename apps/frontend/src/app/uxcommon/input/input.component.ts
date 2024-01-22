@@ -44,7 +44,6 @@ export class InputComponent {
     this.googlePlacesAddressChange?.emit(place);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public handleChange() {
     this.inputValue = '';
   }

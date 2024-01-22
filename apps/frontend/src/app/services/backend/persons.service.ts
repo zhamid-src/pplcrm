@@ -27,11 +27,22 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return this.getAllWithAddress(options);
   }
 
+  public getByHouseholdId(id: bigint | string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id.toString(), options });
+  }
+
   public getById(id: bigint | string) {
     return this.api.persons.getById.query(id.toString());
   }
-  public getByHouseholdId(id: bigint | string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id.toString(), options });
+
+  public async getDistinctTags() {
+    const tags = await this.api.persons.getDistinctTags.query();
+    return tags.map((tag) => tag.name);
+  }
+
+  public async getTags(id: bigint | string) {
+    const tags = await this.api.persons.getTags.query(id.toString());
+    return tags.map((tag) => tag.name);
   }
 
   public async update(id: bigint | string, data: UpdatePersonsType) {
