@@ -34,7 +34,6 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     {
       field: 'tags',
       headerName: 'Tags',
-      filter: false,
       cellRenderer: TagsCellRendererComponent,
       cellRendererParams: {
         type: 'persons',
@@ -71,7 +70,6 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
   }
 
   protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
-    console.log(event.colDef.field);
     if (event.colDef.field === 'address') {
       this.addressChangeModalId = event.data.id;
       this.confirmAddressChange();

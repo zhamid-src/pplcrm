@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export type AddTagType = z.infer<typeof AddTagObj>;
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
 export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
@@ -167,6 +168,16 @@ export const UpdatePersonsObj = z.object({
   last_name: z.string().optional(),
   home_phone: z.string().optional(),
   mobile: z.string().optional(),
+  notes: z.string().optional(),
+  json: z.string().optional(),
+});
+export const UpdateHouseholdsObj = z.object({
+  street_num: z.string().optional(),
+  street: z.string().optional(),
+  apt: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zip: z.string().optional(),
   notes: z.string().optional(),
   json: z.string().optional(),
 });

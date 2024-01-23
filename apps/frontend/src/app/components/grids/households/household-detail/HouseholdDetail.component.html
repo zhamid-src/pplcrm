@@ -64,7 +64,12 @@
           <pc-form-input class="basis-1/2" control="zip" placeholder="Zip / Postal Code" />
         </div>
         <div class="divider mb-1">ADDITIONAL</div>
-        <pc-tags [(tags)]="this.tags" [enableAutoComplete]="true"></pc-tags>
+        <pc-tags
+          [(tags)]="this.tags"
+          [enableAutoComplete]="true"
+          (tagAdded)="tagAdded($event)"
+          (tagRemoved)="tagRemoved($event)"
+        ></pc-tags>
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
         <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
