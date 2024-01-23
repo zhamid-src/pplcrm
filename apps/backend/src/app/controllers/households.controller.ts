@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { IAuthKeyPayload } from '@common';
-import { HouseholdRepo } from '../repositories/households.repository';
+import { HouseholdRepo } from '../repositories/households.repo';
 import { BaseController } from './base.controller';
 
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {

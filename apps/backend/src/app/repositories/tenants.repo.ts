@@ -1,4 +1,4 @@
-import { BaseRepository } from './base.repository';
+import { BaseRepository } from './base.repo';
 
 export class TenantsRepo extends BaseRepository<'tenants'> {
   constructor() {

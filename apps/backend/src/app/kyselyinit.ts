@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { BaseRepository } from './repositories/base.repository';
+import { BaseRepository } from './repositories/base.repo';
 
 // import configs from env via dotenv
 config();

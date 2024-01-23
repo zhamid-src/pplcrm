@@ -1,6 +1,6 @@
 import { Models } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
-import { BaseRepository } from './base.repository';
+import { BaseRepository } from './base.repo';
 
 export class HouseholdRepo extends BaseRepository<'households'> {
   constructor() {

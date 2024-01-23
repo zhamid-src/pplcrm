@@ -1,6 +1,6 @@
 import { Models, TableColumnsType } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
-import { BaseRepository, QueryParams } from './base.repository';
+import { BaseRepository, QueryParams } from './base.repo';
 
 export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {

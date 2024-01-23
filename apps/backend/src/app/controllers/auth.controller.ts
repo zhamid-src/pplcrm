@@ -13,9 +13,9 @@ import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
 import { AuthUsersRepo } from '../repositories/authusers.repo';
-import { SessionsRepo } from '../repositories/sessions.repository';
-import { TenantsRepo } from '../repositories/tenants.repository';
-import { UserPofiles } from '../repositories/userprofiles.repository';
+import { SessionsRepo } from '../repositories/sessions.repo';
+import { TenantsRepo } from '../repositories/tenants.repo';
+import { UserPofiles } from '../repositories/userprofiles.repo';
 import { BaseController } from './base.controller';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {

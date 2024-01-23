@@ -1,6 +1,6 @@
 import { SelectExpression, Transaction, sql } from 'kysely';
 import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from './base.repository';
+import { BaseRepository, QueryParams } from './base.repo';
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 

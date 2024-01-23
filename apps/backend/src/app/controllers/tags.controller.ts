@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 import { OperationDataType } from 'common/src/lib/kysely.models';
-import { TagsRepo } from '../repositories/tags.repository';
+import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
 
 export class TagsController extends BaseController<'tags', TagsRepo> {

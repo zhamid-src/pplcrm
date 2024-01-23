@@ -1,6 +1,6 @@
 import { Models } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
-import { BaseRepository, QueryParams } from './base.repository';
+import { BaseRepository, QueryParams } from './base.repo';
 
 export class UserPofiles extends BaseRepository<'profiles'> {
   constructor() {
