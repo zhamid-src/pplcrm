@@ -1,20 +1,15 @@
 import { IAuthKeyPayload, getAllOptionsType } from '@common';
 import { QueryParams } from '../repositories/base.repository';
-import { PersonsHouseholdsTagsRepository } from '../repositories/persons-households-tags.repository';
-import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
 import { PersonsRepo } from '../repositories/persons.repository';
 import { BaseController } from './base.controller';
 
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
-  private personHouseholdTagsRepo = new PersonsHouseholdsTagsRepository();
-  private personHouseholdRepo = new PersonsHouseholdsRepository();
-
   constructor() {
     super(new PersonsRepo());
   }
 
   public getAllWithAddress(options?: getAllOptionsType) {
-    return this.personHouseholdTagsRepo.getAllWithAddress(
+    return this.getRepo().getAllWithAddress(
       options as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
     );
   }
@@ -24,10 +19,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     auth: IAuthKeyPayload,
     options?: getAllOptionsType,
   ) {
-    return this.personHouseholdRepo.getByHouseholdId(
+    return this.getRepo().getByHouseholdId(
       household_id,
       auth.tenant_id,
-      options as QueryParams<'persons' | 'households'>,
+      options as QueryParams<'persons'>,
     );
   }
 
