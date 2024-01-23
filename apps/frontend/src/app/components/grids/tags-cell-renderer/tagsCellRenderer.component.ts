@@ -22,13 +22,8 @@ export class TagsCellRendererComponent implements ICellRendererAngularComp {
 
   // gets called whenever the user gets the cell to refresh
   refresh(params: ICellRendererParams) {
-    // set value into cell again
     this.cellValue = this.getValueToDisplay(params);
     return true;
-  }
-
-  buttonClicked() {
-    alert(`${this.cellValue} medals won!`);
   }
 
   getValueToDisplay(params: ICellRendererParams) {
