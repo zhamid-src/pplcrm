@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { UserPofiles } from '../repositories/userprofiles.repository';
+import { UserPofiles } from '../repositories/userprofiles.repo';
 import { BaseController } from './base.controller';
 
 export class UserProfilesController extends BaseController<'profiles', UserPofiles> {

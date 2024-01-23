@@ -1,4 +1,4 @@
-import { BaseRepository } from './base.repository';
+import { BaseRepository } from './base.repo';
 
 export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
   constructor() {

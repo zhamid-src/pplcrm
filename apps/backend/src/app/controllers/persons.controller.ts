@@ -1,10 +1,10 @@
 import { IAuthKeyPayload, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 import { OperationDataType } from 'common/src/lib/kysely.models';
-import { QueryParams } from '../repositories/base.repository';
+import { QueryParams } from '../repositories/base.repo';
 import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repository';
-import { TagsRepo } from '../repositories/tags.repository';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
 
 export class PersonsController extends BaseController<'persons', PersonsRepo> {

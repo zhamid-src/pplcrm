@@ -8,7 +8,7 @@ import {
   TableIdType,
   TablesOperationMap,
 } from '../../../../../common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from '../repositories/base.repository';
+import { BaseRepository, QueryParams } from '../repositories/base.repo';
 
 /**
  * Base class for all controllers that provides basic CRUD operations. There is a controller for each
