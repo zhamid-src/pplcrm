@@ -50,6 +50,16 @@ export class TagsComponent {
   @Output() public tagsChange = new EventEmitter<string[]>();
 
   /**
+   * If the user adds a new tag then this event is emitted with the new tag.
+   */
+  @Output() public tagAdded = new EventEmitter<string>();
+
+  /**
+   * If the user removes a tag then this event is emitted with the tag that was removed.
+   */
+  @Output() public tagRemoved = new EventEmitter<string>();
+
+  /**
    * Used by autocomplete to show the list of matches.
    */
   protected matches: string[] = [];
@@ -65,7 +75,8 @@ export class TagsComponent {
     const tag = rawTag.trim();
     if (tag.length > 0 && !this.tags.includes(tag)) {
       this.tags.unshift(tag);
-      this.tagsChange && this.tagsChange.emit(this.tags);
+      this.tagsChange.emit(this.tags);
+      this.tagAdded.emit(tag);
     }
     this.matches = [];
   }
@@ -78,7 +89,7 @@ export class TagsComponent {
    * @param tag - the tag that was clicked
    */
   protected clicked(tag: string) {
-    this.tagClicked && this.tagClicked.emit(tag);
+    this.tagClicked.emit(tag);
   }
 
   /**
@@ -109,8 +120,6 @@ export class TagsComponent {
       }
       this.add(value);
       target.value = '';
-    } else {
-      this.autoComplete(value);
     }
   }
 
@@ -124,6 +133,7 @@ export class TagsComponent {
     if (index > -1) {
       this.tags.splice(index, 1);
       this.tagsChange.emit(this.tags);
+      this.tagRemoved.emit(tag);
     }
   }
 
@@ -133,7 +143,7 @@ export class TagsComponent {
    * @param key - the key to match
    * @returns
    */
-  private async autoComplete(key: string) {
+  protected async autoComplete(key: string) {
     if (!this.enableAutoComplete) {
       return;
     }

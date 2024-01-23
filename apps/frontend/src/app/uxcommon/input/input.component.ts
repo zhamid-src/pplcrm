@@ -3,10 +3,11 @@ import {
   NgxGpAutocompleteOptions,
 } from '@angular-magic/ngx-gp-autocomplete';
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { AfterViewInit, Component, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import { FormsModule, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'pc-input',
@@ -21,7 +22,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   templateUrl: './input.component.html',
   styleUrl: './input.component.scss',
 })
-export class InputComponent {
+export class InputComponent implements AfterViewInit {
   @Input() public disabled: boolean = false;
   @Input() public googlePlaces: boolean = false;
   @Output() public googlePlacesAddressChange = new EventEmitter<google.maps.places.PlaceResult>();
@@ -38,7 +39,18 @@ export class InputComponent {
     types: ['geocode'],
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  @ViewChild('input') public input: NgModel | undefined;
   constructor() {}
+
+  ngAfterViewInit() {
+    if (!this.input) {
+      return;
+    }
+    this.input?.valueChanges?.pipe(debounceTime(250), distinctUntilChanged()).subscribe((value) => {
+      this.handleKeyup(value);
+    });
+  }
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
     this.googlePlacesAddressChange?.emit(place);
@@ -48,7 +60,8 @@ export class InputComponent {
     this.inputValue = '';
   }
 
-  public handleKeyup() {
-    this.valueChange?.emit(this.inputValue);
+  public handleKeyup(value: string) {
+    console.log('key up', value);
+    this.valueChange?.emit(value);
   }
 }

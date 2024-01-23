@@ -49,7 +49,6 @@ export class PersonDetailComponent implements OnInit {
       created_at: [''],
       updated_at: [''],
     }),
-    tags: [[]],
   });
   protected id: string | null = null;
   protected person: Persons | undefined;
@@ -118,6 +117,14 @@ export class PersonDetailComponent implements OnInit {
       return;
     }
     this.tags = await this.personsSvc.getTags(this.id!);
+  }
+
+  protected tagAdded(tag: string) {
+    console.log(tag);
+  }
+
+  protected tagRemoved(tag: string) {
+    console.log(tag);
   }
 
   private async loadPerson() {
