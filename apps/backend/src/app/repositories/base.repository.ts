@@ -56,7 +56,8 @@ const dialect = new PostgresDialect({
 
 /**
  * The base operator class that implements regular db functions.
- * Other tables should extend this class.
+ * Other tables should extend this class. There is generally a
+ * one to one mapping between dB table and repository class.
  *
  * @example - the followng class will enable all CRUD operations for the persons table:
  *
