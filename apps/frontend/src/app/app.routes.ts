@@ -58,6 +58,10 @@ export const appRoutes: Route[] = [
             data: { shouldReuse: true, key: 'householdsgridroot' },
           },
           {
+            path: 'add',
+            component: HouseholdDetailComponent,
+          },
+          {
             path: ':id',
             component: HouseholdDetailComponent,
           },

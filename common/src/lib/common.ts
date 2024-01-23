@@ -172,6 +172,7 @@ export const UpdatePersonsObj = z.object({
   json: z.string().optional(),
 });
 export const UpdateHouseholdsObj = z.object({
+  home_phone: z.string().optional(),
   street_num: z.string().optional(),
   street: z.string().optional(),
   apt: z.string().optional(),

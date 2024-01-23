@@ -13,46 +13,41 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   styleUrl: './AddBtnRow.component.scss',
 })
 export class AddBtnRowComponent implements OnInit {
-  @Output() btn1Clicked = new EventEmitter();
-  @Input({ required: true }) processing!: WritableSignal<boolean>;
-  @Input() buttonsToShow: 'two' | 'three' = 'three';
-
-  @Input() btn1Text = 'SAVE';
-  @Input() btn1Icon: IconName = 'arrow-down-tray';
-  @Input() btn2Text = 'SAVE & ADD MORE';
+  @Output() public btn1Clicked = new EventEmitter();
+  @Input() public btn1Icon: IconName = 'arrow-down-tray';
+  @Input() public btn1Text = 'SAVE';
+  @Input() public btn2Text = 'SAVE & ADD MORE';
+  @Input() public buttonsToShow: 'two' | 'three' = 'three';
+  @Input({ required: true }) public processing!: WritableSignal<boolean>;
 
   protected form!: FormGroup;
+
+  private stay = false;
+
   constructor(
     private rootFormGroup: FormGroupDirective,
     private router: Router,
     private route: ActivatedRoute,
   ) {}
-  private stay = false;
-  ngOnInit() {
+
+  public ngOnInit() {
     this.form = this.rootFormGroup.control;
   }
 
-  cancel() {
+  public cancel() {
     this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  stayOrCancel() {
-    console.log(this.form.controls);
-    if (this.stay) {
-      this.form.reset();
-      console.log('reset');
-    } else {
-      this.cancel();
-    }
-  }
-
-  handleBtn1Clicked() {
-    console.log('clicked');
+  public handleBtn1Clicked() {
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
-  handleBtn2Clicked() {
+  public handleBtn2Clicked() {
     this.stay = true;
     this.handleBtn1Clicked();
+  }
+
+  public stayOrCancel() {
+    this.stay ? this.form.reset() : this.cancel();
   }
 }
