@@ -2,12 +2,10 @@ import { IAuthKeyPayload, getAllOptionsType } from '@common';
 import { QueryParams } from '../repositories/base.repository';
 import { PersonsHouseholdsTagsRepository } from '../repositories/persons-households-tags.repository';
 import { PersonsHouseholdsRepository } from '../repositories/persons-households.repository';
-import { PersonsTagsRepository } from '../repositories/persons-tags-map.repository';
 import { PersonsRepository } from '../repositories/persons.repository';
 import { BaseController } from './base.controller';
 
 export class PersonsController extends BaseController<'persons', PersonsRepository> {
-  private personsTagsRepo = new PersonsTagsRepository();
   private personHouseholdTagsRepo = new PersonsHouseholdsTagsRepository();
   private personHouseholdRepo = new PersonsHouseholdsRepository();
 
