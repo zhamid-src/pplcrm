@@ -49,7 +49,7 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     { field: 'home_phone', headerName: 'Home phone', editable: true },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-  protected myGridOptions: GridOptions<Partial<'households'>> = {
+  protected myGridOptions: GridOptions = {
     onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
   };
 

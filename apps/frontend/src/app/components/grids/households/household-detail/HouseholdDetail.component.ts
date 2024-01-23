@@ -81,6 +81,7 @@ export class HouseholdDetailComponent implements OnInit {
   ) {
     if (this.mode === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
+      console.log(this.id);
     }
   }
 
@@ -97,6 +98,7 @@ export class HouseholdDetailComponent implements OnInit {
     // Save the address by creating the household or updating
     const address = parseAddress(place);
     this.form.patchValue(address);
+    this.form.markAsDirty();
     this.addressVerified = true;
     console.log(address);
     this.processing.set(false);
@@ -125,7 +127,10 @@ export class HouseholdDetailComponent implements OnInit {
     return this.household?.updated_at;
   }
 
-  protected save() {}
+  protected save() {
+    const data = this.form.getRawValue() as UpdateHouseholdsType;
+    return this.id ? this.update(data) : this.add(data);
+  }
 
   protected tagAdded(tag: string) {
     this.householdsSvc.addTag(this.id!, tag);
@@ -175,7 +180,6 @@ export class HouseholdDetailComponent implements OnInit {
     this.processing.set(true);
 
     this.household = (await this.householdsSvc.getById(this.id!)) as Households;
-    console.log(this.household);
     this.getTags();
     this.getPeopleInHousehold();
     this.refreshForm();
@@ -198,7 +202,10 @@ export class HouseholdDetailComponent implements OnInit {
     this.processing.set(true);
     this.householdsSvc
       .update(this.id, data)
-      .then(() => this.alertSvc.showSuccess('Household updated successfully.'))
+      .then(() => {
+        this.alertSvc.showSuccess('Household updated successfully.');
+        this.form.markAsPristine();
+      })
       .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }

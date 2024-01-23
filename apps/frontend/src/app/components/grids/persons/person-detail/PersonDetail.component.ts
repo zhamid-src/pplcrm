@@ -77,6 +77,21 @@ export class PersonDetailComponent implements OnInit {
     return this.id ? this.update(data) : this.add(data);
   }
 
+  /**
+   * Apply the edits the user did on the grid. This is done by calling the
+   * backend service to update the row in the database.
+   *
+   * @param id
+   * @param data
+   * @returns Boolean indicating whether the edit was successful or not
+   */
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
   protected async getAddressString() {
     if (this.person?.household_id) {
       const address = (await this.householdsSvc.getById(this.person.household_id)) as AddressType;
@@ -103,6 +118,14 @@ export class PersonDetailComponent implements OnInit {
     }
   }
 
+  protected tagAdded(tag: string) {
+    this.personsSvc.addTag(this.id!, tag);
+  }
+
+  protected tagRemoved(tag: string) {
+    this.personsSvc.removeTag(this.id!, tag);
+  }
+
   private add(data: UpdatePersonsType) {
     this.processing.set(true);
     this.personsSvc
@@ -117,14 +140,6 @@ export class PersonDetailComponent implements OnInit {
       return;
     }
     this.tags = await this.personsSvc.getTags(this.id!);
-  }
-
-  protected tagAdded(tag: string) {
-    this.personsSvc.addTag(this.id!, tag);
-  }
-
-  protected tagRemoved(tag: string) {
-    this.personsSvc.removeTag(this.id!, tag);
   }
 
   private async loadPerson() {
@@ -156,23 +171,11 @@ export class PersonDetailComponent implements OnInit {
     this.processing.set(true);
     this.personsSvc
       .update(this.id, data)
-      .then(() => this.alertSvc.showSuccess('Person updated successfully.'))
+      .then(() => {
+        this.alertSvc.showSuccess('Person updated successfully.');
+        this.form.markAsPristine();
+      })
       .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.processing.set(false));
-  }
-
-  /**
-   * Apply the edits the user did on the grid. This is done by calling the
-   * backend service to update the row in the database.
-   *
-   * @param id
-   * @param data
-   * @returns Boolean indicating whether the edit was successful or not
-   */
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
-    }
   }
 }
