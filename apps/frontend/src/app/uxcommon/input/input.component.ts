@@ -28,6 +28,7 @@ export class InputComponent implements AfterViewInit {
   @Output() public googlePlacesAddressChange = new EventEmitter<google.maps.places.PlaceResult>();
   @Input() public icon: IconName | null = null;
   @Input() public placeholder: string = '';
+  @Input() public debounceTime: number = 250;
   @Input() public type: string = 'text';
   @Output() public valueChange = new EventEmitter<string>();
 
@@ -47,9 +48,11 @@ export class InputComponent implements AfterViewInit {
     if (!this.input) {
       return;
     }
-    this.input?.valueChanges?.pipe(debounceTime(250), distinctUntilChanged()).subscribe((value) => {
-      this.handleKeyup(value);
-    });
+    this.input?.valueChanges
+      ?.pipe(debounceTime(this.debounceTime), distinctUntilChanged())
+      .subscribe((value) => {
+        this.handleKeyup(value);
+      });
   }
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
@@ -61,7 +64,6 @@ export class InputComponent implements AfterViewInit {
   }
 
   public handleKeyup(value: string) {
-    console.log('key up', value);
     this.valueChange?.emit(value);
   }
 }
