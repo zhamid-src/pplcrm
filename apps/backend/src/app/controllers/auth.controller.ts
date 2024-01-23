@@ -12,26 +12,26 @@ import {
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
-import { AuthUsersRepository } from '../repositories/auth-user.repository';
-import { SessionsRepository } from '../repositories/sessions.repository';
-import { TenantsRepository } from '../repositories/tenants.repository';
-import { UserPofilesRepository } from '../repositories/user-profiles.repository';
+import { AuthUsersRepo } from '../repositories/authusers.repo';
+import { SessionsRepo } from '../repositories/sessions.repository';
+import { TenantsRepo } from '../repositories/tenants.repository';
+import { UserPofiles } from '../repositories/user-profiles.repository';
 import { BaseController } from './base.controller';
 
-export class AuthController extends BaseController<'authusers', AuthUsersRepository> {
-  private profiles: UserPofilesRepository = new UserPofilesRepository();
-  private sessions: SessionsRepository = new SessionsRepository();
-  private tenants: TenantsRepository = new TenantsRepository();
+export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
+  private profiles: UserPofiles = new UserPofiles();
+  private sessions: SessionsRepo = new SessionsRepo();
+  private tenants: TenantsRepo = new TenantsRepo();
 
   constructor() {
-    super(new AuthUsersRepository());
+    super(new AuthUsersRepo());
   }
 
   public async currentUser(auth: IAuthKeyPayload) {
     if (!auth?.user_id) {
       return null;
     }
-    const user = await this.getRepository()
+    const user = await this.getRepo()
       .getById(auth.user_id, {
         columns: ['id', 'email', 'first_name'],
       })
@@ -64,7 +64,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       });
     }
 
-    const result = await this.getRepository().updatePassword(password, code);
+    const result = await this.getRepo().updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
       throw new TRPCError({
         message: 'Wrong code, please try again',
@@ -75,7 +75,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
 
   public async sendPasswordResetEmail(email: string) {
     const user = await this.getUserByEmail(email);
-    const code = this.getRepository().addPasswordResetCode(user.id);
+    const code = this.getRepo().addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -226,7 +226,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       first_name: input.first_name,
       verified: false,
     } as OperationDataType<'authusers', 'insert'>;
-    const user = await this.getRepository().add(row, trx);
+    const user = await this.getRepo().add(row, trx);
 
     if (!user) {
       throw new TRPCError({
@@ -238,7 +238,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async getCodeAge(code: string): Promise<number> {
-    const nowData: QueryResult<INow> = await this.getRepository().nowTime();
+    const nowData: QueryResult<INow> = await this.getRepo().nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -246,7 +246,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
       });
     }
 
-    const data: Partial<AuthUsersType> = await this.getRepository().getPasswordResetCodeTime(code);
+    const data: Partial<AuthUsersType> = await this.getRepo().getPasswordResetCodeTime(code);
     const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
     const then = new Date(thenTimestamp);
 
@@ -256,7 +256,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async getUserByEmail(email: string) {
-    const user = (await this.getRepository().findOneByEmail(email)) as AuthUsersType;
+    const user = (await this.getRepo().findOneByEmail(email)) as AuthUsersType;
 
     if (!user) {
       throw new TRPCError({
@@ -294,7 +294,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersReposit
   }
 
   private async verifyUserDoesNotExist(email: string) {
-    const exists = await this.getRepository().existsByEmail(email);
+    const exists = await this.getRepo().existsByEmail(email);
     if (exists) {
       throw new TRPCError({
         message: 'This email already exists. Did you want to sign in?',

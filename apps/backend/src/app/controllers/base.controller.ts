@@ -117,7 +117,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   /**
    * @returns The operator used by the controller
    */
-  protected getRepository() {
+  protected getRepo() {
     return this.repo;
   }
 }

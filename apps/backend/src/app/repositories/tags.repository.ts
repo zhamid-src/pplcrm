@@ -2,7 +2,7 @@ import { Models, TableIdType } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repository';
 
-export class TagsRepository extends BaseRepository<'tags'> {
+export class TagsRepo extends BaseRepository<'tags'> {
   constructor() {
     super('tags');
   }
