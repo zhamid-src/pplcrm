@@ -98,12 +98,36 @@ export class BaseRepository<T extends keyof Models> {
     return this.getInsert(trx).values(rows).returningAll().execute();
   }
 
+  public async addOrGet(
+    row: OperationDataType<T, 'insert'>,
+    onConflictColumn: { [X in T]: keyof Models[T] }[T] & string,
+    trx?: Transaction<Models>,
+  ) {
+    const insertResult = await this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) => oc.column(onConflictColumn).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) {
+      return insertResult;
+    } else {
+      const lhs = onConflictColumn as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+      const selectResult = await this.getSelect(trx)
+        .selectAll()
+        .where(lhs, '=', row['name'])
+        .executeTakeFirst();
+      return selectResult;
+    }
+  }
+
   /**
    * Add the given row to the table.
    *
    * @returns - newly added row
    */
   public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+    console.log('>>>>', row);
     return this.getInsert(trx).values(row).returningAll().executeTakeFirst();
   }
 

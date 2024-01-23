@@ -121,6 +121,7 @@ export class PersonDetailComponent implements OnInit {
 
   protected tagAdded(tag: string) {
     console.log(tag);
+    this.personsSvc.addTag(this.id!, tag);
   }
 
   protected tagRemoved(tag: string) {

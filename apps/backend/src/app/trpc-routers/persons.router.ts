@@ -4,22 +4,42 @@ import { z } from 'zod';
 import { authProcedure, router } from '../../trpc';
 import { PersonsController } from '../controllers/persons.controller';
 
-const persons = new PersonsController();
+function add() {
+  return authProcedure
+    .input(UpdatePersonsObj)
+    .mutation(({ input }) => persons.add(input as OperationDataType<'persons', 'insert'>));
+}
 
-/**
- * Persons endpoints
- */
-export const PersonsRouter = router({
-  add: add(),
-  getAll: getAll(),
-  delete: deletePerson(),
-  update: update(),
-  getTags: getTags(),
-  getById: getById(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getAllWithAddress: getAllWithAddress(),
-});
+function addTag() {
+  return authProcedure
+    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .mutation(({ input, ctx }) => persons.addTag(BigInt(input.id), input.tag_name, ctx.auth!));
+}
+
+function deletePerson() {
+  return authProcedure.input(z.string()).mutation(({ input }) => persons.delete(BigInt(input)));
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input }) => persons.getAll(input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input }) => persons.getAllWithAddress(input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: z.string(), options: getAllOptions }))
+    .query(({ input, ctx }) =>
+      persons.getByHouseholdId(BigInt(input.id), ctx.auth!, input.options),
+    );
+}
+
+function getById() {
+  return authProcedure.input(z.string()).query(({ input }) => persons.getById(BigInt(input)));
+}
+
 function getDistinctTags() {
   return authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth!));
 }
@@ -38,32 +58,19 @@ function update() {
     );
 }
 
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input }) => persons.getAllWithAddress(input));
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input }) => persons.getAll(input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: z.string(), options: getAllOptions }))
-    .query(({ input, ctx }) =>
-      persons.getByHouseholdId(BigInt(input.id), ctx.auth!, input.options),
-    );
-}
-
-function getById() {
-  return authProcedure.input(z.string()).query(({ input }) => persons.getById(BigInt(input)));
-}
-
-function deletePerson() {
-  return authProcedure.input(z.string()).mutation(({ input }) => persons.delete(BigInt(input)));
-}
-
-function add() {
-  return authProcedure
-    .input(UpdatePersonsObj)
-    .mutation(({ input }) => persons.add(input as OperationDataType<'persons', 'insert'>));
-}
+const persons = new PersonsController();
+/**
+ * Persons endpoints
+ */
+export const PersonsRouter = router({
+  add: add(),
+  getAll: getAll(),
+  delete: deletePerson(),
+  update: update(),
+  addTag: addTag(),
+  getTags: getTags(),
+  getById: getById(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getAllWithAddress: getAllWithAddress(),
+});
