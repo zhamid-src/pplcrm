@@ -26,7 +26,7 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * Given the key, return the first three tags that match the key.
    */
   public findByName(name: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
-    return this.find(name, 'name', auth.tenant_id);
+    return this.find(auth.tenant_id, name, 'name');
   }
 
   /**
@@ -34,6 +34,6 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    */
   public updateTag(id: string, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id } as OperationDataType<'tags', 'insert'>;
-    return this.update(id, payload);
+    return this.update(auth.tenant_id, id, payload);
   }
 }

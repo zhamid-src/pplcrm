@@ -41,8 +41,8 @@ export class HouseholdsController extends BaseController<'households', Household
   /**
    * @returns All households with the number of people in each household
    */
-  public getAllWithPeopleCount() {
-    return this.getRepo().getAllWithPeopleCount();
+  public getAllWithPeopleCount(auth: IAuthKeyPayload) {
+    return this.getRepo().getAllWithPeopleCount(auth.tenant_id);
   }
 
   public getDistinctTags(auth: IAuthKeyPayload) {
@@ -58,12 +58,12 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param household_id of the household
    * @param tag_name - name of the tag to remove
    */
-  public async removeTag(household_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName(tag_name);
+  public async removeTag(tenant_id: string, household_id: string, tag_name: string) {
+    const tag = await this.tagsRepo.getIdByName(tenant_id, tag_name);
     if (tag?.id) {
-      const mapId = await this.mapHouseholdsTagRepo.getId(household_id, tag.id!);
+      const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id!);
       if (mapId) {
-        this.mapHouseholdsTagRepo.delete(mapId);
+        this.mapHouseholdsTagRepo.delete(tenant_id, mapId);
       }
     }
   }

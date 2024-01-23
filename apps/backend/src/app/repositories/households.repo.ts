@@ -10,11 +10,12 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   /**
    * Get all households with the count of people in them
    */
-  public async getAllWithPeopleCount(trx?: Transaction<Models>) {
+  public async getAllWithPeopleCount(tenant_id: string, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .select(sql<string>`households.*`.as('households'))
       .select(sql<string>`count(persons)`.as('person_count'))
       .leftJoin('persons', 'households.id', 'persons.household_id')
+      .where('households.tenant_id', '=', tenant_id)
       .groupBy(['households.id', 'households.tenant_id'])
       .execute();
   }
