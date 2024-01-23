@@ -50,8 +50,6 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
   }
 
   public removeTag(id: string, tag_name: string) {
-    console.log('---------------');
-    console.log(id);
     return this.api.persons.removeTag.mutate({ id: id, tag_name });
   }
 

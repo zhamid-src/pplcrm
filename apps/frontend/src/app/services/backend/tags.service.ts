@@ -18,6 +18,10 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     return Promise.resolve(rows);
   }
 
+  public async addTag(id: string, tag_name: string) {
+    await this.add({ name: tag_name });
+  }
+
   public async delete(id: string): Promise<boolean> {
     return (await this.api.tags.delete.mutate(id.toString())) !== null;
   }
@@ -48,6 +52,10 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
   public async getTags(id: string) {
     const tag = (await this.getById(id)) as Tags;
     return [tag.name];
+  }
+
+  public removeTag(id: string) {
+    return this.delete(id);
   }
 
   public update(id: string, data: UpdateTagType) {
