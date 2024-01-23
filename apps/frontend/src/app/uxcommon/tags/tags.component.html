@@ -1,5 +1,9 @@
 @if (!readonly) {
-  <pc-input (keyup)="onKey($event)" [placeholder]="placeholder" />
+  <pc-input
+    (keyup)="onKey($event)"
+    (valueChange)="autoComplete($event)"
+    [placeholder]="placeholder"
+  />
 }
 
 @if (matches.length) {

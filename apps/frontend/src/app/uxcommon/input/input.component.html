@@ -31,6 +31,7 @@
         />
       } @else {
         <input
+          #input="ngModel"
           placeholder=" "
           [(ngModel)]="inputValue"
           (blur)="handleChange()"
@@ -38,7 +39,6 @@
           [type]="type"
           [attr.aria-placeholder]="placeholder"
           [class.pl-8]="icon"
-          (keyup)="handleKeyup()"
           [class.border-t-transparent]="inputValue.length > 0"
           [class]="inputClass"
         />
