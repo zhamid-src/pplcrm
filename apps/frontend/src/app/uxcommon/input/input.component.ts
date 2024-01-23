@@ -40,7 +40,6 @@ export class InputComponent implements AfterViewInit {
     types: ['geocode'],
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   @ViewChild('input') public input: NgModel | undefined;
   constructor() {}
 
