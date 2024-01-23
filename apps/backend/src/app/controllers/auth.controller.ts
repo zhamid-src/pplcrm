@@ -15,7 +15,7 @@ import nodemailer from 'nodemailer';
 import { AuthUsersRepo } from '../repositories/authusers.repo';
 import { SessionsRepo } from '../repositories/sessions.repository';
 import { TenantsRepo } from '../repositories/tenants.repository';
-import { UserPofiles } from '../repositories/user-profiles.repository';
+import { UserPofiles } from '../repositories/userprofiles.repository';
 import { BaseController } from './base.controller';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
