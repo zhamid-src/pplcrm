@@ -8,7 +8,7 @@ export class UserPofiles extends BaseRepository<'profiles'> {
   }
 
   public getOneByAuthId(
-    auth_id: bigint,
+    auth_id: string,
     options?: QueryParams<'profiles'>,
     trx?: Transaction<Models>,
   ) {

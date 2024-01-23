@@ -24,7 +24,7 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
     refresh_token: string,
     trx?: Transaction<Models>,
   ): Promise<UpdateResult> {
-    if (!user_id) return Promise.resolve({ numUpdatedRows: BigInt(0) });
+    if (!user_id) return Promise.resolve({ numUpdatedRows: '0' });
     return this.getUpdate(trx)
       .set({ refresh_token })
       .where('user_id', '=', user_id)

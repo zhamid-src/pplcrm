@@ -67,13 +67,6 @@ export class DatagridComponent<T extends keyof Models, U> {
    * The component in that route is responsible for adding.
    */
   @Input() public addRoute: string | null = null;
-
-  /**
-   * Whether the view route is disabled or not.
-   *
-   * Default: true
-   */
-  @Input() public disableView = true;
   /**
    * The list of columns to display in the grid. Without anything given,
    * the list of columns will be empty.
@@ -112,6 +105,12 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   @Input() public disableRefresh = false;
   /**
+   * Whether the view route is disabled or not.
+   *
+   * Default: true
+   */
+  @Input() public disableView = true;
+  /**
    * The event emitter that contains the list of filter that the user applied
    */
   @Output() public filter = new EventEmitter();
@@ -126,35 +125,6 @@ export class DatagridComponent<T extends keyof Models, U> {
   @Output() public importCSV = new EventEmitter<string>();
 
   protected _gridRowData: Partial<T>[] = [];
-  /** The default options we start with. This can be overridden
-   * by the parent component providing gridOptions.
-   * @see gridOptions
-   */
-  protected defaultGridOptions: GridOptions<Partial<T>> = {
-    context: this,
-    rowStyle: { cursor: 'pointer' },
-    undoRedoCellEditing: true,
-    stopEditingWhenCellsLoseFocus: true,
-    suppressCellFocus: true,
-    enableCellChangeFlash: true,
-    rowData: this._gridRowData,
-    pagination: true,
-    paginationAutoPageSize: true,
-    rowSelection: 'multiple',
-    animateRows: true,
-    autoSizeStrategy: {
-      type: 'fitCellContents',
-    },
-    onCellValueChanged: this.onCellValueChanged.bind(this),
-    onUndoStarted: this.onUndoStarted.bind(this),
-    onUndoEnded: this.onUndoEnded.bind(this),
-    onRedoStarted: this.onRedoStarted.bind(this),
-    onRedoEnded: this.onRedoEnded.bind(this),
-    onRowDataUpdated: this.onRowDataUpdated.bind(this),
-    onRowValueChanged: this.onRowValueChanged.bind(this),
-    onCellMouseOver: this.onCellMouseOver.bind(this),
-    loadingOverlayComponent: LoadingOverlayComponent,
-  };
   /**
    * The AG Grid API that can be used to interact with the grid.
    */
@@ -184,7 +154,39 @@ export class DatagridComponent<T extends keyof Models, U> {
       suppressCellFlash: true,
     },
   ];
+  /** The default options we start with. This can be overridden
+   * by the parent component providing gridOptions.
+   * @see gridOptions
+   */
+  protected defaultGridOptions: GridOptions<Partial<T>> = {
+    context: this,
+    rowStyle: { cursor: 'pointer' },
+    undoRedoCellEditing: true,
+    stopEditingWhenCellsLoseFocus: true,
+    suppressCellFocus: true,
+    enableCellChangeFlash: true,
+    rowData: this._gridRowData,
+    pagination: true,
+    paginationAutoPageSize: true,
+    rowSelection: 'multiple',
+    animateRows: true,
+    autoSizeStrategy: {
+      type: 'fitCellContents',
+    },
+    onCellValueChanged: this.onCellValueChanged.bind(this),
+    onUndoStarted: this.onUndoStarted.bind(this),
+    onUndoEnded: this.onUndoEnded.bind(this),
+    onRedoStarted: this.onRedoStarted.bind(this),
+    onRedoEnded: this.onRedoEnded.bind(this),
+    onRowDataUpdated: this.onRowDataUpdated.bind(this),
+    onRowValueChanged: this.onRowValueChanged.bind(this),
+    onCellMouseOver: this.onCellMouseOver.bind(this),
+    loadingOverlayComponent: LoadingOverlayComponent,
+  };
+  protected distinctTags: string[] = [];
   protected processing = false;
+
+  private lastRowHovered: string | undefined;
 
   constructor(
     protected router: Router,
@@ -222,6 +224,10 @@ export class DatagridComponent<T extends keyof Models, U> {
     dialog.showModal();
   }
 
+  public onCellMouseOver(event: CellMouseOverEvent) {
+    this.lastRowHovered = event?.data?.id;
+  }
+
   /**
    * Handle the cell value changed event.
    *
@@ -235,7 +241,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     const key = event.colDef.field as keyof T;
-    const row = event.data as Partial<T> & { id: bigint };
+    const row = event.data as Partial<T> & { id: string };
     const payload = this.createPayload(row, key);
 
     this.processing = true;
@@ -272,12 +278,6 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   public onRowDataUpdated(/*event: RowDataUpdatedEvent*/) {}
 
-  private lastRowHovered: string | undefined;
-
-  public onCellMouseOver(event: CellMouseOverEvent) {
-    this.lastRowHovered = event?.data?.id;
-  }
-
   public onRowValueChanged(/*event: RowValueChangedEvent*/) {}
 
   public onUndoEnded(/*event: UndoEndedEvent*/) {
@@ -286,6 +286,10 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   public onUndoStarted(/*event: UndoStartedEvent*/) {
     //console.log("undoStarted", event);
+  }
+
+  public openEdit(id: string) {
+    return this.view(id);
   }
 
   /**
@@ -312,16 +316,9 @@ export class DatagridComponent<T extends keyof Models, U> {
   }
 
   /**
-   * If an addRoute is given then go there to add a new row.
-   */
-  protected add() {
-    this.addRoute && this.router.navigate([this.addRoute], { relativeTo: this.route });
-  }
-
-  /**
    * If a view is not disabled then go there to view the row.
    */
-  public view(id?: string | bigint) {
+  public view(id?: string) {
     // If an ID is explicitly given then we route to that ID
     // But if it's not given then we route to the last hovered
     // row provided that viewing isn't disabled
@@ -333,8 +330,11 @@ export class DatagridComponent<T extends keyof Models, U> {
     }
   }
 
-  public openEdit(id: string | bigint) {
-    return this.view(id);
+  /**
+   * If an addRoute is given then go there to add a new row.
+   */
+  protected add() {
+    this.addRoute && this.router.navigate([this.addRoute], { relativeTo: this.route });
   }
 
   /**
@@ -347,9 +347,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     dialog.showModal();
   }
 
-  protected getSelectedRows() {
-    return this.api?.getSelectedRows() as (Partial<T> & { id: bigint })[];
-  }
   /**
    * Delete the selected rows.
    * There is no undo as it is called by the confirm delete dialog.
@@ -410,6 +407,10 @@ export class DatagridComponent<T extends keyof Models, U> {
     return row.data.id;
   }
 
+  protected getSelectedRows() {
+    return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
+  }
+
   /**
    *
    * @returns The theme to use for the grid
@@ -417,8 +418,6 @@ export class DatagridComponent<T extends keyof Models, U> {
   protected getTheme() {
     return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
   }
-
-  protected distinctTags: string[] = [];
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected async refresh() {
@@ -450,6 +449,21 @@ export class DatagridComponent<T extends keyof Models, U> {
   }
 
   /**
+   * Apply the edits the user did on the grid. This is done by calling the
+   * backend service to update the row in the database.
+   *
+   * @param id
+   * @param data
+   * @returns Boolean indicating whether the edit was successful or not
+   */
+  private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
+    return this.gridSvc
+      .update(id, data as U)
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  /**
    * When the user edits a row, it might contain columns that we don't support
    * updating or editing.
    *
@@ -472,20 +486,5 @@ export class DatagridComponent<T extends keyof Models, U> {
     }
 
     return payload;
-  }
-
-  /**
-   * Apply the edits the user did on the grid. This is done by calling the
-   * backend service to update the row in the database.
-   *
-   * @param id
-   * @param data
-   * @returns Boolean indicating whether the edit was successful or not
-   */
-  private async applyEdit(id: bigint, data: Partial<T>): Promise<boolean> {
-    return this.gridSvc
-      .update(id, data as U)
-      .then(() => true)
-      .catch(() => false);
   }
 }

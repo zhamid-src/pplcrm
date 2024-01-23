@@ -7,10 +7,6 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 export type signInInputType = z.infer<typeof signInInputObj>;
 export type signUpInputType = z.infer<typeof signUpInputObj>;
 
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * The interface for the data that builds the authkey JWT token.
  * All fields are required
@@ -27,11 +23,11 @@ export interface IAuthKeyPayload {
   /**
    * The tenant ID of the current user's tenant
    */
-  tenant_id: bigint;
+  tenant_id: string;
   /**
    * The user ID of the current user
    */
-  user_id: bigint;
+  user_id: string;
 }
 
 /**
@@ -49,7 +45,7 @@ export interface IAuthUser {
   /**
    * The unique ID that is also used as the primary key in the database.
    */
-  id: bigint;
+  id: string;
 }
 
 /**
@@ -67,6 +63,10 @@ export interface INow {
 export interface IToken {
   auth_token: string | null;
   refresh_token: string | null;
+}
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -159,7 +159,7 @@ export const UpdateTagObj = AddTagObj.optional();
  * indicates which Person to update.
  */
 export const UpdatePersonsObj = z.object({
-  household_id: z.bigint().optional(),
+  household_id: z.string().optional(),
   email: z.string().optional(),
   email2: z.string().optional(),
   first_name: z.string().optional(),

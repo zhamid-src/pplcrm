@@ -65,7 +65,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     const result = await this.getRepo().updatePassword(password, code);
-    if (result.numUpdatedRows === BigInt(0)) {
+    if (result.numUpdatedRows === '0') {
       throw new TRPCError({
         message: 'Wrong code, please try again',
         code: 'UNAUTHORIZED',
@@ -148,9 +148,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   private async createProfile(
     trx: Transaction<Models>,
-    id: bigint,
-    tenant_id: bigint,
-    auth_id: bigint,
+    id: string,
+    tenant_id: string,
+    auth_id: string,
   ) {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
     const profile = await this.profiles.add(row, trx);
@@ -176,8 +176,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async createTokens(
-    user_id: bigint,
-    tenant_id: bigint,
+    user_id: string,
+    tenant_id: string,
     name: string,
     oldSession?: string,
   ) {
@@ -214,7 +214,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   private async createUser(
     trx: Transaction<Models>,
-    tenant_id: bigint,
+    tenant_id: string,
     password: string,
     email: string,
     input: { email: string; first_name: string; password: string; organization: string },
@@ -280,9 +280,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   private async updateTenantWithAdmin(
     trx: Transaction<Models>,
-    tenant_id: bigint,
-    admin_id: bigint,
-    createdby_id: bigint,
+    tenant_id: string,
+    admin_id: string,
+    createdby_id: string,
   ) {
     const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
     const id = tenant_id as GetOperandType<

@@ -13,11 +13,11 @@ function add() {
 function addTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) => persons.addTag(BigInt(input.id), input.tag_name, ctx.auth!));
+    .mutation(({ input, ctx }) => persons.addTag(input.id, input.tag_name, ctx.auth!));
 }
 
 function deletePerson() {
-  return authProcedure.input(z.string()).mutation(({ input }) => persons.delete(BigInt(input)));
+  return authProcedure.input(z.string()).mutation(({ input }) => persons.delete(input));
 }
 
 function getAll() {
@@ -31,13 +31,11 @@ function getAllWithAddress() {
 function getByHouseholdId() {
   return authProcedure
     .input(z.object({ id: z.string(), options: getAllOptions }))
-    .query(({ input, ctx }) =>
-      persons.getByHouseholdId(BigInt(input.id), ctx.auth!, input.options),
-    );
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth!, input.options));
 }
 
 function getById() {
-  return authProcedure.input(z.string()).query(({ input }) => persons.getById(BigInt(input)));
+  return authProcedure.input(z.string()).query(({ input }) => persons.getById(input));
 }
 
 function getDistinctTags() {
@@ -47,14 +45,20 @@ function getDistinctTags() {
 function getTags() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => persons.getTags(BigInt(input), ctx.auth!));
+    .query(({ input, ctx }) => persons.getTags(input, ctx.auth!));
+}
+
+function removeTag() {
+  return authProcedure
+    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .mutation(({ input }) => persons.removeTag(input.id, input.tag_name));
 }
 
 function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdatePersonsObj }))
     .mutation(({ input }) =>
-      persons.update(BigInt(input.id), input.data as OperationDataType<'persons', 'update'>),
+      persons.update(input.id, input.data as OperationDataType<'persons', 'update'>),
     );
 }
 
@@ -70,6 +74,7 @@ export const PersonsRouter = router({
   addTag: addTag(),
   getTags: getTags(),
   getById: getById(),
+  removeTag: removeTag(),
   getDistinctTags: getDistinctTags(),
   getByHouseholdId: getByHouseholdId(),
   getAllWithAddress: getAllWithAddress(),

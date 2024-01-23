@@ -6,24 +6,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {
     super('persons');
   }
-  public getTags(id: bigint, tenant_id: bigint) {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', id)
-      .where('persons.tenant_id', '=', tenant_id)
-      .select('tags.name')
-      .execute();
-  }
-  public getDistinctTags(tenant_id: bigint) {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
+
   public async getAllWithAddress(
     optionsIn?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
     trx?: Transaction<Models>,
@@ -83,14 +66,34 @@ export class PersonsRepo extends BaseRepository<'persons'> {
    * @returns
    */
   public getByHouseholdId(
-    household_id: bigint,
-    tenant_id: bigint,
+    household_id: string,
+    tenant_id: string,
     options: QueryParams<'persons'>,
     trx?: Transaction<Models>,
   ) {
     return this.getSelectWithColumns(options, trx)
       .where('household_id', '=', household_id)
       .where('tenant_id', '=', tenant_id)
+      .execute();
+  }
+
+  public getDistinctTags(tenant_id: string) {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(id: string, tenant_id: string) {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', id)
+      .where('persons.tenant_id', '=', tenant_id)
+      .select('tags.name')
       .execute();
   }
 }

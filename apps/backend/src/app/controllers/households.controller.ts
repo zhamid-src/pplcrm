@@ -19,7 +19,7 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getDistinctTags(auth.tenant_id);
   }
 
-  public getTags(id: bigint, auth: IAuthKeyPayload) {
+  public getTags(id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getTags(id, auth.tenant_id);
   }
 }

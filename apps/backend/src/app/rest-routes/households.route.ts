@@ -11,13 +11,9 @@ const households = new HouseholdsController();
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
   fastify.get('', schema.getAll, () => households.getAll());
 
-  fastify.get('/:id', schema.findFromId, (req: IdParam) =>
-    households.getById(BigInt(req.params.id)),
-  );
+  fastify.get('/:id', schema.findFromId, (req: IdParam) => households.getById(req.params.id));
   fastify.get('/count', schema.count, () => households.getCount());
-  fastify.delete('/:id', schema.findFromId, (req: IdParam) =>
-    households.delete(BigInt(req.params.id)),
-  );
+  fastify.delete('/:id', schema.findFromId, (req: IdParam) => households.delete(req.params.id));
 
   done();
 }

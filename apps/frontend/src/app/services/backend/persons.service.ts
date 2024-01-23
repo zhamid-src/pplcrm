@@ -19,7 +19,11 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return Promise.resolve(rows);
   }
 
-  public async delete(id: bigint): Promise<boolean> {
+  public addTag(id: string, tag_name: string) {
+    return this.api.persons.addTag.mutate({ id: id.toString(), tag_name });
+  }
+
+  public async delete(id: string): Promise<boolean> {
     return (await this.api.persons.delete.mutate(id.toString())) !== null;
   }
 
@@ -27,12 +31,12 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return this.getAllWithAddress(options);
   }
 
-  public getByHouseholdId(id: bigint | string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id.toString(), options });
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
   }
 
-  public getById(id: bigint | string) {
-    return this.api.persons.getById.query(id.toString());
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
   }
 
   public async getDistinctTags() {
@@ -40,17 +44,19 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return tags.map((tag) => tag.name);
   }
 
-  public addTag(id: bigint | string, tag_name: string) {
-    return this.api.persons.addTag.mutate({ id: id.toString(), tag_name });
-  }
-
-  public async getTags(id: bigint | string) {
-    const tags = await this.api.persons.getTags.query(id.toString());
+  public async getTags(id: string) {
+    const tags = await this.api.persons.getTags.query(id);
     return tags.map((tag) => tag.name);
   }
 
-  public async update(id: bigint | string, data: UpdatePersonsType) {
-    return this.api.persons.update.mutate({ id: id.toString(), data });
+  public removeTag(id: string, tag_name: string) {
+    console.log('---------------');
+    console.log(id);
+    return this.api.persons.removeTag.mutate({ id: id, tag_name });
+  }
+
+  public async update(id: string, data: UpdatePersonsType) {
+    return this.api.persons.update.mutate({ id: id, data });
   }
 
   private getAllWithAddress(options?: getAllOptionsType) {

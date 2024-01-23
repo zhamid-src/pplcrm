@@ -36,7 +36,7 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    *
    * @param id The id of the row to delete
    */
-  public abstract delete(id: bigint): Promise<boolean>;
+  public abstract delete(id: string): Promise<boolean>;
   /**
    * Return all rows from the database that matches the given options.
    * If no options are given then return all rows.
@@ -58,9 +58,9 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    *
    * @param id - The id of the row to find
    */
-  public abstract getById(id: bigint): Promise<Record<never, never> | undefined>;
+  public abstract getById(id: string): Promise<Record<never, never> | undefined>;
   public abstract getDistinctTags(): Promise<string[]>;
-  public abstract getTags(id: bigint | string): Promise<string[]>;
+  public abstract getTags(id: string | string): Promise<string[]>;
   /**
    * Update the row with the given ID with the given data.
    *
@@ -70,5 +70,5 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    * @param id The row to update
    * @param data The data to update the row with
    */
-  public abstract update(id: bigint, data: U): Promise<Partial<T>[] | unknown>;
+  public abstract update(id: string, data: U): Promise<Partial<T>[] | unknown>;
 }

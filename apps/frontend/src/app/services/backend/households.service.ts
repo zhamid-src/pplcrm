@@ -13,7 +13,7 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return Promise.resolve(rows);
   }
 
-  public delete(id: bigint): Promise<boolean> {
+  public delete(id: string): Promise<boolean> {
     return this.delete(id);
   }
 
@@ -21,8 +21,8 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return this.getAllWithPeopleCount();
   }
 
-  public getById(id: bigint | string) {
-    return this.api.households.getById.query(id.toString());
+  public getById(id: string) {
+    return this.api.households.getById.query(id);
   }
 
   public async getDistinctTags() {
@@ -30,12 +30,12 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return tags.map((tag) => tag.name);
   }
 
-  public async getTags(id: bigint | string) {
-    const tags = await this.api.households.getTags.query(id.toString());
+  public async getTags(id: string) {
+    const tags = await this.api.households.getTags.query(id);
     return tags.map((tag) => tag.name);
   }
 
-  public update(id: bigint, data: OperationDataType<'households', 'insert'>) {
+  public update(id: string, data: OperationDataType<'households', 'insert'>) {
     console.log(id, data);
     // TODO implement
     return Promise.resolve([]);

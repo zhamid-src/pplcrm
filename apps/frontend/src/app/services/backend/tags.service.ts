@@ -18,7 +18,7 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     return Promise.resolve(rows);
   }
 
-  public async delete(id: bigint): Promise<boolean> {
+  public async delete(id: string): Promise<boolean> {
     return (await this.api.tags.delete.mutate(id.toString())) !== null;
   }
 
@@ -32,13 +32,8 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     });
   }
 
-  public getById(id: bigint | string) {
+  public getById(id: string) {
     return this.api.tags.getById.query(id.toString());
-  }
-
-  public async getTags(id: bigint | string) {
-    const tag = (await this.getById(id)) as Tags;
-    return [tag.name];
   }
 
   /**
@@ -50,7 +45,12 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
     return tags.map((tag: Tags) => tag.name);
   }
 
-  public update(id: bigint, data: UpdateTagType) {
+  public async getTags(id: string) {
+    const tag = (await this.getById(id)) as Tags;
+    return [tag.name];
+  }
+
+  public update(id: string, data: UpdateTagType) {
     return this.api.tags.update.mutate({ id: id.toString(), data });
   }
 }

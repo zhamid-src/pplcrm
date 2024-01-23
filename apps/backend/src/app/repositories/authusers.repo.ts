@@ -12,7 +12,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     super('authusers');
   }
 
-  public addPasswordResetCode(id: bigint, trx?: Transaction<Models>) {
+  public addPasswordResetCode(id: string, trx?: Transaction<Models>) {
     return this.getUpdate(trx)
       .set({
         password_reset_code: sql<string>`gen_random_uuid()`,
