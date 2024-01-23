@@ -40,6 +40,10 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
     return tags.map((tag) => tag.name);
   }
 
+  public addTag(id: bigint | string, tag_name: string) {
+    return this.api.persons.addTag.mutate({ id: id.toString(), tag_name });
+  }
+
   public async getTags(id: bigint | string) {
     const tags = await this.api.persons.getTags.query(id.toString());
     return tags.map((tag) => tag.name);
