@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { UpdatePersonsType } from '@common';
+import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { PersonsBackendService, TYPE } from '@services/backend/persons.service';
@@ -36,6 +36,11 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
       headerName: 'Tags',
       filter: false,
       cellRenderer: TagsCellRendererComponent,
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.gridSvc,
+      },
     },
     {
       field: 'address',
@@ -45,15 +50,15 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
 
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-
-  private addressChangeModalId: string | null = null;
-
   /**
    * Hook into the double click so we can open the address change modal
    */
   protected myGridOptions: GridOptions<Partial<TYPE>> = {
     onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
   };
+
+  private addressChangeModalId: string | null = null;
+
   constructor(
     router: Router,
     route: ActivatedRoute,

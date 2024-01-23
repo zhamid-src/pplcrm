@@ -13,6 +13,10 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return Promise.resolve(rows);
   }
 
+  public addTag(id: string, tag_name: string) {
+    return this.api.households.addTag.mutate({ id: id.toString(), tag_name });
+  }
+
   public delete(id: string): Promise<boolean> {
     return this.delete(id);
   }
@@ -33,6 +37,10 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
   public async getTags(id: string) {
     const tags = await this.api.households.getTags.query(id);
     return tags.map((tag) => tag.name);
+  }
+
+  public removeTag(id: string, tag_name: string) {
+    return this.api.households.removeTag.mutate({ id: id, tag_name });
   }
 
   public update(id: string, data: OperationDataType<'households', 'insert'>) {
