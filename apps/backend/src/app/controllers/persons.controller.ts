@@ -34,10 +34,10 @@ export class PersonsController extends BaseController<'persons', PersonsReposito
   }
 
   public getDistinctTags(auth: IAuthKeyPayload) {
-    return this.personsTagsRepo.getDistinctTags(auth.tenant_id);
+    return this.getRepository().getDistinctTags(auth.tenant_id);
   }
 
   public getTags(id: bigint, auth: IAuthKeyPayload) {
-    return this.personsTagsRepo.getTags(id, auth.tenant_id);
+    return this.getRepository().getTags(id, auth.tenant_id);
   }
 }
