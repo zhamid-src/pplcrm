@@ -7,7 +7,7 @@ type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 /**
  * Handles all the authusers table operations.
  */
-export class AuthUsersRepository extends BaseRepository<'authusers'> {
+export class AuthUsersRepo extends BaseRepository<'authusers'> {
   constructor() {
     super('authusers');
   }
