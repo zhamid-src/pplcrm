@@ -7,6 +7,7 @@ import {
   InsertResult,
   Kysely,
   Migrator,
+  OperandValueExpressionOrList,
   OrderByExpression,
   PostgresDialect,
   QueryResult,
@@ -127,7 +128,6 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - newly added row
    */
   public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
-    console.log('>>>>', row);
     return this.getInsert(trx).values(row).returningAll().executeTakeFirst();
   }
 
@@ -135,10 +135,11 @@ export class BaseRepository<T extends keyof Models> {
    * Delete the row that matches the given id.
    */
   public async delete(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
     id: GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
     trx?: Transaction<Models>,
   ) {
-    return this.getDelete(trx).where('id', '=', id).execute();
+    return this.getDelete(trx).where('id', '=', id).where('tenant_id', '=', tenant_id).execute();
   }
 
   /**
@@ -146,8 +147,12 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @see {@link QueryParams} for more information about the options.
    */
-  public getAll(options?: QueryParams<T>, trx?: Transaction<Models>) {
-    return this.getSelectWithColumns(options, trx).execute();
+  public getAll(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
+    options?: QueryParams<T>,
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(options, trx).where('tenant_id', '=', tenant_id).execute();
   }
 
   /**
@@ -155,8 +160,16 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @see {@link QueryParams} for more information about the options.
    */
-  public getById(id: TableIdType<T>, options?: QueryParams<T>, trx?: Transaction<Models>) {
-    return this.getSelectWithColumns(options, trx).where('id', '=', id).executeTakeFirst();
+  public getById(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
+    id: TableIdType<T>,
+    options?: QueryParams<T>,
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(options, trx)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .executeTakeFirst();
   }
 
   /**
@@ -184,9 +197,15 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - returns the count as a string
    */
-  public async count(trx?: Transaction<Models>): Promise<string> {
+  public async count(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
+    trx?: Transaction<Models>,
+  ): Promise<string> {
     const query = sql<string>`count(*)`.as('count');
-    const { count } = (await this.getSelect(trx).select(query).executeTakeFirst()) || {
+    const { count } = (await this.getSelect(trx)
+      .select(query)
+      .where('tenant_id', '=', tenant_id)
+      .executeTakeFirst()) || {
       count: '0',
     };
     return count;
@@ -210,19 +229,18 @@ export class BaseRepository<T extends keyof Models> {
    * @returns
    */
   public async find(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
     key: string,
     column: TableColumnsType<T>,
-    tenant_id: string,
     trx?: Transaction<Models>,
   ) {
-    const tenant_id_lhs = 'tenant_id' as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
     const column_lhs = column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
     const rhs = key + '%';
     return this.getSelect(trx)
       .select([column])
       .limit(3)
       .where(column_lhs, 'ilike', rhs)
-      .where(tenant_id_lhs, '=', tenant_id)
+      .where('tenant_id', '=', tenant_id)
       .execute();
   }
 
@@ -232,11 +250,17 @@ export class BaseRepository<T extends keyof Models> {
    * @returns The updated row
    */
   public async update(
+    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
     id: GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
     row: OperationDataType<T, 'update'>,
     trx?: Transaction<Models>,
   ) {
-    return this.getUpdate(trx).set(row).where('id', '=', id).returningAll().executeTakeFirst();
+    return this.getUpdate(trx)
+      .set(row)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .returningAll()
+      .executeTakeFirst();
   }
 
   /**

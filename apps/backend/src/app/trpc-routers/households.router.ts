@@ -17,19 +17,23 @@ function addTag() {
 }
 
 function deleteHousehold() {
-  return authProcedure.input(z.string()).mutation(({ input }) => households.delete(input));
+  return authProcedure
+    .input(z.string())
+    .mutation(({ input, ctx }) => households.delete(ctx.auth!.tenant_id!, input));
 }
 
 function getAll() {
-  return authProcedure.query(() => households.getAll());
+  return authProcedure.query(({ ctx }) => households.getAll(ctx.auth!.tenant_id!));
 }
 
 function getAllWithPeopleCount() {
-  return authProcedure.query(() => households.getAllWithPeopleCount());
+  return authProcedure.query(({ ctx }) => households.getAllWithPeopleCount(ctx.auth!));
 }
 
 function getById() {
-  return authProcedure.input(z.string()).query(({ input }) => households.getById(input));
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => households.getById(ctx.auth!.tenant_id!, input));
 }
 
 function getDistinctTags() {
@@ -45,14 +49,20 @@ function getTags() {
 function removeTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input }) => households.removeTag(input.id, input.tag_name));
+    .mutation(({ input, ctx }) =>
+      households.removeTag(ctx.auth!.tenant_id!, input.id, input.tag_name),
+    );
 }
 
 function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdateHouseholdsObj }))
-    .mutation(({ input }) =>
-      households.update(input.id, input.data as OperationDataType<'households', 'update'>),
+    .mutation(({ input, ctx }) =>
+      households.update(
+        ctx.auth!.tenant_id!,
+        input.id,
+        input.data as OperationDataType<'households', 'update'>,
+      ),
     );
 }
 

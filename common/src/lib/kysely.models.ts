@@ -85,7 +85,7 @@ export type TableIdType<T extends keyof Models> = OperandValueExpressionOrList<
 export type TablesOperationMap = {
   [K in Keys<Models>]: {
     select: Selectable<Models[K]>;
-    insert: Insertable<Models[K]>;
+    insert: Insertable<Models[K]> & { tenant_id: string };
     update: Updateable<Models[K]>;
   };
 };
@@ -223,7 +223,7 @@ export interface Tags extends RecordType {
   description: string | null;
 }
 
-interface Tenants extends Omit<RecordType, 'tenant_id'>, AddressType {
+interface Tenants extends RecordType, AddressType {
   name: string;
   admin_id: string | null;
   email: string | null;

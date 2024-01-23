@@ -1,15 +1,12 @@
-import { OperationDataType } from 'common/src/lib/kysely.models';
 import { FastifyInstance } from 'fastify';
-import { PersonsController } from '../controllers/persons.controller';
-import { IdParam } from '../rest-schema/fastify.types';
-import * as schema from '../rest-schema/households.schema';
 
-const persons = new PersonsController();
+// const persons = new PersonsController();
 
 /**
  * Supported HTTP routes for the persons endpoint
  */
 function routes(fastify: FastifyInstance, _: never, done: () => void) {
+  /*
   fastify.get('', schema.getAll, () => persons.getAll());
 
   fastify.get('/:id', schema.findFromId, (req: IdParam) => persons.getById(req.params.id));
@@ -21,7 +18,7 @@ function routes(fastify: FastifyInstance, _: never, done: () => void) {
     persons.update(req.params.id, req.body as OperationDataType<'persons', 'insert'>),
   );
   fastify.delete('/:id', schema.findFromId, (req: IdParam) => persons.delete(req.params.id));
-
+*/
   done();
 }
 

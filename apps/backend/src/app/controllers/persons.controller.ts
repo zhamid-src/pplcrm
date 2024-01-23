@@ -81,12 +81,12 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @param person_id of the person
    * @param tag_name - name of the tag to remove
    */
-  public async removeTag(person_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName(tag_name);
+  public async removeTag(tenant_id: string, person_id: string, tag_name: string) {
+    const tag = await this.tagsRepo.getIdByName(tenant_id, tag_name);
     if (tag?.id) {
-      const mapId = await this.mapPersonsTagRepo.getId(person_id, tag.id!);
+      const mapId = await this.mapPersonsTagRepo.getId(tenant_id, person_id, tag.id!);
       if (mapId) {
-        this.mapPersonsTagRepo.delete(mapId);
+        this.mapPersonsTagRepo.delete(tenant_id, mapId);
       }
     }
   }

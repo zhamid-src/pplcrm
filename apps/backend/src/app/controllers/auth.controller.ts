@@ -32,7 +32,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       return null;
     }
     const user = await this.getRepo()
-      .getById(auth.user_id, {
+      .getById(auth.tenant_id, auth.user_id, {
         columns: ['id', 'email', 'first_name'],
       })
       .catch(() => null);
@@ -290,7 +290,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       'update',
       Keys<TablesOperationMap['tenants']['update']>
     >;
-    await this.tenants.update(id, row, trx);
+    await this.tenants.update(tenant_id, id, row, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {

@@ -8,7 +8,9 @@ function add() {
 }
 
 function deleteTag() {
-  return authProcedure.input(z.string()).mutation(({ input }) => tags.delete(input));
+  return authProcedure
+    .input(z.string())
+    .mutation(({ input, ctx }) => tags.delete(ctx.auth!.tenant_id!, input));
 }
 
 function findByName() {
@@ -18,15 +20,13 @@ function findByName() {
 }
 
 function getAll() {
-  return authProcedure.query(() => tags.getAll());
+  return authProcedure.query(({ ctx }) => tags.getAll(ctx.auth!.tenant_id!));
 }
 
 function getById() {
-  return authProcedure.input(z.string()).query(({ input }) => tags.getById(input));
-}
-
-function getByName() {
-  return authProcedure.input(z.string()).query(({ input }) => tags.getById(input));
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => tags.getById(ctx.auth!.tenant_id!, input));
 }
 
 function update() {
@@ -45,6 +45,5 @@ export const TagsRouter = router({
   delete: deleteTag(),
   update: update(),
   getById: getById(),
-  getByName: getByName(),
   findByName: findByName(),
 });
