@@ -44,7 +44,7 @@ export interface Models {
   tenants: Tenants;
 }
 
-export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: bigint };
+export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
 type DiscriminatedUnionOfRecord<
   A,
   B = {
@@ -103,10 +103,10 @@ type TableType = {
 // type definitions to help me out.
 // ====================================================================
 interface RecordType {
-  id: Generated<bigint>;
-  tenant_id: bigint;
-  createdby_id: bigint;
-  updatedby_id: bigint;
+  id: Generated<string>;
+  tenant_id: string;
+  createdby_id: string;
+  updatedby_id: string;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -136,8 +136,8 @@ interface AuthUsers extends RecordType {
 }
 
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
-  admin_id: bigint;
-  createdby_id: bigint;
+  admin_id: string;
+  createdby_id: string;
   description: string | null;
   startdate: string | null;
   enddate: string | null;
@@ -147,38 +147,38 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
 }
 
 export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: bigint;
-  createdby_id: bigint;
-  file_id: bigint | null;
+  campaign_id: string;
+  createdby_id: string;
+  file_id: string | null;
   home_phone: string | null;
   json: Json | null;
   notes: string | null;
 }
 
 interface MapCampaignsUsers extends RecordType {
-  campaign_id: bigint;
-  user_id: bigint;
+  campaign_id: string;
+  user_id: string;
 }
 
 interface MapHouseholdsTags extends RecordType {
-  household_id: bigint;
-  tag_id: bigint;
+  household_id: string;
+  tag_id: string;
 }
 
-interface MapPeoplesTags extends RecordType {
-  person_id: bigint;
-  tag_id: bigint;
+export interface MapPeoplesTags extends RecordType {
+  person_id: string;
+  tag_id: string;
 }
 
 interface MapRolesUsers extends RecordType {
-  role_id: bigint;
-  user_id: bigint;
+  role_id: string;
+  user_id: string;
 }
 
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: bigint;
-  household_id: bigint;
-  createdby_id: bigint;
+  campaign_id: string;
+  household_id: string;
+  createdby_id: string;
   first_name: string | null;
   middle_names: string | null;
   last_name: string | null;
@@ -186,13 +186,13 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   email2: string | null;
   mobile: string | null;
   home_phone: string | null;
-  file_id: bigint | null;
+  file_id: string | null;
   json: Json | null;
   notes: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {
-  auth_id: bigint;
+  auth_id: string;
   email: string | null;
   email2: string | null;
   mobile: string | null;
@@ -209,7 +209,7 @@ interface Roles extends RecordType {
 // We use a UUID for the Id here, so we can't extend the recordtype
 interface Sessions extends RecordType {
   session_id: Generated<string>;
-  user_id: bigint;
+  user_id: string;
   ip_address: string;
   last_accessed: Generated<Timestamp>;
   other_properties: Json | null;
@@ -225,7 +225,7 @@ export interface Tags extends RecordType {
 
 interface Tenants extends Omit<RecordType, 'tenant_id'>, AddressType {
   name: string;
-  admin_id: bigint | null;
+  admin_id: string | null;
   email: string | null;
   email2: string | null;
   phone: string | null;

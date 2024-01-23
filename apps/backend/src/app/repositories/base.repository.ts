@@ -212,7 +212,7 @@ export class BaseRepository<T extends keyof Models> {
   public async find(
     key: string,
     column: TableColumnsType<T>,
-    tenant_id: bigint,
+    tenant_id: string,
     trx?: Transaction<Models>,
   ) {
     const tenant_id_lhs = 'tenant_id' as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;

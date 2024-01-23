@@ -18,7 +18,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .groupBy(['households.id', 'households.tenant_id'])
       .execute();
   }
-  public getDistinctTags(tenant_id: bigint) {
+
+  public getDistinctTags(tenant_id: string) {
     return this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
       .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
@@ -28,7 +29,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
-  public getTags(id: bigint, tenant_id: bigint) {
+  public getTags(id: string, tenant_id: string) {
     return this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
       .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')

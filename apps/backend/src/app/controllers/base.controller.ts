@@ -58,7 +58,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   /**
    * Delete the row with the given id.
    */
-  public delete(id: bigint) {
+  public delete(id: string) {
     return this.repo.delete(
       id as GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
     );
@@ -75,7 +75,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns - upto three rows that best match the key
    */
-  public async find(key: string, column: TableColumnsType<T>, tenant_id: bigint) {
+  public async find(key: string, column: TableColumnsType<T>, tenant_id: string) {
     return await this.repo.find(key, column, tenant_id);
   }
 
@@ -91,7 +91,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   /**
    * Find the row with the given id.
    */
-  public getById(id: bigint) {
+  public getById(id: string) {
     return this.repo.getById(id as TableIdType<T>);
   }
 
@@ -107,7 +107,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   /**
    * Update the row with the given id, overriding columns with the given values.
    */
-  public update(id: bigint, input: OperationDataType<T, 'update'>) {
+  public update(id: string, input: OperationDataType<T, 'update'>) {
     return this.repo.update(
       id as GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
       input,

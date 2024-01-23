@@ -32,7 +32,7 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
   /**
    * Update the tag that matches the given ID
    */
-  public updateTag(id: bigint, input: UpdateTagType, auth: IAuthKeyPayload) {
+  public updateTag(id: string, input: UpdateTagType, auth: IAuthKeyPayload) {
     const payload = { ...input, updatedby_id: auth.user_id } as OperationDataType<'tags', 'insert'>;
     return this.update(id, payload);
   }

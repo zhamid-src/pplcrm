@@ -1,6 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Kysely, sql } from 'kysely';
 
+export async function down(db: Kysely<any>): Promise<void> {
+  console.log('====== Migrating down =======');
+  await db.schema.dropTable('profiles').cascade().execute();
+  await db.schema.dropTable('tenants').cascade().execute();
+  await db.schema.dropTable('sessions').cascade().execute();
+  await db.schema.dropTable('authusers').cascade().execute();
+  await db.schema.dropTable('roles').cascade().execute();
+  await db.schema.dropTable('map_roles_profiles').cascade().execute();
+  await db.schema.dropTable('campaigns').cascade().execute();
+  await db.schema.dropTable('map_campaigns_profiles').cascade().execute();
+  await db.schema.dropTable('households').cascade().execute();
+  await db.schema.dropTable('persons').cascade().execute();
+  await db.schema.dropTable('tags').cascade().execute();
+  await db.schema.dropTable('map_peoples_tags').cascade().execute();
+  await db.schema.dropTable('map_households_tags').cascade().execute();
+}
+
 export async function up(db: Kysely<any>): Promise<void> {
   console.log('======= Migrating up ========');
 
@@ -130,7 +147,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     .on("roles")
     .column("tenant_id")
     .execute();
-
  
   await db.schema
     .createTable("map_roles_profiles")
@@ -486,21 +502,4 @@ export async function up(db: Kysely<any>): Promise<void> {
     .alterTable('profiles')
     .addForeignKeyConstraint('fk_profiles_auth_id', ['auth_id'], 'authusers', ['id'])
     .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  console.log('====== Migrating down =======');
-  await db.schema.dropTable('profiles').cascade().execute();
-  await db.schema.dropTable('tenants').cascade().execute();
-  await db.schema.dropTable('sessions').cascade().execute();
-  await db.schema.dropTable('authusers').cascade().execute();
-  await db.schema.dropTable('roles').cascade().execute();
-  await db.schema.dropTable('map_roles_profiles').cascade().execute();
-  await db.schema.dropTable('campaigns').cascade().execute();
-  await db.schema.dropTable('map_campaigns_profiles').cascade().execute();
-  await db.schema.dropTable('households').cascade().execute();
-  await db.schema.dropTable('persons').cascade().execute();
-  await db.schema.dropTable('tags').cascade().execute();
-  await db.schema.dropTable('map_peoples_tags').cascade().execute();
-  await db.schema.dropTable('map_households_tags').cascade().execute();
 }
