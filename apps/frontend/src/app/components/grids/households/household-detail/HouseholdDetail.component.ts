@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
+import { UpdateHouseholdsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsBackendService } from '@services/backend/households.service';
 import { PersonsBackendService } from '@services/backend/persons.service';
@@ -12,6 +13,14 @@ import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 import { Households } from 'common/src/lib/kysely.models';
+
+type PERSONINHOUSEHOLDTYPE = {
+  id: string;
+  first_name: string;
+  middle_names: string;
+  last_name: string;
+  full_name: string;
+};
 
 @Component({
   selector: 'pc-household-detail',
@@ -59,8 +68,7 @@ export class HouseholdDetailComponent implements OnInit {
   });
   protected household: Households | undefined;
   protected id: string | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  protected peopleInHousehold: any[] = [];
+  protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
   protected processing = signal(false);
   protected tags: string[] = [];
 
@@ -94,6 +102,21 @@ export class HouseholdDetailComponent implements OnInit {
     this.processing.set(false);
   }
 
+  /**
+   * Apply the edits the user did on the grid. This is done by calling the
+   * backend service to update the row in the database.
+   *
+   * @param id
+   * @param data
+   * @returns Boolean indicating whether the edit was successful or not
+   */
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
   protected getCreatedAt() {
     return this.household?.created_at;
   }
@@ -104,40 +127,37 @@ export class HouseholdDetailComponent implements OnInit {
 
   protected save() {}
 
+  protected tagAdded(tag: string) {
+    this.householdsSvc.addTag(this.id!, tag);
+  }
+
+  protected tagRemoved(tag: string) {
+    this.householdsSvc.removeTag(this.id!, tag);
+  }
+
+  private add(data: UpdateHouseholdsType) {
+    this.processing.set(true);
+    this.householdsSvc
+      .add(data)
+      .then(() => this.alertSvc.showSuccess('Household added'))
+      .catch((err) => this.alertSvc.showError(err))
+      .finally(() => this.processing.set(false));
+  }
+
   private async getPeopleInHousehold() {
     if (!this.household) {
       return;
     }
-    this.peopleInHousehold = await this.personsSvc.getByHouseholdId(this.id!, {
+    this.peopleInHousehold = (await this.personsSvc.getByHouseholdId(this.id!, {
       columns: ['id', 'first_name', 'middle_names', 'last_name'],
-    });
-    [
-      {
-        id: '229',
-        first_name: 'Jessica',
-        middle_names: 'J',
-        last_name: 'Taylor',
-      },
-      {
-        id: '239',
-        first_name: 'Christopher',
-        middle_names: 'V',
-        last_name: 'White',
-      },
-      {
-        id: '248',
-        first_name: 'Mia',
-        middle_names: 'M',
-        last_name: 'Hernandez',
-      },
-    ];
+    })) as PERSONINHOUSEHOLDTYPE[];
+
     this.peopleInHousehold = this.peopleInHousehold.map((person) => {
       return {
         ...person,
         full_name: `${person.first_name} ${person.middle_names} ${person.last_name}`,
       };
     });
-    console.log(this.peopleInHousehold);
   }
 
   private async getTags() {
@@ -168,5 +188,18 @@ export class HouseholdDetailComponent implements OnInit {
       return;
     }
     this.form.patchValue(this.household);
+  }
+
+  private update(data: Partial<UpdateHouseholdsType>) {
+    if (!this.id) {
+      return;
+    }
+
+    this.processing.set(true);
+    this.householdsSvc
+      .update(this.id, data)
+      .then(() => this.alertSvc.showSuccess('Household updated successfully.'))
+      .catch((err) => this.alertSvc.showError(err))
+      .finally(() => this.processing.set(false));
   }
 }

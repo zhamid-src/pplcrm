@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { UpdateHouseholdsType } from '@common';
 import { AbstractBackendService } from './abstract.service';
 
 /**
@@ -9,6 +9,10 @@ import { AbstractBackendService } from './abstract.service';
   providedIn: 'root',
 })
 export class HouseholdsBackendService extends AbstractBackendService<'households', never> {
+  public add(household: UpdateHouseholdsType) {
+    return this.api.households.add.mutate(household);
+  }
+
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
   }
@@ -43,10 +47,8 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
     return this.api.households.removeTag.mutate({ id: id, tag_name });
   }
 
-  public update(id: string, data: OperationDataType<'households', 'insert'>) {
-    console.log(id, data);
-    // TODO implement
-    return Promise.resolve([]);
+  public update(id: string, data: UpdateHouseholdsType) {
+    return this.api.households.update.mutate({ id: id, data });
   }
 
   private getAllWithPeopleCount() {

@@ -1,12 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { UpdateHouseholdsObj } from '@common';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { HouseholdsBackendService } from '@services/backend/households.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
+import { CellDoubleClickedEvent, GridOptions } from 'ag-grid-community';
+import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
 @Component({
   selector: 'pc-households-grid',
@@ -26,15 +29,29 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
     { field: 'person_count', headerName: 'People in household' },
-    { field: 'street_num', headerName: 'Street' },
-    { field: 'street', headerName: 'Street line 2' },
-    { field: 'city', headerName: 'City' },
-    { field: 'state', headerName: 'State/Province' },
-    { field: 'zip', headerName: 'Zip/Province' },
-    { field: 'country', headerName: 'Country' },
-    { field: 'home_phone', headerName: 'Home phone' },
-    { field: 'notes', headerName: 'Notes' },
+    { field: 'street_num', headerName: 'Street Number', editable: true },
+    { field: 'street', headerName: 'Street', editable: true },
+    { field: 'apt', headerName: 'Apt', editable: true },
+    { field: 'city', headerName: 'City', editable: true },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      cellRenderer: TagsCellRendererComponent,
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.gridSvc,
+      },
+    },
+    { field: 'state', headerName: 'State/Province', editable: true },
+    { field: 'zip', headerName: 'Zip/Province', editable: true },
+    { field: 'country', headerName: 'Country', editable: true },
+    { field: 'home_phone', headerName: 'Home phone', editable: true },
+    { field: 'notes', headerName: 'Notes', editable: true },
   ];
+  protected myGridOptions: GridOptions<Partial<'households'>> = {
+    onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
+  };
 
   constructor(
     router: Router,
@@ -45,5 +62,11 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     gridSvc: HouseholdsBackendService,
   ) {
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
+  }
+
+  protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
+    if (event.colDef.field === 'tags') {
+      this.openEdit(event.data.id);
+    }
   }
 }

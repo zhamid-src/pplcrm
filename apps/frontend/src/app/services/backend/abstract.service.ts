@@ -20,6 +20,7 @@ import { TRPCService } from '../trpc.service';
   providedIn: 'root',
 })
 export abstract class AbstractBackendService<T extends keyof Models, U> extends TRPCService<T> {
+  public abstract add(row: U): Promise<Partial<T> | unknown>;
   /**
    * Add all given rows to the database.
    *
