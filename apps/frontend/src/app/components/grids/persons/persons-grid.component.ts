@@ -9,7 +9,7 @@ import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
-import { CellDoubleClickedEvent, GridOptions } from 'ag-grid-community';
+import { CellDoubleClickedEvent, ColDef, GridOptions } from 'ag-grid-community';
 import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
 @Component({
@@ -21,7 +21,7 @@ import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRendere
   providers: [{ provide: AbstractBackendService, useClass: PersonsBackendService }],
 })
 export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {
-  protected col = [
+  protected col: ColDef[] = [
     {
       field: 'first_name',
       headerName: 'First Name',
@@ -35,6 +35,13 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
       field: 'tags',
       headerName: 'Tags',
       cellRenderer: TagsCellRendererComponent,
+      equals: (valueA: string[], valueB: string[]) => valueA.toString() === valueB.toString(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      valueFormatter: (params: any) =>
+        (!params.value || !params.value[0] ? [] : params.value).toString(),
+      comparator: (valueA: string[], valueB: string[]) =>
+        valueA.toString().localeCompare(valueB.toString()),
+      cellDataType: 'object',
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,

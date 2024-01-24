@@ -1,1 +1,6 @@
-<pc-tags [(tags)]="this.tags" [readonly]="true" (tagRemoved)="removeTag($event)"></pc-tags>
+<pc-tags
+  [animateRemoval]="false"
+  [tags]="this.tags"
+  [readonly]="true"
+  (tagRemoved)="removeTag($event)"
+></pc-tags>

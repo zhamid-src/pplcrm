@@ -124,7 +124,6 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   @Output() public importCSV = new EventEmitter<string>();
 
-  protected _gridRowData: Partial<T>[] = [];
   /**
    * The AG Grid API that can be used to interact with the grid.
    */
@@ -165,7 +164,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     stopEditingWhenCellsLoseFocus: true,
     suppressCellFocus: true,
     enableCellChangeFlash: true,
-    rowData: this._gridRowData,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: 'multiple',
@@ -371,9 +369,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     } else {
       this.api?.applyTransaction({ remove: rows });
 
-      // We will never load more rows than the number can handle, so we don't need bigint here
-      rows.forEach((row) => this._gridRowData.splice(Number(row.id!), 1));
-
       this.alertSvc.show({
         text: 'Deleted successfully. Click Undo to undo delete',
         type: 'success',
@@ -428,11 +423,7 @@ export class DatagridComponent<T extends keyof Models, U> {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }
     this.distinctTags = await this.gridSvc.getDistinctTags();
-
-    // Set the grid option because it works around Angular's
-    // ValueChangedAterChecked error
-    this.api!.setGridOption('rowData', this._gridRowData);
-    this.api!.applyTransaction({ add: rows });
+    this.api!.setGridOption('rowData', rows);
   }
 
   protected async undoDeleteRows() {
