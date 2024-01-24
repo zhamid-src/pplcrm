@@ -1,5 +1,5 @@
 import { Models } from 'common/src/lib/kysely.models';
-import { Transaction, sql } from 'kysely';
+import { Transaction } from 'kysely';
 import { BaseRepository } from './base.repo';
 
 export class HouseholdRepo extends BaseRepository<'households'> {
@@ -12,11 +12,33 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    */
   public async getAllWithPeopleCount(tenant_id: string, trx?: Transaction<Models>) {
     return this.getSelect(trx)
-      .select(sql<string>`households.*`.as('households'))
-      .select(sql<string>`count(persons)`.as('person_count'))
-      .leftJoin('persons', 'households.id', 'persons.household_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .groupBy(['households.id', 'households.tenant_id'])
+      .select([
+        'households.id',
+        'households.country',
+        'households.city',
+        'households.street',
+        'households.street_num',
+        'households.apt',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
+          .as('persons_count'), // Alias the subquery
+      ])
+      .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .select(({ fn }) => [fn.agg<string[]>('array_agg', ['tags.name']).as('tags')])
+      .groupBy([
+        'households.tenant_id',
+        'households.id',
+        'households.country',
+        'households.city',
+        'households.street',
+        'households.street_num',
+        'households.apt',
+      ])
       .execute();
   }
 
