@@ -28,7 +28,7 @@ import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRendere
  */
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
-    { field: 'person_count', headerName: 'People in household' },
+    { field: 'persons_count', headerName: 'People in household' },
     { field: 'street_num', headerName: 'Street Number', editable: true },
     { field: 'street', headerName: 'Street', editable: true },
     { field: 'apt', headerName: 'Apt', editable: true },
@@ -37,6 +37,13 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
       field: 'tags',
       headerName: 'Tags',
       cellRenderer: TagsCellRendererComponent,
+      equals: (valueA: string[], valueB: string[]) => valueA?.toString() === valueB?.toString(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      valueFormatter: (params: any) =>
+        (!params?.value || !params.value[0] ? [] : params.value)?.toString(),
+      comparator: (valueA: string[], valueB: string[]) =>
+        valueA.toString().localeCompare(valueB.toString()),
+      cellDataType: 'object',
       cellRendererParams: {
         type: 'households',
         obj: UpdateHouseholdsObj,

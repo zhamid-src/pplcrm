@@ -29,7 +29,9 @@ function getAll() {
 }
 
 function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input }) => persons.getAllWithAddress(input));
+  return authProcedure
+    .input(getAllOptions)
+    .query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth!, input));
 }
 
 function getByHouseholdId() {

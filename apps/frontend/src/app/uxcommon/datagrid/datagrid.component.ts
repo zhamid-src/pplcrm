@@ -420,6 +420,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     let rows = [] as Partial<T>[];
     try {
       rows = (await this.gridSvc.getAll()) as Partial<T>[];
+      console.log(rows);
     } catch {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }

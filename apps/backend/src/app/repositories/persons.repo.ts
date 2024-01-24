@@ -8,6 +8,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   public async getAllWithAddress(
+    tenant_id: string,
     optionsIn?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
     trx?: Transaction<Models>,
   ) {
@@ -24,7 +25,9 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.mobile',
         'persons.notes',
         'name as tags',
-        sql<string>`concat(households.street_num, ' ', households.street)`.as('address'),
+        sql<string>`concat(households.apt, '-', households.street_num, ' ', households.street, ','households.city')`.as(
+          'address',
+        ),
       ] as TypeTableColumns<'persons' | 'households' | 'tags' | 'map_peoples_tags'>[]);
 
     //TODO: use options
@@ -39,10 +42,14 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.email',
         'persons.mobile',
         'persons.notes',
-        sql<string>`concat(households.street_num, ' ', households.street)`.as('address'),
+        sql<string>`concat(households.street_num, ' ', households.street, ', ', households.city)`.as(
+          'address',
+        ),
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
       ])
+      .where('households.tenant_id', '=', tenant_id)
       .groupBy([
+        'persons.tenant_id',
         'persons.id',
         'persons.first_name',
         'persons.last_name',

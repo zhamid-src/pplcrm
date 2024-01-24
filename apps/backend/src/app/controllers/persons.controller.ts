@@ -50,8 +50,9 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   /**
    * Get all people with their address and tags
    */
-  public getAllWithAddress(options?: getAllOptionsType) {
+  public getAllWithAddress(auth: IAuthKeyPayload, options?: getAllOptionsType) {
     return this.getRepo().getAllWithAddress(
+      auth.tenant_id,
       options as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
     );
   }
