@@ -60,6 +60,7 @@ import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-c
  * <pc-datagrid [colDefs]="col" [disableDelete]="false"></pc-datagrid>
 
  */
+// TODO: these are not the correct generics
 export class DatagridComponent<T extends keyof Models, U> {
   /**
    * If given, we enable an "add" button that allows new rows to be added.
