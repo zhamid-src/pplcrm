@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { IAuthKeyPayload } from '@common';
+import { IAuthKeyPayload, UpdateHouseholdsType } from '@common';
 import { TRPCError } from '@trpc/server';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { HouseholdRepo } from '../repositories/households.repo';
@@ -13,6 +13,15 @@ export class HouseholdsController extends BaseController<'households', Household
 
   constructor() {
     super(new HouseholdRepo());
+  }
+
+  public addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const row = {
+      ...payload,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+    } as OperationDataType<'households', 'insert'>;
+    return this.add(row);
   }
 
   /**
@@ -29,7 +38,7 @@ export class HouseholdsController extends BaseController<'households', Household
       createdby_id: auth.user_id,
     } as OperationDataType<'tags', 'insert'>;
 
-    const tag = await this.tagsRepo.addOrGet(row, 'name');
+    const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' });
     return this.addToMap({
       tag_id: tag?.id,
       household_id,
@@ -59,11 +68,11 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param tag_name - name of the tag to remove
    */
   public async removeTag(tenant_id: string, household_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName(tenant_id, tag_name);
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
     if (tag?.id) {
       const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id!);
       if (mapId) {
-        this.mapHouseholdsTagRepo.delete(tenant_id, mapId);
+        this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
       }
     }
   }
@@ -83,6 +92,6 @@ export class HouseholdsController extends BaseController<'households', Household
         code: 'INTERNAL_SERVER_ERROR',
       });
     }
-    this.mapHouseholdsTagRepo.add(row as OperationDataType<'map_households_tags', 'insert'>);
+    this.mapHouseholdsTagRepo.add({ row: row as OperationDataType<'households', 'insert'> });
   }
 }

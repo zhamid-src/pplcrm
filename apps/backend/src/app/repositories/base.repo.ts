@@ -7,7 +7,6 @@ import {
   InsertResult,
   Kysely,
   Migrator,
-  OperandValueExpressionOrList,
   OrderByExpression,
   PostgresDialect,
   QueryResult,
@@ -21,13 +20,11 @@ import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-par
 import path from 'path';
 import { Pool } from 'pg';
 import {
-  GetOperandType,
-  Keys,
   Models,
   OperationDataType,
-  TableColumnsType,
-  TableIdType,
-  TablesOperationMap,
+  TypeId,
+  TypeTableColumns,
+  TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
 
 /**
@@ -36,7 +33,7 @@ import {
  * set, ordering the result set, and grouping the result set.
  */
 export type QueryParams<T extends keyof Models> = {
-  columns?: TableColumnsType<T>[];
+  columns?: TypeTableColumns<T>[];
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, ExtractTableAlias<Models, T>, object>[];
@@ -95,28 +92,38 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - newly added rows
    */
-  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(rows).returningAll().execute();
+  public async addMany(
+    input: {
+      rows: OperationDataType<T, 'insert'>[];
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getInsert(trx).values(input.rows).returningAll().execute();
   }
 
   public async addOrGet(
-    row: OperationDataType<T, 'insert'>,
-    onConflictColumn: { [X in T]: keyof Models[T] }[T] & string,
+    input: {
+      row: OperationDataType<T, 'insert'>;
+      onConflictColumn: { [X in T]: keyof Models[T] }[T] & string;
+    },
     trx?: Transaction<Models>,
   ) {
     const insertResult = await this.getInsert(trx)
-      .values(row)
-      .onConflict((oc) => oc.column(onConflictColumn).doNothing())
+      .values(input.row)
+      .onConflict((oc) => oc.column(input.onConflictColumn).doNothing())
       .returningAll()
       .executeTakeFirst();
 
     if (insertResult) {
       return insertResult;
     } else {
-      const lhs = onConflictColumn as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+      const lhs = input.onConflictColumn as ReferenceExpression<
+        Models,
+        ExtractTableAlias<Models, T>
+      >;
       const selectResult = await this.getSelect(trx)
         .selectAll()
-        .where(lhs, '=', row['name'])
+        .where(lhs, '=', input.row['name'])
         .executeTakeFirst();
       return selectResult;
     }
@@ -127,19 +134,22 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - newly added row
    */
-  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(row).returningAll().executeTakeFirst();
+  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
+    console.log(input);
+    return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
   }
 
   /**
    * Delete the row that matches the given id.
    */
   public async delete(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    id: GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
+    input: { tenant_id: TypeTenantId<T>; id: TypeId<T> },
     trx?: Transaction<Models>,
   ) {
-    return this.getDelete(trx).where('id', '=', id).where('tenant_id', '=', tenant_id).execute();
+    return this.getDelete(trx)
+      .where('id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
   }
 
   /**
@@ -148,11 +158,15 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public getAll(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    options?: QueryParams<T>,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      options?: QueryParams<T>;
+    },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(options, trx).where('tenant_id', '=', tenant_id).execute();
+    return this.getSelectWithColumns(input.options, trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
   }
 
   /**
@@ -161,14 +175,16 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public getById(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    id: TableIdType<T>,
-    options?: QueryParams<T>,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      id: TypeId<T>;
+      options?: QueryParams<T>;
+    },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(options, trx)
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenant_id)
+    return this.getSelectWithColumns(input.options, trx)
+      .where('id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
       .executeTakeFirst();
   }
 
@@ -178,14 +194,16 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public async exists(
-    key: string,
-    column: TableColumnsType<T>,
+    input: {
+      key: string;
+      column: TypeTableColumns<T>;
+    },
     trx?: Transaction<Models>,
   ): Promise<boolean> {
-    const column_lhs = column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+    const column_lhs = input.column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
     const result = await this.getSelect(trx)
-      .select(column)
-      .where(column_lhs, '=', key)
+      .select(input.column)
+      .where(column_lhs, '=', input.key)
       .executeTakeFirst();
     return result !== undefined;
   }
@@ -197,10 +215,7 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - returns the count as a string
    */
-  public async count(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    trx?: Transaction<Models>,
-  ): Promise<string> {
+  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<string> {
     const query = sql<string>`count(*)`.as('count');
     const { count } = (await this.getSelect(trx)
       .select(query)
@@ -229,18 +244,20 @@ export class BaseRepository<T extends keyof Models> {
    * @returns
    */
   public async find(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    key: string,
-    column: TableColumnsType<T>,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      key: string;
+      column: TypeTableColumns<T>;
+    },
     trx?: Transaction<Models>,
   ) {
-    const column_lhs = column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
-    const rhs = key + '%';
+    const column_lhs = input.column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+    const rhs = input.key + '%';
     return this.getSelect(trx)
-      .select([column])
+      .select([input.column])
       .limit(3)
       .where(column_lhs, 'ilike', rhs)
-      .where('tenant_id', '=', tenant_id)
+      .where('tenant_id', '=', input.tenant_id)
       .execute();
   }
 
@@ -250,15 +267,17 @@ export class BaseRepository<T extends keyof Models> {
    * @returns The updated row
    */
   public async update(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    id: GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
-    row: OperationDataType<T, 'update'>,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      id: TypeId<T>;
+      row: OperationDataType<T, 'update'>;
+    },
     trx?: Transaction<Models>,
   ) {
     return this.getUpdate(trx)
-      .set(row)
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenant_id)
+      .set(input.row)
+      .where('id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
       .returningAll()
       .executeTakeFirst();
   }

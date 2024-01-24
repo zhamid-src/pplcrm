@@ -71,16 +71,18 @@ export type OperationDataType<
   Op extends 'select' | 'update' | 'insert',
 > = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
 // export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
-export type TableColumnsType<T extends keyof Models> = T extends keyof Models
-  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
-  : never;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 
-export type TableIdType<T extends keyof Models> = OperandValueExpressionOrList<
+export type TypeId<T extends keyof Models> = TypeColumn<T, 'id'>;
+export type TypeTenantId<T extends keyof Models> = TypeColumn<T, 'tenant_id'>;
+export type TypeColumn<T extends keyof Models, U> = OperandValueExpressionOrList<
   Models,
   ExtractTableAlias<Models, T>,
-  'id'
+  U
 >;
+export type TypeTableColumns<T extends keyof Models> = T extends keyof Models
+  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
+  : never;
 
 export type TablesOperationMap = {
   [K in Keys<Models>]: {

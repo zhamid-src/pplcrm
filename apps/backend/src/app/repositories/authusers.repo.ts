@@ -24,10 +24,10 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
   }
 
   public existsByEmail(email: string): Promise<boolean> {
-    return this.exists(email, 'email');
+    return this.exists({ key: email, column: 'email' });
   }
 
-  public findOneByEmail(
+  public getByEmail(
     email: SelectEmailType,
     options?: QueryParams<'authusers'>,
     trx?: Transaction<Models>,

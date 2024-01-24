@@ -26,14 +26,17 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * Given the key, return the first three tags that match the key.
    */
   public findByName(name: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
-    return this.find(auth.tenant_id, name, 'name');
+    return this.find({ tenant_id: auth.tenant_id, key: name, column: 'name' });
   }
 
   /**
    * Update the tag that matches the given ID
    */
-  public updateTag(id: string, input: UpdateTagType, auth: IAuthKeyPayload) {
-    const payload = { ...input, updatedby_id: auth.user_id } as OperationDataType<'tags', 'insert'>;
-    return this.update(auth.tenant_id, id, payload);
+  public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<
+      'tags',
+      'insert'
+    >;
+    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
   }
 }

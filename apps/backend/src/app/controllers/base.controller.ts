@@ -1,14 +1,12 @@
 import { getAllOptionsType } from '@common';
-import { OperandValueExpressionOrList } from 'kysely';
-import { ExtractTableAlias } from 'kysely/dist/cjs/parser/table-parser';
+import { Transaction } from 'kysely';
 import {
-  GetOperandType,
-  Keys,
   Models,
   OperationDataType,
-  TableColumnsType,
-  TableIdType,
-  TablesOperationMap,
+  TypeColumn,
+  TypeId,
+  TypeTableColumns,
+  TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from '../repositories/base.repo';
 
@@ -41,8 +39,8 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns The inserted row
    */
-  public add(row: OperationDataType<T, 'insert'>) {
-    return this.repo.add(row);
+  public add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+    return this.repo.add({ row }, trx);
   }
 
   /**
@@ -53,21 +51,16 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns The inserted rows
    */
-  public addMany(rows: OperationDataType<T, 'insert'>[]) {
-    return this.repo.addMany(rows);
+  public addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
+    return this.repo.addMany({ rows }, trx);
   }
 
   /**
    * Delete the row with the given id.
    */
-  public delete(
-    tenant_id: OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    id: string,
-  ) {
-    return this.repo.delete(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-      id as GetOperandType<T, 'select', Keys<TablesOperationMap[T]['select']>>,
-    );
+  public delete(tenant_id: TypeColumn<T, 'tenant_id'>, idToDelete: string) {
+    const id = idToDelete as TypeId<T>;
+    return this.repo.delete({ id, tenant_id });
   }
 
   /**
@@ -81,12 +74,9 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns - upto three rows that best match the key
    */
-  public async find(tenant_id: string, key: string, column: TableColumnsType<T>) {
-    return await this.repo.find(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-      key,
-      column,
-    );
+  public async find(input: { tenant_id: string; key: string; column: TypeTableColumns<T> }) {
+    const tenant_id = input.tenant_id as TypeTenantId<T>;
+    return await this.repo.find({ tenant_id, key: input.key, column: input.column });
   }
 
   /**
@@ -94,21 +84,19 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @see {@link getAllOptionsType} for more information about the options.
    */
-  public getAll(tenant_id: string, options?: getAllOptionsType) {
-    return this.repo.getAll(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-      options as QueryParams<T>,
-    );
+  public getAll(tenant: string, options?: getAllOptionsType) {
+    const tenant_id = tenant as TypeTenantId<T>;
+    return this.repo.getAll({ tenant_id, options: options as QueryParams<T> });
   }
 
   /**
    * Find the row with the given id.
    */
-  public getById(tenant_id: string, id: string) {
-    return this.repo.getById(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-      id as TableIdType<T>,
-    );
+  public getById(input: { tenant_id: string; id: string }) {
+    const tenant_id = input.tenant_id as TypeTenantId<T>;
+    const id = input.id as TypeId<T>;
+
+    return this.repo.getById({ id, tenant_id });
   }
 
   /**
@@ -117,20 +105,16 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    */
   public getCount(tenant_id: string) {
-    return this.repo.count(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-    );
+    return this.repo.count(tenant_id as TypeColumn<T, 'tenant_id'>);
   }
 
   /**
    * Update the row with the given id, overriding columns with the given values.
    */
-  public update(tenant_id: string, id: string, input: OperationDataType<T, 'update'>) {
-    return this.repo.update(
-      tenant_id as OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, 'tenant_id'>,
-      id as GetOperandType<T, 'update', Keys<TablesOperationMap[T]['update']>>,
-      input,
-    );
+  public update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+    const id = input.id as TypeId<T>;
+    const tenant_id = input.tenant_id as TypeTenantId<T>;
+    return this.repo.update({ id, tenant_id, row: input.row });
   }
 
   /**
