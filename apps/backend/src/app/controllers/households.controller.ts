@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { IAuthKeyPayload, UpdateHouseholdsType } from '@common';
 import { TRPCError } from '@trpc/server';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -6,7 +5,6 @@ import { HouseholdRepo } from '../repositories/households.repo';
 import { MapHouseholdsTagsRepo } from '../repositories/map-households-tags.repo';
 import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
-
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
   private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
   private tagsRepo = new TagsRepo();

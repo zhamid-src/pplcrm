@@ -135,7 +135,6 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - newly added row
    */
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    console.log(input);
     return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
   }
 

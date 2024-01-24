@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { TagsRepo } from '../repositories/tags.repo';

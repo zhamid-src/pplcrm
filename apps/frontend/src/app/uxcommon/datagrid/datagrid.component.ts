@@ -419,7 +419,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected async refresh() {
     this.api!.showLoadingOverlay();
     let rows = [] as Partial<T>[];
