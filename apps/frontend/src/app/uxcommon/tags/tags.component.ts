@@ -37,6 +37,9 @@ export class TagsComponent {
    * This component does not do anything else with this event.
    */
   @Output() public tagClicked = new EventEmitter<string>();
+
+  @Input() public animateRemoval = true;
+
   /**
    * In case the parent wants to give a list of tags to start with.
    * This can also be used as a two-way binding
@@ -99,7 +102,8 @@ export class TagsComponent {
    * @param tag - the tag that was closed
    */
   protected closed(tag: string) {
-    setTimeout(() => this.remove(tag), 500);
+    const duration = this.animateRemoval ? 500 : 100;
+    setTimeout(() => this.remove(tag), duration);
   }
 
   /**

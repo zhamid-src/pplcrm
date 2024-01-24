@@ -3,7 +3,7 @@ import { Component } from '@angular/core';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { ICellRendererAngularComp } from 'ag-grid-angular';
-import { ICellRendererParams } from 'ag-grid-community';
+import { GridApi, ICellRendererParams } from 'ag-grid-community';
 import { Models } from 'common/src/lib/kysely.models';
 
 interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererParams {
@@ -20,38 +20,37 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
 export class TagsCellRendererComponent<T extends keyof Models, U>
   implements ICellRendererAngularComp
 {
-  public cellValue!: string;
-
+  private api!: GridApi<T>;
   protected tags: string[] = [];
 
   private rowId!: string;
   private service?: AbstractBackendService<T, U>;
+  private colName!: string;
 
   constructor() {}
 
   // gets called once before the renderer is used
   public agInit(params: MyCellRendererParams<T, U>): void {
-    this.cellValue = this.getValueToDisplay(params);
+    this.tags = !params.value || !params.value[0] ? [] : params.value;
+    this.api = params.api;
+
     this.service = params?.service;
     this.rowId = params.data.id;
-  }
-
-  public getValueToDisplay(params: ICellRendererParams) {
-    if (!params.value || !params.value[0]) {
-      this.tags = [];
-    } else {
-      this.tags = params.value;
-    }
-    return params.value;
+    this.colName = params.colDef!.field!;
   }
 
   // gets called whenever the user gets the cell to refresh
   public refresh(params: ICellRendererParams) {
-    this.cellValue = this.getValueToDisplay(params);
+    this.tags = !params.value || !params.value[0] ? [] : params.value;
     return true;
   }
 
   public removeTag(tag_name: string) {
     this.service?.removeTag(this.rowId, tag_name);
+    const node = this.api!.getRowNode(this.rowId);
+    this.api?.flashCells({
+      rowNodes: node ? [node] : [],
+      columns: [this.colName],
+    });
   }
 }

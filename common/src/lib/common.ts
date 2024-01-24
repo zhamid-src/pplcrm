@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export type AddTagType = z.infer<typeof AddTagObj>;
 export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+export type PersonsType = z.infer<typeof PersonsObj>;
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
 export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
@@ -159,6 +160,19 @@ export const UpdateTagObj = AddTagObj.optional();
  * It's used with an ID in the API call that
  * indicates which Person to update.
  */
+export const PersonsObj = z.object({
+  id: z.string(),
+  household_id: z.string(),
+  email: z.string(),
+  email2: z.string(),
+  first_name: z.string(),
+  middle_names: z.string(),
+  last_name: z.string(),
+  home_phone: z.string(),
+  mobile: z.string(),
+  notes: z.string(),
+  json: z.string(),
+});
 export const UpdatePersonsObj = z.object({
   household_id: z.string().optional(),
   email: z.string().optional(),
