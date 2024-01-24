@@ -1,4 +1,4 @@
-import { Models, TableColumnsType } from 'common/src/lib/kysely.models';
+import { Models, TypeTableColumns } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
 import { BaseRepository, QueryParams } from './base.repo';
 
@@ -25,7 +25,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.notes',
         'name as tags',
         sql<string>`concat(households.street_num, ' ', households.street)`.as('address'),
-      ] as TableColumnsType<'persons' | 'households' | 'tags' | 'map_peoples_tags'>[]);
+      ] as TypeTableColumns<'persons' | 'households' | 'tags' | 'map_peoples_tags'>[]);
 
     //TODO: use options
     return this.getSelect(trx)
@@ -66,14 +66,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
    * @returns
    */
   public getByHouseholdId(
-    household_id: string,
-    tenant_id: string,
-    options: QueryParams<'persons'>,
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(options, trx)
-      .where('household_id', '=', household_id)
-      .where('tenant_id', '=', tenant_id)
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
       .execute();
   }
 
@@ -87,12 +85,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .execute();
   }
 
-  public getTags(id: string, tenant_id: string) {
+  public getTags(input: { id: string; tenant_id: string }) {
     return this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', id)
-      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id)
       .select('tags.name')
       .execute();
   }

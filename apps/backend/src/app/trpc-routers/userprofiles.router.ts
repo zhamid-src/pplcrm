@@ -5,7 +5,7 @@ import { UserProfilesController } from '../controllers/usersprofiles.controller'
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => user.getById(ctx.auth!.tenant_id!, input));
+    .query(({ input, ctx }) => user.getById({ tenant_id: ctx.auth!.tenant_id!, id: input }));
 }
 
 const user = new UserProfilesController();

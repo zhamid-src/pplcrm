@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, getAllOptionsType } from '@common';
+import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { QueryParams } from '../repositories/base.repo';
@@ -15,6 +15,15 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     super(new PersonsRepo());
   }
 
+  public addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    const row = {
+      ...payload,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+    } as OperationDataType<'persons', 'insert'>;
+    return this.add(row);
+  }
+
   /**
    * Add a tag to a person. If the tag doesn't exist, it will be added.
    * * @param person_id of the person
@@ -29,7 +38,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       createdby_id: auth.user_id,
     } as OperationDataType<'tags', 'insert'>;
 
-    const tag = await this.tagsRepo.addOrGet(row, 'name');
+    const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' });
     return this.addToMap({
       tag_id: tag?.id,
       person_id,
@@ -55,11 +64,11 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     auth: IAuthKeyPayload,
     options?: getAllOptionsType,
   ) {
-    return this.getRepo().getByHouseholdId(
-      household_id,
-      auth.tenant_id,
-      options as QueryParams<'persons'>,
-    );
+    return this.getRepo().getByHouseholdId({
+      id: household_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
   }
 
   /**
@@ -73,7 +82,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * Get tags assigned to this person
    */
   public getTags(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTags(person_id, auth.tenant_id);
+    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id });
   }
 
   /**
@@ -81,12 +90,12 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @param person_id of the person
    * @param tag_name - name of the tag to remove
    */
-  public async removeTag(tenant_id: string, person_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName(tenant_id, tag_name);
+  public async removeTag(input: { tenant_id: string; person_id: string; name: string }) {
+    const tag = await this.tagsRepo.getIdByName(input);
     if (tag?.id) {
-      const mapId = await this.mapPersonsTagRepo.getId(tenant_id, person_id, tag.id!);
-      if (mapId) {
-        this.mapPersonsTagRepo.delete(tenant_id, mapId);
+      const id = await this.mapPersonsTagRepo.getId({ ...input, tag_id: tag.id });
+      if (id) {
+        this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
       }
     }
   }
@@ -106,6 +115,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         code: 'INTERNAL_SERVER_ERROR',
       });
     }
-    this.mapPersonsTagRepo.add(row as OperationDataType<'map_peoples_tags', 'insert'>);
+    this.mapPersonsTagRepo.add({ row: row as OperationDataType<'map_peoples_tags', 'insert'> });
   }
 }

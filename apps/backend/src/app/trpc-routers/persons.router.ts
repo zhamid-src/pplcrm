@@ -7,7 +7,7 @@ import { PersonsController } from '../controllers/persons.controller';
 function add() {
   return authProcedure
     .input(UpdatePersonsObj)
-    .mutation(({ input }) => persons.add(input as OperationDataType<'persons', 'insert'>));
+    .mutation(({ input, ctx }) => persons.addPerson(input, ctx.auth!));
 }
 
 function addTag() {
@@ -41,7 +41,7 @@ function getByHouseholdId() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => persons.getById(ctx.auth!.tenant_id!, input));
+    .query(({ input, ctx }) => persons.getById({ tenant_id: ctx.auth!.tenant_id!, id: input }));
 }
 
 function getDistinctTags() {
@@ -58,7 +58,11 @@ function removeTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
     .mutation(({ input, ctx }) =>
-      persons.removeTag(ctx.auth!.tenant_id!, input.id, input.tag_name),
+      persons.removeTag({
+        tenant_id: ctx.auth!.tenant_id!,
+        person_id: input.id,
+        name: input.tag_name,
+      }),
     );
 }
 
@@ -66,11 +70,11 @@ function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdatePersonsObj }))
     .mutation(({ input, ctx }) =>
-      persons.update(
-        ctx.auth!.tenant_id!,
-        input.id,
-        input.data as OperationDataType<'persons', 'update'>,
-      ),
+      persons.update({
+        tenant_id: ctx.auth!.tenant_id!,
+        id: input.id,
+        row: input.data as OperationDataType<'persons', 'update'>,
+      }),
     );
 }
 

@@ -7,7 +7,7 @@ import { HouseholdsController } from '../controllers/households.controller';
 function add() {
   return authProcedure
     .input(UpdateHouseholdsObj)
-    .mutation(({ input }) => households.add(input as OperationDataType<'households', 'insert'>));
+    .mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth!));
 }
 
 function addTag() {
@@ -33,7 +33,7 @@ function getAllWithPeopleCount() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => households.getById(ctx.auth!.tenant_id!, input));
+    .query(({ input, ctx }) => households.getById({ tenant_id: ctx.auth!.tenant_id!, id: input }));
 }
 
 function getDistinctTags() {
@@ -58,11 +58,11 @@ function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdateHouseholdsObj }))
     .mutation(({ input, ctx }) =>
-      households.update(
-        ctx.auth!.tenant_id!,
-        input.id,
-        input.data as OperationDataType<'households', 'update'>,
-      ),
+      households.update({
+        tenant_id: ctx.auth!.tenant_id!,
+        id: input.id,
+        row: input.data as OperationDataType<'households', 'update'>,
+      }),
     );
 }
 

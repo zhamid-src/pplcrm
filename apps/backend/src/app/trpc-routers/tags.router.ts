@@ -26,7 +26,7 @@ function getAll() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => tags.getById(ctx.auth!.tenant_id!, input));
+    .query(({ input, ctx }) => tags.getById({ tenant_id: ctx.auth!.tenant_id!, id: input }));
 }
 
 function update() {

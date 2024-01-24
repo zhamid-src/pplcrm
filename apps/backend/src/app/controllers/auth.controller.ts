@@ -13,6 +13,7 @@ import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
 import { AuthUsersRepo } from '../repositories/authusers.repo';
+import { QueryParams } from '../repositories/base.repo';
 import { SessionsRepo } from '../repositories/sessions.repo';
 import { TenantsRepo } from '../repositories/tenants.repo';
 import { UserPofiles } from '../repositories/userprofiles.repo';
@@ -31,10 +32,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (!auth?.user_id) {
       return null;
     }
+    const options = { columns: ['id', 'email', 'first_name'] } as QueryParams<'authusers'>;
     const user = await this.getRepo()
-      .getById(auth.tenant_id, auth.user_id, {
-        columns: ['id', 'email', 'first_name'],
-      })
+      .getById({ tenant_id: auth.tenant_id, id: auth.user_id, options })
       .catch(() => null);
     return user || null;
   }
@@ -48,8 +48,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
     const decode = createDecoder();
     const payload = decode(input.auth_token);
-
-    return this.createTokens(payload.user_id, payload.tenant_id, payload.name, payload.session_id);
+    return this.createTokens(payload);
   }
 
   public async resetPassword(plaintextPassword: string, code: string) {
@@ -103,7 +102,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async signIn(input: signInInputType) {
+    console.log('*************************** signIn ***************************');
+
     const user = await this.getUserByEmail(input.email);
+    console.log('user: ', user);
 
     if (!bcrypt.compareSync(input.password, user.password)) {
       throw new TRPCError({
@@ -112,8 +114,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         code: 'UNAUTHORIZED',
       });
     }
+    console.log('passwords match');
 
-    return this.createTokens(user.id, user.tenant_id, user.first_name);
+    return this.createTokens({
+      user_id: user.id,
+      tenant_id: user.tenant_id,
+      name: user.first_name,
+    });
   }
 
   /**
@@ -140,7 +147,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const user = await this.createUser(trx, tenant_id, password, email, input);
       const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
       await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
-      token = await this.createTokens(profile.id, user.tenant_id, user.first_name);
+      token = await this.createTokens({
+        user_id: profile.id,
+        tenant_id: user.tenant_id,
+        name: user.first_name,
+      });
     });
 
     return token;
@@ -153,7 +164,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     auth_id: string,
   ) {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
-    const profile = await this.profiles.add(row, trx);
+    const profile = await this.profiles.add({ row }, trx);
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -165,7 +176,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   private async createTenant(trx: Transaction<Models>, name: string) {
     const row = { name } as OperationDataType<'tenants', 'insert'>;
-    const tenantAddResult = await this.tenants.add(row, trx);
+    const tenantAddResult = await this.tenants.add({ row }, trx);
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -175,23 +186,28 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return tenantAddResult.id;
   }
 
-  private async createTokens(
-    user_id: string,
-    tenant_id: string,
-    name: string,
-    oldSession?: string,
-  ) {
+  private async createTokens(input: {
+    user_id: string;
+    tenant_id: string;
+    name: string;
+    oldSession?: string;
+  }) {
+    console.log(input);
     // Delete the old session
-    oldSession && (await this.sessions.deleteBySessionId(oldSession));
+    input.oldSession && (await this.sessions.deleteBySessionId(input.oldSession));
 
     const row = {
-      user_id,
-      tenant_id,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
       ip_address: '',
       user_agent: '',
       status: 'active',
     } as OperationDataType<'sessions', 'insert'>;
-    const currentSession = await this.sessions.add(row);
+
+    console.log('adding sessin');
+    const currentSession = await this.sessions.add({ row });
+
+    console.log('session added');
 
     if (!currentSession) {
       throw new TRPCError({
@@ -208,7 +224,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       clockTimestamp: Date.now(),
       expiresIn: '30m',
     });
-    const auth_token = signer({ user_id, tenant_id, name, session_id });
+    const auth_token = signer({
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      name: input.name,
+      session_id,
+    });
     return { auth_token, refresh_token: currentSession.refresh_token };
   }
 
@@ -226,7 +247,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       first_name: input.first_name,
       verified: false,
     } as OperationDataType<'authusers', 'insert'>;
-    const user = await this.getRepo().add(row, trx);
+    const user = await this.getRepo().add({ row }, trx);
 
     if (!user) {
       throw new TRPCError({
@@ -256,7 +277,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async getUserByEmail(email: string) {
-    const user = (await this.getRepo().findOneByEmail(email)) as AuthUsersType;
+    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
 
     if (!user) {
       throw new TRPCError({
@@ -290,7 +311,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       'update',
       Keys<TablesOperationMap['tenants']['update']>
     >;
-    await this.tenants.update(tenant_id, id, row, trx);
+    await this.tenants.update({ id, tenant_id, row }, trx);
   }
 
   private async verifyUserDoesNotExist(email: string) {
