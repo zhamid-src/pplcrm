@@ -64,7 +64,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     const result = await this.getRepo().updatePassword(password, code);
-    if (result.numUpdatedRows === '0') {
+    if (result.numUpdatedRows === BigInt(0)) {
       throw new TRPCError({
         message: 'Wrong code, please try again',
         code: 'UNAUTHORIZED',

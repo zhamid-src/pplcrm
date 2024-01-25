@@ -1,4 +1,4 @@
-import { GridApi } from 'ag-grid-community';
+import { GridApi } from '@ag-grid-community/core';
 
 type UNDOTYPE = 'aggrid' | 'custom';
 

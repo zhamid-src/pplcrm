@@ -1,6 +1,6 @@
+import { ILoadingOverlayAngularComp } from '@ag-grid-community/angular';
+import { ILoadingOverlayParams } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
-import { ILoadingOverlayAngularComp } from 'ag-grid-angular';
-import { ILoadingOverlayParams } from 'ag-grid-community';
 
 @Component({
   selector: 'pc-loading-overlay',
