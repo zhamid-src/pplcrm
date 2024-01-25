@@ -1,3 +1,4 @@
+import { CellDoubleClickedEvent, GridOptions } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -8,7 +9,6 @@ import { HouseholdsBackendService } from '@services/backend/households.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
-import { CellDoubleClickedEvent, GridOptions } from 'ag-grid-community';
 import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
 @Component({

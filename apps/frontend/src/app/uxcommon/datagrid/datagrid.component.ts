@@ -1,12 +1,4 @@
-import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, effect } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@services/alert.service';
-import { AbstractBackendService } from '@services/backend/abstract.service';
-import { SearchService } from '@services/search.service';
-import { ThemeService } from '@services/theme.service';
-import { IconsComponent } from '@uxcommon/icons/icons.component';
-import { AgGridModule } from 'ag-grid-angular';
+import { AgGridModule } from '@ag-grid-community/angular';
 import {
   CellMouseOverEvent,
   CellValueChangedEvent,
@@ -15,7 +7,15 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-} from 'ag-grid-community';
+} from '@ag-grid-community/core';
+import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, Output, effect } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@services/alert.service';
+import { AbstractBackendService } from '@services/backend/abstract.service';
+import { SearchService } from '@services/search.service';
+import { ThemeService } from '@services/theme.service';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { Models } from 'common/src/lib/kysely.models';
 import { LoadingOverlayComponent } from './overlay/loadingOverlay.component';
 import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-cell-renderer.component';

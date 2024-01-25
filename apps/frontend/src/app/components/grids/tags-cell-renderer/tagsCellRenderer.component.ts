@@ -1,9 +1,9 @@
+import { ICellRendererAngularComp } from '@ag-grid-community/angular';
+import { GridApi, ICellRendererParams, } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { AbstractBackendService } from '@services/backend/abstract.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
-import { ICellRendererAngularComp } from 'ag-grid-angular';
-import { GridApi, ICellRendererParams } from 'ag-grid-community';
 import { Models } from 'common/src/lib/kysely.models';
 
 interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererParams {
