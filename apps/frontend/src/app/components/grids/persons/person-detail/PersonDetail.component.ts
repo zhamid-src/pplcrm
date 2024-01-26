@@ -120,11 +120,11 @@ export class PersonDetailComponent implements OnInit {
   }
 
   protected tagAdded(tag: string) {
-    this.personsSvc.addTag(this.id!, tag);
+    this.personsSvc.attachTag(this.id!, tag);
   }
 
   protected tagRemoved(tag: string) {
-    this.personsSvc.removeTag(this.id!, tag);
+    this.personsSvc.detachTag(this.id!, tag);
   }
 
   private add(data: UpdatePersonsType) {

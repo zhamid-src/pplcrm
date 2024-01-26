@@ -145,24 +145,24 @@ export class BaseRepository<T extends keyof Models> {
     input: { tenant_id: TypeTenantId<T>; id: TypeId<T> },
     trx?: Transaction<Models>,
   ) {
-    return this.getDelete(trx)
-      .where('id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
+    const ids = [input.id] as TypeId<T>;
+    return this.deleteMany({ tenant_id: input.tenant_id, ids }, trx);
   }
 
   /**
    * Delete the rows that matches the given ids.
    */
   public async deleteMany(
-    input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] },
+    input: { tenant_id: TypeTenantId<T>; ids: TypeId<T> },
     trx?: Transaction<Models>,
   ) {
     const ids = input.ids as TypeId<T>;
-    return this.getDelete(trx)
-      .where('id', 'in', ids)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
+    return (
+      (await this.getDelete(trx)
+        .where('id', 'in', ids)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute()) !== null
+    );
   }
 
   /**

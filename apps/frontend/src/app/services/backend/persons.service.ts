@@ -19,7 +19,7 @@ export class PersonsService extends AbstractAPIService<TYPE, UpdatePersonsType> 
     return Promise.resolve(rows);
   }
 
-  public addTag(id: string, tag_name: string) {
+  public attachTag(id: string, tag_name: string) {
     return this.api.persons.addTag.mutate({ id: id, tag_name });
   }
 
@@ -47,7 +47,7 @@ export class PersonsService extends AbstractAPIService<TYPE, UpdatePersonsType> 
     return tags.map((tag) => tag.name);
   }
 
-  public removeTag(id: string, tag_name: string) {
+  public detachTag(id: string, tag_name: string) {
     return this.api.persons.removeTag.mutate({ id: id, tag_name });
   }
 

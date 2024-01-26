@@ -18,7 +18,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return Promise.resolve(rows);
   }
 
-  public async addTag(id: string, tag_name: string) {
+  public async attachTag(id: string, tag_name: string) {
     await this.add({ name: tag_name });
   }
 
@@ -46,7 +46,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return [tag.name];
   }
 
-  public removeTag(id: string) {
+  public detachTag(id: string) {
     return this.delete(id);
   }
 

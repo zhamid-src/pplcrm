@@ -17,7 +17,7 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return Promise.resolve(rows);
   }
 
-  public addTag(id: string, tag_name: string) {
+  public attachTag(id: string, tag_name: string) {
     return this.api.households.addTag.mutate({ id: id, tag_name });
   }
 
@@ -41,7 +41,7 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return tags.map((tag) => tag.name);
   }
 
-  public removeTag(id: string, tag_name: string) {
+  public detachTag(id: string, tag_name: string) {
     return this.api.households.removeTag.mutate({ id: id, tag_name });
   }
 

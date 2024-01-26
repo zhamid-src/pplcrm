@@ -29,7 +29,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param rows The rows to add to the grid
    */
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
-  public abstract addTag(id: string, tag_name: string): Promise<never | void>;
+  public abstract attachTag(id: string, tag_name: string): Promise<never | void>;
   /**
    * Delete the row with the given id from the database.
    *
@@ -63,7 +63,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    */
   public abstract getById(id: string): Promise<Record<never, never> | undefined>;
   public abstract getTags(id: string): Promise<string[]>;
-  public abstract removeTag(id: string, tag_name: string): Promise<never | boolean>;
+  public abstract detachTag(id: string, tag_name: string): Promise<never | boolean>;
   /**
    * Update the row with the given ID with the given data.
    *
