@@ -145,6 +145,17 @@ export class DatagridComponent<T extends keyof Models, U> {
   protected _sideBar: SideBarDef = {
     toolPanels: [
       {
+        id: 'filters',
+        labelDefault: 'Filters',
+        labelKey: 'filters',
+        iconKey: 'filter',
+        toolPanel: 'agFiltersToolPanel',
+        toolPanelParams: {
+          suppressExpandAll: true,
+          suppressFilterSearch: true,
+        },
+      },
+      {
         id: 'columns',
         labelDefault: 'Columns',
         labelKey: 'columns',
@@ -155,20 +166,7 @@ export class DatagridComponent<T extends keyof Models, U> {
           suppressValues: true,
           suppressPivots: true,
           suppressPivotMode: true,
-          suppressColumnFilter: true,
           suppressColumnSelectAll: true,
-          suppressColumnExpandAll: true,
-        },
-      },
-      {
-        id: 'filters',
-        labelDefault: 'Filters',
-        labelKey: 'filters',
-        iconKey: 'filter',
-        toolPanel: 'agFiltersToolPanel',
-        toolPanelParams: {
-          suppressExpandAll: true,
-          suppressFilterSearch: true,
         },
       },
     ],
@@ -228,7 +226,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     rowStyle: { cursor: 'pointer' },
     sideBar: this._sideBar,
     stopEditingWhenCellsLoseFocus: true,
-    suppressCellFocus: true,
     undoRedoCellEditing: true,
 
     loadingOverlayComponent: LoadingOverlayComponent,
@@ -303,7 +300,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     const row = event.data as Partial<T> & { id: string };
     const payload = this.createPayload(row, key);
 
-    this.processing = true;
+    //this.processing = true;
     const edited = await this.applyEdit(row.id, payload);
     if (!edited) {
       this.alertSvc.showError('Could not edit the row. Please try again later.');
@@ -314,7 +311,7 @@ export class DatagridComponent<T extends keyof Models, U> {
         columns: [event.column],
       });
     }
-    this.processing = false;
+    //this.processing = false;
   }
 
   /**
@@ -384,7 +381,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     if (id || !this.disableView) {
       const rowId = id || this.lastRowHovered;
       if (rowId) {
-        this.router.navigate([rowId], { relativeTo: this.route });
+        this.ngZone.run(() => this.router.navigate([rowId], { relativeTo: this.route }));
       }
     }
   }
