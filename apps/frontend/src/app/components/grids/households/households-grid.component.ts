@@ -1,6 +1,5 @@
-import { CellDoubleClickedEvent, GridOptions } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdateHouseholdsObj } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -11,6 +10,9 @@ import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
+interface ParamsType {
+  value: string[];
+}
 @Component({
   selector: 'pc-households-grid',
   standalone: true,
@@ -28,27 +30,30 @@ import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRendere
  */
 export class HouseholdsGridComponent extends DatagridComponent<'households', never> {
   protected col = [
-    { field: 'persons_count', headerName: 'People in household' },
+    {
+      field: 'persons_count',
+      headerName: 'People',
+      tooltipField: 'Number of people in this household',
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+    },
     { field: 'street_num', headerName: 'Street Number', editable: true },
-    { field: 'street', headerName: 'Street', editable: true },
     { field: 'apt', headerName: 'Apt', editable: true },
+    { field: 'street', headerName: 'Street', editable: true },
     { field: 'city', headerName: 'City', editable: true },
     {
       field: 'tags',
       headerName: 'Tags',
-      cellRenderer: TagsCellRendererComponent,
-      equals: (valueA: string[], valueB: string[]) => valueA?.toString() === valueB?.toString(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      valueFormatter: (params: any) =>
-        (!params?.value || !params.value[0] ? [] : params.value)?.toString(),
-      comparator: (valueA: string[], valueB: string[]) =>
-        valueA.toString().localeCompare(valueB.toString()),
       cellDataType: 'object',
       cellRendererParams: {
         type: 'households',
         obj: UpdateHouseholdsObj,
         service: this.gridSvc,
       },
+      cellRenderer: TagsCellRendererComponent,
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+      equals: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB),
     },
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },
@@ -56,9 +61,6 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     { field: 'home_phone', headerName: 'Home phone', editable: true },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-  protected myGridOptions: GridOptions = {
-    onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
-  };
 
   constructor(
     router: Router,
@@ -67,13 +69,15 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     serachSvc: SearchService,
     alertSvc: AlertService,
     gridSvc: HouseholdsBackendService,
+    ngZone: NgZone,
   ) {
-    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
+  }
+  private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return tagsA.toString().localeCompare(tagsB.toString());
   }
 
-  protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
-    if (event.colDef.field === 'tags') {
-      this.openEdit(event.data.id);
-    }
+  private tagsToString(tags: string[]): string {
+    return !tags || !tags[0] ? '' : tags.toString();
   }
 }

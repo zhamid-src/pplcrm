@@ -7,7 +7,6 @@ import { SignInComponent } from './auth/signin/signin.component';
 import { SignUpComponent } from './auth/signup/signup.component';
 import { HouseholdDetailComponent } from './components/grids/households/household-detail/HouseholdDetail.component';
 import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
-import { AddPersonComponent } from './components/grids/persons/add-person/add-person.component';
 import { PersonDetailComponent } from './components/grids/persons/person-detail/PersonDetail.component';
 import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
 import { TagsGridComponent } from './components/grids/tags/tags-grid.component';
@@ -41,7 +40,7 @@ export const appRoutes: Route[] = [
           },
           {
             path: 'add',
-            component: AddPersonComponent,
+            component: PersonDetailComponent,
           },
           {
             path: ':id',

@@ -42,21 +42,39 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.email',
         'persons.mobile',
         'persons.notes',
+        'persons.household_id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street',
+        'households.street_num',
+        'households.apt',
+        /*
         sql<string>`concat(households.street_num, ' ', households.street, ', ', households.city)`.as(
           'address',
         ),
+        */
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
       ])
       .where('households.tenant_id', '=', tenant_id)
       .groupBy([
-        'persons.tenant_id',
         'persons.id',
         'persons.first_name',
         'persons.last_name',
         'persons.email',
         'persons.mobile',
         'persons.notes',
-        'address',
+        'persons.household_id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street',
+        'households.street_num',
+        'households.apt',
       ])
       .execute();
   }

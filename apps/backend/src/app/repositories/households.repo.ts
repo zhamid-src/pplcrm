@@ -15,10 +15,14 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .select([
         'households.id',
         'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
         'households.city',
         'households.street',
         'households.street_num',
         'households.apt',
+        'households.notes',
       ])
       .select((eb) => [
         eb
@@ -36,8 +40,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.country',
         'households.city',
         'households.street',
-        'households.street_num',
-        'households.apt',
       ])
       .execute();
   }

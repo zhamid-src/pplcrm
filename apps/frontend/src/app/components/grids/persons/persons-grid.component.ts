@@ -1,6 +1,6 @@
-import { CellDoubleClickedEvent, ColDef, GridOptions } from '@ag-grid-community/core';
+import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -12,6 +12,10 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRenderer.component';
 
+interface ParamsType {
+  value: string[];
+}
+
 @Component({
   selector: 'pc-persons-grid',
   standalone: true,
@@ -22,46 +26,75 @@ import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRendere
 })
 export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {
   protected col: ColDef[] = [
-    {
-      field: 'first_name',
-      headerName: 'First Name',
-      headerTooltip: 'First name',
-      editable: true,
-    },
+    { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'home_phone', headerName: 'Home phone', editable: false },
     {
       field: 'tags',
       headerName: 'Tags',
-      cellRenderer: TagsCellRendererComponent,
-      equals: (valueA: string[], valueB: string[]) => valueA.toString() === valueB.toString(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      valueFormatter: (params: any) =>
-        (!params.value || !params.value[0] ? [] : params.value).toString(),
-      comparator: (valueA: string[], valueB: string[]) =>
-        valueA.toString().localeCompare(valueB.toString()),
       cellDataType: 'object',
+      cellEditor: 'agRichSelectCellEditor',
+      cellEditorParams: {
+        values: ['Volunteer', 'Important'],
+      },
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,
         service: this.gridSvc,
       },
+      cellRenderer: TagsCellRendererComponent,
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+      equals: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB),
     },
     {
-      field: 'address',
-      headerName: 'Address',
-      cellClass: 'text-gray-500 cursor-auto',
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street',
+      headerName: 'Street',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
 
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-  /**
-   * Hook into the double click so we can open the address change modal
-   */
-  protected myGridOptions: GridOptions<Partial<TYPE>> = {
-    onCellDoubleClicked: this.onCellDoubleClicked.bind(this),
-  };
 
   private addressChangeModalId: string | null = null;
 
@@ -72,17 +105,22 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     serachSvc: SearchService,
     alertSvc: AlertService,
     gridSvc: PersonsBackendService,
+    ngZone: NgZone,
   ) {
-    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
   }
 
-  protected onCellDoubleClicked(event: CellDoubleClickedEvent) {
-    if (event.colDef.field === 'address') {
-      this.addressChangeModalId = event.data.id;
-      this.confirmAddressChange();
-    } else if (event.colDef.field === 'tags') {
-      this.openEdit(event.data.id);
-    }
+  private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return tagsA.toString().localeCompare(tagsB.toString());
+  }
+
+  private tagsToString(tags: string[]): string {
+    return !tags || !tags[0] ? '' : tags.toString();
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
+    this.addressChangeModalId = event.data.household_id;
+    this.confirmAddressChange();
   }
 
   protected routeToHouseholds() {

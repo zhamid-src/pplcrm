@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -31,7 +31,8 @@ export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
     serachSvc: SearchService,
     alertSvc: AlertService,
     gridSvc: TagsBackendService,
+    ngZone: NgZone,
   ) {
-    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc);
+    super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
   }
 }

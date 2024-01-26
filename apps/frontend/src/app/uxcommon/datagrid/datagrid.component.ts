@@ -1,5 +1,6 @@
 import { AgGridModule } from '@ag-grid-community/angular';
 import {
+  CellDoubleClickedEvent,
   CellMouseOverEvent,
   CellValueChangedEvent,
   ColDef,
@@ -7,9 +8,11 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
+  GridState,
+  SideBarDef,
 } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, effect } from '@angular/core';
+import { Component, EventEmitter, Input, NgZone, Output, effect } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AbstractBackendService } from '@services/backend/abstract.service';
@@ -125,6 +128,52 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   @Output() public importCSV = new EventEmitter<string>();
 
+  protected _defaultColDef: ColDef = {
+    filter: 'agMultiColumnFilter',
+    flex: 1,
+    enableValue: true,
+    enablePivot: true,
+  };
+  protected _initialState: GridState = {
+    sideBar: {
+      openToolPanel: null,
+      position: 'right',
+      visible: true,
+      toolPanels: {},
+    },
+  };
+  protected _sideBar: SideBarDef = {
+    toolPanels: [
+      {
+        id: 'columns',
+        labelDefault: 'Columns',
+        labelKey: 'columns',
+        iconKey: 'columns',
+        toolPanel: 'agColumnsToolPanel',
+        toolPanelParams: {
+          suppressRowGroups: true,
+          suppressValues: true,
+          suppressPivots: true,
+          suppressPivotMode: true,
+          suppressColumnFilter: true,
+          suppressColumnSelectAll: true,
+          suppressColumnExpandAll: true,
+        },
+      },
+      {
+        id: 'filters',
+        labelDefault: 'Filters',
+        labelKey: 'filters',
+        iconKey: 'filter',
+        toolPanel: 'agFiltersToolPanel',
+        toolPanelParams: {
+          suppressExpandAll: true,
+          suppressFilterSearch: true,
+        },
+      },
+    ],
+    defaultToolPanel: 'filters',
+  };
   /**
    * The AG Grid API that can be used to interact with the grid.
    */
@@ -148,10 +197,16 @@ export class DatagridComponent<T extends keyof Models, U> {
       sortable: false,
       cellClass: 'shortcut-cell',
       resizable: false,
-      minWidth: 60,
-      maxWidth: 60,
+      minWidth: 80,
+      maxWidth: 80,
       cellRenderer: DeleteCellRendererComponent,
       suppressCellFlash: true,
+      lockVisible: true,
+      lockPosition: true,
+      suppressMovable: true,
+      suppressMenu: true,
+      pinned: 'left',
+      lockPinned: true,
     },
   ];
   /** The default options we start with. This can be overridden
@@ -159,19 +214,23 @@ export class DatagridComponent<T extends keyof Models, U> {
    * @see gridOptions
    */
   protected defaultGridOptions: GridOptions<Partial<T>> = {
+    animateRows: true,
+    autoSizeStrategy: { type: 'fitCellContents' },
     context: this,
-    rowStyle: { cursor: 'pointer' },
-    undoRedoCellEditing: true,
-    stopEditingWhenCellsLoseFocus: true,
-    suppressCellFocus: true,
+    defaultColDef: this._defaultColDef,
     enableCellChangeFlash: true,
+    enableRangeSelection: true,
+    initialState: this._initialState,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: 'multiple',
-    animateRows: true,
-    autoSizeStrategy: {
-      type: 'fitCellContents',
-    },
+    rowStyle: { cursor: 'pointer' },
+    sideBar: this._sideBar,
+    stopEditingWhenCellsLoseFocus: true,
+    suppressCellFocus: true,
+    undoRedoCellEditing: true,
+
+    loadingOverlayComponent: LoadingOverlayComponent,
     onCellValueChanged: this.onCellValueChanged.bind(this),
     onUndoStarted: this.onUndoStarted.bind(this),
     onUndoEnded: this.onUndoEnded.bind(this),
@@ -180,7 +239,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     onRowDataUpdated: this.onRowDataUpdated.bind(this),
     onRowValueChanged: this.onRowValueChanged.bind(this),
     onCellMouseOver: this.onCellMouseOver.bind(this),
-    loadingOverlayComponent: LoadingOverlayComponent,
   };
   protected distinctTags: string[] = [];
   protected processing = false;
@@ -194,6 +252,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     private serachSvc: SearchService,
     protected alertSvc: AlertService,
     protected gridSvc: AbstractBackendService<T, U>,
+    private ngZone: NgZone,
   ) {
     /**
      * Whenever the search text changes, we update the grid options
@@ -327,6 +386,10 @@ export class DatagridComponent<T extends keyof Models, U> {
         this.router.navigate([rowId], { relativeTo: this.route });
       }
     }
+  }
+
+  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
+    this.ngZone.run(() => this.openEdit(event.data.id));
   }
 
   /**

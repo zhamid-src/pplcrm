@@ -85,11 +85,6 @@ export const SidebarItems: ISidebarItem[] = [
     icon: 'queue-list',
   },
   {
-    name: 'Tags',
-    route: '/console/tags',
-    icon: 'hashtag',
-  },
-  {
     name: `OUTREACH`,
     type: 'subheading',
   },
@@ -145,6 +140,11 @@ export const SidebarItems: ISidebarItem[] = [
     name: `Tasks`,
     route: '/console/tasks',
     icon: 'square-3-stack-3d',
+  },
+  {
+    name: 'Tags',
+    route: '/console/tags',
+    icon: 'hashtag',
   },
   {
     name: 'Forms',
