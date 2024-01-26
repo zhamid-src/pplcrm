@@ -39,6 +39,7 @@ export class TagsComponent {
   @Output() public tagClicked = new EventEmitter<string>();
 
   @Input() public animateRemoval = true;
+  @Input() public animate = true;
 
   /**
    * In case the parent wants to give a list of tags to start with.

@@ -14,6 +14,7 @@ export class TagComponent {
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();
   @Input({ required: true }) public name!: string;
+  @Input() animate = true;
 
   protected destroy: boolean = false;
 
