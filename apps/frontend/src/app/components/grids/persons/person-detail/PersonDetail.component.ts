@@ -68,8 +68,8 @@ export class PersonDetailComponent implements OnInit {
     }
   }
 
-  public async ngOnInit() {
-    await this.loadPerson();
+  public ngOnInit() {
+    this.loadPerson();
   }
 
   public save() {
@@ -104,8 +104,9 @@ export class PersonDetailComponent implements OnInit {
   }
 
   protected getFormName() {
-    return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')
-      ?.value}  ${this.form.get('last_name')?.value}`;
+    return `${this.form.get('first_name')?.value} ${
+      this.form.get('middle_names')?.value
+    }  ${this.form.get('last_name')?.value}`;
   }
 
   protected getUpdatedAt() {
@@ -143,6 +144,7 @@ export class PersonDetailComponent implements OnInit {
   }
 
   private async loadPerson() {
+    console.log('loading');
     if (!this.id) {
       return;
     }

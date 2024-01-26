@@ -1,8 +1,8 @@
 <div
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-56"
+  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-150"
   [class.hidden]="!this.isMobileOpen()"
-  [class.w-56]="this.isDrawerFull() || this.isMobileOpen()"
-  [class.w-14]="this.isDrawerHalf() && !this.isMobileOpen()"
+  [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
+  [class.w-16]="this.isDrawerHalf() && !this.isMobileOpen()"
 >
   <!-- First, add logo (full or square) -->
   <div
@@ -16,7 +16,7 @@
     [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
     class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
   >
-    <img src="../../assets/sq.svg" class="min-w-24 h-auto w-full p-2" />
+    <img src="../../assets/sq.svg" class="w-24 h-auto p-2" />
   </div>
 
   <!-- Sidebar content here -->
