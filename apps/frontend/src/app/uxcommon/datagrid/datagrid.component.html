@@ -64,47 +64,16 @@
         <pc-icon name="arrow-down-tray" />
       </a>
     </li>
-
-    <li>
-      <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button">
-          <pc-icon name="tag"></pc-icon>
-        </div>
-
-        <!-- Menu -->
-        <ul
-          tabindex="0"
-          class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
-        >
-          @for (tag of distinctTags; track tag) {
-            <li>
-              <a (click)="filterByTag(tag)">
-                {{ tag }}
-              </a>
-            </li>
-          }
-        </ul>
-      </div>
-    </li>
-    <li>
-      <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button">
-          <pc-icon name="ellipsis-vertical"></pc-icon>
-        </div>
-
-        <!-- Menu -->
-        <ul
-          tabindex="0"
-          class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-20 w-44 cursor-pointer font-light shadow"
-        >
-          <li [class.disabled]="disableDelete" (click)="deleteSelectedRows()">
-            <a>
-              <pc-icon name="trash" />
-              Delete
-            </a>
-          </li>
-        </ul>
-      </div>
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="!disableDelete"
+      [class.disabled]="disableDelete || !isRowSelected()"
+      (click)="!disableDelete && isRowSelected() && confirmDelete()"
+      data-tip="Deleted selected row(s)"
+    >
+      <a>
+        <pc-icon name="trash" />
+      </a>
     </li>
     <li class="grow">
       <a class="hover:text-primary ml-auto">
@@ -123,7 +92,6 @@
     [enableRangeSelection]="true"
     [suppressMultiRangeSelection]="true"
     [enableCellTextSelection]="true"
-
   >
   </ag-grid-angular>
 </div>
@@ -148,7 +116,9 @@
 <dialog id="confirmDelete" class="modal">
   <div class="modal-box">
     <h3 class="text-lg font-bold">Are you sure?</h3>
-    <p class="pt-4 pb-6 font-light">The data will be deleted permanantly. You cannot undo this.</p>
+    <p class="pt-4 pb-6 font-light">
+      The selected rows will be deleted permanantly. You cannot undo this.
+    </p>
 
     <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
       <button class="btn btn-error" (click)="deleteSelectedRows()">

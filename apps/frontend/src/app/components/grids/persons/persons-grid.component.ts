@@ -33,12 +33,9 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     { field: 'home_phone', headerName: 'Home phone', editable: false },
     {
       field: 'tags',
+      filter: true,
       headerName: 'Tags',
       cellDataType: 'object',
-      cellEditor: 'agRichSelectCellEditor',
-      cellEditorParams: {
-        values: ['Volunteer', 'Important'],
-      },
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,
@@ -111,7 +108,7 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
   }
 
   private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return tagsA.toString().localeCompare(tagsB.toString());
+    return tagsA?.toString().localeCompare(tagsB?.toString());
   }
 
   private tagsToString(tags: string[]): string {
