@@ -35,6 +35,16 @@ function update() {
     .mutation(({ input, ctx }) => tags.updateTag(input.id, input.data, ctx.auth!));
 }
 
+function getAllWithCounts() {
+  return authProcedure.query(({ ctx }) => tags.getAllWithCounts(ctx.auth!.tenant_id!));
+}
+
+function deleteTags() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => tags.deleteMany(ctx.auth!.tenant_id!, input));
+}
+
 const tags = new TagsController();
 /**
  * Tags endpoints
@@ -42,8 +52,10 @@ const tags = new TagsController();
 export const TagsRouter = router({
   add: add(),
   getAll: getAll(),
-  delete: deleteTag(),
   update: update(),
   getById: getById(),
+  delete: deleteTag(),
+  deleteMany: deleteTags(),
   findByName: findByName(),
+  getAllWithCounts: getAllWithCounts(),
 });

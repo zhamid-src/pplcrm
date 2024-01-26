@@ -21,7 +21,8 @@ export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
   protected col = [
     { field: 'name', headerName: 'Tag Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
-    { field: 'count', headerName: 'Times Used', editable: true },
+    { field: 'use_count_people', headerName: 'People' },
+    { field: 'use_count_households', headerName: 'Households' },
   ];
 
   constructor(

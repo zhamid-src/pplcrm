@@ -66,6 +66,11 @@ function update() {
     );
 }
 
+function deleteHouseholds() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => households.deleteMany(ctx.auth!.tenant_id!, input));
+}
 const households = new HouseholdsController();
 /**
  * Household endpoints
@@ -73,12 +78,14 @@ const households = new HouseholdsController();
 export const HouseholdsRouter = router({
   add: add(),
   addTag: addTag(),
-  delete: deleteHousehold(),
+
   update: update(),
   getAll: getAll(),
   getById: getById(),
   getTags: getTags(),
   removeTag: removeTag(),
+  delete: deleteHousehold(),
+  deleteMany: deleteHouseholds(),
   getDistinctTags: getDistinctTags(),
   getAllWithPeopleCount: getAllWithPeopleCount(),
 });

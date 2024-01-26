@@ -152,6 +152,20 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   /**
+   * Delete the rows that matches the given ids.
+   */
+  public async deleteMany(
+    input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] },
+    trx?: Transaction<Models>,
+  ) {
+    const ids = input.ids as TypeId<T>;
+    return this.getDelete(trx)
+      .where('id', 'in', ids)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  /**
    * Get all rows that matches the given options.
    *
    * @see {@link QueryParams} for more information about the options.

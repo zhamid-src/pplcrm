@@ -33,7 +33,6 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     {
       field: 'persons_count',
       headerName: 'People',
-      tooltipField: 'Number of people in this household',
       onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
     },
     { field: 'street_num', headerName: 'Street Number', editable: true },

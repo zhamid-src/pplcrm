@@ -8,6 +8,9 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     super(new TagsRepo());
   }
 
+  public getAllWithCounts(tenant_id: string) {
+    return this.getRepo().getAllWithCounts({ tenant_id });
+  }
   /**
    * Add the new tag to the database.
    */

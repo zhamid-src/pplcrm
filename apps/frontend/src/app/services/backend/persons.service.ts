@@ -20,11 +20,14 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
   }
 
   public addTag(id: string, tag_name: string) {
-    return this.api.persons.addTag.mutate({ id: id.toString(), tag_name });
+    return this.api.persons.addTag.mutate({ id: id, tag_name });
   }
 
   public async delete(id: string): Promise<boolean> {
-    return (await this.api.persons.delete.mutate(id.toString())) !== null;
+    return (await this.api.persons.delete.mutate(id)) !== null;
+  }
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    return (await this.api.persons.deleteMany.mutate(ids)) !== null;
   }
 
   public getAll(options?: getAllOptionsType) {
@@ -37,11 +40,6 @@ export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePe
 
   public getById(id: string) {
     return this.api.persons.getById.query(id);
-  }
-
-  public async getDistinctTags() {
-    const tags = await this.api.persons.getDistinctTags.query();
-    return tags.map((tag) => tag.name);
   }
 
   public async getTags(id: string) {
