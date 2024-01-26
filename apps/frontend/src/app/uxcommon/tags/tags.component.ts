@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { TagsBackendService } from '@services/backend/tags.service';
+import { TagsService } from '@services/backend/tags.service';
 import { InputComponent } from '@uxcommon/input/input.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
 
@@ -68,7 +68,7 @@ export class TagsComponent {
    */
   protected matches: string[] = [];
 
-  constructor(private tagSvc: TagsBackendService) {}
+  constructor(private tagSvc: TagsService) {}
 
   /**
    * This adds a tag to the list of tags, removing any duplicates

@@ -14,12 +14,12 @@ import { TRPCService } from '../trpc.service';
  *
  * Example:
  * If the table is "persons"", and the table has columns id, name, age, then the AbstractBackendService
- * can be extended as AbstractBackendService<"persons", { name: string, age: number }>
+ * can be extended as AbstractAPIService<"persons", { name: string, age: number }>
  */
 @Injectable({
   providedIn: 'root',
 })
-export abstract class AbstractBackendService<T extends keyof Models, U> extends TRPCService<T> {
+export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
   public abstract add(row: U): Promise<Partial<T> | unknown>;
   /**
    * Add all given rows to the database.
