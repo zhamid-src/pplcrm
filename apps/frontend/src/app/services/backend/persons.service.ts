@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { UpdatePersonsType, getAllOptionsType } from '@common';
-import { AbstractBackendService } from './abstract.service';
+import { AbstractAPIService } from './abstract.service';
 
 export type TYPE = 'persons' | 'households';
 
@@ -10,7 +10,7 @@ export type TYPE = 'persons' | 'households';
 @Injectable({
   providedIn: 'root',
 })
-export class PersonsBackendService extends AbstractBackendService<TYPE, UpdatePersonsType> {
+export class PersonsService extends AbstractAPIService<TYPE, UpdatePersonsType> {
   public add(row: UpdatePersonsType) {
     return this.api.persons.add.mutate(row);
   }

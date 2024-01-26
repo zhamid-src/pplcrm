@@ -15,7 +15,7 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, NgZone, Output, effect } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AbstractBackendService } from '@services/backend/abstract.service';
+import { AbstractAPIService } from '@services/backend/abstract.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
@@ -249,7 +249,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     private themeSvc: ThemeService,
     private serachSvc: SearchService,
     protected alertSvc: AlertService,
-    protected gridSvc: AbstractBackendService<T, U>,
+    protected gridSvc: AbstractAPIService<T, U>,
     private ngZone: NgZone,
   ) {
     /**

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
 import { Tags } from 'common/src/lib/kysely.models';
-import { AbstractBackendService } from './abstract.service';
+import { AbstractAPIService } from './abstract.service';
 
 /**
  * @see @link{AbstractBackendService} for more information about this class.
@@ -9,7 +9,7 @@ import { AbstractBackendService } from './abstract.service';
 @Injectable({
   providedIn: 'root',
 })
-export class TagsBackendService extends AbstractBackendService<'tags', AddTagType> {
+export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }

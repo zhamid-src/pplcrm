@@ -4,8 +4,8 @@ import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { HouseholdsBackendService } from '@services/backend/households.service';
-import { PersonsBackendService } from '@services/backend/persons.service';
+import { HouseholdsService } from '@services/backend/households.service';
+import { PersonsService } from '@services/backend/persons.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
@@ -59,8 +59,8 @@ export class PersonDetailComponent implements OnInit {
     private fb: FormBuilder,
     private router: Router,
     private route: ActivatedRoute,
-    private personsSvc: PersonsBackendService,
-    private householdsSvc: HouseholdsBackendService,
+    private personsSvc: PersonsService,
+    private householdsSvc: HouseholdsService,
     private alertSvc: AlertService,
   ) {
     if (this.mode === 'edit') {

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { UpdateHouseholdsType } from '@common';
-import { AbstractBackendService } from './abstract.service';
+import { AbstractAPIService } from './abstract.service';
 
 /**
  * @see @link{AbstractBackendService} for more information about this class.
@@ -8,7 +8,7 @@ import { AbstractBackendService } from './abstract.service';
 @Injectable({
   providedIn: 'root',
 })
-export class HouseholdsBackendService extends AbstractBackendService<'households', never> {
+export class HouseholdsService extends AbstractAPIService<'households', never> {
   public add(household: UpdateHouseholdsType) {
     return this.api.households.add.mutate(household);
   }

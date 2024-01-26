@@ -4,8 +4,8 @@ import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { AbstractBackendService } from '@services/backend/abstract.service';
-import { PersonsBackendService, TYPE } from '@services/backend/persons.service';
+import { AbstractAPIService } from '@services/backend/abstract.service';
+import { PersonsService, TYPE } from '@services/backend/persons.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
@@ -22,7 +22,7 @@ interface ParamsType {
   imports: [CommonModule, DatagridComponent, IconsComponent],
   templateUrl: './persons-grid.component.html',
   styleUrl: './persons-grid.component.scss',
-  providers: [{ provide: AbstractBackendService, useClass: PersonsBackendService }],
+  providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {
   protected col: ColDef[] = [
@@ -101,7 +101,7 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: PersonsBackendService,
+    gridSvc: PersonsService,
     ngZone: NgZone,
   ) {
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);

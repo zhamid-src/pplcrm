@@ -1,13 +1,13 @@
 import { ICellRendererAngularComp } from '@ag-grid-community/angular';
-import { GridApi, ICellRendererParams, } from '@ag-grid-community/core';
+import { GridApi, ICellRendererParams } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
-import { AbstractBackendService } from '@services/backend/abstract.service';
+import { AbstractAPIService } from '@services/backend/abstract.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { Models } from 'common/src/lib/kysely.models';
 
 interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererParams {
-  service?: AbstractBackendService<T, U>;
+  service?: AbstractAPIService<T, U>;
 }
 
 @Component({
@@ -24,7 +24,7 @@ export class TagsCellRendererComponent<T extends keyof Models, U>
   protected tags: string[] = [];
 
   private rowId!: string;
-  private service?: AbstractBackendService<T, U>;
+  private service?: AbstractAPIService<T, U>;
   private colName!: string;
 
   constructor() {}

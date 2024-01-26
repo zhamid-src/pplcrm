@@ -3,8 +3,8 @@ import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdateHouseholdsObj } from '@common';
 import { AlertService } from '@services/alert.service';
-import { AbstractBackendService } from '@services/backend/abstract.service';
-import { HouseholdsBackendService } from '@services/backend/households.service';
+import { AbstractAPIService } from '@services/backend/abstract.service';
+import { HouseholdsService } from '@services/backend/households.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
@@ -19,7 +19,7 @@ interface ParamsType {
   imports: [CommonModule, DatagridComponent],
   templateUrl: './households-grid.component.html',
   styleUrl: './households-grid.component.scss',
-  providers: [{ provide: AbstractBackendService, useClass: HouseholdsBackendService }],
+  providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
 })
 
 /**
@@ -68,7 +68,7 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     themeSvc: ThemeService,
     serachSvc: SearchService,
     alertSvc: AlertService,
-    gridSvc: HouseholdsBackendService,
+    gridSvc: HouseholdsService,
     ngZone: NgZone,
   ) {
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
