@@ -39,6 +39,7 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    * @param id The id of the row to delete
    */
   public abstract delete(id: string): Promise<boolean>;
+  public abstract deleteMany(ids: string[]): Promise<boolean>;
   /**
    * Return all rows from the database that matches the given options.
    * If no options are given then return all rows.
@@ -61,7 +62,6 @@ export abstract class AbstractBackendService<T extends keyof Models, U> extends 
    * @param id - The id of the row to find
    */
   public abstract getById(id: string): Promise<Record<never, never> | undefined>;
-  public abstract getDistinctTags(): Promise<string[]>;
   public abstract getTags(id: string): Promise<string[]>;
   public abstract removeTag(id: string, tag_name: string): Promise<never | boolean>;
   /**

@@ -11,7 +11,6 @@ import { FiltersToolPanelModule } from '@ag-grid-enterprise/filter-tool-panel';
 import { MenuModule } from '@ag-grid-enterprise/menu';
 import { MultiFilterModule } from '@ag-grid-enterprise/multi-filter';
 import { RangeSelectionModule } from '@ag-grid-enterprise/range-selection';
-
 import { SetFilterModule } from '@ag-grid-enterprise/set-filter';
 
 bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err));

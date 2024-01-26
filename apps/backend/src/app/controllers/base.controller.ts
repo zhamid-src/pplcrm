@@ -64,6 +64,12 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   }
 
   /**
+   * Delete the rows with the given ids.
+   */
+  public deleteMany(tenant_id: TypeColumn<T, 'tenant_id'>, idsToDelete: string[]) {
+    return this.repo.deleteMany({ ids: idsToDelete as TypeId<T>[], tenant_id });
+  }
+  /**
    * Given the key, return the first three rows that best match it
    * It's used for autocomplete.
    *

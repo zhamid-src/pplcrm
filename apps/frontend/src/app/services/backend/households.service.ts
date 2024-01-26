@@ -18,11 +18,14 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
   }
 
   public addTag(id: string, tag_name: string) {
-    return this.api.households.addTag.mutate({ id: id.toString(), tag_name });
+    return this.api.households.addTag.mutate({ id: id, tag_name });
   }
 
-  public delete(id: string): Promise<boolean> {
-    return this.delete(id);
+  public async delete(id: string): Promise<boolean> {
+    return (await this.api.households.delete.mutate(id)) !== null;
+  }
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    return (await this.api.households.deleteMany.mutate(ids)) !== null;
   }
 
   public getAll() {
@@ -31,11 +34,6 @@ export class HouseholdsBackendService extends AbstractBackendService<'households
 
   public getById(id: string) {
     return this.api.households.getById.query(id);
-  }
-
-  public async getDistinctTags() {
-    const tags = await this.api.households.getDistinctTags.query();
-    return tags.map((tag) => tag.name);
   }
 
   public async getTags(id: string) {

@@ -193,13 +193,11 @@ export class DatagridComponent<T extends keyof Models, U> {
     },
     */
     {
+      checkboxSelection: true,
       filter: false,
       sortable: false,
-      cellClass: 'shortcut-cell',
+      cellClass: 'pl-1 pr-0 w-auto',
       resizable: false,
-      minWidth: 80,
-      maxWidth: 80,
-      cellRenderer: DeleteCellRendererComponent,
       suppressCellFlash: true,
       lockVisible: true,
       lockPosition: true,
@@ -207,6 +205,7 @@ export class DatagridComponent<T extends keyof Models, U> {
       suppressMenu: true,
       pinned: 'left',
       lockPinned: true,
+      cellRenderer: DeleteCellRendererComponent,
     },
   ];
   /** The default options we start with. This can be overridden
@@ -220,6 +219,8 @@ export class DatagridComponent<T extends keyof Models, U> {
     defaultColDef: this._defaultColDef,
     enableCellChangeFlash: true,
     enableRangeSelection: true,
+    copyHeadersToClipboard: true,
+    enableCellEditingOnBackspace: true,
     initialState: this._initialState,
     pagination: true,
     paginationAutoPageSize: true,
@@ -425,8 +426,8 @@ export class DatagridComponent<T extends keyof Models, U> {
     const ids = rows.map((row) => row.id);
 
     //TODO: use deleteMany
-    const deleted = this.gridSvc.delete(ids[0]);
-    // const deleted = this.gridSvc.deleteMany(ids);
+    //const deleted = this.gridSvc.delete(ids[0]);
+    const deleted = this.gridSvc.deleteMany(ids);
 
     if (!deleted) {
       this.alertSvc.showError('Could not delete. Please try again later.');
@@ -492,7 +493,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     } catch {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }
-    this.distinctTags = await this.gridSvc.getDistinctTags();
     this.api!.setGridOption('rowData', rows);
   }
 

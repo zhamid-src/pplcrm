@@ -23,7 +23,10 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
   }
 
   public async delete(id: string): Promise<boolean> {
-    return (await this.api.tags.delete.mutate(id.toString())) !== null;
+    return (await this.api.tags.delete.mutate(id)) !== null;
+  }
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    return (await this.api.tags.deleteMany.mutate(ids)) !== null;
   }
 
   public findByName(name: string) {
@@ -31,22 +34,11 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
   }
 
   public getAll() {
-    return this.api.tags.getAll.query(undefined, {
-      signal: this.ac.signal,
-    });
+    return this.getAllWithCounts();
   }
 
   public getById(id: string) {
-    return this.api.tags.getById.query(id.toString());
-  }
-
-  /**
-   * For tags, this is the same as getAll.
-   * @returns
-   */
-  public async getDistinctTags() {
-    const tags = (await this.getAll()) as Tags[];
-    return tags.map((tag: Tags) => tag.name);
+    return this.api.tags.getById.query(id);
   }
 
   public async getTags(id: string) {
@@ -59,6 +51,10 @@ export class TagsBackendService extends AbstractBackendService<'tags', AddTagTyp
   }
 
   public update(id: string, data: UpdateTagType) {
-    return this.api.tags.update.mutate({ id: id.toString(), data });
+    return this.api.tags.update.mutate({ id: id, data });
+  }
+
+  public getAllWithCounts() {
+    return this.api.tags.getAllWithCounts.query();
   }
 }
