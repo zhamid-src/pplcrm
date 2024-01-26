@@ -386,10 +386,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     }
   }
 
-  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.ngZone.run(() => this.openEdit(event.data.id));
-  }
-
   /**
    * If an addRoute is given then go there to add a new row.
    */
@@ -468,17 +464,21 @@ export class DatagridComponent<T extends keyof Models, U> {
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
-  protected isRowSelected() {
-    const rows = this.getSelectedRows();
-    return rows?.length > 0;
-  }
-
   /**
    *
    * @returns The theme to use for the grid
    */
   protected getTheme() {
     return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
+  }
+
+  protected isRowSelected() {
+    const rows = this.getSelectedRows();
+    return rows?.length > 0;
+  }
+
+  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
+    this.ngZone.run(() => this.openEdit(event.data.id));
   }
 
   protected async refresh() {
@@ -491,6 +491,14 @@ export class DatagridComponent<T extends keyof Models, U> {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }
     this.api!.setGridOption('rowData', rows);
+  }
+
+  protected tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return tagsA?.toString().localeCompare(tagsB?.toString());
+  }
+
+  protected tagsToString(tags: string[]): string {
+    return !tags || !tags[0] ? '' : tags.toString();
   }
 
   protected async undoDeleteRows() {

@@ -13,6 +13,7 @@ import { TagsCellRendererComponent } from '../tags-cell-renderer/tagsCellRendere
 interface ParamsType {
   value: string[];
 }
+
 @Component({
   selector: 'pc-households-grid',
   standalone: true,
@@ -72,12 +73,5 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     ngZone: NgZone,
   ) {
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
-  }
-  private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return tagsA?.toString().localeCompare(tagsB?.toString());
-  }
-
-  private tagsToString(tags: string[]): string {
-    return !tags || !tags[0] ? '' : tags.toString();
   }
 }
