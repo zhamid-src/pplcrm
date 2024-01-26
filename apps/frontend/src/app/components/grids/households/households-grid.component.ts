@@ -42,6 +42,7 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     { field: 'city', headerName: 'City', editable: true },
     {
       field: 'tags',
+      filter: true,
       headerName: 'Tags',
       cellDataType: 'object',
       cellRendererParams: {
@@ -74,7 +75,7 @@ export class HouseholdsGridComponent extends DatagridComponent<'households', nev
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
   }
   private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return tagsA.toString().localeCompare(tagsB.toString());
+    return tagsA?.toString().localeCompare(tagsB?.toString());
   }
 
   private tagsToString(tags: string[]): string {

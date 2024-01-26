@@ -470,6 +470,11 @@ export class DatagridComponent<T extends keyof Models, U> {
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
+  protected isRowSelected() {
+    const rows = this.getSelectedRows();
+    return rows?.length > 0;
+  }
+
   /**
    *
    * @returns The theme to use for the grid
