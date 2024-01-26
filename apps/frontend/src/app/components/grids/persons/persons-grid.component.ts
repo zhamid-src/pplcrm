@@ -107,14 +107,6 @@ export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsT
     super(router, route, themeSvc, serachSvc, alertSvc, gridSvc, ngZone);
   }
 
-  private tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return tagsA?.toString().localeCompare(tagsB?.toString());
-  }
-
-  private tagsToString(tags: string[]): string {
-    return !tags || !tags[0] ? '' : tags.toString();
-  }
-
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
