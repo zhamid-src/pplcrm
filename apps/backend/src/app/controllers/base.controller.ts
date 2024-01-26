@@ -58,17 +58,17 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   /**
    * Delete the row with the given id.
    */
-  public delete(tenant_id: TypeColumn<T, 'tenant_id'>, idToDelete: string) {
-    const id = idToDelete as TypeId<T>;
-    return this.repo.delete({ id, tenant_id });
+  public delete(tenant_id: TypeTenantId<T>, idToDelete: string) {
+    return this.repo.delete({ tenant_id: tenant_id, id: idToDelete as TypeId<T> });
   }
 
   /**
    * Delete the rows with the given ids.
    */
   public deleteMany(tenant_id: TypeColumn<T, 'tenant_id'>, idsToDelete: string[]) {
-    return this.repo.deleteMany({ ids: idsToDelete as TypeId<T>[], tenant_id });
+    return this.repo.deleteMany({ ids: idsToDelete as TypeId<T>, tenant_id });
   }
+
   /**
    * Given the key, return the first three rows that best match it
    * It's used for autocomplete.

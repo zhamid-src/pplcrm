@@ -46,7 +46,7 @@ export class TagsCellRendererComponent<T extends keyof Models, U>
   }
 
   public removeTag(tag_name: string) {
-    this.service?.removeTag(this.rowId, tag_name);
+    this.service?.detachTag(this.rowId, tag_name);
     const node = this.api!.getRowNode(this.rowId);
     this.api?.flashCells({
       rowNodes: node ? [node] : [],

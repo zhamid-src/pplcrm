@@ -28,7 +28,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * Add a tag to a person. If the tag doesn't exist, it will be added.
    * * @param person_id of the person
    */
-  public async addTag(person_id: string, name: string, auth: IAuthKeyPayload) {
+  public async attachTag(person_id: string, name: string, auth: IAuthKeyPayload) {
     // Two things:
     // Check if the tag_name exists. If it does, get the ID. If it doesn't, then add it.
     // Use the ID to add the tag to the map.
@@ -45,6 +45,21 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
     });
+  }
+
+  /**
+   * Remove the tag from the person
+   * @param person_id of the person
+   * @param tag_name - name of the tag to remove
+   */
+  public async detachTag(input: { tenant_id: string; person_id: string; name: string }) {
+    const tag = await this.tagsRepo.getIdByName(input);
+    if (tag?.id) {
+      const id = await this.mapPersonsTagRepo.getId({ ...input, tag_id: tag.id });
+      if (id) {
+        this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
+      }
+    }
   }
 
   /**
@@ -84,21 +99,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    */
   public getTags(person_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id });
-  }
-
-  /**
-   * Remove the tag from the person
-   * @param person_id of the person
-   * @param tag_name - name of the tag to remove
-   */
-  public async removeTag(input: { tenant_id: string; person_id: string; name: string }) {
-    const tag = await this.tagsRepo.getIdByName(input);
-    if (tag?.id) {
-      const id = await this.mapPersonsTagRepo.getId({ ...input, tag_id: tag.id });
-      if (id) {
-        this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
-      }
-    }
   }
 
   /**

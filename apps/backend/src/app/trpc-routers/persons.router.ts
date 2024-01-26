@@ -10,16 +10,34 @@ function add() {
     .mutation(({ input, ctx }) => persons.addPerson(input, ctx.auth!));
 }
 
-function addTag() {
+function attachTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) => persons.addTag(input.id, input.tag_name, ctx.auth!));
+    .mutation(({ input, ctx }) => persons.attachTag(input.id, input.tag_name, ctx.auth!));
 }
 
-function deletePerson() {
+function deleteMany() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth!.tenant_id!, input));
+}
+
+function deleteOne() {
   return authProcedure
     .input(z.string())
     .mutation(({ input, ctx }) => persons.delete(ctx.auth!.tenant_id!, input));
+}
+
+function detachTag() {
+  return authProcedure
+    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .mutation(({ input, ctx }) =>
+      persons.detachTag({
+        tenant_id: ctx.auth!.tenant_id!,
+        person_id: input.id,
+        name: input.tag_name,
+      }),
+    );
 }
 
 function getAll() {
@@ -56,18 +74,6 @@ function getTags() {
     .query(({ input, ctx }) => persons.getTags(input, ctx.auth!));
 }
 
-function removeTag() {
-  return authProcedure
-    .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) =>
-      persons.removeTag({
-        tenant_id: ctx.auth!.tenant_id!,
-        person_id: input.id,
-        name: input.tag_name,
-      }),
-    );
-}
-
 function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdatePersonsObj }))
@@ -80,12 +86,6 @@ function update() {
     );
 }
 
-function deletePersons() {
-  return authProcedure
-    .input(z.array(z.string()))
-    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth!.tenant_id!, input));
-}
-
 const persons = new PersonsController();
 /**
  * Persons endpoints
@@ -94,12 +94,12 @@ export const PersonsRouter = router({
   add: add(),
   getAll: getAll(),
   update: update(),
-  addTag: addTag(),
   getTags: getTags(),
   getById: getById(),
-  delete: deletePerson(),
-  deleteMany: deletePersons(),
-  removeTag: removeTag(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
   getDistinctTags: getDistinctTags(),
   getByHouseholdId: getByHouseholdId(),
   getAllWithAddress: getAllWithAddress(),

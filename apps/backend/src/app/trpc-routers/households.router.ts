@@ -10,16 +10,30 @@ function add() {
     .mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth!));
 }
 
-function addTag() {
+function attachTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) => households.addTag(input.id, input.tag_name, ctx.auth!));
+    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth!));
 }
 
-function deleteHousehold() {
+function deleteMany() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => households.deleteMany(ctx.auth!.tenant_id!, input));
+}
+
+function deleteOne() {
   return authProcedure
     .input(z.string())
     .mutation(({ input, ctx }) => households.delete(ctx.auth!.tenant_id!, input));
+}
+
+function detachTag() {
+  return authProcedure
+    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .mutation(({ input, ctx }) =>
+      households.detachTag(ctx.auth!.tenant_id!, input.id, input.tag_name),
+    );
 }
 
 function getAll() {
@@ -46,14 +60,6 @@ function getTags() {
     .query(({ input, ctx }) => households.getTags(input, ctx.auth!));
 }
 
-function removeTag() {
-  return authProcedure
-    .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) =>
-      households.removeTag(ctx.auth!.tenant_id!, input.id, input.tag_name),
-    );
-}
-
 function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdateHouseholdsObj }))
@@ -66,26 +72,20 @@ function update() {
     );
 }
 
-function deleteHouseholds() {
-  return authProcedure
-    .input(z.array(z.string()))
-    .mutation(({ input, ctx }) => households.deleteMany(ctx.auth!.tenant_id!, input));
-}
 const households = new HouseholdsController();
 /**
  * Household endpoints
  */
 export const HouseholdsRouter = router({
   add: add(),
-  addTag: addTag(),
-
-  update: update(),
   getAll: getAll(),
-  getById: getById(),
+  update: update(),
   getTags: getTags(),
-  removeTag: removeTag(),
-  delete: deleteHousehold(),
-  deleteMany: deleteHouseholds(),
+  getById: getById(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
   getDistinctTags: getDistinctTags(),
   getAllWithPeopleCount: getAllWithPeopleCount(),
 });

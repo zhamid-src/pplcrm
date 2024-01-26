@@ -26,7 +26,7 @@ export class HouseholdsController extends BaseController<'households', Household
    * Add a tag to a household. If the tag doesn't exist, it will be added.
    * * @param household_id of the household
    */
-  public async addTag(household_id: string, name: string, auth: IAuthKeyPayload) {
+  public async attachTag(household_id: string, name: string, auth: IAuthKeyPayload) {
     // Two things:
     // Check if the tag_name exists. If it does, get the ID. If it doesn't, then add it.
     // Use the ID to add the tag to the map.
@@ -46,6 +46,21 @@ export class HouseholdsController extends BaseController<'households', Household
   }
 
   /**
+   * Remove the tag from the household
+   * @param household_id of the household
+   * @param tag_name - name of the tag to remove
+   */
+  public async detachTag(tenant_id: string, household_id: string, tag_name: string) {
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
+    if (tag?.id) {
+      const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id!);
+      if (mapId) {
+        this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
+      }
+    }
+  }
+
+  /**
    * @returns All households with the number of people in each household
    */
   public getAllWithPeopleCount(auth: IAuthKeyPayload) {
@@ -58,21 +73,6 @@ export class HouseholdsController extends BaseController<'households', Household
 
   public getTags(id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getTags(id, auth.tenant_id);
-  }
-
-  /**
-   * Remove the tag from the household
-   * @param household_id of the household
-   * @param tag_name - name of the tag to remove
-   */
-  public async removeTag(tenant_id: string, household_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
-    if (tag?.id) {
-      const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id!);
-      if (mapId) {
-        this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
-      }
-    }
   }
 
   /**

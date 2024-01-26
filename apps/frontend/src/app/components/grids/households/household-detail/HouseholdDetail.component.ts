@@ -133,11 +133,11 @@ export class HouseholdDetailComponent implements OnInit {
   }
 
   protected tagAdded(tag: string) {
-    this.householdsSvc.addTag(this.id!, tag);
+    this.householdsSvc.attachTag(this.id!, tag);
   }
 
   protected tagRemoved(tag: string) {
-    this.householdsSvc.removeTag(this.id!, tag);
+    this.householdsSvc.detachTag(this.id!, tag);
   }
 
   private add(data: UpdateHouseholdsType) {
