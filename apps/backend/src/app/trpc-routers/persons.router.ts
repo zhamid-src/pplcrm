@@ -48,7 +48,7 @@ function getAll() {
 
 function getAllWithAddress() {
   return authProcedure
-    .input(getAllOptions)
+    .input(z.object({ options: getAllOptions, tags: z.array(z.string()).optional() }))
     .query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth!, input));
 }
 

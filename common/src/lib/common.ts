@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export type AddTagType = z.infer<typeof AddTagObj>;
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
 export type PersonsType = z.infer<typeof PersonsObj>;
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
 export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
@@ -154,7 +154,18 @@ export const AddTagObj = z.object({
  * It's used with an ID in the API call that
  * indicates which Tag to update.
  */
-export const UpdateTagObj = AddTagObj.optional();
+export const UpdateTagObj = z.object({
+  /**
+   * The tag to add.
+   *
+   * Example: Supporter, Donor, Volunteer, etc.
+   */
+  name: z.string().optional(),
+  /**
+   * The optional field that describes the tag.
+   */
+  description: z.string().nullable().optional(),
+});
 /**
  * The parameter for updating a person.
  * It's used with an ID in the API call that

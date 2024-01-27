@@ -298,9 +298,12 @@ export class DatagridComponent<T extends keyof Models, U> {
   public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: string };
-    const payload = this.createPayload(row, key);
 
-    //this.processing = true;
+    if ('deletable' in row && row.deletable === false && key === 'name') {
+      this.undo();
+      return this.alertSvc.showError('This cell cannot be edited or deleted.');
+    }
+    const payload = this.createPayload(row, key);
     const edited = await this.applyEdit(row.id, payload);
     if (!edited) {
       this.alertSvc.showError('Could not edit the row. Please try again later.');
@@ -311,7 +314,6 @@ export class DatagridComponent<T extends keyof Models, U> {
         columns: [event.column],
       });
     }
-    //this.processing = false;
   }
 
   /**
@@ -410,22 +412,26 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   protected async deleteSelectedRows() {
     const rows = this.getSelectedRows();
+    const deletableRows = rows.filter((row) => !('deletable' in row) || row.deletable !== false);
     if (!rows?.length) {
       return this.alertSvc.showError('Please select at least one row to delete.');
+    } else if (deletableRows.length !== rows.length) {
+      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
+    }
+
+    if (deletableRows.length === 0) {
+      return;
     }
 
     this.processing = true;
 
-    const ids = rows.map((row) => row.id);
-
-    //TODO: use deleteMany
-    //const deleted = this.gridSvc.delete(ids[0]);
+    const ids = deletableRows.map((row) => row.id);
     const deleted = this.gridSvc.deleteMany(ids);
 
     if (!deleted) {
       this.alertSvc.showError('Could not delete. Please try again later.');
     } else {
-      this.api?.applyTransaction({ remove: rows });
+      this.api?.applyTransaction({ remove: deletableRows });
 
       this.alertSvc.show({
         text: 'Deleted successfully. Click Undo to undo delete',
@@ -522,6 +528,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    * @returns Boolean indicating whether the edit was successful or not
    */
   private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
+    console.log(data);
     return this.gridSvc
       .update(id, data as U)
       .then(() => true)

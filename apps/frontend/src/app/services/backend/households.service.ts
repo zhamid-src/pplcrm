@@ -18,14 +18,19 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   }
 
   public attachTag(id: string, tag_name: string) {
-    return this.api.households.addTag.mutate({ id: id, tag_name });
+    return this.api.households.attachTag.mutate({ id: id, tag_name });
   }
 
   public async delete(id: string): Promise<boolean> {
     return (await this.api.households.delete.mutate(id)) !== null;
   }
+
   public async deleteMany(ids: string[]): Promise<boolean> {
     return (await this.api.households.deleteMany.mutate(ids)) !== null;
+  }
+
+  public detachTag(id: string, tag_name: string) {
+    return this.api.households.detachTag.mutate({ id: id, tag_name });
   }
 
   public getAll() {
@@ -39,10 +44,6 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   public async getTags(id: string) {
     const tags = await this.api.households.getTags.query(id);
     return tags.map((tag) => tag.name);
-  }
-
-  public detachTag(id: string, tag_name: string) {
-    return this.api.households.removeTag.mutate({ id: id, tag_name });
   }
 
   public update(id: string, data: UpdateHouseholdsType) {
