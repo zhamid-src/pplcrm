@@ -24,9 +24,10 @@ type JsonObject = { [K in string]?: JsonValue };
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
-  ? ColumnType<S, I | undefined, U>
-  : ColumnType<T, T | undefined, T>;
+type Generated<T> =
+  T extends ColumnType<infer S, infer I, infer U>
+    ? ColumnType<S, I | undefined, U>
+    : ColumnType<T, T | undefined, T>;
 
 export interface Models {
   authusers: AuthUsers;
@@ -66,10 +67,8 @@ export type GetOperandType<
 export type GroupDataType<T extends keyof Models> = T extends keyof Models
   ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
   : never;
-export type OperationDataType<
-  T extends Keys<Models>,
-  Op extends 'select' | 'update' | 'insert',
-> = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
+export type OperationDataType<T extends Keys<Models>, Op extends 'select' | 'update' | 'insert'> =
+  T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
 // export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 
@@ -223,6 +222,7 @@ interface Sessions extends RecordType {
 export interface Tags extends RecordType {
   name: string;
   description: string | null;
+  deletable: boolean;
 }
 
 interface Tenants extends RecordType, AddressType {

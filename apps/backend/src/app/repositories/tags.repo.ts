@@ -17,12 +17,19 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .deleteFrom('map_households_tags')
         .where('tag_id', 'in', tag_ids as TypeId<'map_households_tags'>)
         .execute();
+
       await trx
         .deleteFrom('map_peoples_tags')
         .where('tag_id', 'in', tag_ids as TypeId<'map_peoples_tags'>)
         .execute();
 
-      return (await trx.deleteFrom('tags').where('id', 'in', tag_ids).execute()) !== null;
+      return (
+        (await trx
+          .deleteFrom('tags')
+          .where('id', 'in', tag_ids)
+          .where('deletable', '=', true)
+          .execute()) !== null
+      );
     });
   }
 
@@ -39,10 +46,11 @@ export class TagsRepo extends BaseRepository<'tags'> {
         'tags.id',
         'tags.name',
         'tags.description',
+        'tags.deletable',
         fn.count('map_peoples_tags.person_id').as('use_count_people'),
         fn.count('map_households_tags.household_id').as('use_count_households'),
       ])
-      .groupBy(['tags.id', 'tags.name', 'tags.description'])
+      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.deletable'])
       .where('tags.tenant_id', '=', input.tenant_id)
       .execute();
   }

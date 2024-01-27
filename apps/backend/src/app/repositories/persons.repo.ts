@@ -8,12 +8,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   public async getAllWithAddress(
-    tenant_id: string,
-    optionsIn?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>;
+      tags?: string[];
+    },
     trx?: Transaction<Models>,
   ) {
     const options =
-      optionsIn || ({} as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>);
+      input.options || ({} as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>);
 
     options!.columns =
       options?.columns ||
@@ -58,7 +61,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         */
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
       ])
-      .where('households.tenant_id', '=', tenant_id)
+      .where('households.tenant_id', '=', input.tenant_id)
+      .$if(!!input.tags && input.tags.length > 0, (q) => q.where('tags.name', 'in', input.tags!))
       .groupBy([
         'persons.id',
         'persons.first_name',

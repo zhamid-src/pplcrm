@@ -8,9 +8,6 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     super(new TagsRepo());
   }
 
-  public getAllWithCounts(tenant_id: string) {
-    return this.getRepo().getAllWithCounts({ tenant_id });
-  }
   /**
    * Add the new tag to the database.
    */
@@ -29,6 +26,10 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    */
   public findByName(name: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
     return this.find({ tenant_id: auth.tenant_id, key: name, column: 'name' });
+  }
+
+  public getAllWithCounts(tenant_id: string) {
+    return this.getRepo().getAllWithCounts({ tenant_id });
   }
 
   /**

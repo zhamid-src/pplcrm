@@ -25,8 +25,13 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   public async delete(id: string): Promise<boolean> {
     return (await this.api.tags.delete.mutate(id)) !== null;
   }
+
   public async deleteMany(ids: string[]): Promise<boolean> {
     return (await this.api.tags.deleteMany.mutate(ids)) !== null;
+  }
+
+  public detachTag(id: string) {
+    return this.delete(id);
   }
 
   public findByName(name: string) {
@@ -35,6 +40,10 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 
   public getAll() {
     return this.getAllWithCounts();
+  }
+
+  public getAllWithCounts() {
+    return this.api.tags.getAllWithCounts.query();
   }
 
   public getById(id: string) {
@@ -46,15 +55,8 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return [tag.name];
   }
 
-  public detachTag(id: string) {
-    return this.delete(id);
-  }
-
   public update(id: string, data: UpdateTagType) {
+    console.log('UUUUPPPPDDAAATTIINNNGNG', data);
     return this.api.tags.update.mutate({ id: id, data });
-  }
-
-  public getAllWithCounts() {
-    return this.api.tags.getAllWithCounts.query();
   }
 }
