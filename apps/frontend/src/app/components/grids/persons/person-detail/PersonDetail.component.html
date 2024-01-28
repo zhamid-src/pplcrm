@@ -86,17 +86,11 @@
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
 
-        <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
+        @if (person && person.household_id) {
+          <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
+          <pc-people-in-household [householdId]="person?.household_id"></pc-people-in-household>
+        }
 
-        <ul>
-          @for (person of peopleInHousehold; track person) {
-            <li>
-              <a routerLink="/console/people/{{ person.id }}" class="link hover:no-underline">{{
-                person.full_name
-              }}</a>
-            </li>
-          }
-        </ul>
         <pc-add-btn-row
           [processing]="processing"
           (btn1Clicked)="save()"

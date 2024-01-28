@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsService } from '@services/backend/households.service';
@@ -9,6 +9,7 @@ import { PersonsService } from '@services/backend/persons.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
+import { PeopleInHouseholdComponent } from '@uxcommon/ppl-in-household/peopleInHousehold.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
@@ -26,7 +27,7 @@ import { Households } from 'common/src/lib/kysely.models';
     TagsComponent,
     AddBtnRowComponent,
     TextareaComponent,
-    RouterModule,
+    PeopleInHouseholdComponent,
   ],
   templateUrl: './HouseholdDetail.component.html',
   styleUrl: './HouseholdDetail.component.scss',
@@ -58,7 +59,13 @@ export class HouseholdDetailComponent implements OnInit {
       updated_at: [''],
     }),
   });
-  protected household: Households | undefined;
+  protected _household = signal<Households | null>(null);
+  protected get household() {
+    return this._household();
+  }
+  protected set household(household: Households | null) {
+    this._household.set(household);
+  }
   protected id: string | null = null;
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
   protected processing = signal(false);
@@ -73,7 +80,6 @@ export class HouseholdDetailComponent implements OnInit {
   ) {
     if (this.mode === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
-      console.log(this.id);
     }
   }
 

@@ -46,8 +46,8 @@
         <div class="divider mb-1">OR</div>
 
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/4" control="street_num" placeholder="Street Number" />
-          <pc-form-input class="basis-1/4" control="apt" placeholder="Unit" />
+          <pc-form-input control="street_num" placeholder="Street Number" />
+          <pc-form-input control="apt" placeholder="Unit" />
           <pc-form-input class="basis-1/2" control="street" placeholder="Street" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
@@ -75,27 +75,10 @@
         ></pc-tags>
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
-        <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
 
-        <ul>
-          @for (person of peopleInHousehold; track person) {
-            <li>
-              <a routerLink="/console/people/{{ person.id }}" class="link hover:no-underline">{{
-                person.full_name
-              }}</a>
-            </li>
-          }
-        </ul>
-
-        @if (household?.id) {
-          <div>
-            <div class="font-light text-xs text-center text-gray-500">
-              <span
-                >(This household by Zeeshan Hamid on 12/21/2024. Last updated on blah by
-                blah.)</span
-              >
-            </div>
-          </div>
+        @if (household && household.id) {
+          <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
+          <pc-people-in-household [householdId]="id"></pc-people-in-household>
         }
 
         <pc-add-btn-row
