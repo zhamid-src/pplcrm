@@ -2,13 +2,14 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType } from '@common';
+import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsService } from '@services/backend/households.service';
 import { PersonsService } from '@services/backend/persons.service';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 import { InputComponent } from '@uxcommon/input/input.component';
+import { PeopleInHouseholdComponent } from '@uxcommon/ppl-in-household/peopleInHousehold.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
@@ -26,6 +27,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
     AddBtnRowComponent,
     TextareaComponent,
     RouterModule,
+    PeopleInHouseholdComponent,
   ],
   templateUrl: './PersonDetail.component.html',
   styleUrl: './PersonDetail.component.scss',
@@ -52,8 +54,14 @@ export class PersonDetailComponent implements OnInit {
     }),
   });
   protected id: string | null = null;
-  protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
-  protected person: Persons | undefined;
+  protected _person = signal<Persons | null>(null);
+
+  protected get person() {
+    return this._person();
+  }
+  protected set person(person: Persons | null) {
+    this._person.set(person);
+  }
   protected processing = signal(false);
   protected tags: string[] = [];
 
@@ -146,7 +154,6 @@ export class PersonDetailComponent implements OnInit {
   }
 
   private async loadPerson() {
-    console.log('loading');
     if (!this.id) {
       return;
     }
@@ -155,7 +162,7 @@ export class PersonDetailComponent implements OnInit {
     this.person = (await this.personsSvc.getById(this.id!)) as Persons;
     this.getAddressString();
     this.getTags();
-    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.person?.household_id);
+
     this.refreshForm();
 
     this.processing.set(false);
