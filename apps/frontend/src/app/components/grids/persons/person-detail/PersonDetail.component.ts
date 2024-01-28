@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { UpdatePersonsType } from '@common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsService } from '@services/backend/households.service';
 import { PersonsService } from '@services/backend/persons.service';
@@ -25,6 +25,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
     TagsComponent,
     AddBtnRowComponent,
     TextareaComponent,
+    RouterModule,
   ],
   templateUrl: './PersonDetail.component.html',
   styleUrl: './PersonDetail.component.scss',
@@ -51,6 +52,7 @@ export class PersonDetailComponent implements OnInit {
     }),
   });
   protected id: string | null = null;
+  protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
   protected person: Persons | undefined;
   protected processing = signal(false);
   protected tags: string[] = [];
@@ -153,6 +155,7 @@ export class PersonDetailComponent implements OnInit {
     this.person = (await this.personsSvc.getById(this.id!)) as Persons;
     this.getAddressString();
     this.getTags();
+    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.person?.household_id);
     this.refreshForm();
 
     this.processing.set(false);
