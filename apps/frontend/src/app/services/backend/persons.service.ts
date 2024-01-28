@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { UpdatePersonsType, getAllOptionsType } from '@common';
+import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
 import { AbstractAPIService } from './abstract.service';
 
 export type TYPE = 'persons' | 'households';
@@ -46,6 +46,21 @@ export class PersonsService extends AbstractAPIService<TYPE, UpdatePersonsType> 
         signal: this.ac.signal,
       },
     );
+  }
+  public async getPeopleInHousehold(id: string | null | undefined) {
+    if (!id) {
+      return [];
+    }
+    const peopleInHousehold = (await this.getByHouseholdId(id, {
+      columns: ['id', 'first_name', 'middle_names', 'last_name'],
+    })) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name} ${person.middle_names} ${person.last_name}`,
+      };
+    });
   }
 
   public getByHouseholdId(id: string, options?: getAllOptionsType) {

@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { UpdateHouseholdsType } from '@common';
+import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { HouseholdsService } from '@services/backend/households.service';
 import { PersonsService } from '@services/backend/persons.service';
@@ -13,14 +13,6 @@ import { TagsComponent } from '@uxcommon/tags/tags.component';
 import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 import { Households } from 'common/src/lib/kysely.models';
-
-type PERSONINHOUSEHOLDTYPE = {
-  id: string;
-  first_name: string;
-  middle_names: string;
-  last_name: string;
-  full_name: string;
-};
 
 @Component({
   selector: 'pc-household-detail',
@@ -149,22 +141,6 @@ export class HouseholdDetailComponent implements OnInit {
       .finally(() => this.processing.set(false));
   }
 
-  private async getPeopleInHousehold() {
-    if (!this.household) {
-      return;
-    }
-    this.peopleInHousehold = (await this.personsSvc.getByHouseholdId(this.id!, {
-      columns: ['id', 'first_name', 'middle_names', 'last_name'],
-    })) as PERSONINHOUSEHOLDTYPE[];
-
-    this.peopleInHousehold = this.peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name} ${person.middle_names} ${person.last_name}`,
-      };
-    });
-  }
-
   private async getTags() {
     if (!this.household) {
       return;
@@ -181,7 +157,7 @@ export class HouseholdDetailComponent implements OnInit {
 
     this.household = (await this.householdsSvc.getById(this.id!)) as Households;
     this.getTags();
-    this.getPeopleInHousehold();
+    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
     this.refreshForm();
 
     this.processing.set(false);

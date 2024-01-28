@@ -118,6 +118,11 @@ export const SidebarItems: ISidebarItem[] = [
     icon: 'user-group',
   },
   {
+    name: 'Schedule',
+    route: '/console/schedule',
+    icon: 'clock',
+  },
+  {
     name: 'Donors',
     route: '/console/donors',
     icon: 'banknotes',
@@ -144,7 +149,7 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: 'Tags',
     route: '/console/tags',
-    icon: 'hashtag',
+    icon: 'tag',
   },
   {
     name: 'Forms',

@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 export type AddTagType = z.infer<typeof AddTagObj>;
+export type PERSONINHOUSEHOLDTYPE = {
+  id: string;
+  first_name: string;
+  middle_names: string;
+  last_name: string;
+  full_name: string;
+};
 export type PersonsType = z.infer<typeof PersonsObj>;
 export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
