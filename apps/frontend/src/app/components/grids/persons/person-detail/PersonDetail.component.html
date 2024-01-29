@@ -88,7 +88,7 @@
 
         @if (person && person.household_id) {
           <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
-          <pc-people-in-household [householdId]="person?.household_id"></pc-people-in-household>
+          <pc-people-in-household [householdId]="person.household_id"></pc-people-in-household>
         }
 
         <pc-add-btn-row

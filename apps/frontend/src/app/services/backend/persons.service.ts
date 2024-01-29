@@ -36,16 +36,13 @@ export class PersonsService extends AbstractAPIService<TYPE, UpdatePersonsType> 
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress({ options });
+    return this.getAllWithAddress(options);
   }
 
-  public getAllWithAddress(input: { tags?: string[]; options?: getAllOptionsType }) {
-    return this.api.persons.getAllWithAddress.query(
-      { options: input.options, tags: input.tags },
-      {
-        signal: this.ac.signal,
-      },
-    );
+  public getAllWithAddress(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithAddress.query(options, {
+      signal: this.ac.signal,
+    });
   }
   public async getPeopleInHousehold(id: string | null | undefined) {
     if (!id) {
