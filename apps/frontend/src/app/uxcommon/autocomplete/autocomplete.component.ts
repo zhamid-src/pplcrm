@@ -1,7 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Output, input, signal } from '@angular/core';
 import { InputComponent } from '@uxcommon/input/input.component';
 
+type TFILTER = {
+  filter: (arg0: string) => Promise<string[]>;
+};
 @Component({
   selector: 'pc-autocomplete',
   standalone: true,
@@ -10,16 +13,12 @@ import { InputComponent } from '@uxcommon/input/input.component';
   styleUrl: './autocomplete.component.scss',
 })
 export class AutocompleteComponent {
-  @Input() public filterSvc:
-    | {
-        filter: (arg0: string) => Promise<string[]>;
-      }
-    | null
-    | undefined;
-  @Input() public placeholder: string = '';
+  public filterSvc = input<TFILTER | null>(null);
+  public placeholder = input('');
+
   @Output() public valueChange = new EventEmitter<string>();
 
-  protected matches: string[] = [];
+  protected matches = signal<string[]>([]);
 
   /**
    * Show the autocomplete list of tags that match the key.
@@ -28,12 +27,17 @@ export class AutocompleteComponent {
    * @returns
    */
   protected async autoComplete(key: string) {
-    this.matches = this.filterSvc && !!key ? await this.filterSvc.filter(key) : [];
+    const filterSvc = this.filterSvc();
+    if (!filterSvc || !key?.length) {
+      return;
+    }
+    const matches = await filterSvc.filter(key);
+    this.matches.set(matches);
   }
 
   protected handleClick(key: string) {
     this.valueChange.emit(key);
-    this.matches = [];
+    this.reset();
   }
 
   /**
@@ -49,6 +53,12 @@ export class AutocompleteComponent {
       this.valueChange.emit(target.value);
       target.value = '';
     }
-    this.matches = [];
+    if (target.value?.length === 0) {
+      this.reset();
+    }
+  }
+
+  protected reset() {
+    this.matches.set([]);
   }
 }

@@ -30,6 +30,7 @@ export class InputComponent implements AfterViewInit {
   @Input() public placeholder: string = '';
   @Input() public debounceTime: number = 250;
   @Input() public type: string = 'text';
+  @Output() public lostFocus = new EventEmitter();
   @Output() public valueChange = new EventEmitter<string>();
 
   protected inputClass: string =
@@ -60,6 +61,7 @@ export class InputComponent implements AfterViewInit {
 
   public handleChange() {
     this.inputValue = '';
+    this.lostFocus.emit();
   }
 
   public handleKeyup(value: string) {
