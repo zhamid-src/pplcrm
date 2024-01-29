@@ -104,6 +104,7 @@ export const getAllOptions = z
      * The list of columns to group by. If not given then don't group.
      */
     groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
   })
   .optional();
 /**

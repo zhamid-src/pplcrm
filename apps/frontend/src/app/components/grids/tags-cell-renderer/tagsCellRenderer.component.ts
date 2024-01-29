@@ -41,16 +41,13 @@ export class TagsCellRendererComponent<T extends keyof Models, U>
 
   // gets called whenever the user gets the cell to refresh
   public refresh(params: ICellRendererParams) {
+    console.log(params);
     this.tags = !params.value || !params.value[0] ? [] : params.value;
     return true;
   }
 
   public removeTag(tag_name: string) {
     this.service?.detachTag(this.rowId, tag_name);
-    const node = this.api!.getRowNode(this.rowId);
-    this.api?.flashCells({
-      rowNodes: node ? [node] : [],
-      columns: [this.colName],
-    });
+    this.api!.getRowNode(this.rowId)?.setDataValue(this.colName, this.tags);
   }
 }

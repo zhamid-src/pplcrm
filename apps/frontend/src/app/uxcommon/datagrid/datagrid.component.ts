@@ -108,6 +108,11 @@ export class DatagridComponent<T extends keyof Models, U> {
    * refreshing of rows. The default is false, so by default refresh is enabled.
    */
   @Input() public disableRefresh = false;
+
+  /**
+   * The list of tags to limit the grid to.
+   */
+  @Input() public limitToTags: string[] = [];
   /**
    * Whether the view route is disabled or not.
    *
@@ -299,6 +304,10 @@ export class DatagridComponent<T extends keyof Models, U> {
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: string };
 
+    console.log('**************');
+    console.log(event);
+    console.log(key);
+
     if ('deletable' in row && row.deletable === false && key === 'name') {
       this.undo();
       return this.alertSvc.showError('This cell cannot be edited or deleted.');
@@ -454,14 +463,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.api!.exportDataAsCsv();
   }
 
-  /**
-   * Apply the label filter and emit the filter event.
-   */
-  protected filterByTag(tag: string) {
-    console.log(tag);
-    this.filter.emit();
-  }
-
   protected getRowId(row: GetRowIdParams) {
     return row.data.id;
   }
@@ -482,7 +483,6 @@ export class DatagridComponent<T extends keyof Models, U> {
     const rows = this.getSelectedRows();
     return rows?.length > 0;
   }
-
   protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.ngZone.run(() => this.openEdit(event.data.id));
   }
@@ -491,7 +491,8 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.api!.showLoadingOverlay();
     let rows = [] as Partial<T>[];
     try {
-      rows = (await this.gridSvc.getAll()) as Partial<T>[];
+      console.log(this.limitToTags);
+      rows = (await this.gridSvc.getAll({ tags: this.limitToTags })) as Partial<T>[];
       console.log(rows);
     } catch {
       this.alertSvc.showError('Could not load the data. Please try again later.');

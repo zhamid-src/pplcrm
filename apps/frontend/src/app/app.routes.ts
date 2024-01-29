@@ -10,6 +10,7 @@ import { HouseholdsGridComponent } from './components/grids/households/household
 import { PersonDetailComponent } from './components/grids/persons/person-detail/PersonDetail.component';
 import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
 import { TagsGridComponent } from './components/grids/tags/tags-grid.component';
+import { VolunteersGridComponent } from './components/grids/volunteers/volunteers-grid.component';
 import { SummaryComponent } from './components/summary/summary.component';
 import { authGuard } from './guards/auth.guard';
 import { loginGuard } from './guards/login.guard';
@@ -77,6 +78,16 @@ export const appRoutes: Route[] = [
           {
             path: 'add',
             component: AddTagComponent,
+          },
+        ],
+      },
+      {
+        path: 'volunteers',
+        children: [
+          {
+            path: '',
+            component: VolunteersGridComponent,
+            data: { shouldReuse: true, key: 'volunteersgridroot' },
           },
         ],
       },
