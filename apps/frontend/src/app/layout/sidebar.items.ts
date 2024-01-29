@@ -80,6 +80,11 @@ export const SidebarItems: ISidebarItem[] = [
     icon: 'envelope',
   },
   {
+    name: 'Segments',
+    route: '/console/segments',
+    icon: 'chart-pie',
+  },
+  {
     name: 'Lists',
     route: '/console/lists',
     icon: 'queue-list',
