@@ -1,9 +1,10 @@
-<pc-autocomplete
-  (valueChange)="add($event)"
-  [placeholder]="placeholder"
-  [filterSvc]="enableAutoComplete ? tagSvc : null"
-></pc-autocomplete>
-
+@if (!readonly) {
+  <pc-autocomplete
+    (valueChange)="add($event)"
+    [placeholder]="placeholder"
+    [filterSvc]="enableAutoComplete ? tagSvc : null"
+  ></pc-autocomplete>
+}
 @if (tags.length) {
   <div class="contents" [class.mt-2]="!readonly">
     @if (!readonly) {

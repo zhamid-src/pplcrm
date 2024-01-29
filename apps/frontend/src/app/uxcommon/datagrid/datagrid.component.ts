@@ -18,6 +18,7 @@ import { AlertService } from '@services/alert.service';
 import { AbstractAPIService } from '@services/backend/abstract.service';
 import { SearchService } from '@services/search.service';
 import { ThemeService } from '@services/theme.service';
+import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { Models } from 'common/src/lib/kysely.models';
 import { LoadingOverlayComponent } from './overlay/loadingOverlay.component';
@@ -65,6 +66,7 @@ import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-c
  */
 // TODO: these are not the correct generics
 export class DatagridComponent<T extends keyof Models, U> {
+  @Input() plusIcon: IconName = 'plus';
   /**
    * If given, we enable an "add" button that allows new rows to be added.
    * Clicking the button takes the user to the route given here.
