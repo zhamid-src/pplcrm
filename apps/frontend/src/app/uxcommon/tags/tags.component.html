@@ -1,7 +1,7 @@
 <pc-autocomplete
   (valueChange)="add($event)"
   [placeholder]="placeholder"
-  [filterSvc]="tagSvc"
+  [filterSvc]="enableAutoComplete ? tagSvc : null"
 ></pc-autocomplete>
 
 @if (tags.length) {
