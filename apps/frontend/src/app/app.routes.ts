@@ -5,6 +5,7 @@ import { NewPasswordComponent } from './auth/new-password/new-password.component
 import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
 import { SignInComponent } from './auth/signin/signin.component';
 import { SignUpComponent } from './auth/signup/signup.component';
+import { DonorsGridComponent } from './components/grids/donors/donors-grid.component';
 import { HouseholdDetailComponent } from './components/grids/households/household-detail/HouseholdDetail.component';
 import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
 import { PersonDetailComponent } from './components/grids/persons/person-detail/PersonDetail.component';
@@ -88,6 +89,16 @@ export const appRoutes: Route[] = [
             path: '',
             component: VolunteersGridComponent,
             data: { shouldReuse: true, key: 'volunteersgridroot' },
+          },
+        ],
+      },
+      {
+        path: 'donors',
+        children: [
+          {
+            path: '',
+            component: DonorsGridComponent,
+            data: { shouldReuse: true, key: 'donorsgridroot' },
           },
         ],
       },
