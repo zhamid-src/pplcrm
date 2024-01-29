@@ -1,13 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { TagsService } from '@services/backend/tags.service';
-import { InputComponent } from '@uxcommon/input/input.component';
+import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
 
 @Component({
   selector: 'pc-tags',
   standalone: true,
-  imports: [CommonModule, TagComponent, InputComponent],
+  imports: [CommonModule, TagComponent, AutocompleteComponent],
   templateUrl: './tags.component.html',
   styleUrl: './tags.component.scss',
 })
@@ -63,26 +63,34 @@ export class TagsComponent {
    */
   @Output() public tagRemoved = new EventEmitter<string>();
 
-  /**
-   * Used by autocomplete to show the list of matches.
-   */
-  protected matches: string[] = [];
-
-  constructor(private tagSvc: TagsService) {}
+  constructor(public tagSvc: TagsService) {}
 
   /**
    * This adds a tag to the list of tags, removing any duplicates
    * and whitespaces. It also emits the new list of tags, if it has changed.
    * @param rawTag - the new tag to end to the list
    */
-  protected add(rawTag: string) {
-    const tag = rawTag.trim();
+  protected add(tag: string) {
+    // If the user types really quickly then we might get a comma in the middle of the word.
+    // We want to remove the comma and add the word.
+    if (tag.indexOf(',') >= 0) {
+      tag = tag.replace(',', '').trim();
+    }
     if (tag.length > 0 && !this.tags.includes(tag)) {
       this.tags.unshift(tag);
       this.tagsChange.emit(this.tags);
       this.tagAdded.emit(tag);
     }
-    this.matches = [];
+  }
+
+  public async filter(key: string) {
+    if (!key || key.length === 0) {
+      return [];
+    }
+    console.log('filter', key);
+    console.log(this.tagSvc);
+    const names = (await this.tagSvc.findByName(key)) as { name: string }[];
+    return names.map((m) => m.name);
   }
 
   /**
@@ -108,27 +116,6 @@ export class TagsComponent {
   }
 
   /**
-   * The event that's fired on every key press.
-   * If the key is Enter or comma then we add the tag.
-   * If the key is anything else then we show the autocomplete list.
-   *
-   * @param event
-   */
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    let value = target.value;
-    if (event.key === 'Enter' || event.key === ',') {
-      // If the user types really quickly then we might get a comma in the middle of the word.
-      // We want to remove the comma and add the word.
-      if (value.indexOf(',') >= 0) {
-        value = value.replace(',', '');
-      }
-      this.add(value);
-      target.value = '';
-    }
-  }
-
-  /**
    * Remove the tag from the list of tags and emit the new list of tags.
    *
    * @param tag - the tag to remove
@@ -139,24 +126,6 @@ export class TagsComponent {
       this.tags.splice(index, 1);
       this.tagsChange.emit(this.tags);
       this.tagRemoved.emit(tag);
-    }
-  }
-
-  /**
-   * Show the autocomplete list of tags that match the key.
-   *
-   * @param key - the key to match
-   * @returns
-   */
-  protected async autoComplete(key: string) {
-    if (!this.enableAutoComplete) {
-      return;
-    }
-    if (key && key.length > 0) {
-      const payload = (await this.tagSvc.findByName(key)) as { name: string }[];
-      this.matches = payload.map((m) => m.name);
-    } else {
-      this.matches = [];
     }
   }
 }
