@@ -130,11 +130,11 @@ export class PersonDetailComponent implements OnInit {
   }
 
   protected tagAdded(tag: string) {
-    this.personsSvc.attachTag(this.id!, tag);
+    this.id && this.personsSvc.attachTag(this.id, tag);
   }
 
   protected tagRemoved(tag: string) {
-    this.personsSvc.detachTag(this.id!, tag);
+    this.id && this.personsSvc.detachTag(this.id, tag);
   }
 
   private add(data: UpdatePersonsType) {
@@ -150,7 +150,7 @@ export class PersonDetailComponent implements OnInit {
     if (!this.person) {
       return;
     }
-    this.tags = await this.personsSvc.getTags(this.id!);
+    this.tags = this.id ? await this.personsSvc.getTags(this.id) : [];
   }
 
   private async loadPerson() {
@@ -159,7 +159,7 @@ export class PersonDetailComponent implements OnInit {
     }
     this.processing.set(true);
 
-    this.person = (await this.personsSvc.getById(this.id!)) as Persons;
+    this.person = (await this.personsSvc.getById(this.id)) as Persons;
     this.getAddressString();
     this.getTags();
 

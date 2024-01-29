@@ -131,11 +131,11 @@ export class HouseholdDetailComponent implements OnInit {
   }
 
   protected tagAdded(tag: string) {
-    this.householdsSvc.attachTag(this.id!, tag);
+    this.id && this.householdsSvc.attachTag(this.id, tag);
   }
 
   protected tagRemoved(tag: string) {
-    this.householdsSvc.detachTag(this.id!, tag);
+    this.id && this.householdsSvc.detachTag(this.id, tag);
   }
 
   private add(data: UpdateHouseholdsType) {
@@ -148,11 +148,10 @@ export class HouseholdDetailComponent implements OnInit {
   }
 
   private async getTags() {
-    if (!this.household) {
+    if (!this.household || !this.id) {
       return;
     }
-    this.tags = await this.householdsSvc.getTags(this.id!);
-    console.log(this.tags);
+    this.tags = await this.householdsSvc.getTags(this.id);
   }
 
   private async loadHousehold() {
@@ -161,7 +160,7 @@ export class HouseholdDetailComponent implements OnInit {
     }
     this.processing.set(true);
 
-    this.household = (await this.householdsSvc.getById(this.id!)) as Households;
+    this.household = (await this.householdsSvc.getById(this.id)) as Households;
     this.getTags();
     this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
     this.refreshForm();
