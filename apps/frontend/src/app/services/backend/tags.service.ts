@@ -38,6 +38,11 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return this.api.tags.findByName.query(name);
   }
 
+  public async filter(key: string) {
+    const names = await this.findByName(key);
+    return names.map((m) => m.name);
+  }
+
   public getAll() {
     return this.getAllWithCounts();
   }
