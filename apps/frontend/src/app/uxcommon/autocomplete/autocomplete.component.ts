@@ -10,9 +10,12 @@ import { InputComponent } from '@uxcommon/input/input.component';
   styleUrl: './autocomplete.component.scss',
 })
 export class AutocompleteComponent {
-  @Input({ required: true }) public filterSvc!: {
-    filter: (arg0: string) => Promise<string[]>;
-  };
+  @Input() public filterSvc:
+    | {
+        filter: (arg0: string) => Promise<string[]>;
+      }
+    | null
+    | undefined;
   @Input() public placeholder: string = '';
   @Output() public valueChange = new EventEmitter<string>();
 
@@ -25,10 +28,7 @@ export class AutocompleteComponent {
    * @returns
    */
   protected async autoComplete(key: string) {
-    if (!key?.length) {
-      return;
-    }
-    this.matches = await this.filterSvc.filter(key);
+    this.matches = this.filterSvc && !!key ? await this.filterSvc.filter(key) : [];
   }
 
   protected handleClick(key: string) {
