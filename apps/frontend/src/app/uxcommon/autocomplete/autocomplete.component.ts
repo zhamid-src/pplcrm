@@ -13,6 +13,7 @@ type TFILTER = {
   styleUrl: './autocomplete.component.scss',
 })
 export class AutocompleteComponent {
+  protected hideAutoComplete = true;
   public filterSvc = input<TFILTER | null>(null);
   public placeholder = input('');
 
@@ -35,6 +36,10 @@ export class AutocompleteComponent {
     this.matches.set(matches);
   }
 
+  /**
+   * The user clicked on an item in the autocomplete list
+   * We emit it for the parent to decide what to do with it
+   */
   protected handleClick(key: string) {
     this.valueChange.emit(key);
     this.reset();
@@ -58,7 +63,24 @@ export class AutocompleteComponent {
     }
   }
 
+  /**
+   * Reset the autocomplete list
+   */
   protected reset() {
     this.matches.set([]);
+  }
+
+  protected showAutoCompleteList() {
+    this.hideAutoComplete = false;
+  }
+
+  //$hack:
+  // This is a hack to hide the autocomplete list when the user clicks outside of the list.
+  // We can't immediately hide because if the lost focus happens due to the user clicking
+  // on an item in the autocomplete then the click event on the item will not fire.
+  // By adding the delay, we make sure that the autocomplete list stays up for long enough
+  // for the click event to fire.
+  protected hideAutoCompleteList() {
+    setTimeout(() => (this.hideAutoComplete = true), 200);
   }
 }

@@ -31,6 +31,7 @@ export class InputComponent implements AfterViewInit {
   @Input() public debounceTime: number = 250;
   @Input() public type: string = 'text';
   @Output() public lostFocus = new EventEmitter();
+  @Output() public gotFocus = new EventEmitter();
   @Output() public valueChange = new EventEmitter<string>();
 
   protected inputClass: string =
@@ -59,9 +60,13 @@ export class InputComponent implements AfterViewInit {
     this.googlePlacesAddressChange?.emit(place);
   }
 
-  public handleChange() {
+  public handleBlur() {
     this.inputValue = '';
     this.lostFocus.emit();
+  }
+
+  public handleFocus() {
+    this.gotFocus.emit();
   }
 
   public handleKeyup(value: string) {

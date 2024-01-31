@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
-import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
 import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
@@ -9,7 +9,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
 @Component({
   selector: 'pc-form-input',
   standalone: true,
-  imports: [CommonModule, IconsComponent, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, IconsComponent, ReactiveFormsModule],
   templateUrl: './formInput.component.html',
   styleUrl: './formInput.component.scss',
 })
