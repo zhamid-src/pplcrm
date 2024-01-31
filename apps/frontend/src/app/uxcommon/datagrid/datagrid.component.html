@@ -2,20 +2,20 @@
   <ul class="menu menu-horizontal flex flex-row pt-0">
     <li
       class="tooltip-accent"
-      [class.tooltip]="addRoute"
-      [class.disabled]="!addRoute"
-      (click)="addRoute && add()"
+      [class.tooltip]="addRoute()"
+      [class.disabled]="!addRoute()"
+      (click)="addRoute() && add()"
       data-tip="Add"
     >
       <a>
-        <pc-icon [name]="plusIcon"></pc-icon>
+        <pc-icon [name]="plusIcon()"></pc-icon>
       </a>
     </li>
     <li
       class="tooltip-accent"
-      [class.tooltip]="!disableRefresh"
-      [class.disabled]="disableRefresh"
-      (click)="!disableRefresh && refresh()"
+      [class.tooltip]="!disableRefresh()"
+      [class.disabled]="disableRefresh()"
+      (click)="!disableRefresh() && refresh()"
       data-tip="Refresh the grid"
     >
       <a>
@@ -44,9 +44,9 @@
     </li>
     <li
       class="tooltip-accent"
-      [class.tooltip]="!disableImport"
-      [class.disabled]="disableImport"
-      (click)="!disableImport && doImportCSV()"
+      [class.tooltip]="!disableImport()"
+      [class.disabled]="disableImport()"
+      (click)="!disableImport() && doImportCSV()"
       data-tip="Import data from CSV"
     >
       <a>
@@ -55,9 +55,9 @@
     </li>
     <li
       class="tooltip-accent"
-      [class.tooltip]="!disableExport"
-      [class.disabled]="disableExport"
-      (click)="!disableExport && confirmExport()"
+      [class.tooltip]="!disableExport()"
+      [class.disabled]="disableExport()"
+      (click)="!disableExport() && confirmExport()"
       data-tip="Download as CSV"
     >
       <a>
@@ -66,9 +66,9 @@
     </li>
     <li
       class="tooltip-accent"
-      [class.tooltip]="!disableDelete"
-      [class.disabled]="disableDelete || !isRowSelected()"
-      (click)="!disableDelete && isRowSelected() && confirmDelete()"
+      [class.tooltip]="!disableDelete()"
+      [class.disabled]="disableDelete() || !isRowSelected()"
+      (click)="!disableDelete() && isRowSelected() && confirmDelete()"
       data-tip="Deleted selected row(s)"
     >
       <a>

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Output, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IconName } from '../icons/icons';
 import { IconsComponent } from '../icons/icons.component';
@@ -12,11 +12,11 @@ import { IconsComponent } from '../icons/icons.component';
   styleUrl: './swap.component.scss',
 })
 export class SwapComponent {
-  @Input() public animation: 'flip' | 'rotate' = 'rotate';
-  @Input() public checked: boolean = false;
+  public animation = input<'flip' | 'rotate'>('rotate');
+  public checked = input<boolean>(false);
   @Output() public clickEvent = new EventEmitter();
-  @Input({ required: true }) public swapOffIcon!: IconName;
-  @Input({ required: true }) public swapOnIcon!: IconName;
+  public swapOffIcon = input.required<IconName>();
+  public swapOnIcon = input.required<IconName>();
 
   public emitClick() {
     this.clickEvent.emit();

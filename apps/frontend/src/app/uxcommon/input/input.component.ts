@@ -3,7 +3,7 @@ import {
   NgxGpAutocompleteOptions,
 } from '@angular-magic/ngx-gp-autocomplete';
 import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from '@angular/core';
 import { FormsModule, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
@@ -23,15 +23,16 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
   styleUrl: './input.component.scss',
 })
 export class InputComponent implements AfterViewInit {
-  @Input() public disabled: boolean = false;
-  @Input() public googlePlaces: boolean = false;
+  public debounceTime = input<number>(250);
+  public disabled = input<boolean>(false);
+  public googlePlaces = input<boolean>(false);
   @Output() public googlePlacesAddressChange = new EventEmitter<google.maps.places.PlaceResult>();
-  @Input() public icon: IconName | null = null;
-  @Input() public placeholder: string = '';
-  @Input() public debounceTime: number = 250;
-  @Input() public type: string = 'text';
-  @Output() public lostFocus = new EventEmitter();
   @Output() public gotFocus = new EventEmitter();
+  public icon = input<IconName | null>(null);
+  @ViewChild('input') public input: NgModel | undefined;
+  @Output() public lostFocus = new EventEmitter();
+  public placeholder = input<string>('');
+  public type = input<string>('text');
   @Output() public valueChange = new EventEmitter<string>();
 
   protected inputClass: string =
@@ -42,15 +43,17 @@ export class InputComponent implements AfterViewInit {
     types: ['geocode'],
   };
 
-  @ViewChild('input') public input: NgModel | undefined;
   constructor() {}
 
-  ngAfterViewInit() {
+  public ngAfterViewInit() {
     if (!this.input) {
       return;
     }
+
+    console.log('*****', this.icon(), this.placeholder());
+
     this.input?.valueChanges
-      ?.pipe(debounceTime(this.debounceTime), distinctUntilChanged())
+      ?.pipe(debounceTime(this.debounceTime()), distinctUntilChanged())
       .subscribe((value) => {
         this.handleKeyup(value);
       });

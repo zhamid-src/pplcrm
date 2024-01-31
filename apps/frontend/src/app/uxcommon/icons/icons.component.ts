@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@pipes/svg-html.pipe';
 import { IconName, icons } from './icons';
 
@@ -11,10 +11,10 @@ import { IconName, icons } from './icons';
   styleUrl: './icons.component.scss',
 })
 export class IconsComponent {
-  @Input({ required: true }) public name!: IconName;
-  @Input() public size: number = 6;
+  public name = input.required<IconName>();
+  public size = input<number>(6);
 
   public getSvg() {
-    return icons[this.name];
+    return icons[this.name()];
   }
 }

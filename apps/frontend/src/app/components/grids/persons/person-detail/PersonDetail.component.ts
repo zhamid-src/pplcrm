@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, signal } from '@angular/core';
+import { Component, OnInit, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
@@ -32,7 +32,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   styleUrl: './PersonDetail.component.scss',
 })
 export class PersonDetailComponent implements OnInit {
-  @Input() public mode: 'new' | 'edit' = 'edit';
+  public mode = input<'new' | 'edit'>('edit');
 
   protected addressString = signal<string | null>(null);
   protected form = this.fb.group({
@@ -72,7 +72,7 @@ export class PersonDetailComponent implements OnInit {
     private householdsSvc: HouseholdsService,
     private alertSvc: AlertService,
   ) {
-    if (this.mode === 'edit') {
+    if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
     }
   }

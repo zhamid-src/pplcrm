@@ -1,11 +1,11 @@
 <div class="form-control">
   <label
     class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation === 'flip'"
-    [class.swap-rotate]="animation === 'rotate'"
+    [class.swap-flip]="animation() === 'flip'"
+    [class.swap-rotate]="animation() === 'rotate'"
   >
-    <input type="checkbox" (click)="emitClick()" [checked]="checked" />
-    <pc-icon [name]="swapOnIcon" class="swap-on" />
-    <pc-icon [name]="swapOffIcon" class="swap-off" />
+    <input type="checkbox" (click)="emitClick()" [checked]="checked()" />
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" />
+    <pc-icon [name]="swapOffIcon()!" class="swap-off" />
   </label>
 </div>

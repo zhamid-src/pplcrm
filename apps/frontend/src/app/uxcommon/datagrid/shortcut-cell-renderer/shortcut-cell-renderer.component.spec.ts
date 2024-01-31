@@ -1,16 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { DeleteCellRendererComponent } from './shortcut-cell-renderer.component';
+import { ShortcutCellRendererComponent } from './shortcut-cell-renderer.component';
 
 describe('DeleteCellRendererComponent', () => {
-  let component: DeleteCellRendererComponent;
-  let fixture: ComponentFixture<DeleteCellRendererComponent>;
+  let component: ShortcutCellRendererComponent;
+  let fixture: ComponentFixture<ShortcutCellRendererComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [DeleteCellRendererComponent],
+      imports: [ShortcutCellRendererComponent],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(DeleteCellRendererComponent);
+    fixture = TestBed.createComponent(ShortcutCellRendererComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
