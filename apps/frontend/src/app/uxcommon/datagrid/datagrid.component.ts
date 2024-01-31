@@ -12,7 +12,7 @@ import {
   SideBarDef,
 } from '@ag-grid-community/core';
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, NgZone, Output, effect } from '@angular/core';
+import { Component, EventEmitter, NgZone, Output, effect, input } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AbstractAPIService } from '@services/backend/abstract.service';
@@ -22,7 +22,7 @@ import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { Models } from 'common/src/lib/kysely.models';
 import { LoadingOverlayComponent } from './overlay/loadingOverlay.component';
-import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-cell-renderer.component';
+import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut-cell-renderer.component';
 
 @Component({
   selector: 'pc-datagrid',
@@ -66,23 +66,22 @@ import { DeleteCellRendererComponent } from './shortcut-cell-renderer/shortcut-c
  */
 // TODO: these are not the correct generics
 export class DatagridComponent<T extends keyof Models, U> {
-  @Input() plusIcon: IconName = 'plus';
   /**
    * If given, we enable an "add" button that allows new rows to be added.
    * Clicking the button takes the user to the route given here.
    * The component in that route is responsible for adding.
    */
-  @Input() public addRoute: string | null = null;
+  public addRoute = input<string | null>(null);
   /**
    * The list of columns to display in the grid. Without anything given,
    * the list of columns will be empty.
    */
-  @Input() public colDefs: ColDef[] = [];
+  public colDefs = input<ColDef[]>([]);
   /**
    * Whether delete should be enabled or disabled. Not all grids support
    * deleting of rows. The default is true, so by default delete is disabled.
    */
-  @Input() public disableDelete = true;
+  public disableDelete = input<boolean>(true);
   /**
    * Whether export should be enabled or disabled. Not all grids support
    * exporting of rows. The default is false, so by default export is enabled.
@@ -94,33 +93,23 @@ export class DatagridComponent<T extends keyof Models, U> {
    * Also if the grid shows columns from multiple tables, then the export
    * will be done based on the columns from those tables.
    */
-  @Input() public disableExport = false;
-  /**
-   * Whether filter should be enabled or disabled. Not all grids support
-   * filtering of rows. The default is false, so by default filter is enabled.
-   */
-  @Input() public disableFilter = false;
+  public disableExport = input<boolean>(false);
   /**
    * Whether import should be enabled or disabled. Not all grids support
    * importing of rows. The default is true, so by default import is disabled.
    */
-  @Input() public disableImport = true;
+  public disableImport = input<boolean>(true);
   /**
    * Whether refresh should be enabled or disabled. Not all grids support
    * refreshing of rows. The default is false, so by default refresh is enabled.
    */
-  @Input() public disableRefresh = false;
-
-  /**
-   * The list of tags to limit the grid to.
-   */
-  @Input() public limitToTags: string[] = [];
+  public disableRefresh = input<boolean>(false);
   /**
    * Whether the view route is disabled or not.
    *
    * Default: true
    */
-  @Input() public disableView = true;
+  public disableView = input<boolean>(true);
   /**
    * The event emitter that contains the list of filter that the user applied
    */
@@ -129,11 +118,16 @@ export class DatagridComponent<T extends keyof Models, U> {
    * The lst of grid options to use or override.
    * @see https://www.ag-grid.com/javascript-grid-properties/
    */
-  @Input() public gridOptions: GridOptions<Partial<T>> = {};
+  public gridOptions = input<GridOptions<Partial<T>>>({});
   /**
    * Emit the name of the CSV file that was imported by the user.
    */
   @Output() public importCSV = new EventEmitter<string>();
+  /**
+   * The list of tags to limit the grid to.
+   */
+  public limitToTags = input<string[]>([]);
+  public plusIcon = input<IconName>('plus');
 
   protected _defaultColDef: ColDef = {
     filter: 'agMultiColumnFilter',
@@ -210,7 +204,7 @@ export class DatagridComponent<T extends keyof Models, U> {
       suppressMenu: true,
       pinned: 'left',
       lockPinned: true,
-      cellRenderer: DeleteCellRendererComponent,
+      cellRenderer: ShortcutCellRendererComponent,
     },
   ];
   /** The default options we start with. This can be overridden
@@ -277,7 +271,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    *
    */
   public confirmDelete(): void {
-    if (this.disableDelete) {
+    if (this.disableDelete()) {
       return this.alertSvc.showError(
         'You do not have the permission to delete rows from this table.',
       );
@@ -335,9 +329,9 @@ export class DatagridComponent<T extends keyof Models, U> {
    *
    */
   public onGridReady(params: GridReadyEvent) {
-    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs];
+    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
     this.api = params.api;
-    this.api.updateGridOptions(this.gridOptions);
+    this.api.updateGridOptions(this.gridOptions());
     this.refresh();
   }
 
@@ -391,7 +385,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     // If an ID is explicitly given then we route to that ID
     // But if it's not given then we route to the last hovered
     // row provided that viewing isn't disabled
-    if (id || !this.disableView) {
+    if (id || !this.disableView()) {
       const rowId = id || this.lastRowHovered;
       if (rowId) {
         this.ngZone.run(() => this.router.navigate([rowId], { relativeTo: this.route }));
@@ -403,7 +397,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    * If an addRoute is given then go there to add a new row.
    */
   protected add() {
-    this.addRoute && this.router.navigate([this.addRoute], { relativeTo: this.route });
+    this.addRoute() && this.router.navigate([this.addRoute()], { relativeTo: this.route });
   }
 
   /**
@@ -485,6 +479,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     const rows = this.getSelectedRows();
     return rows?.length > 0;
   }
+
   protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.ngZone.run(() => this.openEdit(event.data.id));
   }
@@ -493,9 +488,7 @@ export class DatagridComponent<T extends keyof Models, U> {
     this.api!.showLoadingOverlay();
     let rows = [] as Partial<T>[];
     try {
-      console.log(this.limitToTags);
-      rows = (await this.gridSvc.getAll({ tags: this.limitToTags })) as Partial<T>[];
-      console.log(rows);
+      rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
     } catch {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     }

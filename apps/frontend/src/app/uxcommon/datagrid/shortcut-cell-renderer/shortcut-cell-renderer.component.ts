@@ -14,7 +14,7 @@ import { DatagridComponent } from '../datagrid.component';
   styleUrl: './shortcut-cell-renderer.component.scss',
   encapsulation: ViewEncapsulation.None,
 })
-export class DeleteCellRendererComponent<T extends keyof Models, U>
+export class ShortcutCellRendererComponent<T extends keyof Models, U>
   implements ICellRendererAngularComp
 {
   private parent: DatagridComponent<T, U> | undefined;
@@ -28,11 +28,11 @@ export class DeleteCellRendererComponent<T extends keyof Models, U>
   }
 
   public showDelete() {
-    return !this.parent?.disableDelete;
+    return !this.parent?.disableDelete();
   }
 
   public showView() {
-    return !this.parent?.disableView;
+    return !this.parent?.disableView();
   }
 
   public view() {

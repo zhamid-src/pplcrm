@@ -82,7 +82,7 @@
         }
 
         <pc-add-btn-row
-          [processing]="processing"
+          [processing]="processing()"
           (btn1Clicked)="save()"
           [buttonsToShow]="household?.id ? 'two' : 'three'"
         ></pc-add-btn-row>

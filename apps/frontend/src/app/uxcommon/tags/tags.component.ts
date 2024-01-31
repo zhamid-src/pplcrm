@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Output, input } from '@angular/core';
 import { TagsService } from '@services/backend/tags.service';
 import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
@@ -16,36 +16,36 @@ export class TagsComponent {
    * If the list of tags can be deleted. It adds or remove the x button.
    * The default is true.
    */
-  @Input() public allowDetele = true;
+  public allowDetele = input<boolean>(true);
   /**
    * If this is set then an autocomplete list based on available tags will be shown.
    * The default is false.
    */
-  @Input() public enableAutoComplete: boolean = false;
+  public enableAutoComplete = input<boolean>(false);
   /**
    * The placeholder text for the input field.
    * The default is 'Enter tags, separated by comma'.
    */
-  @Input() public placeholder: string = 'Enter tags, separated by comma';
+  public placeholder = input<string>('Enter tags, separated by comma');
   /**
    * If this is set to true then we don't see the text input field that
    * allows users to add more tags. The default is false.
    */
-  @Input() public readonly = false;
+  public readonly = input<boolean>(false);
   /**
    * If the user clicks on a tag then this event is emitted with the tag name.
    * This component does not do anything else with this event.
    */
   @Output() public tagClicked = new EventEmitter<string>();
 
-  @Input() public animateRemoval = true;
-  @Input() public animate = true;
+  public animateRemoval = input<boolean>(true);
+  public animate = input<boolean>(true);
 
   /**
    * In case the parent wants to give a list of tags to start with.
    * This can also be used as a two-way binding
    */
-  @Input() public tags: string[] = [];
+  public tags = input<string[]>([]);
   /**
    * If the list of tags changes then this event is emitted with the new list of tags.
    * This can be used by the parent to update its list of tags or simply as a notification
@@ -76,9 +76,9 @@ export class TagsComponent {
     if (tag.indexOf(',') >= 0) {
       tag = tag.replace(',', '').trim();
     }
-    if (tag.length > 0 && !this.tags.includes(tag)) {
-      this.tags.unshift(tag);
-      this.tagsChange.emit(this.tags);
+    if (tag.length > 0 && !this.tags().includes(tag)) {
+      this.tags().unshift(tag);
+      this.tagsChange.emit(this.tags());
       this.tagAdded.emit(tag);
     }
   }
@@ -111,7 +111,7 @@ export class TagsComponent {
    * @param tag - the tag that was closed
    */
   protected closed(tag: string) {
-    const duration = this.animateRemoval ? 500 : 100;
+    const duration = this.animateRemoval() ? 500 : 100;
     setTimeout(() => this.remove(tag), duration);
   }
 
@@ -121,10 +121,10 @@ export class TagsComponent {
    * @param tag - the tag to remove
    */
   protected remove(tag: string) {
-    const index = this.tags.indexOf(tag);
+    const index = this.tags().indexOf(tag);
     if (index > -1) {
-      this.tags.splice(index, 1);
-      this.tagsChange.emit(this.tags);
+      this.tags().splice(index, 1);
+      this.tagsChange.emit(this.tags());
       this.tagRemoved.emit(tag);
     }
   }

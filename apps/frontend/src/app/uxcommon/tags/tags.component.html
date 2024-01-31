@@ -1,24 +1,24 @@
-@if (!readonly) {
+@if (!readonly()) {
   <pc-autocomplete
     (valueChange)="add($event)"
-    [placeholder]="placeholder"
-    [filterSvc]="enableAutoComplete ? tagSvc : null"
+    [placeholder]="placeholder()"
+    [filterSvc]="enableAutoComplete() ? tagSvc : null"
   ></pc-autocomplete>
 }
-@if (tags.length) {
-  <div class="contents" [class.mt-2]="!readonly">
-    @if (!readonly) {
+@if (tags().length) {
+  <div class="contents" [class.mt-2]="!readonly()">
+    @if (!readonly()) {
       <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
     }
 
-    @for (tag of tags; track tag) {
+    @for (tag of tags(); track tag) {
       <pc-tag
         class="mr-1"
         [name]="tag"
-        [allowDetele]="allowDetele"
+        [allowDetele]="allowDetele()"
         (clickEvent)="clicked(tag)"
         (closeEvent)="closed(tag)"
-        [animate]="animate"
+        [animate]="animate()"
       ></pc-tag>
     }
   </div>

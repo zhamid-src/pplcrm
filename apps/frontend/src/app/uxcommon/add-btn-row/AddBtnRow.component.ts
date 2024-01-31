@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnInit, Output, WritableSignal } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IconName } from '@uxcommon/icons/icons';
@@ -14,11 +14,11 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 })
 export class AddBtnRowComponent implements OnInit {
   @Output() public btn1Clicked = new EventEmitter();
-  @Input() public btn1Icon: IconName = 'arrow-down-tray';
-  @Input() public btn1Text = 'SAVE';
-  @Input() public btn2Text = 'SAVE & ADD MORE';
-  @Input() public buttonsToShow: 'two' | 'three' = 'three';
-  @Input({ required: true }) public processing!: WritableSignal<boolean>;
+  public btn1Icon = input<IconName>('arrow-down-tray');
+  public btn1Text = input<string>('SAVE');
+  public btn2Text = input<string>('SAVE & ADD MORE');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public processing = input.required<boolean>();
 
   protected form!: FormGroup;
 
