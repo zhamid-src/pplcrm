@@ -17,6 +17,7 @@ export class PeopleInHouseholdComponent {
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
 
   constructor(private personsSvc: PersonsService) {
+    // TODO: is effect needed here?
     effect(async () => {
       this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.householdId());
     });
