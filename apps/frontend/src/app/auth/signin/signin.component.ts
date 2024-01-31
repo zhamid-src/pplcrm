@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, effect, signal } from '@angular/core';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { Router, RouterLink } from '@angular/router';
 import { AlertService } from '@services/alert.service';
@@ -13,14 +13,7 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
 @Component({
   selector: 'pc-login',
   standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
-    RouterLink,
-    IconsComponent,
-    AlertComponent,
-  ],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
   templateUrl: './signin.component.html',
   styleUrl: './signin.component.scss',
 })

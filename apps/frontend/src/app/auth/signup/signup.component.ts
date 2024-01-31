@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpClientModule } from '@angular/common/http';
 import { Component, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -17,7 +17,6 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     CommonModule,
     PasswordCheckerModule,
     HttpClientModule,
-    FormsModule,
     ReactiveFormsModule,
     IconsComponent,
     RouterModule,

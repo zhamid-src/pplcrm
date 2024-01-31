@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, ViewChild, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
 import { TagsService } from '@services/backend/tags.service';
@@ -14,7 +14,6 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
   standalone: true,
   imports: [
     CommonModule,
-    FormsModule,
     ReactiveFormsModule,
     IconsComponent,
     FormInputComponent,

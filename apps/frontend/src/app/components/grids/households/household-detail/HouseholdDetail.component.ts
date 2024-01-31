@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -21,7 +21,6 @@ import { Households } from 'common/src/lib/kysely.models';
   imports: [
     CommonModule,
     FormInputComponent,
-    FormsModule,
     ReactiveFormsModule,
     InputComponent,
     TagsComponent,

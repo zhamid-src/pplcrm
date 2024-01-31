@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -20,7 +20,6 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   imports: [
     CommonModule,
     FormInputComponent,
-    FormsModule,
     ReactiveFormsModule,
     InputComponent,
     TagsComponent,
