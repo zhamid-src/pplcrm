@@ -1,6 +1,7 @@
 import closeWithGrace from "close-with-grace";
 import * as pino from "pino";
 import { FastifyServer } from "./fastify.server";
+import { migrateToLatest } from "./app/kyselyinit";
 
 process.on("SIGTERM", closeWithGrace);
 process.on("SIGINT", closeWithGrace);
@@ -13,6 +14,11 @@ const logger: pino.Logger = pino.pino({
     target: "pino-pretty",
   },
 });
+
+/**
+ * Migrate the database
+ */
+(async () => await migrateToLatest())();
 
 /**
  * Create the server and serve

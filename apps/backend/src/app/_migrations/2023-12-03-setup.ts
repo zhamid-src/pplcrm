@@ -30,7 +30,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('first_name', 'text')
     .addColumn('email', 'text', (col) => col.notNull().unique())
     .addColumn('password', 'text', (col) => col.notNull())
-    .addColumn('reset_password_token', 'uuid')
+    .addColumn('password_reset_code', 'uuid')
+    .addColumn('password_reset_code_created_at', 'timestamp')
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .execute();
@@ -120,9 +121,9 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 
   await db.schema
-    .createIndex('sessions_refresh_token_index')
+    .createIndex('sessions_session_id_index')
     .on('sessions')
-    .column('sessions_id')
+    .column('session_id')
     .execute();
 
   /*

@@ -7,7 +7,9 @@ config();
 // Run the migrations
 
 // Migration function
-async function migrateToLatest() {
+export async function migrateToLatest() {
+  console.log('Migration starting');
+
   const { error, results } = await BaseRepository.migrator.migrateToLatest();
 
   results?.forEach((it) => {
