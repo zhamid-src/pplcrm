@@ -73,7 +73,8 @@ export class BaseRepository<T extends keyof Models> {
     dialect,
   });
 
-  private static migrationFolder = path.join(__dirname, './_migrations');
+  private static migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+
   public static migrator = new Migrator({
     db: BaseRepository.db,
     provider: new FileMigrationProvider({
