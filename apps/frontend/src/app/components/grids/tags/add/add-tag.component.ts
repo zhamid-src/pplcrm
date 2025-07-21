@@ -7,20 +7,17 @@ import { TagsService } from '@services/backend/tags.service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
-import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-add-tag',
-  standalone: true,
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    IconsComponent,
-    FormInputComponent,
-    AddBtnRowComponent,
-  ],
-  templateUrl: './add-tag.component.html',
-  styleUrl: './add-tag.component.scss',
+    selector: 'pc-add-tag',
+    imports: [
+        CommonModule,
+        ReactiveFormsModule,
+        FormInputComponent,
+        AddBtnRowComponent,
+    ],
+    templateUrl: './add-tag.component.html',
+    styleUrl: './add-tag.component.scss'
 })
 export class AddTagComponent {
   @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;

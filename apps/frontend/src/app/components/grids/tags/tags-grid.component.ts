@@ -10,12 +10,11 @@ import { ThemeService } from '@services/theme.service';
 import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 
 @Component({
-  selector: 'pc-tags-grid',
-  standalone: true,
-  imports: [CommonModule, DatagridComponent],
-  templateUrl: './tags-grid.component.html',
-  styleUrl: './tags-grid.component.scss',
-  providers: [{ provide: AbstractAPIService, useClass: TagsService }],
+    selector: 'pc-tags-grid',
+    imports: [CommonModule, DatagridComponent],
+    templateUrl: './tags-grid.component.html',
+    styleUrl: './tags-grid.component.scss',
+    providers: [{ provide: AbstractAPIService, useClass: TagsService }]
 })
 export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {
   protected col = [

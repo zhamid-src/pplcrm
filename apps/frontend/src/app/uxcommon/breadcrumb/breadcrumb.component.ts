@@ -4,11 +4,10 @@ import { Router } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 
 @Component({
-  selector: 'pc-breadcrumb',
-  standalone: true,
-  imports: [CommonModule],
-  templateUrl: './breadcrumb.component.html',
-  styleUrl: './breadcrumb.component.scss',
+    selector: 'pc-breadcrumb',
+    imports: [CommonModule],
+    templateUrl: './breadcrumb.component.html',
+    styleUrl: './breadcrumb.component.scss'
 })
 export class BreadcrumbComponent {
   protected crumbs: string[] = [];

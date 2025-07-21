@@ -25,11 +25,10 @@ import { LoadingOverlayComponent } from './overlay/loadingOverlay.component';
 import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut-cell-renderer.component';
 
 @Component({
-  selector: 'pc-datagrid',
-  standalone: true,
-  imports: [CommonModule, AgGridModule, IconsComponent],
-  templateUrl: './datagrid.component.html',
-  styleUrl: './datagrid.component.scss',
+    selector: 'pc-datagrid',
+    imports: [CommonModule, AgGridModule, IconsComponent],
+    templateUrl: './datagrid.component.html',
+    styleUrl: './datagrid.component.scss'
 })
 
 /**

@@ -10,17 +10,16 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
-  selector: 'pc-input',
-  standalone: true,
-  imports: [
-    CommonModule,
-    IconsComponent,
-    FormsModule,
-    ReactiveFormsModule,
-    NgxGpAutocompleteModule,
-  ],
-  templateUrl: './input.component.html',
-  styleUrl: './input.component.scss',
+    selector: 'pc-input',
+    imports: [
+        CommonModule,
+        IconsComponent,
+        FormsModule,
+        ReactiveFormsModule,
+        NgxGpAutocompleteModule,
+    ],
+    templateUrl: './input.component.html',
+    styleUrl: './input.component.scss'
 })
 export class InputComponent implements AfterViewInit {
   public debounceTime = input<number>(250);

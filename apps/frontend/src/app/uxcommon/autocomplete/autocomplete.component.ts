@@ -6,11 +6,10 @@ type TFILTER = {
   filter: (arg0: string) => Promise<string[]>;
 };
 @Component({
-  selector: 'pc-autocomplete',
-  standalone: true,
-  imports: [CommonModule, InputComponent],
-  templateUrl: './autocomplete.component.html',
-  styleUrl: './autocomplete.component.scss',
+    selector: 'pc-autocomplete',
+    imports: [CommonModule, InputComponent],
+    templateUrl: './autocomplete.component.html',
+    styleUrl: './autocomplete.component.scss'
 })
 export class AutocompleteComponent {
   protected hideAutoComplete = true;

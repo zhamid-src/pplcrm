@@ -5,11 +5,10 @@ import { PERSONINHOUSEHOLDTYPE } from '@common';
 import { PersonsService } from '@services/backend/persons.service';
 
 @Component({
-  selector: 'pc-people-in-household',
-  standalone: true,
-  imports: [CommonModule, RouterModule],
-  templateUrl: './peopleInHousehold.component.html',
-  styleUrl: './peopleInHousehold.component.scss',
+    selector: 'pc-people-in-household',
+    imports: [CommonModule, RouterModule],
+    templateUrl: './peopleInHousehold.component.html',
+    styleUrl: './peopleInHousehold.component.scss'
 })
 export class PeopleInHouseholdComponent {
   public householdId = input.required<string | null>();

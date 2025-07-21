@@ -16,20 +16,19 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
 import { Households } from 'common/src/lib/kysely.models';
 
 @Component({
-  selector: 'pc-household-detail',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormInputComponent,
-    ReactiveFormsModule,
-    InputComponent,
-    TagsComponent,
-    AddBtnRowComponent,
-    TextareaComponent,
-    PeopleInHouseholdComponent,
-  ],
-  templateUrl: './HouseholdDetail.component.html',
-  styleUrl: './HouseholdDetail.component.scss',
+    selector: 'pc-household-detail',
+    imports: [
+        CommonModule,
+        FormInputComponent,
+        ReactiveFormsModule,
+        InputComponent,
+        TagsComponent,
+        AddBtnRowComponent,
+        TextareaComponent,
+        PeopleInHouseholdComponent,
+    ],
+    templateUrl: './HouseholdDetail.component.html',
+    styleUrl: './HouseholdDetail.component.scss'
 })
 export class HouseholdDetailComponent implements OnInit {
   public mode = input<'new' | 'edit'>('edit');

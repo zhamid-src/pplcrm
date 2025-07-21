@@ -3,11 +3,10 @@ import { Component, EventEmitter, Output, input } from '@angular/core';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-tag',
-  standalone: true,
-  imports: [CommonModule, IconsComponent, TagComponent],
-  templateUrl: './tag.component.html',
-  styleUrl: './tag.component.scss',
+    selector: 'pc-tag',
+    imports: [CommonModule, IconsComponent],
+    templateUrl: './tag.component.html',
+    styleUrl: './tag.component.scss'
 })
 export class TagComponent {
   public allowDetele = input<boolean>(true);

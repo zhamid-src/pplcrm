@@ -17,12 +17,11 @@ interface ParamsType {
 }
 
 @Component({
-  selector: 'pc-volunteers-grid',
-  standalone: true,
-  imports: [CommonModule, DatagridComponent, IconsComponent],
-  templateUrl: './volunteers-grid.component.html',
-  styleUrl: './volunteers-grid.component.scss',
-  providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
+    selector: 'pc-volunteers-grid',
+    imports: [CommonModule, DatagridComponent, IconsComponent],
+    templateUrl: './volunteers-grid.component.html',
+    styleUrl: './volunteers-grid.component.scss',
+    providers: [{ provide: AbstractAPIService, useClass: PersonsService }]
 })
 export class VolunteersGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {
   protected col: ColDef[] = [

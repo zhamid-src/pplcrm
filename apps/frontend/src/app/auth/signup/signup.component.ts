@@ -11,19 +11,18 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-signup',
-  standalone: true,
-  imports: [
-    CommonModule,
-    PasswordCheckerModule,
-    HttpClientModule,
-    ReactiveFormsModule,
-    IconsComponent,
-    RouterModule,
-    AlertComponent,
-  ],
-  templateUrl: './signup.component.html',
-  styleUrl: './signup.component.scss',
+    selector: 'pc-signup',
+    imports: [
+        CommonModule,
+        PasswordCheckerModule,
+        HttpClientModule,
+        ReactiveFormsModule,
+        IconsComponent,
+        RouterModule,
+        AlertComponent,
+    ],
+    templateUrl: './signup.component.html',
+    styleUrl: './signup.component.scss'
 })
 export class SignUpComponent {
   protected form = this.fb.group({

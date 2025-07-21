@@ -5,11 +5,10 @@ import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.compo
 import { TagComponent } from '@uxcommon/tag/tag.component';
 
 @Component({
-  selector: 'pc-tags',
-  standalone: true,
-  imports: [CommonModule, TagComponent, AutocompleteComponent],
-  templateUrl: './tags.component.html',
-  styleUrl: './tags.component.scss',
+    selector: 'pc-tags',
+    imports: [CommonModule, TagComponent, AutocompleteComponent],
+    templateUrl: './tags.component.html',
+    styleUrl: './tags.component.scss'
 })
 export class TagsComponent {
   /**

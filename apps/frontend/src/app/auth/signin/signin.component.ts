@@ -11,11 +11,10 @@ import { TokenService } from '@services/token.service';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({
-  selector: 'pc-login',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
-  templateUrl: './signin.component.html',
-  styleUrl: './signin.component.scss',
+    selector: 'pc-login',
+    imports: [CommonModule, ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
+    templateUrl: './signin.component.html',
+    styleUrl: './signin.component.scss'
 })
 export class SignInComponent {
   public form = this.fb.group({
