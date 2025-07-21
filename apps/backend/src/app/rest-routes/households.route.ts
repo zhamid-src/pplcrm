@@ -1,11 +1,11 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyPluginCallback } from 'fastify';
 
 // const households = new HouseholdsController();
 
 /**
  * Supported HTTP routes for the households endpoint
  */
-function routes(fastify: FastifyInstance, _: never, done: () => void) {
+const routes: FastifyPluginCallback = (fastify, _, done) => {
   /*
   fastify.get('', schema.getAll, () => households.getAll());
 

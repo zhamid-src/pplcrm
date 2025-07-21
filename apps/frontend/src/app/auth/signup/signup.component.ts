@@ -5,7 +5,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
 import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/backend/auth.service.js';
+import { AuthService } from '@services/backend/auth.service';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 import { IconsComponent } from '@uxcommon/icons/icons.component';

@@ -1,12 +1,17 @@
-import { default as fastify } from 'fastify';
-import * as pino from 'pino';
+import { default as fastify } from "fastify";
+import * as pino from "pino";
 // import { errorHandler } from "./utils/error";
-import AutoLoad from '@fastify/autoload';
+import cors from "@fastify/cors";
+import sensible from "@fastify/sensible";
+import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 
-import * as path from 'path';
-import { routes } from './app/routes';
+import * as path from "path";
+import { routes } from "./app/routes";
+import { fileURLToPath } from "url";
+import { trpcRouters } from "./app/trpc.routers";
+import { createContext } from "./context";
 
-const host = process.env.HOST ?? 'localhost';
+const host = process.env.HOST ?? "localhost";
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 /**
@@ -17,7 +22,12 @@ export class FastifyServer {
 
   constructor(logger: pino.Logger, opts: object = {}) {
     this.server = fastify({
-      logger,
+      logger: {
+        level: "info",
+        transport: {
+          target: "pino-pretty",
+        },
+      },
       ignoreTrailingSlash: true,
       exposeHeadRoutes: false,
     });
@@ -25,9 +35,11 @@ export class FastifyServer {
     this.server.register(routes);
 
     // This loads all plugins defined in the plugins folder
-    this.server.register(AutoLoad, {
-      dir: path.join(__dirname, 'app/_fastify.plugins'),
-      options: { ...opts },
+    this.server.register(cors, { ...opts });
+    this.server.register(sensible);
+    this.server.register(fastifyTRPCPlugin, {
+      prefix: "/",
+      trpcOptions: { router: trpcRouters, createContext },
     });
   }
 

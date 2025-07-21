@@ -2,12 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",
-    "allowSyntheticDefaultImports": true,
-    "lib": ["ES2022"],
-    "module": "ES2022",
-    "moduleResolution": "node",
-    "target": "ES2022"
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": false
   },
-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"],
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"]
 }

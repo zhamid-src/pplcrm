@@ -1,6 +1,3 @@
-// tsco:ignore
-import { INow } from '@common';
-import { promises as fs } from 'fs';
 import {
   FileMigrationProvider,
   InsertQueryBuilder,
@@ -11,21 +8,24 @@ import {
   PostgresDialect,
   QueryResult,
   ReferenceExpression,
+  SelectExpression,
   SelectQueryBuilder,
   Transaction,
+  UpdateQueryBuilder,
   sql,
-} from 'kysely';
-import { GroupByArg } from 'kysely/dist/cjs/parser/group-by-parser';
-import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
-import path from 'path';
-import { Pool } from 'pg';
+} from "kysely";
+import { Pool } from "pg";
+import path from "path";
+import { promises as fs } from "fs";
 import {
+  ColumnValue,
   Models,
   OperationDataType,
+  TypeColumnValue,
   TypeId,
-  TypeTableColumns,
   TypeTenantId,
-} from '../../../../../common/src/lib/kysely.models';
+} from "../../../../../common/src/lib/kysely.models";
+import { INow } from "@common";
 
 /**
  * The options that can be passed to the query the database
@@ -33,21 +33,48 @@ import {
  * set, ordering the result set, and grouping the result set.
  */
 export type QueryParams<T extends keyof Models> = {
-  columns?: TypeTableColumns<T>[];
+  columns?: SelectExpression<Models, keyof Models>[];
   limit?: number;
   offset?: number;
-  orderBy?: OrderByExpression<Models, ExtractTableAlias<Models, T>, object>[];
-  groupBy?: GroupByArg<Models, ExtractTableAlias<Models, T>, object>;
+  orderBy?: OrderByExpression<Models, T, object>[];
+  groupBy?: (keyof Models[T])[];
 };
+
+export type JoinedQueryParams = {
+  columns?: (string | SelectExpression<Models, keyof Models>)[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, keyof Models, object>[];
+  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
+};
+
+export function ref<
+  TTable extends keyof Models,
+  TColumn extends keyof Models[TTable],
+>(table: TTable, column: TColumn): ReferenceExpression<Models, TTable> {
+  return `${String(table)}.${String(column)}` as ReferenceExpression<
+    Models,
+    TTable
+  >;
+}
+
+export function refCol<
+  TTable extends keyof Models,
+  TColumn extends SelectExpression<Models, keyof Models>,
+>(table: TTable, column: TColumn): ReferenceExpression<Models, TTable> {
+  return `${String(table)}.${String(column)}` as ReferenceExpression<
+    Models,
+    TTable
+  >;
+}
 
 const dialect = new PostgresDialect({
   pool: new Pool({
-    // connectionString: process.env["DATABASE_URL"],
-    user: 'zeehamid',
-    database: 'pplcrm',
-    password: 'Eternity#1',
+    user: "zeehamid",
+    database: "pplcrm",
+    password: "Eternity#1",
     port: 5432,
-    host: 'localhost',
+    host: "localhost",
     ssl: false,
   }),
 });
@@ -73,7 +100,10 @@ export class BaseRepository<T extends keyof Models> {
     dialect,
   });
 
-  private static migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+  private static migrationFolder = path.resolve(
+    process.cwd(),
+    "apps/backend/src/app/_migrations",
+  );
 
   public static migrator = new Migrator({
     db: BaseRepository.db,
@@ -94,21 +124,19 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - newly added rows
    */
   public async addMany(
-    input: {
-      rows: OperationDataType<T, 'insert'>[];
-    },
+    input: { rows: OperationDataType<T, "insert">[] },
     trx?: Transaction<Models>,
   ) {
     return this.getInsert(trx).values(input.rows).returningAll().execute();
   }
 
-  public async addOrGet(
+  public async addOrGet<K extends keyof Models[T] & string>(
     input: {
-      row: OperationDataType<T, 'insert'>;
-      onConflictColumn: { [X in T]: keyof Models[T] }[T] & string;
+      row: OperationDataType<T, "insert">;
+      onConflictColumn: K;
     },
     trx?: Transaction<Models>,
-  ) {
+  ): Promise<Models[T] | undefined> {
     const insertResult = await this.getInsert(trx)
       .values(input.row)
       .onConflict((oc) => oc.column(input.onConflictColumn).doNothing())
@@ -116,17 +144,20 @@ export class BaseRepository<T extends keyof Models> {
       .executeTakeFirst();
 
     if (insertResult) {
-      return insertResult;
+      return insertResult as unknown as Models[T];
     } else {
-      const lhs = input.onConflictColumn as ReferenceExpression<
-        Models,
-        ExtractTableAlias<Models, T>
-      >;
-      const selectResult = await this.getSelect(trx)
+      const matchValue = input.row[input.onConflictColumn];
+      if (matchValue === undefined) {
+        throw new Error(
+          `Missing value for conflict column: ${String(input.onConflictColumn)}`,
+        );
+      }
+
+      const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
+      return this.getSelect(trx)
         .selectAll()
-        .where(lhs, '=', input.row['name'])
-        .executeTakeFirst();
-      return selectResult;
+        .where(lhs, "=", input.row["name"])
+        .executeTakeFirst() as unknown as Models[T] | undefined;
     }
   }
 
@@ -135,8 +166,14 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - newly added row
    */
-  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
+  public async add(
+    input: { row: OperationDataType<T, "insert"> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getInsert(trx)
+      .values(input.row)
+      .returningAll()
+      .executeTakeFirst();
   }
 
   /**
@@ -146,8 +183,8 @@ export class BaseRepository<T extends keyof Models> {
     input: { tenant_id: TypeTenantId<T>; id: TypeId<T> },
     trx?: Transaction<Models>,
   ) {
-    const ids = [input.id] as TypeId<T>;
-    return this.deleteMany({ tenant_id: input.tenant_id, ids }, trx);
+    // TODO: zee - ids should be an array I think.
+    return this.deleteMany({ tenant_id: input.tenant_id, ids: input.id }, trx);
   }
 
   /**
@@ -157,13 +194,16 @@ export class BaseRepository<T extends keyof Models> {
     input: { tenant_id: TypeTenantId<T>; ids: TypeId<T> },
     trx?: Transaction<Models>,
   ) {
-    const ids = input.ids as TypeId<T>;
-    return (
-      (await this.getDelete(trx)
-        .where('id', 'in', ids)
-        .where('tenant_id', '=', input.tenant_id)
-        .execute()) !== null
-    );
+    const deleteQuery = this.getDelete(trx) as unknown as ReturnType<
+      typeof BaseRepository.prototype.getDelete
+    >;
+
+    const result = await deleteQuery
+      .where("id", "in", input.ids)
+      .where("tenant_id", "=", input.tenant_id)
+      .execute();
+
+    return result !== null;
   }
 
   /**
@@ -172,14 +212,13 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public getAll(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      options?: QueryParams<T>;
-    },
+    input: { tenant_id: TypeTenantId<T>; options?: QueryParams<T> },
     trx?: Transaction<Models>,
   ) {
+    const tenantRef = refCol(this.table, "tenant_id");
+
     return this.getSelectWithColumns(input.options, trx)
-      .where('tenant_id', '=', input.tenant_id)
+      .where(tenantRef, "=", input.tenant_id)
       .execute();
   }
 
@@ -196,9 +235,12 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
+    const idRef = refCol(this.table, "id");
+    const tenantRef = refCol(this.table, "tenant_id");
+
     return this.getSelectWithColumns(input.options, trx)
-      .where('id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
+      .where(idRef, "=", input.id)
+      .where(tenantRef, "=", input.tenant_id)
       .executeTakeFirst();
   }
 
@@ -208,18 +250,21 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public async exists(
-    input: {
-      key: string;
-      column: TypeTableColumns<T>;
-    },
+    input: { key: string; column: keyof Models[T] },
     trx?: Transaction<Models>,
   ): Promise<boolean> {
-    const column_lhs = input.column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
+    const columnRef =
+      `${String(this.table)}.${String(input.column)}` as ReferenceExpression<
+        Models,
+        T
+      >;
+
     const result = await this.getSelect(trx)
-      .select(input.column)
-      .where(column_lhs, '=', input.key)
-      .executeTakeFirst();
-    return result !== undefined;
+      .where(columnRef, "=", input.key)
+      .limit(1)
+      .execute();
+
+    return result.length > 0;
   }
 
   /**
@@ -229,15 +274,17 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - returns the count as a string
    */
-  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<string> {
-    const query = sql<string>`count(*)`.as('count');
-    const { count } = (await this.getSelect(trx)
-      .select(query)
-      .where('tenant_id', '=', tenant_id)
-      .executeTakeFirst()) || {
-      count: '0',
-    };
-    return count;
+  public async count(
+    tenant_id: TypeTenantId<T>,
+    trx?: Transaction<Models>,
+  ): Promise<number> {
+    const tenantRef = refCol(this.table, "tenant_id");
+
+    const result = await this.getSelect(trx)
+      .select(({ fn }) => [fn.countAll<number>().as("count")])
+      .where(tenantRef, "=", tenant_id)
+      .executeTakeFirst();
+    return result?.count ?? 0;
   }
 
   /**
@@ -245,7 +292,9 @@ export class BaseRepository<T extends keyof Models> {
    * @returns The current time in the database
    */
   public async nowTime(): Promise<QueryResult<INow>> {
-    return (await sql`select now()::timestamp`.execute(BaseRepository.db)) as QueryResult<INow>;
+    return (await sql`select now()::timestamp`.execute(
+      BaseRepository.db,
+    )) as QueryResult<INow>;
   }
 
   /**
@@ -261,17 +310,22 @@ export class BaseRepository<T extends keyof Models> {
     input: {
       tenant_id: TypeTenantId<T>;
       key: string;
-      column: TypeTableColumns<T>;
+      column: SelectExpression<Models, keyof Models>;
     },
     trx?: Transaction<Models>,
   ) {
-    const column_lhs = input.column as ReferenceExpression<Models, ExtractTableAlias<Models, T>>;
-    const rhs = input.key + '%';
-    return this.getSelect(trx)
-      .select([input.column])
+    const columnRef = refCol(this.table, input.column);
+    const tenantRef = refCol(this.table, "tenant_id");
+
+    const options: QueryParams<T> = {
+      columns: [input.column],
+      limit: 3,
+    };
+
+    return this.getSelectWithColumns(options, trx)
+      .where(columnRef, "ilike", input.key + "%")
+      .where(tenantRef, "=", input.tenant_id)
       .limit(3)
-      .where(column_lhs, 'ilike', rhs)
-      .where('tenant_id', '=', input.tenant_id)
       .execute();
   }
 
@@ -284,14 +338,18 @@ export class BaseRepository<T extends keyof Models> {
     input: {
       tenant_id: TypeTenantId<T>;
       id: TypeId<T>;
-      row: OperationDataType<T, 'update'>;
+      row: OperationDataType<T, "update">;
     },
     trx?: Transaction<Models>,
   ) {
     return this.getUpdate(trx)
       .set(input.row)
-      .where('id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
+      .where("id", "=", input.id as unknown as string)
+      .where(
+        "tenant_id",
+        "=",
+        input.tenant_id as TypeColumnValue<T, "tenant_id">,
+      )
       .returningAll()
       .executeTakeFirst();
   }
@@ -317,15 +375,16 @@ export class BaseRepository<T extends keyof Models> {
    *
    */
   protected applyOptions(
-    query: SelectQueryBuilder<Models, ExtractTableAlias<Models, T>, object>,
+    query: SelectQueryBuilder<Models, T, unknown>,
     options?: QueryParams<T>,
   ) {
-    query = options?.columns ? query.select(options.columns) : query.selectAll();
+    query = options?.columns
+      ? this.getSelectWithColumns(options)
+      : query.selectAll();
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy) : query;
-
+    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
     return query;
   }
 
@@ -340,7 +399,9 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - the query builder for delete queries
    */
   protected getDelete(trx?: Transaction<Models>) {
-    return trx ? trx.deleteFrom(this.table) : BaseRepository.db.deleteFrom(this.table);
+    return trx
+      ? trx.deleteFrom(this.table)
+      : BaseRepository.db.deleteFrom(this.table);
   }
 
   /**
@@ -353,8 +414,12 @@ export class BaseRepository<T extends keyof Models> {
    *
    * @returns - the query builder for insert queries
    */
-  protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
-    return trx ? trx.insertInto(this.table) : BaseRepository.db.insertInto(this.table);
+  protected getInsert(
+    trx?: Transaction<Models>,
+  ): InsertQueryBuilder<Models, T, InsertResult> {
+    return trx
+      ? trx.insertInto(this.table)
+      : BaseRepository.db.insertInto(this.table);
   }
 
   /**
@@ -368,7 +433,11 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - the query builder for select queries
    */
   protected getSelect(trx?: Transaction<Models>) {
-    return trx ? trx.selectFrom(this.table) : BaseRepository.db.selectFrom(this.table);
+    const ret = trx
+      ? trx.selectFrom(this.table)
+      : BaseRepository.db.selectFrom(this.table);
+
+    return ret as unknown as SelectQueryBuilder<Models, T, Models[T]>;
   }
 
   /**
@@ -386,12 +455,11 @@ export class BaseRepository<T extends keyof Models> {
    * @param trx
    * @returns - the query builder for select queries
    */
-  protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
-    const query = this.getSelect(trx) as SelectQueryBuilder<
-      Models,
-      ExtractTableAlias<Models, T>,
-      object
-    >;
+  protected getSelectWithColumns(
+    options?: QueryParams<T>,
+    trx?: Transaction<Models>,
+  ) {
+    const query = this.getSelect(trx);
     return this.applyOptions(query, options);
   }
 
@@ -406,6 +474,15 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - the query builder for update queries
    */
   protected getUpdate(trx?: Transaction<Models>) {
-    return trx ? trx.updateTable(this.table) : BaseRepository.db.updateTable(this.table);
+    const ret = trx
+      ? trx.updateTable(this.table)
+      : BaseRepository.db.updateTable(this.table);
+
+    return ret as unknown as UpdateQueryBuilder<
+      Models,
+      T,
+      keyof Models,
+      object
+    >;
   }
 }

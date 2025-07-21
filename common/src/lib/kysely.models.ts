@@ -13,9 +13,8 @@ import type {
   SelectExpression,
   Selectable,
   Updateable,
-} from 'kysely';
-import { UndirectedOrderByExpression } from 'node_modules/kysely/dist/cjs/parser/order-by-parser';
-import { ExtractTableAlias } from 'node_modules/kysely/dist/cjs/parser/table-parser';
+} from "kysely";
+import { ExtractColumnType } from "node_modules/kysely/dist/esm/util/type-utils";
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
@@ -45,15 +44,22 @@ export interface Models {
   tenants: Tenants;
 }
 
-export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
+export type AuthUsersType = Omit<AuthUsers, "id"> & { id: string };
 type DiscriminatedUnionOfRecord<
   A,
   B = {
-    [Key in Keys<A> as '_']: {
-      [K in Key]: [{ [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] }];
+    [Key in Keys<A> as "_"]: {
+      [K in Key]: [
+        { [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] },
+      ];
     };
-  }['_'],
-> = Keys<A> extends Keys<B> ? (B[Keys<A>] extends Array<any> ? B[Keys<A>][number] : never) : never;
+  }["_"],
+> =
+  Keys<A> extends Keys<B>
+    ? B[Keys<A>] extends Array<any>
+      ? B[Keys<A>][number]
+      : never
+    : never;
 
 export type GetOperandType<
   T extends Keys<TablesOperationMap>,
@@ -64,21 +70,29 @@ export type GetOperandType<
   : TablesOperationMap[T][Op][Key] extends never
     ? never
     : TablesOperationMap[T][Op][Key];
-export type GroupDataType<T extends keyof Models> = T extends keyof Models
-  ? UndirectedOrderByExpression<Models, ExtractTableAlias<Models, T>, object>
-  : never;
-export type OperationDataType<T extends Keys<Models>, Op extends 'select' | 'update' | 'insert'> =
-  T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
+
+export type OperationDataType<
+  T extends Keys<Models>,
+  Op extends "select" | "update" | "insert",
+> = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
 // export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 
-export type TypeId<T extends keyof Models> = TypeColumn<T, 'id'>;
-export type TypeTenantId<T extends keyof Models> = TypeColumn<T, 'tenant_id'>;
-export type TypeColumn<T extends keyof Models, U> = OperandValueExpressionOrList<
-  Models,
-  ExtractTableAlias<Models, T>,
-  U
->;
+export type TypeId<T extends keyof Models> = TypeColumn<T, "id">;
+export type TypeTenantId<T extends keyof Models> = TypeColumn<T, "tenant_id">;
+
+type ExtractTableAlias<DB, TE> = TE extends `${string} as ${infer TA}`
+  ? TA extends keyof DB
+    ? TA
+    : never
+  : TE extends keyof DB
+    ? TE
+    : never;
+
+export type TypeColumn<
+  T extends keyof Models,
+  U,
+> = OperandValueExpressionOrList<Models, ExtractTableAlias<Models, T>, U>;
 export type TypeTableColumns<T extends keyof Models> = T extends keyof Models
   ? SelectExpression<Models, ExtractTableAlias<Models, T>>
   : never;
@@ -90,6 +104,16 @@ export type TablesOperationMap = {
     update: Updateable<Models[K]>;
   };
 };
+
+export type ColumnValue<
+  TTable extends keyof Models,
+  TColumn extends keyof Models[TTable],
+> = ExtractColumnType<Models, TTable, TColumn>;
+
+export type TypeColumnValue<
+  TTable extends keyof Models,
+  TColumn extends keyof Models[TTable],
+> = ExtractColumnType<Models, TTable, TColumn>;
 
 /*
 type TableType = {
@@ -136,7 +160,7 @@ interface AuthUsers extends RecordType {
   verified: boolean;
 }
 
-interface Campaigns extends Omit<RecordType, 'createdby_id'> {
+interface Campaigns extends Omit<RecordType, "createdby_id"> {
   admin_id: string;
   createdby_id: string;
   description: string | null;
@@ -147,7 +171,9 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   notes: string | null;
 }
 
-export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
+export interface Households
+  extends Omit<RecordType, "createdby_id">,
+    AddressType {
   campaign_id: string;
   createdby_id: string;
   file_id: string | null;
@@ -176,7 +202,7 @@ interface MapRolesUsers extends RecordType {
   user_id: string;
 }
 
-export interface Persons extends Omit<RecordType, 'createdby_id'> {
+export interface Persons extends Omit<RecordType, "createdby_id"> {
   campaign_id: string;
   household_id: string;
   createdby_id: string;
