@@ -1,11 +1,20 @@
 const { createGlobPatternsForDependencies } = require('@nx/angular/tailwind');
-const { join } = require('path');
+const { join, dirname } = require('path');
+const { fileURLToPath } = require('url');
+
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     join(__dirname, 'src/**/!(*.stories|*.spec).{ts,html}'),
     ...createGlobPatternsForDependencies(__dirname),
+  ],
+  daisyui: {
+    presets: [require('@daisyui/core')],
+    content: [
+    './src/**/*.{html,ts}', // Angular components & templates
   ],
   theme: {
     extend: {
@@ -71,7 +80,7 @@ module.exports = {
       },
     },
   },
-  daisyui: {
+  
     themes: [
       {
         light: {
@@ -107,6 +116,4 @@ module.exports = {
       },
     ],
   },
-
-  plugins: [require('daisyui')],
 };
