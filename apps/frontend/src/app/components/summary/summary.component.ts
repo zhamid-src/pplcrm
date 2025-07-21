@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component } from '@angular/core';
 import { AlertService } from '@services/alert.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 
 @Component({
     selector: 'pc-summary',
-    imports: [CommonModule, TagsComponent],
+    imports: [TagsComponent],
     templateUrl: './summary.component.html',
     styleUrl: './summary.component.scss'
 })

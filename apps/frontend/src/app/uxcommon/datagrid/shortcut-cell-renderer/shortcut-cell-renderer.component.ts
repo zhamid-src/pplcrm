@@ -1,6 +1,6 @@
 import { ICellRendererAngularComp } from '@ag-grid-community/angular';
 import { ICellRendererParams } from '@ag-grid-community/core';
-import { CommonModule } from '@angular/common';
+
 import { Component, ViewEncapsulation } from '@angular/core';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { Models } from 'common/src/lib/kysely.models';
@@ -8,7 +8,7 @@ import { DatagridComponent } from '../datagrid.component';
 
 @Component({
     selector: 'pc-shortcut-cell-renderer',
-    imports: [CommonModule, IconsComponent],
+    imports: [IconsComponent],
     templateUrl: './shortcut-cell-renderer.component.html',
     styleUrl: './shortcut-cell-renderer.component.scss',
     encapsulation: ViewEncapsulation.None

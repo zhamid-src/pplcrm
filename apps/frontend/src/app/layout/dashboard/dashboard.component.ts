@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
@@ -10,13 +10,12 @@ import { SidebarComponent } from '../sidebar/sidebar.component';
 @Component({
     selector: 'pc-dashboard',
     imports: [
-        CommonModule,
-        NavbarComponent,
-        SidebarComponent,
-        RouterModule,
-        BreadcrumbComponent,
-        AlertComponent,
-    ],
+    NavbarComponent,
+    SidebarComponent,
+    RouterModule,
+    BreadcrumbComponent,
+    AlertComponent
+],
     templateUrl: './dashboard.component.html',
     styleUrl: './dashboard.component.scss'
 })

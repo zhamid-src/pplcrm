@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, Output, input, signal } from '@angular/core';
 import { InputComponent } from '@uxcommon/input/input.component';
 
@@ -7,7 +7,7 @@ type TFILTER = {
 };
 @Component({
     selector: 'pc-autocomplete',
-    imports: [CommonModule, InputComponent],
+    imports: [InputComponent],
     templateUrl: './autocomplete.component.html',
     styleUrl: './autocomplete.component.scss'
 })

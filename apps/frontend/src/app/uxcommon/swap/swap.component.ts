@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, Output, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IconName } from '../icons/icons';
@@ -6,7 +6,7 @@ import { IconsComponent } from '../icons/icons.component';
 
 @Component({
     selector: 'pc-swap',
-    imports: [CommonModule, FormsModule, IconsComponent],
+    imports: [FormsModule, IconsComponent],
     templateUrl: './swap.component.html',
     styleUrl: './swap.component.scss'
 })

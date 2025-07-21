@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, Output, input } from '@angular/core';
 import { TagsService } from '@services/backend/tags.service';
 import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.component';
@@ -6,7 +6,7 @@ import { TagComponent } from '@uxcommon/tag/tag.component';
 
 @Component({
     selector: 'pc-tags',
-    imports: [CommonModule, TagComponent, AutocompleteComponent],
+    imports: [TagComponent, AutocompleteComponent],
     templateUrl: './tags.component.html',
     styleUrl: './tags.component.scss'
 })

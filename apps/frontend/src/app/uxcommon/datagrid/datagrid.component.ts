@@ -11,7 +11,7 @@ import {
   GridState,
   SideBarDef,
 } from '@ag-grid-community/core';
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, NgZone, Output, effect, input } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
@@ -26,7 +26,7 @@ import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut
 
 @Component({
     selector: 'pc-datagrid',
-    imports: [CommonModule, AgGridModule, IconsComponent],
+    imports: [AgGridModule, IconsComponent],
     templateUrl: './datagrid.component.html',
     styleUrl: './datagrid.component.scss'
 })

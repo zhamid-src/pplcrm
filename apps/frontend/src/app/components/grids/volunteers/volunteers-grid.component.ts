@@ -1,5 +1,5 @@
 import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
-import { CommonModule } from '@angular/common';
+
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
@@ -18,7 +18,7 @@ interface ParamsType {
 
 @Component({
     selector: 'pc-volunteers-grid',
-    imports: [CommonModule, DatagridComponent, IconsComponent],
+    imports: [DatagridComponent, IconsComponent],
     templateUrl: './volunteers-grid.component.html',
     styleUrl: './volunteers-grid.component.scss',
     providers: [{ provide: AbstractAPIService, useClass: PersonsService }]
