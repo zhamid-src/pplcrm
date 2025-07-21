@@ -5,11 +5,10 @@ import { IconName } from '../icons/icons';
 import { IconsComponent } from '../icons/icons.component';
 
 @Component({
-  selector: 'pc-swap',
-  standalone: true,
-  imports: [CommonModule, FormsModule, IconsComponent],
-  templateUrl: './swap.component.html',
-  styleUrl: './swap.component.scss',
+    selector: 'pc-swap',
+    imports: [CommonModule, FormsModule, IconsComponent],
+    templateUrl: './swap.component.html',
+    styleUrl: './swap.component.scss'
 })
 export class SwapComponent {
   public animation = input<'flip' | 'rotate'>('rotate');

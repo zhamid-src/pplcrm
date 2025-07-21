@@ -4,11 +4,10 @@ import { BypassHtmlSanitizerPipe } from '@pipes/svg-html.pipe';
 import { IconName, icons } from './icons';
 
 @Component({
-  selector: 'pc-icon',
-  standalone: true,
-  imports: [CommonModule, BypassHtmlSanitizerPipe],
-  templateUrl: './icons.component.html',
-  styleUrl: './icons.component.scss',
+    selector: 'pc-icon',
+    imports: [CommonModule, BypassHtmlSanitizerPipe],
+    templateUrl: './icons.component.html',
+    styleUrl: './icons.component.scss'
 })
 export class IconsComponent {
   public name = input.required<IconName>();

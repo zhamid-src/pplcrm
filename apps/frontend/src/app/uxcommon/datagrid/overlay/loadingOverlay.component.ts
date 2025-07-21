@@ -3,9 +3,10 @@ import { ILoadingOverlayParams } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 
 @Component({
-  selector: 'pc-loading-overlay',
-  templateUrl: './loadingOverlay.component.html',
-  styleUrls: ['./loadingOverlay.component.scss'],
+    selector: 'pc-loading-overlay',
+    templateUrl: './loadingOverlay.component.html',
+    styleUrls: ['./loadingOverlay.component.scss'],
+    standalone: false
 })
 export class LoadingOverlayComponent implements ILoadingOverlayAngularComp {
   public params: ILoadingOverlayParams | undefined;

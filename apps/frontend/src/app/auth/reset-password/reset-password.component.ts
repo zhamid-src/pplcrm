@@ -2,17 +2,16 @@ import { CommonModule } from '@angular/common';
 import { Component, signal } from '@angular/core';
 
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AuthService } from '@services/backend/auth.service';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({
-  selector: 'pc-reset-password',
-  standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, AlertComponent],
-  templateUrl: './reset-password.component.html',
-  styleUrl: './reset-password.component.scss',
+    selector: 'pc-reset-password',
+    imports: [CommonModule, FormsModule, ReactiveFormsModule, AlertComponent],
+    templateUrl: './reset-password.component.html',
+    styleUrl: './reset-password.component.scss'
 })
 export class ResetPasswordComponent {
   public form = this.fb.group({

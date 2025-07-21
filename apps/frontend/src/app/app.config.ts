@@ -4,7 +4,7 @@ import {
   withInterceptors,
   withInterceptorsFromDi,
 } from '@angular/common/http';
-import { APP_INITIALIZER, ApplicationConfig } from '@angular/core';
+import { ApplicationConfig, inject, provideAppInitializer } from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -46,11 +46,9 @@ export const appConfig: ApplicationConfig = {
       multi: true,
     },
     provideHttpClient(withInterceptorsFromDi()),
-    {
-      provide: APP_INITIALIZER,
-      multi: true,
-      useFactory: initSession,
-      deps: [AuthService],
-    },
+    provideAppInitializer(() => {
+        const initializerFn = (initSession)(inject(AuthService));
+        return initializerFn();
+      }),
   ],
 };

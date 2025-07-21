@@ -4,11 +4,10 @@ import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from 
 import { AlertService } from '@services/alert.service';
 
 @Component({
-  selector: 'pc-textarea',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule],
-  templateUrl: './textarea.component.html',
-  styleUrl: './textarea.component.scss',
+    selector: 'pc-textarea',
+    imports: [CommonModule, ReactiveFormsModule, FormsModule],
+    templateUrl: './textarea.component.html',
+    styleUrl: './textarea.component.scss'
 })
 export class TextareaComponent implements OnInit {
   public control = input.required<string>();

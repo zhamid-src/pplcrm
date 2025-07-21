@@ -6,11 +6,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-  selector: 'pc-sidebar',
-  standalone: true,
-  imports: [CommonModule, IconsComponent, RouterLink, SwapComponent],
-  templateUrl: './sidebar.component.html',
-  styleUrl: './sidebar.component.scss',
+    selector: 'pc-sidebar',
+    imports: [CommonModule, IconsComponent, RouterLink, SwapComponent],
+    templateUrl: './sidebar.component.html',
+    styleUrl: './sidebar.component.scss'
 })
 export class SidebarComponent {
   constructor(

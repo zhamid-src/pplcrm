@@ -15,12 +15,11 @@ interface ParamsType {
 }
 
 @Component({
-  selector: 'pc-households-grid',
-  standalone: true,
-  imports: [CommonModule, DatagridComponent],
-  templateUrl: './households-grid.component.html',
-  styleUrl: './households-grid.component.scss',
-  providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
+    selector: 'pc-households-grid',
+    imports: [CommonModule, DatagridComponent],
+    templateUrl: './households-grid.component.html',
+    styleUrl: './households-grid.component.scss',
+    providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }]
 })
 
 /**

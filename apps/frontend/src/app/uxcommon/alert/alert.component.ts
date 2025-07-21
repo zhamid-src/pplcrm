@@ -4,11 +4,10 @@ import { ALERTTYPE, AlertService } from '@services/alert.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-alert',
-  standalone: true,
-  imports: [CommonModule, IconsComponent],
-  templateUrl: './alert.component.html',
-  styleUrl: './alert.component.scss',
+    selector: 'pc-alert',
+    imports: [CommonModule, IconsComponent],
+    templateUrl: './alert.component.html',
+    styleUrl: './alert.component.scss'
 })
 export class AlertComponent {
   position = signal<'top' | 'bottom' | 'relative'>('relative');

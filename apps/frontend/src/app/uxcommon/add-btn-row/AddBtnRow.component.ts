@@ -6,11 +6,10 @@ import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: 'pc-add-btn-row',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, IconsComponent],
-  templateUrl: './AddBtnRow.component.html',
-  styleUrl: './AddBtnRow.component.scss',
+    selector: 'pc-add-btn-row',
+    imports: [CommonModule, ReactiveFormsModule, IconsComponent],
+    templateUrl: './AddBtnRow.component.html',
+    styleUrl: './AddBtnRow.component.scss'
 })
 export class AddBtnRowComponent implements OnInit {
   @Output() public btn1Clicked = new EventEmitter();

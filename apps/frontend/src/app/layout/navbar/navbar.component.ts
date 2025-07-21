@@ -10,11 +10,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-  selector: 'pc-navbar',
-  standalone: true,
-  imports: [CommonModule, IconsComponent, SwapComponent, FormsModule],
-  templateUrl: './navbar.component.html',
-  styleUrl: './navbar.component.scss',
+    selector: 'pc-navbar',
+    imports: [CommonModule, IconsComponent, SwapComponent, FormsModule],
+    templateUrl: './navbar.component.html',
+    styleUrl: './navbar.component.scss'
 })
 export class NavbarComponent {
   protected searchOnMobile = false;

@@ -8,18 +8,17 @@ import { NavbarComponent } from '../navbar/navbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 
 @Component({
-  selector: 'pc-dashboard',
-  standalone: true,
-  imports: [
-    CommonModule,
-    NavbarComponent,
-    SidebarComponent,
-    RouterModule,
-    BreadcrumbComponent,
-    AlertComponent,
-  ],
-  templateUrl: './dashboard.component.html',
-  styleUrl: './dashboard.component.scss',
+    selector: 'pc-dashboard',
+    imports: [
+        CommonModule,
+        NavbarComponent,
+        SidebarComponent,
+        RouterModule,
+        BreadcrumbComponent,
+        AlertComponent,
+    ],
+    templateUrl: './dashboard.component.html',
+    styleUrl: './dashboard.component.scss'
 })
 export class DashboardComponent {
   constructor(private sidebarSvc: SidebarService) {}

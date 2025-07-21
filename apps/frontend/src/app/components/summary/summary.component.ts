@@ -1,15 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { AlertService } from '@services/alert.service';
-import { AlertComponent } from '@uxcommon/alert/alert.component';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 
 @Component({
-  selector: 'pc-summary',
-  standalone: true,
-  imports: [CommonModule, TagsComponent, AlertComponent],
-  templateUrl: './summary.component.html',
-  styleUrl: './summary.component.scss',
+    selector: 'pc-summary',
+    imports: [CommonModule, TagsComponent],
+    templateUrl: './summary.component.html',
+    styleUrl: './summary.component.scss'
 })
 export class SummaryComponent {
   public allowDetele = true;

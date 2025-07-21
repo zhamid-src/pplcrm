@@ -15,21 +15,19 @@ import { TextareaComponent } from '@uxcommon/textarea/textarea.component';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
 @Component({
-  selector: 'pc-person-detail',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormInputComponent,
-    ReactiveFormsModule,
-    InputComponent,
-    TagsComponent,
-    AddBtnRowComponent,
-    TextareaComponent,
-    RouterModule,
-    PeopleInHouseholdComponent,
-  ],
-  templateUrl: './PersonDetail.component.html',
-  styleUrl: './PersonDetail.component.scss',
+    selector: 'pc-person-detail',
+    imports: [
+        CommonModule,
+        FormInputComponent,
+        ReactiveFormsModule,
+        TagsComponent,
+        AddBtnRowComponent,
+        TextareaComponent,
+        RouterModule,
+        PeopleInHouseholdComponent,
+    ],
+    templateUrl: './PersonDetail.component.html',
+    styleUrl: './PersonDetail.component.scss'
 })
 export class PersonDetailComponent implements OnInit {
   public mode = input<'new' | 'edit'>('edit');
