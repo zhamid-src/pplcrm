@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, signal } from '@angular/core';
 
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -9,7 +9,7 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({
     selector: 'pc-reset-password',
-    imports: [CommonModule, FormsModule, ReactiveFormsModule, AlertComponent],
+    imports: [FormsModule, ReactiveFormsModule, AlertComponent],
     templateUrl: './reset-password.component.html',
     styleUrl: './reset-password.component.scss'
 })

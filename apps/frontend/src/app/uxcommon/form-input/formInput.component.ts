@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
@@ -8,7 +8,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
     selector: 'pc-form-input',
-    imports: [CommonModule, IconsComponent, ReactiveFormsModule],
+    imports: [IconsComponent, ReactiveFormsModule],
     templateUrl: './formInput.component.html',
     styleUrl: './formInput.component.scss'
 })

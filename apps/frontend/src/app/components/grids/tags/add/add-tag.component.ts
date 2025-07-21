@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, ViewChild, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
@@ -11,11 +11,10 @@ import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 @Component({
     selector: 'pc-add-tag',
     imports: [
-        CommonModule,
-        ReactiveFormsModule,
-        FormInputComponent,
-        AddBtnRowComponent,
-    ],
+    ReactiveFormsModule,
+    FormInputComponent,
+    AddBtnRowComponent
+],
     templateUrl: './add-tag.component.html',
     styleUrl: './add-tag.component.scss'
 })

@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UpdateHouseholdsObj } from '@common';
@@ -16,7 +16,7 @@ interface ParamsType {
 
 @Component({
     selector: 'pc-households-grid',
-    imports: [CommonModule, DatagridComponent],
+    imports: [DatagridComponent],
     templateUrl: './households-grid.component.html',
     styleUrl: './households-grid.component.scss',
     providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }]

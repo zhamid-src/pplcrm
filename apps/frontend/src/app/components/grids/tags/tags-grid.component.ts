@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AddTagType } from '@common';
@@ -11,7 +11,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
 
 @Component({
     selector: 'pc-tags-grid',
-    imports: [CommonModule, DatagridComponent],
+    imports: [DatagridComponent],
     templateUrl: './tags-grid.component.html',
     styleUrl: './tags-grid.component.scss',
     providers: [{ provide: AbstractAPIService, useClass: TagsService }]

@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, OnInit, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -17,15 +17,14 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
 @Component({
     selector: 'pc-person-detail',
     imports: [
-        CommonModule,
-        FormInputComponent,
-        ReactiveFormsModule,
-        TagsComponent,
-        AddBtnRowComponent,
-        TextareaComponent,
-        RouterModule,
-        PeopleInHouseholdComponent,
-    ],
+    FormInputComponent,
+    ReactiveFormsModule,
+    TagsComponent,
+    AddBtnRowComponent,
+    TextareaComponent,
+    RouterModule,
+    PeopleInHouseholdComponent
+],
     templateUrl: './PersonDetail.component.html',
     styleUrl: './PersonDetail.component.scss'
 })

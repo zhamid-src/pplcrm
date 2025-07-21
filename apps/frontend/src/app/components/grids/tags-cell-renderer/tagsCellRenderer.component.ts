@@ -1,6 +1,6 @@
 import { ICellRendererAngularComp } from '@ag-grid-community/angular';
 import { GridApi, ICellRendererParams } from '@ag-grid-community/core';
-import { CommonModule } from '@angular/common';
+
 import { Component } from '@angular/core';
 import { AbstractAPIService } from '@services/backend/abstract.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
@@ -12,7 +12,7 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
 
 @Component({
     selector: 'pc-tags-cell-renderer',
-    imports: [CommonModule, TagsComponent],
+    imports: [TagsComponent],
     templateUrl: './tagsCellRenderer.component.html',
     styleUrl: './tagsCellRenderer.component.scss'
 })

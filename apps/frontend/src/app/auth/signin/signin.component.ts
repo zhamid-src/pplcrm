@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, effect, signal } from '@angular/core';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
@@ -12,7 +12,7 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({
     selector: 'pc-login',
-    imports: [CommonModule, ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
+    imports: [ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
     templateUrl: './signin.component.html',
     styleUrl: './signin.component.scss'
 })

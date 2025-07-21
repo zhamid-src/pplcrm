@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -7,7 +7,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
     selector: 'pc-add-btn-row',
-    imports: [CommonModule, ReactiveFormsModule, IconsComponent],
+    imports: [ReactiveFormsModule, IconsComponent],
     templateUrl: './AddBtnRow.component.html',
     styleUrl: './AddBtnRow.component.scss'
 })

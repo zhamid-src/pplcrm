@@ -2,7 +2,7 @@ import {
   NgxGpAutocompleteModule,
   NgxGpAutocompleteOptions,
 } from '@angular-magic/ngx-gp-autocomplete';
-import { CommonModule } from '@angular/common';
+
 import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from '@angular/core';
 import { FormsModule, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { IconName } from '@uxcommon/icons/icons';
@@ -12,12 +12,11 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
 @Component({
     selector: 'pc-input',
     imports: [
-        CommonModule,
-        IconsComponent,
-        FormsModule,
-        ReactiveFormsModule,
-        NgxGpAutocompleteModule,
-    ],
+    IconsComponent,
+    FormsModule,
+    ReactiveFormsModule,
+    NgxGpAutocompleteModule
+],
     templateUrl: './input.component.html',
     styleUrl: './input.component.scss'
 })

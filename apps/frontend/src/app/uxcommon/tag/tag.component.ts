@@ -1,10 +1,10 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, Output, input } from '@angular/core';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
     selector: 'pc-tag',
-    imports: [CommonModule, IconsComponent],
+    imports: [IconsComponent],
     templateUrl: './tag.component.html',
     styleUrl: './tag.component.scss'
 })

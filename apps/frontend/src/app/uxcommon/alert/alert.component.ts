@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, signal } from '@angular/core';
 import { ALERTTYPE, AlertService } from '@services/alert.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
     selector: 'pc-alert',
-    imports: [CommonModule, IconsComponent],
+    imports: [IconsComponent],
     templateUrl: './alert.component.html',
     styleUrl: './alert.component.scss'
 })

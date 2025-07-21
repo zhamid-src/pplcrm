@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, effect, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
@@ -6,7 +6,7 @@ import { PersonsService } from '@services/backend/persons.service';
 
 @Component({
     selector: 'pc-people-in-household',
-    imports: [CommonModule, RouterModule],
+    imports: [RouterModule],
     templateUrl: './peopleInHousehold.component.html',
     styleUrl: './peopleInHousehold.component.scss'
 })

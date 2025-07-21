@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
 
 @Component({
     selector: 'pc-textarea',
-    imports: [CommonModule, ReactiveFormsModule, FormsModule],
+    imports: [ReactiveFormsModule, FormsModule],
     templateUrl: './textarea.component.html',
     styleUrl: './textarea.component.scss'
 })

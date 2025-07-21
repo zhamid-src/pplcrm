@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, input } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@pipes/svg-html.pipe';
 import { IconName, icons } from './icons';
 
 @Component({
     selector: 'pc-icon',
-    imports: [CommonModule, BypassHtmlSanitizerPipe],
+    imports: [BypassHtmlSanitizerPipe],
     templateUrl: './icons.component.html',
     styleUrl: './icons.component.scss'
 })

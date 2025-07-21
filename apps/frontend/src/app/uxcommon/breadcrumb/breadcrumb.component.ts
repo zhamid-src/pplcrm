@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 
 @Component({
     selector: 'pc-breadcrumb',
-    imports: [CommonModule],
+    imports: [],
     templateUrl: './breadcrumb.component.html',
     styleUrl: './breadcrumb.component.scss'
 })

@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
@@ -7,7 +7,7 @@ import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
     selector: 'pc-sidebar',
-    imports: [CommonModule, IconsComponent, RouterLink, SwapComponent],
+    imports: [IconsComponent, RouterLink, SwapComponent],
     templateUrl: './sidebar.component.html',
     styleUrl: './sidebar.component.scss'
 })
