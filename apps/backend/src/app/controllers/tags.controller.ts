@@ -1,9 +1,9 @@
-import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
-import { OperationDataType } from 'common/src/lib/kysely.models';
-import { TagsRepo } from '../repositories/tags.repo';
-import { BaseController } from './base.controller';
+import { AddTagType, IAuthKeyPayload, UpdateTagType } from "@common";
+import { OperationDataType } from "common/src/lib/kysely.models";
+import { TagsRepo } from "../repositories/tags.repo";
+import { BaseController } from "./base.controller";
 
-export class TagsController extends BaseController<'tags', TagsRepo> {
+export class TagsController extends BaseController<"tags", TagsRepo> {
   constructor() {
     super(new TagsRepo());
   }
@@ -17,15 +17,15 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
       description: payload.description,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
-    } as OperationDataType<'tags', 'insert'>;
+    } as OperationDataType<"tags", "insert">;
     return this.add(row);
   }
 
   /**
    * Given the key, return the first three tags that match the key.
    */
-  public findByName(name: string, auth: IAuthKeyPayload): Promise<{ name: string }[]> {
-    return this.find({ tenant_id: auth.tenant_id, key: name, column: 'name' });
+  public findByName(name: string, auth: IAuthKeyPayload) {
+    return this.find({ tenant_id: auth.tenant_id, key: name, column: "name" });
   }
 
   public getAllWithCounts(tenant_id: string) {
@@ -36,10 +36,14 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * Update the tag that matches the given ID
    */
   public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<
-      'tags',
-      'insert'
-    >;
-    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<"tags", "insert">;
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy,
+    });
   }
 }

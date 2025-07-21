@@ -1,5 +1,5 @@
-import { getAllOptionsType } from '@common';
-import { Transaction } from 'kysely';
+import { getAllOptionsType } from "@common";
+import { SelectExpression, Transaction } from "kysely";
 import {
   Models,
   OperationDataType,
@@ -7,8 +7,8 @@ import {
   TypeId,
   TypeTableColumns,
   TypeTenantId,
-} from '../../../../../common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from '../repositories/base.repo';
+} from "../../../../../common/src/lib/kysely.models";
+import { BaseRepository, QueryParams } from "../repositories/base.repo";
 
 /**
  * Base class for all controllers that provides basic CRUD operations. There is a controller for each
@@ -28,7 +28,10 @@ import { BaseRepository, QueryParams } from '../repositories/base.repo';
  *
  * This enables CRUD operations for the households table.
  */
-export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
+export class BaseController<
+  T extends keyof Models,
+  R extends BaseRepository<T>,
+> {
   constructor(private repo: R) {}
 
   /**
@@ -39,7 +42,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns The inserted row
    */
-  public add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+  public add(row: OperationDataType<T, "insert">, trx?: Transaction<Models>) {
     return this.repo.add({ row }, trx);
   }
 
@@ -51,7 +54,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns The inserted rows
    */
-  public addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
+  public addMany(
+    rows: OperationDataType<T, "insert">[],
+    trx?: Transaction<Models>,
+  ) {
     return this.repo.addMany({ rows }, trx);
   }
 
@@ -59,13 +65,19 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * Delete the row with the given id.
    */
   public delete(tenant_id: TypeTenantId<T>, idToDelete: string) {
-    return this.repo.delete({ tenant_id: tenant_id, id: idToDelete as TypeId<T> });
+    return this.repo.delete({
+      tenant_id: tenant_id,
+      id: idToDelete as TypeId<T>,
+    });
   }
 
   /**
    * Delete the rows with the given ids.
    */
-  public deleteMany(tenant_id: TypeColumn<T, 'tenant_id'>, idsToDelete: string[]) {
+  public deleteMany(
+    tenant_id: TypeColumn<T, "tenant_id">,
+    idsToDelete: string[],
+  ) {
     return this.repo.deleteMany({ ids: idsToDelete as TypeId<T>, tenant_id });
   }
 
@@ -80,9 +92,17 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    * @returns - upto three rows that best match the key
    */
-  public async find(input: { tenant_id: string; key: string; column: TypeTableColumns<T> }) {
+  public async find(input: {
+    tenant_id: string;
+    key: string;
+    column: SelectExpression<Models, keyof Models>;
+  }) {
     const tenant_id = input.tenant_id as TypeTenantId<T>;
-    return await this.repo.find({ tenant_id, key: input.key, column: input.column });
+    return await this.repo.find({
+      tenant_id,
+      key: input.key,
+      column: input.column,
+    });
   }
 
   /**
@@ -111,13 +131,17 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    *
    */
   public getCount(tenant_id: string) {
-    return this.repo.count(tenant_id as TypeColumn<T, 'tenant_id'>);
+    return this.repo.count(tenant_id as TypeColumn<T, "tenant_id">);
   }
 
   /**
    * Update the row with the given id, overriding columns with the given values.
    */
-  public update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+  public update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<T, "update">;
+  }) {
     const id = input.id as TypeId<T>;
     const tenant_id = input.tenant_id as TypeTenantId<T>;
     return this.repo.update({ id, tenant_id, row: input.row });

@@ -4,7 +4,7 @@ import { Component, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/backend/auth.service.js';
+import { AuthService } from '@services/backend/auth.service';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({

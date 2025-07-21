@@ -1,15 +1,15 @@
-import { Injectable } from '@angular/core';
-import { AddTagType, UpdateTagType } from '@common';
-import { Tags } from 'common/src/lib/kysely.models';
-import { AbstractAPIService } from './abstract.service';
+import { Injectable } from "@angular/core";
+import { AddTagType, UpdateTagType } from "@common";
+import { Tags } from "common/src/lib/kysely.models";
+import { AbstractAPIService } from "./abstract.service";
 
 /**
  * @see @link{AbstractBackendService} for more information about this class.
  */
 @Injectable({
-  providedIn: 'root',
+  providedIn: "root",
 })
-export class TagsService extends AbstractAPIService<'tags', AddTagType> {
+export class TagsService extends AbstractAPIService<"tags", AddTagType> {
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }
@@ -39,7 +39,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   }
 
   public async filter(key: string) {
-    const names = await this.findByName(key);
+    const names = (await this.findByName(key)) as AddTagType[];
     return names.map((m) => m.name);
   }
 
@@ -61,7 +61,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   }
 
   public update(id: string, data: UpdateTagType) {
-    console.log('UUUUPPPPDDAAATTIINNNGNG', data);
+    console.log("UUUUPPPPDDAAATTIINNNGNG", data);
     return this.api.tags.update.mutate({ id: id, data });
   }
 }

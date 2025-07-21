@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import {  FastifyPluginCallback } from 'fastify';
 
 /**
  * No public HTTP routes for authentication
@@ -6,7 +6,7 @@ import { FastifyInstance } from 'fastify';
  * @param _
  * @param done
  */
-function routes(fastify: FastifyInstance, _: never, done: () => void) {
+const routes: FastifyPluginCallback = (fastify, _, done) => {
   done();
 }
 
