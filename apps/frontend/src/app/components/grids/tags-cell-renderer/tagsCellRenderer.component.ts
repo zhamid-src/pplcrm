@@ -14,7 +14,7 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
     selector: 'pc-tags-cell-renderer',
     imports: [TagsComponent],
     templateUrl: './tagsCellRenderer.component.html',
-    styleUrl: './tagsCellRenderer.component.scss'
+    styleUrl: './tagsCellRenderer.component.css'
 })
 export class TagsCellRendererComponent<T extends keyof Models, U>
   implements ICellRendererAngularComp

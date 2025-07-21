@@ -13,7 +13,7 @@ import { DatagridComponent } from '@uxcommon/datagrid/datagrid.component';
     selector: 'pc-tags-grid',
     imports: [DatagridComponent],
     templateUrl: './tags-grid.component.html',
-    styleUrl: './tags-grid.component.scss',
+    styleUrl: './tags-grid.component.css',
     providers: [{ provide: AbstractAPIService, useClass: TagsService }]
 })
 export class TagsGridComponent extends DatagridComponent<'tags', AddTagType> {

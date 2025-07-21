@@ -10,7 +10,7 @@ import { DatagridComponent } from '../datagrid.component';
     selector: 'pc-shortcut-cell-renderer',
     imports: [IconsComponent],
     templateUrl: './shortcut-cell-renderer.component.html',
-    styleUrl: './shortcut-cell-renderer.component.scss',
+    styleUrl: './shortcut-cell-renderer.component.css',
     encapsulation: ViewEncapsulation.None
 })
 export class ShortcutCellRendererComponent<T extends keyof Models, U>

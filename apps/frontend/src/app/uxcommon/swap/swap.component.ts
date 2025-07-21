@@ -8,7 +8,7 @@ import { IconsComponent } from '../icons/icons.component';
     selector: 'pc-swap',
     imports: [FormsModule, IconsComponent],
     templateUrl: './swap.component.html',
-    styleUrl: './swap.component.scss'
+    styleUrl: './swap.component.css'
 })
 export class SwapComponent {
   public animation = input<'flip' | 'rotate'>('rotate');

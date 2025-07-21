@@ -22,7 +22,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
         AlertComponent,
     ],
     templateUrl: './signup.component.html',
-    styleUrl: './signup.component.scss'
+    styleUrl: './signup.component.css'
 })
 export class SignUpComponent {
   protected form = this.fb.group({

@@ -7,7 +7,7 @@ import { SidebarService } from '@services/sidebar.service';
     selector: 'pc-breadcrumb',
     imports: [],
     templateUrl: './breadcrumb.component.html',
-    styleUrl: './breadcrumb.component.scss'
+    styleUrl: './breadcrumb.component.css'
 })
 export class BreadcrumbComponent {
   protected crumbs: string[] = [];

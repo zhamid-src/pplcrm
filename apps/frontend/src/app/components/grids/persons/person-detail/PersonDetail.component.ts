@@ -26,7 +26,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
     PeopleInHouseholdComponent
 ],
     templateUrl: './PersonDetail.component.html',
-    styleUrl: './PersonDetail.component.scss'
+    styleUrl: './PersonDetail.component.css'
 })
 export class PersonDetailComponent implements OnInit {
   public mode = input<'new' | 'edit'>('edit');

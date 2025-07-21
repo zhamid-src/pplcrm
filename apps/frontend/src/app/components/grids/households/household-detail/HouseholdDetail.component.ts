@@ -27,7 +27,7 @@ import { Households } from 'common/src/lib/kysely.models';
     PeopleInHouseholdComponent
 ],
     templateUrl: './HouseholdDetail.component.html',
-    styleUrl: './HouseholdDetail.component.scss'
+    styleUrl: './HouseholdDetail.component.css'
 })
 export class HouseholdDetailComponent implements OnInit {
   public mode = input<'new' | 'edit'>('edit');

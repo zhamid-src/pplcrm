@@ -13,7 +13,7 @@ import { SwapComponent } from '@uxcommon/swap/swap.component';
     selector: 'pc-navbar',
     imports: [IconsComponent, SwapComponent, FormsModule],
     templateUrl: './navbar.component.html',
-    styleUrl: './navbar.component.scss'
+    styleUrl: './navbar.component.css'
 })
 export class NavbarComponent {
   protected searchOnMobile = false;

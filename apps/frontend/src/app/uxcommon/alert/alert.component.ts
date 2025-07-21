@@ -7,7 +7,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     selector: 'pc-alert',
     imports: [IconsComponent],
     templateUrl: './alert.component.html',
-    styleUrl: './alert.component.scss'
+    styleUrl: './alert.component.css'
 })
 export class AlertComponent {
   position = signal<'top' | 'bottom' | 'relative'>('relative');

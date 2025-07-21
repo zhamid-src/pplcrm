@@ -1,0 +1,51 @@
+@import "@ag-grid-community/styles/ag-grid.css";
+@import "@ag-grid-community/styles/ag-theme-quartz.css";
+
+@import "tailwindcss";
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  --color-primary: "#0ea5e9";
+  --color-secondary: "#14e8a6";
+  --color-accent: "#0c506e";
+  --color-neutral:
+    "#cbd5e1" --color-neutral-content: "#1f2937", --color-base-100: "#ffffff",
+    --color-base-300: "#f0f0f0", --color-info: "#38bdf8",
+    --color-success: "#2dd4bf", --color-warning: "#e5c963",
+    --color-error: "#f37373";
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: "Roboto", sans-serif;
+}
+
+.bg-image {
+  background-image: url("assets/bg.jpg");
+}
+
+.input-pplcrm {
+  @apply input focus:input-primary invalid:input-error caret-primary w-full border-gray-200 placeholder:text-sm;
+}
+
+.input-override:-webkit-autofill,
+.input-override:-webkit-autofill:hover,
+.input-override:-webkit-autofill:focus,
+.input-override:-webkit-autofill:active {
+  background: transparent;
+}
+
+.ag-theme-quartz {
+  --ag-font-family: "Roboto", sans-serif;
+  --ag-modal-overlay-background-color: rgba(255, 255, 255, 0.9);
+}
+
+.ag-theme-quartz-dark {
+  --ag-modal-overlay-background-color: rgba(18, 35, 46, 0.95);
+}

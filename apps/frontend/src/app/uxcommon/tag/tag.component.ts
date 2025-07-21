@@ -6,7 +6,7 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     selector: 'pc-tag',
     imports: [IconsComponent],
     templateUrl: './tag.component.html',
-    styleUrl: './tag.component.scss'
+    styleUrl: './tag.component.css'
 })
 export class TagComponent {
   public allowDetele = input<boolean>(true);

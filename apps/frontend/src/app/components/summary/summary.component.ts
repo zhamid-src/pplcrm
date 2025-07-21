@@ -7,7 +7,7 @@ import { TagsComponent } from '@uxcommon/tags/tags.component';
     selector: 'pc-summary',
     imports: [TagsComponent],
     templateUrl: './summary.component.html',
-    styleUrl: './summary.component.scss'
+    styleUrl: './summary.component.css'
 })
 export class SummaryComponent {
   public allowDetele = true;

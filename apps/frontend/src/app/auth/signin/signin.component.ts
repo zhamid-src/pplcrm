@@ -1,25 +1,24 @@
+import { Component, effect, signal } from "@angular/core";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 
-import { Component, effect, signal } from '@angular/core';
-import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
 
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-
-import { Router, RouterLink } from '@angular/router';
-import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/backend/auth.service';
-import { TokenService } from '@services/token.service';
-import { AlertComponent } from '@uxcommon/alert/alert.component';
+import { Router, RouterLink } from "@angular/router";
+import { AlertService } from "@services/alert.service";
+import { AuthService } from "@services/backend/auth.service";
+import { TokenService } from "@services/token.service";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
 
 @Component({
-    selector: 'pc-login',
-    imports: [ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
-    templateUrl: './signin.component.html',
-    styleUrl: './signin.component.scss'
+  selector: "pc-login",
+  imports: [ReactiveFormsModule, RouterLink, IconsComponent, AlertComponent],
+  templateUrl: "./signin.component.html",
+  styleUrl: "./signin.component.css",
 })
 export class SignInComponent {
   public form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    email: ["", [Validators.required, Validators.email]],
+    password: ["", [Validators.required, Validators.minLength(8)]],
   });
 
   protected hidePassword = true;
@@ -34,38 +33,52 @@ export class SignInComponent {
     private alertSvc: AlertService,
   ) {
     effect(() => {
-      if (this.authService.user()) this.router.navigate(['console', 'summary']);
+      console.log(
+        "******************************** User changed:",
+        this.authService.user(),
+      );
+      if (this.authService.user()) this.router.navigate(["console", "summary"]);
     });
   }
 
   public get email() {
-    return this.form.get('email');
+    return this.form.get("email");
   }
 
   public get password() {
-    return this.form.get('password');
+    return this.form.get("password");
   }
 
   public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
+    return this.hidePassword ? "password" : "text";
   }
 
   public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
+    return this.hidePassword ? "eye-slash" : "eye";
   }
 
   public async signIn() {
     if (this.form.invalid)
-      return this.alertSvc.showError('Please enter a valid email and password.');
+      return this.alertSvc.showError(
+        "Please enter a valid email and password.",
+      );
 
     this.processing.set(true);
 
+    // We know that email and password are defined because of the form validation
+    // So we can safely use non-null assertion here
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const email = this.email!.value!;
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const password = this.password!.value!;
 
     return this.authService
       .signIn({ email, password })
-      .catch((err) => this.alertSvc.showError(err.message))
+      .catch((err) => {
+        console.log("================= error", err);
+        this.alertSvc.showError(err.message);
+      })
       .finally(() => this.processing.set(false));
   }
 
@@ -79,7 +92,7 @@ export class SignInComponent {
   }
 
   protected getError() {
-    return this.form?.errors ? this.form?.errors['message'] : null;
+    return this.form?.errors ? this.form?.errors["message"] : null;
   }
 
   protected hasError() {

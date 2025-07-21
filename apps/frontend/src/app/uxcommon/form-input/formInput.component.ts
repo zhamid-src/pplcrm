@@ -10,7 +10,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
     selector: 'pc-form-input',
     imports: [IconsComponent, ReactiveFormsModule],
     templateUrl: './formInput.component.html',
-    styleUrl: './formInput.component.scss'
+    styleUrl: './formInput.component.css'
 })
 export class FormInputComponent implements OnInit {
   public control = input.required<string>();
