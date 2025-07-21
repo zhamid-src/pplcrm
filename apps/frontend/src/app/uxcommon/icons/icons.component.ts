@@ -7,7 +7,7 @@ import { IconName, icons } from './icons';
     selector: 'pc-icon',
     imports: [BypassHtmlSanitizerPipe],
     templateUrl: './icons.component.html',
-    styleUrl: './icons.component.scss'
+    styleUrl: './icons.component.css'
 })
 export class IconsComponent {
   public name = input.required<IconName>();

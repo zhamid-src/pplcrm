@@ -7,7 +7,7 @@ import { AlertService } from '@services/alert.service';
     selector: 'pc-textarea',
     imports: [ReactiveFormsModule, FormsModule],
     templateUrl: './textarea.component.html',
-    styleUrl: './textarea.component.scss'
+    styleUrl: './textarea.component.css'
 })
 export class TextareaComponent implements OnInit {
   public control = input.required<string>();

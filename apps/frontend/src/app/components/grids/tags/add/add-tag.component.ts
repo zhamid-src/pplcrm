@@ -16,7 +16,7 @@ import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
     AddBtnRowComponent
 ],
     templateUrl: './add-tag.component.html',
-    styleUrl: './add-tag.component.scss'
+    styleUrl: './add-tag.component.css'
 })
 export class AddTagComponent {
   @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;

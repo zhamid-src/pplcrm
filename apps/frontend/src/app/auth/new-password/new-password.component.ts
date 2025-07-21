@@ -22,7 +22,7 @@ import { firstValueFrom } from 'rxjs';
         AlertComponent,
     ],
     templateUrl: './new-password.component.html',
-    styleUrl: './new-password.component.scss'
+    styleUrl: './new-password.component.css'
 })
 export class NewPasswordComponent implements OnInit {
   public form = this.fb.group({

@@ -18,7 +18,7 @@ interface ParamsType {
     selector: 'pc-households-grid',
     imports: [DatagridComponent],
     templateUrl: './households-grid.component.html',
-    styleUrl: './households-grid.component.scss',
+    styleUrl: './households-grid.component.css',
     providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }]
 })
 

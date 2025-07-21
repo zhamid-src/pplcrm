@@ -8,7 +8,7 @@ import { TagComponent } from '@uxcommon/tag/tag.component';
     selector: 'pc-tags',
     imports: [TagComponent, AutocompleteComponent],
     templateUrl: './tags.component.html',
-    styleUrl: './tags.component.scss'
+    styleUrl: './tags.component.css'
 })
 export class TagsComponent {
   /**

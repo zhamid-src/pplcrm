@@ -11,7 +11,7 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
     selector: 'pc-reset-password',
     imports: [FormsModule, ReactiveFormsModule, AlertComponent],
     templateUrl: './reset-password.component.html',
-    styleUrl: './reset-password.component.scss'
+    styleUrl: './reset-password.component.css'
 })
 export class ResetPasswordComponent {
   public form = this.fb.group({

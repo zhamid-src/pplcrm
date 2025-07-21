@@ -20,7 +20,7 @@ interface ParamsType {
     selector: 'pc-volunteers-grid',
     imports: [DatagridComponent, IconsComponent],
     templateUrl: './volunteers-grid.component.html',
-    styleUrl: './volunteers-grid.component.scss',
+    styleUrl: './volunteers-grid.component.css',
     providers: [{ provide: AbstractAPIService, useClass: PersonsService }]
 })
 export class VolunteersGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {

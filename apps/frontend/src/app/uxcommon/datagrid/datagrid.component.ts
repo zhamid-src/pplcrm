@@ -28,7 +28,7 @@ import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut
     selector: 'pc-datagrid',
     imports: [AgGridModule, IconsComponent],
     templateUrl: './datagrid.component.html',
-    styleUrl: './datagrid.component.scss'
+    styleUrl: './datagrid.component.css'
 })
 
 /**

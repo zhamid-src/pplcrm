@@ -9,7 +9,7 @@ type TFILTER = {
     selector: 'pc-autocomplete',
     imports: [InputComponent],
     templateUrl: './autocomplete.component.html',
-    styleUrl: './autocomplete.component.scss'
+    styleUrl: './autocomplete.component.css'
 })
 export class AutocompleteComponent {
   protected hideAutoComplete = true;

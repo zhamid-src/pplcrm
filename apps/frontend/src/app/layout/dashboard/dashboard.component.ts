@@ -17,7 +17,7 @@ import { SidebarComponent } from '../sidebar/sidebar.component';
     AlertComponent
 ],
     templateUrl: './dashboard.component.html',
-    styleUrl: './dashboard.component.scss'
+    styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent {
   constructor(private sidebarSvc: SidebarService) {}

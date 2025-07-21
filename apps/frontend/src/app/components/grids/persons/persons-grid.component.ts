@@ -20,7 +20,7 @@ interface ParamsType {
     selector: 'pc-persons-grid',
     imports: [DatagridComponent, IconsComponent],
     templateUrl: './persons-grid.component.html',
-    styleUrl: './persons-grid.component.scss',
+    styleUrl: './persons-grid.component.css',
     providers: [{ provide: AbstractAPIService, useClass: PersonsService }]
 })
 export class PersonsGridComponent extends DatagridComponent<TYPE, UpdatePersonsType> {

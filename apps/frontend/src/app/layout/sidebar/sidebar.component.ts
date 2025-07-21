@@ -9,7 +9,7 @@ import { SwapComponent } from '@uxcommon/swap/swap.component';
     selector: 'pc-sidebar',
     imports: [IconsComponent, RouterLink, SwapComponent],
     templateUrl: './sidebar.component.html',
-    styleUrl: './sidebar.component.scss'
+    styleUrl: './sidebar.component.css'
 })
 export class SidebarComponent {
   constructor(

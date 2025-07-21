@@ -8,7 +8,7 @@ import { PersonsService } from '@services/backend/persons.service';
     selector: 'pc-people-in-household',
     imports: [RouterModule],
     templateUrl: './peopleInHousehold.component.html',
-    styleUrl: './peopleInHousehold.component.scss'
+    styleUrl: './peopleInHousehold.component.css'
 })
 export class PeopleInHouseholdComponent {
   public householdId = input.required<string | null>();

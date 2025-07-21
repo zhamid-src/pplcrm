@@ -18,7 +18,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
     NgxGpAutocompleteModule
 ],
     templateUrl: './input.component.html',
-    styleUrl: './input.component.scss'
+    styleUrl: './input.component.css'
 })
 export class InputComponent implements AfterViewInit {
   public debounceTime = input<number>(250);
