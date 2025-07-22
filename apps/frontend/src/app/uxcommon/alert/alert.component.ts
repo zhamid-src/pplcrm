@@ -1,5 +1,5 @@
 
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject } from '@angular/core';
 import { ALERTTYPE, AlertService } from '@services/alert.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
@@ -10,14 +10,14 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     styleUrl: './alert.component.css'
 })
 export class AlertComponent {
+  protected alertSvc = inject(AlertService);
+
   position = signal<'top' | 'bottom' | 'relative'>('relative');
   protected alerts() {
     return this.position() === 'top'
       ? this.alertSvc.alerts.slice().reverse()
       : this.alertSvc.alerts;
   }
-
-  constructor(protected alertSvc: AlertService) {}
 
   public OKBtnClick(text: string) {
     this.alertSvc.OKBtnCallback(text);

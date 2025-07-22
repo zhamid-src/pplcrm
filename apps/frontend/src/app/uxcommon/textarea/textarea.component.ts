@@ -1,5 +1,5 @@
 
-import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
 
@@ -10,6 +10,9 @@ import { AlertService } from '@services/alert.service';
     styleUrl: './textarea.component.css'
 })
 export class TextareaComponent implements OnInit {
+  private rootFormGroup = inject(FormGroupDirective);
+  private alertSvc = inject(AlertService);
+
   public control = input.required<string>();
   public disabled = input<boolean>(false);
   public placeholder = input<string>('');
@@ -17,11 +20,6 @@ export class TextareaComponent implements OnInit {
   @Output() public valueChange = new EventEmitter<string>();
 
   protected form!: FormGroup;
-
-  constructor(
-    private rootFormGroup: FormGroupDirective,
-    private alertSvc: AlertService,
-  ) {}
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;

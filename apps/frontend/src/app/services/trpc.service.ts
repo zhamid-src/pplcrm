@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { refreshTokenLink } from '@pyncz/trpc-refresh-token-link';
@@ -19,16 +19,16 @@ import { TokenService } from './token.service';
   providedIn: 'root',
 })
 export class TRPCService<T> {
+  protected tokenService = inject(TokenService);
+  protected router = inject(Router);
+
   protected ac = new AbortController();
   protected api;
 
   /**
    * Create the TRPC proxy client that's used by the derived classes
    */
-  constructor(
-    protected tokenService: TokenService,
-    protected router: Router,
-  ) {
+  constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({
       links: [
         loggerLink(),

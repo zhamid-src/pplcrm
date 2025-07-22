@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClientModule } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
@@ -25,6 +25,11 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     styleUrl: './signup.component.css'
 })
 export class SignUpComponent {
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private router = inject(Router);
+  private alertSvc = inject(AlertService);
+
   protected form = this.fb.group({
     organization: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
@@ -36,13 +41,6 @@ export class SignUpComponent {
   });
   protected hidePassword = true;
   protected processing = signal(false);
-
-  constructor(
-    private fb: FormBuilder,
-    private authService: AuthService,
-    private router: Router,
-    private alertSvc: AlertService,
-  ) {}
 
   public get email() {
     return this.form.get('email');

@@ -1,5 +1,5 @@
 
-import { Component, OnInit, input, signal } from '@angular/core';
+import { Component, OnInit, input, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
@@ -29,6 +29,13 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
     styleUrl: './PersonDetail.component.css'
 })
 export class PersonDetailComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private personsSvc = inject(PersonsService);
+  private householdsSvc = inject(HouseholdsService);
+  private alertSvc = inject(AlertService);
+
   public mode = input<'new' | 'edit'>('edit');
 
   protected addressString = signal<string | null>(null);
@@ -61,14 +68,7 @@ export class PersonDetailComponent implements OnInit {
   protected processing = signal(false);
   protected tags: string[] = [];
 
-  constructor(
-    private fb: FormBuilder,
-    private router: Router,
-    private route: ActivatedRoute,
-    private personsSvc: PersonsService,
-    private householdsSvc: HouseholdsService,
-    private alertSvc: AlertService,
-  ) {
+  constructor() {
     if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
     }

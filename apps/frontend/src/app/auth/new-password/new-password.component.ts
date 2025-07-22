@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, inject } from '@angular/core';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
@@ -25,6 +25,12 @@ import { firstValueFrom } from 'rxjs';
     styleUrl: './new-password.component.css'
 })
 export class NewPasswordComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private alertSvc = inject(AlertService);
+
   public form = this.fb.group({
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
@@ -35,14 +41,6 @@ export class NewPasswordComponent implements OnInit {
 
   private code: string | null = null;
   private hidePassword = true;
-
-  constructor(
-    private fb: FormBuilder,
-    private authService: AuthService,
-    private router: Router,
-    private route: ActivatedRoute,
-    private alertSvc: AlertService,
-  ) {}
 
   public get password() {
     return this.form.get('password');

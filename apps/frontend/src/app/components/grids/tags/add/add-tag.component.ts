@@ -1,5 +1,5 @@
 
-import { Component, ViewChild, signal } from '@angular/core';
+import { Component, ViewChild, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { AlertService } from '@services/alert.service';
@@ -19,6 +19,10 @@ import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
     styleUrl: './add-tag.component.css'
 })
 export class AddTagComponent {
+  private fb = inject(FormBuilder);
+  private tagSvc = inject(TagsService);
+  private alertSvc = inject(AlertService);
+
   @ViewChild(AddBtnRowComponent) public addBtnRow!: AddBtnRowComponent;
 
   protected form = this.fb.group({
@@ -26,12 +30,6 @@ export class AddTagComponent {
     description: [''],
   });
   protected processing = signal(false);
-
-  constructor(
-    private fb: FormBuilder,
-    private tagSvc: TagsService,
-    private alertSvc: AlertService,
-  ) {}
 
   protected async add() {
     this.processing.set(true);

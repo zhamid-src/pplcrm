@@ -1,5 +1,5 @@
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '@services/backend/auth.service';
@@ -16,15 +16,13 @@ import { SwapComponent } from '@uxcommon/swap/swap.component';
     styleUrl: './navbar.component.css'
 })
 export class NavbarComponent {
+  private auth = inject(AuthService);
+  protected themeSvc = inject(ThemeService);
+  private searchSvc = inject(SearchService);
+  private sideBarSvc = inject(SidebarService);
+
   protected searchOnMobile = false;
   protected searchStr = '';
-
-  constructor(
-    private auth: AuthService,
-    protected themeSvc: ThemeService,
-    private searchSvc: SearchService,
-    private sideBarSvc: SidebarService,
-  ) {}
 
   public clearSearch() {
     this.searchOnMobile = false;

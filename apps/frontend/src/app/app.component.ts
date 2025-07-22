@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import { Component, inject } from "@angular/core";
 import { RouterLink, RouterModule } from "@angular/router";
 import { ThemeService } from "@services/theme.service";
 
@@ -9,5 +9,5 @@ import { ThemeService } from "@services/theme.service";
     styleUrl: "./app.component.css"
 })
 export class AppComponent {
-  constructor(protected themeSvc: ThemeService) {}
+  protected themeSvc = inject(ThemeService);
 }
