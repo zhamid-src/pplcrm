@@ -27,7 +27,13 @@ export class AuthService extends TRPCService<"authusers"> {
   }
 
   public async signOut() {
-    const apiReturn = await this.api.auth.signOut.mutate();
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error("Error during sign out:", error);
+    }
+
     this._user.set(null);
     this.tokenService.clearAll();
     this.router.navigate(["/signin"]);
@@ -48,7 +54,6 @@ export class AuthService extends TRPCService<"authusers"> {
     const user = (await this.api.auth.currentUser
       .query()
       .catch(() => null)) as IAuthUser;
-    console.log("~~~~~~~~~~~~~~~~Current user:", user);
     if (user) this._user.set(user);
     return user;
   }
@@ -57,7 +62,6 @@ export class AuthService extends TRPCService<"authusers"> {
     if (!token || token instanceof TRPCError) {
       throw token;
     }
-
     this.tokenService.set(token);
     return this.getCurrentUser();
   }

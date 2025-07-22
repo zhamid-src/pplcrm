@@ -58,6 +58,9 @@ export class SignInComponent {
   }
 
   public async signIn() {
+    // if we're here then we should clear the auth token
+    this.tokenService.clearAll();
+
     if (this.form.invalid)
       return this.alertSvc.showError(
         "Please enter a valid email and password.",
@@ -79,7 +82,10 @@ export class SignInComponent {
         console.log("================= error", err);
         this.alertSvc.showError(err.message);
       })
-      .finally(() => this.processing.set(false));
+      .finally(() => {
+        console.log("=================== finally ");
+        this.processing.set(false);
+      });
   }
 
   public togglePersistence(target: EventTarget | null) {

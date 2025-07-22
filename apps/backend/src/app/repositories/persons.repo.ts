@@ -19,7 +19,7 @@ export class PersonsRepo extends BaseRepository<"persons"> {
   ) {
     const options: JoinedQueryParams = input.options || {};
 
-    options!.columns =
+    options.columns =
       options?.columns ||
       ([
         "persons.id",

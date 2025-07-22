@@ -3,7 +3,7 @@ import {
   GetOperandType,
   Models,
 } from "../../../../../common/src/lib/kysely.models";
-import { BaseRepository, QueryParams, refCol } from "./base.repo";
+import { BaseRepository, QueryParams } from "./base.repo";
 
 type SelectEmailType = GetOperandType<"authusers", "select", "email">;
 

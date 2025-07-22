@@ -1,11 +1,14 @@
 import { getAllOptionsType } from "@common";
-import { SelectExpression, Transaction } from "kysely";
+import {
+  OperandValueExpressionOrList,
+  ReferenceExpression,
+  Transaction,
+} from "kysely";
 import {
   Models,
   OperationDataType,
   TypeColumn,
   TypeId,
-  TypeTableColumns,
   TypeTenantId,
 } from "../../../../../common/src/lib/kysely.models";
 import { BaseRepository, QueryParams } from "../repositories/base.repo";
@@ -95,9 +98,13 @@ export class BaseController<
   public async find(input: {
     tenant_id: string;
     key: string;
-    column: SelectExpression<Models, keyof Models>;
+    column: ReferenceExpression<Models, T>;
   }) {
-    const tenant_id = input.tenant_id as TypeTenantId<T>;
+    const tenant_id = input.tenant_id as OperandValueExpressionOrList<
+      Models,
+      T,
+      "tenant_id"
+    >;
     return await this.repo.find({
       tenant_id,
       key: input.key,
@@ -111,7 +118,11 @@ export class BaseController<
    * @see {@link getAllOptionsType} for more information about the options.
    */
   public getAll(tenant: string, options?: getAllOptionsType) {
-    const tenant_id = tenant as TypeTenantId<T>;
+    const tenant_id = tenant as OperandValueExpressionOrList<
+      Models,
+      T,
+      "tenant_id"
+    >;
     return this.repo.getAll({ tenant_id, options: options as QueryParams<T> });
   }
 
@@ -119,8 +130,12 @@ export class BaseController<
    * Find the row with the given id.
    */
   public getById(input: { tenant_id: string; id: string }) {
-    const tenant_id = input.tenant_id as TypeTenantId<T>;
-    const id = input.id as TypeId<T>;
+    const tenant_id = input.tenant_id as OperandValueExpressionOrList<
+      Models,
+      T,
+      "tenant_id"
+    >;
+    const id = input.id as OperandValueExpressionOrList<Models, T, "id">;
 
     return this.repo.getById({ id, tenant_id });
   }
@@ -131,7 +146,9 @@ export class BaseController<
    *
    */
   public getCount(tenant_id: string) {
-    return this.repo.count(tenant_id as TypeColumn<T, "tenant_id">);
+    return this.repo.count(
+      tenant_id as OperandValueExpressionOrList<Models, T, "tenant_id">,
+    );
   }
 
   /**
