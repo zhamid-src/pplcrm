@@ -1,9 +1,0 @@
-<ul>
-  @for (person of peopleInHousehold; track person) {
-    <li>
-      <a routerLink="/console/people/{{ person.id }}" class="link hover:no-underline">{{
-        person.full_name
-      }}</a>
-    </li>
-  }
-</ul>

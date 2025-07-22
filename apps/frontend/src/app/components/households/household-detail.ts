@@ -1,0 +1,180 @@
+import { Component, OnInit, input, signal, inject } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
+import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
+import { AlertService } from '@uxcommon/alert-service';
+import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { FormInput } from '@uxcommon/formInput';
+import { Input } from '@uxcommon/input';
+import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
+import { Tags } from 'apps/frontend/src/app/components/tags/tags';
+import { TextArea } from '@uxcommon/textarea';
+import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
+import { Households } from 'common/src/lib/kysely.models';
+import { HouseholdsService } from './households-service';
+import { PersonsService } from '../persons/persons-service';
+
+@Component({
+  selector: 'pc-household-detail',
+  imports: [FormInput, ReactiveFormsModule, Input, Tags, AddBtnRow, TextArea, PeopleInHousehold],
+  templateUrl: './Household-detail.html',
+})
+export class HouseholdDetail implements OnInit {
+  private fb = inject(FormBuilder);
+  private route = inject(ActivatedRoute);
+  private householdsSvc = inject(HouseholdsService);
+  private personsSvc = inject(PersonsService);
+  private alertSvc = inject(AlertService);
+
+  public mode = input<'new' | 'edit'>('edit');
+
+  protected addressVerified = false;
+  protected form = this.fb.group({
+    formatted_address: [''],
+    type: [''],
+    lat: [0],
+    lng: [0],
+    street_num: [''],
+    street: [''],
+    apt: [''],
+    city: [''],
+    state: [''],
+    country: [''],
+    zip: [''],
+    home_phone: [''],
+    notes: [''],
+    tags: [],
+    metadata: this.fb.group({
+      tenant_id: [''],
+      createdby_id: [''],
+      updatedby_id: [''],
+      created_at: [''],
+      updated_at: [''],
+    }),
+  });
+  protected _household = signal<Households | null>(null);
+  protected get household() {
+    return this._household();
+  }
+  protected set household(household: Households | null) {
+    this._household.set(household);
+  }
+  protected id: string | null = null;
+  protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
+  protected processing = signal(false);
+  protected tags: string[] = [];
+
+  constructor() {
+    if (this.mode() === 'edit') {
+      this.id = this.route.snapshot.paramMap.get('id');
+    }
+  }
+
+  public async ngOnInit() {
+    await this.loadHousehold();
+  }
+
+  public handleAddressChange(place: google.maps.places.PlaceResult) {
+    this.processing.set(true);
+    if (!place?.address_components?.length) {
+      this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+      return;
+    }
+    // Save the address by creating the household or updating
+    const address = parseAddress(place);
+    this.form.patchValue(address);
+    this.form.markAsDirty();
+    this.addressVerified = true;
+    console.log(address);
+    this.processing.set(false);
+  }
+
+  /**
+   * Apply the edits the user did on the grid. This is done by calling the
+   * backend service to update the row in the database.
+   *
+   * @param id
+   * @param data
+   * @returns Boolean indicating whether the edit was successful or not
+   */
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected getCreatedAt() {
+    return this.household?.created_at;
+  }
+
+  protected getUpdatedAt() {
+    return this.household?.updated_at;
+  }
+
+  protected save() {
+    const data = this.form.getRawValue() as UpdateHouseholdsType;
+    return this.id ? this.update(data) : this.add(data);
+  }
+
+  protected tagAdded(tag: string) {
+    this.id && this.householdsSvc.attachTag(this.id, tag);
+  }
+
+  protected tagRemoved(tag: string) {
+    this.id && this.householdsSvc.detachTag(this.id, tag);
+  }
+
+  private add(data: UpdateHouseholdsType) {
+    this.processing.set(true);
+    this.householdsSvc
+      .add(data)
+      .then(() => this.alertSvc.showSuccess('Household added'))
+      .catch((err) => this.alertSvc.showError(err))
+      .finally(() => this.processing.set(false));
+  }
+
+  private async getTags() {
+    if (!this.household || !this.id) {
+      return;
+    }
+    this.tags = await this.householdsSvc.getTags(this.id);
+  }
+
+  private async loadHousehold() {
+    if (!this.id) {
+      return;
+    }
+    this.processing.set(true);
+
+    this.household = (await this.householdsSvc.getById(this.id)) as Households;
+    this.getTags();
+    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
+    this.refreshForm();
+
+    this.processing.set(false);
+  }
+
+  private refreshForm() {
+    if (!this.household) {
+      return;
+    }
+    this.form.patchValue(this.household);
+  }
+
+  private update(data: Partial<UpdateHouseholdsType>) {
+    if (!this.id) {
+      return;
+    }
+
+    this.processing.set(true);
+    this.householdsSvc
+      .update(this.id, data)
+      .then(() => {
+        this.alertSvc.showSuccess('Household updated successfully.');
+        this.form.markAsPristine();
+      })
+      .catch((err) => this.alertSvc.showError(err))
+      .finally(() => this.processing.set(false));
+  }
+}

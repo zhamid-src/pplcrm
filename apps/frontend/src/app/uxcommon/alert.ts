@@ -1,0 +1,37 @@
+import { Component, signal, inject } from '@angular/core';
+import { ALERTTYPE, AlertService } from '@uxcommon/alert-service';
+import { IconsComponent } from '@uxcommon/icons.component';
+
+@Component({
+  selector: 'pc-alert',
+  imports: [IconsComponent],
+  templateUrl: './alert.html',
+})
+export class Alert {
+  protected alertSvc = inject(AlertService);
+
+  position = signal<'top' | 'bottom' | 'relative'>('relative');
+  protected alerts() {
+    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
+  }
+
+  public OKBtnClick(text: string) {
+    this.alertSvc.OKBtnCallback(text);
+    this.alertSvc.dismiss(text);
+  }
+
+  public btn2Click(text: string) {
+    this.alertSvc.btn2Callback(text);
+    this.alertSvc.dismiss(text);
+  }
+
+  public icon(type: ALERTTYPE) {
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'x-circle'
+          : 'exclamation-circle';
+  }
+}

@@ -1,52 +1,52 @@
 import { Route } from '@angular/router';
-import { NotFoundComponent } from '@uxcommon/not-found/not-found.component';
-import { AddTagComponent } from 'apps/frontend/src/app/components/grids/tags/add/add-tag.component';
-import { NewPasswordComponent } from './auth/new-password/new-password.component';
-import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
-import { SignInComponent } from './auth/signin/signin.component';
-import { SignUpComponent } from './auth/signup/signup.component';
-import { DonorsGridComponent } from './components/grids/donors/donors-grid.component';
-import { HouseholdDetailComponent } from './components/grids/households/household-detail/HouseholdDetail.component';
-import { HouseholdsGridComponent } from './components/grids/households/households-grid.component';
-import { PersonDetailComponent } from './components/grids/persons/person-detail/PersonDetail.component';
-import { PersonsGridComponent } from './components/grids/persons/persons-grid.component';
-import { TagsGridComponent } from './components/grids/tags/tags-grid.component';
-import { VolunteersGridComponent } from './components/grids/volunteers/volunteers-grid.component';
-import { SummaryComponent } from './components/summary/summary.component';
-import { authGuard } from './guards/auth.guard';
-import { loginGuard } from './guards/login.guard';
-import { DashboardComponent } from './layout/dashboard/dashboard.component';
+import { NotFound } from '@uxcommon/not-found';
+import { AddTag } from 'apps/frontend/src/app/components/tags/add-tag';
+import { NewPasswordPage } from './auth/new-password-page';
+import { ResetPasswordPage } from './auth/reset-password-page';
+import { SignInPage } from './auth/signin-page';
+import { SignUpPage } from './auth/signup-page';
+import { DonorsGrid } from './components/donors/donors-grid';
+import { HouseholdDetail } from './components/households/household-detail';
+import { HouseholdsGrid } from './components/households/households-grid';
+import { PersonDetail } from './components/persons/person-detail';
+import { PersonsGrid } from './components/persons/persons-grid';
+import { TagsGridComponent } from './components/tags/tags-grid';
+import { VolunteersGrid } from './components/volunteers/volunteers-grid';
+import { Summary } from './temp/summary';
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login-guard';
+import { Dashboard } from './layout/dashboard';
 
 export const appRoutes: Route[] = [
   { path: '', redirectTo: 'console/summary', pathMatch: 'full' },
-  { path: 'signin', component: SignInComponent, canActivate: [loginGuard] },
-  { path: 'signup', component: SignUpComponent },
-  { path: 'resetpassword', component: ResetPasswordComponent },
-  { path: 'newpassword', component: NewPasswordComponent },
+  { path: 'signin', component: SignInPage, canActivate: [loginGuard] },
+  { path: 'signup', component: SignUpPage },
+  { path: 'resetpassword', component: ResetPasswordPage },
+  { path: 'newpassword', component: NewPasswordPage },
   {
     path: 'console',
-    component: DashboardComponent,
+    component: Dashboard,
     canActivate: [authGuard],
     children: [
       {
         path: 'summary',
-        component: SummaryComponent,
+        component: Summary,
       },
       {
         path: 'people',
         children: [
           {
             path: '',
-            component: PersonsGridComponent,
+            component: PersonsGrid,
             data: { shouldReuse: true, key: 'persongridroot' },
           },
           {
             path: 'add',
-            component: PersonDetailComponent,
+            component: PersonDetail,
           },
           {
             path: ':id',
-            component: PersonDetailComponent,
+            component: PersonDetail,
           },
         ],
       },
@@ -55,16 +55,16 @@ export const appRoutes: Route[] = [
         children: [
           {
             path: '',
-            component: HouseholdsGridComponent,
+            component: HouseholdsGrid,
             data: { shouldReuse: true, key: 'householdsgridroot' },
           },
           {
             path: 'add',
-            component: HouseholdDetailComponent,
+            component: HouseholdDetail,
           },
           {
             path: ':id',
-            component: HouseholdDetailComponent,
+            component: HouseholdDetail,
           },
         ],
       },
@@ -78,7 +78,7 @@ export const appRoutes: Route[] = [
           },
           {
             path: 'add',
-            component: AddTagComponent,
+            component: AddTag,
           },
         ],
       },
@@ -87,7 +87,7 @@ export const appRoutes: Route[] = [
         children: [
           {
             path: '',
-            component: VolunteersGridComponent,
+            component: VolunteersGrid,
             data: { shouldReuse: true, key: 'volunteersgridroot' },
           },
         ],
@@ -97,7 +97,7 @@ export const appRoutes: Route[] = [
         children: [
           {
             path: '',
-            component: DonorsGridComponent,
+            component: DonorsGrid,
             data: { shouldReuse: true, key: 'donorsgridroot' },
           },
         ],
@@ -106,6 +106,6 @@ export const appRoutes: Route[] = [
   },
   {
     path: '**',
-    component: NotFoundComponent,
+    component: NotFound,
   },
 ];
