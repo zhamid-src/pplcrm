@@ -3,11 +3,11 @@ import { ApplicationConfig, inject, provideAppInitializer } from '@angular/core'
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
-import { AuthService } from '@services/backend/auth.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { appRoutes } from './app.routes';
-import { CustomRouteReuseStrategy } from './components/route.reuse.strategy';
-import { httpInterceptor } from './interceptors/http.interceptor';
-import { ErrorCatchingInterceptor } from './interceptors/httperrors.interceptor';
+import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
+import { httpInterceptor } from './http-interceptor';
+import { ErrorCatchingInterceptor } from './http-errors-interceptor';
 
 export function initSession(authService: AuthService) {
   return async () => {
