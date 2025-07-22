@@ -95,11 +95,7 @@ export class AlertService {
     });
 
     // start the timer to remove
-    setTimeout(
-      () => this.removeAlert(messageWithMeta),
-      messageWithMeta.duration || 3000,
-      messageWithMeta,
-    );
+    setTimeout(() => this.removeAlert(messageWithMeta), messageWithMeta.duration || 3000, messageWithMeta);
   }
 
   public showError(text: string) {

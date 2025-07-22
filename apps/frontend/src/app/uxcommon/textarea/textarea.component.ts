@@ -1,13 +1,12 @@
-
 import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
 
 @Component({
-    selector: 'pc-textarea',
-    imports: [ReactiveFormsModule, FormsModule],
-    templateUrl: './textarea.component.html',
-    styleUrl: './textarea.component.css'
+  selector: 'pc-textarea',
+  imports: [ReactiveFormsModule, FormsModule],
+  templateUrl: './textarea.component.html',
+  styleUrl: './textarea.component.css',
 })
 export class TextareaComponent implements OnInit {
   private rootFormGroup = inject(FormGroupDirective);

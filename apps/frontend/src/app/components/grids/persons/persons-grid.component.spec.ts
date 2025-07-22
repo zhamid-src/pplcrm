@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { PersonsGridComponent } from "./persons-grid.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { PersonsGridComponent } from './persons-grid.component';
 
-describe("PersonsGridComponent", () => {
+describe('PersonsGridComponent', () => {
   let component: PersonsGridComponent;
   let fixture: ComponentFixture<PersonsGridComponent>;
 
@@ -15,7 +15,7 @@ describe("PersonsGridComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

@@ -1,4 +1,3 @@
-
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
@@ -6,15 +5,14 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-    selector: 'pc-sidebar',
-    imports: [IconsComponent, RouterLink, SwapComponent],
-    templateUrl: './sidebar.component.html',
-    styleUrl: './sidebar.component.css'
+  selector: 'pc-sidebar',
+  imports: [IconsComponent, RouterLink, SwapComponent],
+  templateUrl: './sidebar.component.html',
+  styleUrl: './sidebar.component.css',
 })
 export class SidebarComponent {
   private sidebarSvc = inject(SidebarService);
   protected router = inject(Router);
-
 
   public get items() {
     return this.sidebarSvc.items;

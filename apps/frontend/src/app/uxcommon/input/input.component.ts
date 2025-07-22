@@ -1,7 +1,4 @@
-import {
-  NgxGpAutocompleteModule,
-  NgxGpAutocompleteOptions,
-} from '@angular-magic/ngx-gp-autocomplete';
+import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 
 import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from '@angular/core';
 import { FormsModule, NgModel, ReactiveFormsModule } from '@angular/forms';
@@ -10,15 +7,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
-    selector: 'pc-input',
-    imports: [
-    IconsComponent,
-    FormsModule,
-    ReactiveFormsModule,
-    NgxGpAutocompleteModule
-],
-    templateUrl: './input.component.html',
-    styleUrl: './input.component.css'
+  selector: 'pc-input',
+  imports: [IconsComponent, FormsModule, ReactiveFormsModule, NgxGpAutocompleteModule],
+  templateUrl: './input.component.html',
+  styleUrl: './input.component.css',
 })
 export class InputComponent implements AfterViewInit {
   public debounceTime = input<number>(250);
@@ -50,11 +42,9 @@ export class InputComponent implements AfterViewInit {
 
     console.log('*****', this.icon(), this.placeholder());
 
-    this.input?.valueChanges
-      ?.pipe(debounceTime(this.debounceTime()), distinctUntilChanged())
-      .subscribe((value) => {
-        this.handleKeyup(value);
-      });
+    this.input?.valueChanges?.pipe(debounceTime(this.debounceTime()), distinctUntilChanged()).subscribe((value) => {
+      this.handleKeyup(value);
+    });
   }
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {

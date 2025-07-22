@@ -1,14 +1,13 @@
-
 import { Component, EventEmitter, Output, input, inject } from '@angular/core';
 import { TagsService } from '@services/backend/tags.service';
 import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
 
 @Component({
-    selector: 'pc-tags',
-    imports: [TagComponent, AutocompleteComponent],
-    templateUrl: './tags.component.html',
-    styleUrl: './tags.component.css'
+  selector: 'pc-tags',
+  imports: [TagComponent, AutocompleteComponent],
+  templateUrl: './tags.component.html',
+  styleUrl: './tags.component.css',
 })
 export class TagsComponent {
   tagSvc = inject(TagsService);

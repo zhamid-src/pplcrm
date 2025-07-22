@@ -1,22 +1,19 @@
-
 import { Component, signal, inject } from '@angular/core';
 import { ALERTTYPE, AlertService } from '@services/alert.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-    selector: 'pc-alert',
-    imports: [IconsComponent],
-    templateUrl: './alert.component.html',
-    styleUrl: './alert.component.css'
+  selector: 'pc-alert',
+  imports: [IconsComponent],
+  templateUrl: './alert.component.html',
+  styleUrl: './alert.component.css',
 })
 export class AlertComponent {
   protected alertSvc = inject(AlertService);
 
   position = signal<'top' | 'bottom' | 'relative'>('relative');
   protected alerts() {
-    return this.position() === 'top'
-      ? this.alertSvc.alerts.slice().reverse()
-      : this.alertSvc.alerts;
+    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
   }
 
   public OKBtnClick(text: string) {

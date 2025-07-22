@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { TagsGridComponent } from "./tags-grid.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TagsGridComponent } from './tags-grid.component';
 
-describe("TagsGridComponent", () => {
+describe('TagsGridComponent', () => {
   let component: TagsGridComponent;
   let fixture: ComponentFixture<TagsGridComponent>;
 
@@ -15,7 +15,7 @@ describe("TagsGridComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

@@ -25,10 +25,10 @@ import { LoadingOverlayComponent } from './overlay/loadingOverlay.component';
 import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut-cell-renderer.component';
 
 @Component({
-    selector: 'pc-datagrid',
-    imports: [AgGridModule, IconsComponent],
-    templateUrl: './datagrid.component.html',
-    styleUrl: './datagrid.component.css'
+  selector: 'pc-datagrid',
+  imports: [AgGridModule, IconsComponent],
+  templateUrl: './datagrid.component.html',
+  styleUrl: './datagrid.component.css',
 })
 
 /**
@@ -271,9 +271,7 @@ export class DatagridComponent<T extends keyof Models, U> {
    */
   public confirmDelete(): void {
     if (this.disableDelete()) {
-      return this.alertSvc.showError(
-        'You do not have the permission to delete rows from this table.',
-      );
+      return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
     }
 
     const dialog = document.querySelector('#confirmDelete') as HTMLDialogElement;

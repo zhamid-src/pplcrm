@@ -1,11 +1,11 @@
-import { Component, EventEmitter, Output, input } from "@angular/core";
-import { IconsComponent } from "@uxcommon/icons/icons.component";
+import { Component, EventEmitter, Output, input } from '@angular/core';
+import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-  selector: "pc-tag",
+  selector: 'pc-tag',
   imports: [IconsComponent],
-  templateUrl: "./tag.component.html",
-  styleUrl: "./tag.component.css",
+  templateUrl: './tag.component.html',
+  styleUrl: './tag.component.css',
 })
 export class TagComponent {
   public allowDetele = input<boolean>(true);

@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { HouseholdsGridComponent } from "./households-grid.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HouseholdsGridComponent } from './households-grid.component';
 
-describe("HouseholdsGridComponent", () => {
+describe('HouseholdsGridComponent', () => {
   let component: HouseholdsGridComponent;
   let fixture: ComponentFixture<HouseholdsGridComponent>;
 
@@ -15,7 +15,7 @@ describe("HouseholdsGridComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

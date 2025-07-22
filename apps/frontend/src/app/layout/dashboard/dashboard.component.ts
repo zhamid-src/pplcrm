@@ -1,4 +1,3 @@
-
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
@@ -8,20 +7,13 @@ import { NavbarComponent } from '../navbar/navbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 
 @Component({
-    selector: 'pc-dashboard',
-    imports: [
-    NavbarComponent,
-    SidebarComponent,
-    RouterModule,
-    BreadcrumbComponent,
-    AlertComponent
-],
-    templateUrl: './dashboard.component.html',
-    styleUrl: './dashboard.component.css'
+  selector: 'pc-dashboard',
+  imports: [NavbarComponent, SidebarComponent, RouterModule, BreadcrumbComponent, AlertComponent],
+  templateUrl: './dashboard.component.html',
+  styleUrl: './dashboard.component.css',
 })
 export class DashboardComponent {
   private sidebarSvc = inject(SidebarService);
-
 
   public isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();

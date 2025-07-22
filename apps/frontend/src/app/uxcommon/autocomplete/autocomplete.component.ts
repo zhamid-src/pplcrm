@@ -1,4 +1,3 @@
-
 import { Component, EventEmitter, Output, input, signal } from '@angular/core';
 import { InputComponent } from '@uxcommon/input/input.component';
 
@@ -6,10 +5,10 @@ type TFILTER = {
   filter: (arg0: string) => Promise<string[]>;
 };
 @Component({
-    selector: 'pc-autocomplete',
-    imports: [InputComponent],
-    templateUrl: './autocomplete.component.html',
-    styleUrl: './autocomplete.component.css'
+  selector: 'pc-autocomplete',
+  imports: [InputComponent],
+  templateUrl: './autocomplete.component.html',
+  styleUrl: './autocomplete.component.css',
 })
 export class AutocompleteComponent {
   protected hideAutoComplete = true;

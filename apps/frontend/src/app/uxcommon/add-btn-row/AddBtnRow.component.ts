@@ -1,4 +1,3 @@
-
 import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,10 +5,10 @@ import { IconName } from '@uxcommon/icons/icons';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
 
 @Component({
-    selector: 'pc-add-btn-row',
-    imports: [ReactiveFormsModule, IconsComponent],
-    templateUrl: './AddBtnRow.component.html',
-    styleUrl: './AddBtnRow.component.css'
+  selector: 'pc-add-btn-row',
+  imports: [ReactiveFormsModule, IconsComponent],
+  templateUrl: './AddBtnRow.component.html',
+  styleUrl: './AddBtnRow.component.css',
 })
 export class AddBtnRowComponent implements OnInit {
   private rootFormGroup = inject(FormGroupDirective);

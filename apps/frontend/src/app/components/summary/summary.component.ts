@@ -1,13 +1,12 @@
-
 import { Component, inject } from '@angular/core';
 import { AlertService } from '@services/alert.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 
 @Component({
-    selector: 'pc-summary',
-    imports: [TagsComponent],
-    templateUrl: './summary.component.html',
-    styleUrl: './summary.component.css'
+  selector: 'pc-summary',
+  imports: [TagsComponent],
+  templateUrl: './summary.component.html',
+  styleUrl: './summary.component.css',
 })
 export class SummaryComponent {
   private alert = inject(AlertService);
