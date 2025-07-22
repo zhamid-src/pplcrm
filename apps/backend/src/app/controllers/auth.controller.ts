@@ -231,10 +231,7 @@ export class AuthController extends BaseController<"authusers", AuthUsersRepo> {
       status: "active",
     } as OperationDataType<"sessions", "insert">;
 
-    console.log("adding sessin");
     const currentSession = await this.sessions.add({ row });
-
-    console.log("session added");
 
     if (!currentSession) {
       throw new TRPCError({
@@ -243,7 +240,8 @@ export class AuthController extends BaseController<"authusers", AuthUsersRepo> {
       });
     }
 
-    const session_id = currentSession.id!;
+    const session_id = currentSession.session_id;
+
     const key = process.env["SHARED_SECRET"];
     const signer = createSigner({
       algorithm: "HS256",

@@ -105,11 +105,6 @@ export type TablesOperationMap = {
   };
 };
 
-export type ColumnValue<
-  TTable extends keyof Models,
-  TColumn extends keyof Models[TTable],
-> = ExtractColumnType<Models, TTable, TColumn>;
-
 export type TypeColumnValue<
   TTable extends keyof Models,
   TColumn extends keyof Models[TTable],

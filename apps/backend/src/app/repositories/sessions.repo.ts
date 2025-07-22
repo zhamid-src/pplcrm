@@ -1,4 +1,4 @@
-import { Transaction, UpdateResult } from "kysely";
+import { Transaction } from "kysely";
 import {
   GetOperandType,
   Models,

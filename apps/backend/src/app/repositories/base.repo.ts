@@ -4,6 +4,7 @@ import {
   InsertResult,
   Kysely,
   Migrator,
+  OperandValueExpressionOrList,
   OrderByExpression,
   PostgresDialect,
   QueryResult,
@@ -18,11 +19,11 @@ import { Pool } from "pg";
 import path from "path";
 import { promises as fs } from "fs";
 import {
-  ColumnValue,
   Models,
   OperationDataType,
   TypeColumnValue,
   TypeId,
+  TypeTableColumns,
   TypeTenantId,
 } from "../../../../../common/src/lib/kysely.models";
 import { INow } from "@common";
@@ -33,7 +34,7 @@ import { INow } from "@common";
  * set, ordering the result set, and grouping the result set.
  */
 export type QueryParams<T extends keyof Models> = {
-  columns?: SelectExpression<Models, keyof Models>[];
+  columns?: ReferenceExpression<Models, T>[];
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, T, object>[];
@@ -41,7 +42,11 @@ export type QueryParams<T extends keyof Models> = {
 };
 
 export type JoinedQueryParams = {
-  columns?: (string | SelectExpression<Models, keyof Models>)[];
+  columns?: (
+    | string
+    | ReferenceExpression<Models, keyof Models>
+    | TypeTableColumns<keyof Models>
+  )[];
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, keyof Models, object>[];
@@ -51,16 +56,6 @@ export type JoinedQueryParams = {
 export function ref<
   TTable extends keyof Models,
   TColumn extends keyof Models[TTable],
->(table: TTable, column: TColumn): ReferenceExpression<Models, TTable> {
-  return `${String(table)}.${String(column)}` as ReferenceExpression<
-    Models,
-    TTable
-  >;
-}
-
-export function refCol<
-  TTable extends keyof Models,
-  TColumn extends SelectExpression<Models, keyof Models>,
 >(table: TTable, column: TColumn): ReferenceExpression<Models, TTable> {
   return `${String(table)}.${String(column)}` as ReferenceExpression<
     Models,
@@ -212,13 +207,14 @@ export class BaseRepository<T extends keyof Models> {
    * @see {@link QueryParams} for more information about the options.
    */
   public getAll(
-    input: { tenant_id: TypeTenantId<T>; options?: QueryParams<T> },
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, "tenant_id">;
+      options?: QueryParams<T>;
+    },
     trx?: Transaction<Models>,
   ) {
-    const tenantRef = refCol(this.table, "tenant_id");
-
     return this.getSelectWithColumns(input.options, trx)
-      .where(tenantRef, "=", input.tenant_id)
+      .where("tenant_id", "=", input.tenant_id)
       .execute();
   }
 
@@ -229,18 +225,15 @@ export class BaseRepository<T extends keyof Models> {
    */
   public getById(
     input: {
-      tenant_id: TypeTenantId<T>;
-      id: TypeId<T>;
+      tenant_id: OperandValueExpressionOrList<Models, T, "tenant_id">;
+      id: OperandValueExpressionOrList<Models, T, "id">;
       options?: QueryParams<T>;
     },
     trx?: Transaction<Models>,
   ) {
-    const idRef = refCol(this.table, "id");
-    const tenantRef = refCol(this.table, "tenant_id");
-
     return this.getSelectWithColumns(input.options, trx)
-      .where(idRef, "=", input.id)
-      .where(tenantRef, "=", input.tenant_id)
+      .where("id", "=", input.id)
+      .where("tenant_id", "=", input.tenant_id)
       .executeTakeFirst();
   }
 
@@ -275,14 +268,12 @@ export class BaseRepository<T extends keyof Models> {
    * @returns - returns the count as a string
    */
   public async count(
-    tenant_id: TypeTenantId<T>,
+    tenant_id: OperandValueExpressionOrList<Models, T, "tenant_id">,
     trx?: Transaction<Models>,
   ): Promise<number> {
-    const tenantRef = refCol(this.table, "tenant_id");
-
     const result = await this.getSelect(trx)
       .select(({ fn }) => [fn.countAll<number>().as("count")])
-      .where(tenantRef, "=", tenant_id)
+      .where("tenant_id", "=", tenant_id)
       .executeTakeFirst();
     return result?.count ?? 0;
   }
@@ -308,23 +299,20 @@ export class BaseRepository<T extends keyof Models> {
    */
   public async find(
     input: {
-      tenant_id: TypeTenantId<T>;
+      tenant_id: OperandValueExpressionOrList<Models, T, "tenant_id">;
       key: string;
-      column: SelectExpression<Models, keyof Models>;
+      column: ReferenceExpression<Models, T>;
     },
     trx?: Transaction<Models>,
   ) {
-    const columnRef = refCol(this.table, input.column);
-    const tenantRef = refCol(this.table, "tenant_id");
-
     const options: QueryParams<T> = {
       columns: [input.column],
       limit: 3,
     };
 
     return this.getSelectWithColumns(options, trx)
-      .where(columnRef, "ilike", input.key + "%")
-      .where(tenantRef, "=", input.tenant_id)
+      .where(input.column, "ilike", input.key + "%")
+      .where("tenant_id", "=", input.tenant_id)
       .limit(3)
       .execute();
   }
@@ -379,7 +367,7 @@ export class BaseRepository<T extends keyof Models> {
     options?: QueryParams<T>,
   ) {
     query = options?.columns
-      ? this.getSelectWithColumns(options)
+      ? query.select(options.columns as SelectExpression<Models, T>[])
       : query.selectAll();
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
