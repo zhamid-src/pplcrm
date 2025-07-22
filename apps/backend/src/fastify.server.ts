@@ -1,13 +1,10 @@
 import { default as fastify } from "fastify";
 import * as pino from "pino";
-// import { errorHandler } from "./utils/error";
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 
-import * as path from "path";
 import { routes } from "./app/routes";
-import { fileURLToPath } from "url";
 import { trpcRouters } from "./app/trpc.routers";
 import { createContext } from "./context";
 
