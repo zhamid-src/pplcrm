@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { TagsCellRendererComponent } from "./tagsCellRenderer.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TagsCellRendererComponent } from './tagsCellRenderer.component';
 
-describe("TagsCellRendererComponent", () => {
+describe('TagsCellRendererComponent', () => {
   let component: TagsCellRendererComponent;
   let fixture: ComponentFixture<TagsCellRendererComponent>;
 
@@ -15,7 +15,7 @@ describe("TagsCellRendererComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

@@ -7,15 +7,13 @@ import { Models } from 'common/src/lib/kysely.models';
 import { DatagridComponent } from '../datagrid.component';
 
 @Component({
-    selector: 'pc-shortcut-cell-renderer',
-    imports: [IconsComponent],
-    templateUrl: './shortcut-cell-renderer.component.html',
-    styleUrl: './shortcut-cell-renderer.component.css',
-    encapsulation: ViewEncapsulation.None
+  selector: 'pc-shortcut-cell-renderer',
+  imports: [IconsComponent],
+  templateUrl: './shortcut-cell-renderer.component.html',
+  styleUrl: './shortcut-cell-renderer.component.css',
+  encapsulation: ViewEncapsulation.None,
 })
-export class ShortcutCellRendererComponent<T extends keyof Models, U>
-  implements ICellRendererAngularComp
-{
+export class ShortcutCellRendererComponent<T extends keyof Models, U> implements ICellRendererAngularComp {
   private parent: DatagridComponent<T, U> | undefined;
 
   public agInit(params: ICellRendererParams<T, number>): void {

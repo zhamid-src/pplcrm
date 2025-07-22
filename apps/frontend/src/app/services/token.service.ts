@@ -1,17 +1,17 @@
-import { Injectable } from "@angular/core";
-import { IToken } from "@common";
+import { Injectable } from '@angular/core';
+import { IToken } from '@common';
 
-const AUTHTOKEN = "ppl-crm-auth-token";
-const REFRESHTOKEN = "ppl-crm-refresh-token";
+const AUTHTOKEN = 'ppl-crm-auth-token';
+const REFRESHTOKEN = 'ppl-crm-refresh-token';
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class TokenService {
   private _persistence = false;
 
   constructor() {
-    this.persistence = !!localStorage.getItem("pc-persistence");
+    this.persistence = !!localStorage.getItem('pc-persistence');
   }
 
   public get persistence() {
@@ -26,7 +26,7 @@ export class TokenService {
       this.clearSessionStorage();
     }
     this._persistence = persistence;
-    localStorage.setItem("pc-persistence", persistence ? "1" : "0");
+    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
   }
 
   public clearAll() {
@@ -42,15 +42,11 @@ export class TokenService {
   }
 
   public getAuthToken() {
-    return this.persistence
-      ? localStorage.getItem(AUTHTOKEN)
-      : sessionStorage.getItem(AUTHTOKEN);
+    return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
   }
 
   public getRefreshToken() {
-    return this.persistence
-      ? localStorage.getItem(REFRESHTOKEN)
-      : sessionStorage.getItem(REFRESHTOKEN);
+    return this.persistence ? localStorage.getItem(REFRESHTOKEN) : sessionStorage.getItem(REFRESHTOKEN);
   }
 
   public removeAuthToken() {
@@ -62,12 +58,8 @@ export class TokenService {
   }
 
   public set(token: IToken) {
-    token.auth_token
-      ? this.setAuthToken(token.auth_token)
-      : this.removeAuthToken();
-    token.refresh_token
-      ? this.setRefreshToken(token.refresh_token)
-      : this.removeRefreshToken();
+    token.auth_token ? this.setAuthToken(token.auth_token) : this.removeAuthToken();
+    token.refresh_token ? this.setRefreshToken(token.refresh_token) : this.removeRefreshToken();
   }
 
   public setAuthToken(token: string) {
@@ -89,14 +81,10 @@ export class TokenService {
   }
 
   private removeToken(item: string) {
-    this.persistence
-      ? localStorage.removeItem(item)
-      : sessionStorage.removeItem(item);
+    this.persistence ? localStorage.removeItem(item) : sessionStorage.removeItem(item);
   }
 
   private setToken(item: string, token: string) {
-    this.persistence
-      ? localStorage.setItem(item, token)
-      : sessionStorage.setItem(item, token);
+    this.persistence ? localStorage.setItem(item, token) : sessionStorage.setItem(item, token);
   }
 }

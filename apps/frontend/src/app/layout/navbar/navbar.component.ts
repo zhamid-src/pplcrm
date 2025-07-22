@@ -1,4 +1,3 @@
-
 import { Component, inject } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
@@ -10,10 +9,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { SwapComponent } from '@uxcommon/swap/swap.component';
 
 @Component({
-    selector: 'pc-navbar',
-    imports: [IconsComponent, SwapComponent, FormsModule],
-    templateUrl: './navbar.component.html',
-    styleUrl: './navbar.component.css'
+  selector: 'pc-navbar',
+  imports: [IconsComponent, SwapComponent, FormsModule],
+  templateUrl: './navbar.component.html',
+  styleUrl: './navbar.component.css',
 })
 export class NavbarComponent {
   private auth = inject(AuthService);

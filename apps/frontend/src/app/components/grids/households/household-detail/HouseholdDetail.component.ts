@@ -1,4 +1,3 @@
-
 import { Component, OnInit, input, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -16,18 +15,18 @@ import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMap
 import { Households } from 'common/src/lib/kysely.models';
 
 @Component({
-    selector: 'pc-household-detail',
-    imports: [
+  selector: 'pc-household-detail',
+  imports: [
     FormInputComponent,
     ReactiveFormsModule,
     InputComponent,
     TagsComponent,
     AddBtnRowComponent,
     TextareaComponent,
-    PeopleInHouseholdComponent
-],
-    templateUrl: './HouseholdDetail.component.html',
-    styleUrl: './HouseholdDetail.component.css'
+    PeopleInHouseholdComponent,
+  ],
+  templateUrl: './HouseholdDetail.component.html',
+  styleUrl: './HouseholdDetail.component.css',
 })
 export class HouseholdDetailComponent implements OnInit {
   private fb = inject(FormBuilder);

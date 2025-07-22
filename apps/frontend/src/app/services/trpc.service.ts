@@ -2,13 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { refreshTokenLink } from '@pyncz/trpc-refresh-token-link';
-import {
-  TRPCClientError,
-  TRPCLink,
-  createTRPCProxyClient,
-  httpBatchLink,
-  loggerLink,
-} from '@trpc/client';
+import { TRPCClientError, TRPCLink, createTRPCProxyClient, httpBatchLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import { TRPC_ERROR_CODES_BY_KEY } from '@trpc/server/rpc';
 import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
@@ -30,12 +24,7 @@ export class TRPCService<T> {
    */
   constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink,
-        httpLink(this.tokenService),
-      ],
+      links: [loggerLink(), refreshLink(this.tokenService, this.router), errorLink, httpLink(this.tokenService)],
     });
   }
 
@@ -129,8 +118,7 @@ function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRoute
         refresh: payload.refresh_token,
       };
     },
-    onJwtPairFetched: (payload) =>
-      tokenSvc.set({ auth_token: payload.access, refresh_token: payload.refresh }),
+    onJwtPairFetched: (payload) => tokenSvc.set({ auth_token: payload.access, refresh_token: payload.refresh }),
     onRefreshFailed: () => tokenSvc.clearAll(),
     onUnauthorized: () => router.navigate([router.url]),
   });

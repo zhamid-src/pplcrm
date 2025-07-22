@@ -1,4 +1,3 @@
-
 import { Component, ViewChild, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
@@ -9,14 +8,10 @@ import { AddBtnRowComponent } from '@uxcommon/add-btn-row/AddBtnRow.component';
 import { FormInputComponent } from '@uxcommon/form-input/formInput.component';
 
 @Component({
-    selector: 'pc-add-tag',
-    imports: [
-    ReactiveFormsModule,
-    FormInputComponent,
-    AddBtnRowComponent
-],
-    templateUrl: './add-tag.component.html',
-    styleUrl: './add-tag.component.css'
+  selector: 'pc-add-tag',
+  imports: [ReactiveFormsModule, FormInputComponent, AddBtnRowComponent],
+  templateUrl: './add-tag.component.html',
+  styleUrl: './add-tag.component.css',
 })
 export class AddTagComponent {
   private fb = inject(FormBuilder);

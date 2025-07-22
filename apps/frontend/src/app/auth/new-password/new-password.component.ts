@@ -12,17 +12,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { firstValueFrom } from 'rxjs';
 
 @Component({
-    selector: 'pc-new-password',
-    imports: [
-        CommonModule,
-        ReactiveFormsModule,
-        RouterLink,
-        PasswordCheckerModule,
-        IconsComponent,
-        AlertComponent,
-    ],
-    templateUrl: './new-password.component.html',
-    styleUrl: './new-password.component.css'
+  selector: 'pc-new-password',
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordCheckerModule, IconsComponent, AlertComponent],
+  templateUrl: './new-password.component.html',
+  styleUrl: './new-password.component.css',
 })
 export class NewPasswordComponent implements OnInit {
   private fb = inject(FormBuilder);

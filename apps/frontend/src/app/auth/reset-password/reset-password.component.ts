@@ -1,4 +1,3 @@
-
 import { Component, signal, inject } from '@angular/core';
 
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -8,10 +7,10 @@ import { AuthService } from '@services/backend/auth.service';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
 
 @Component({
-    selector: 'pc-reset-password',
-    imports: [FormsModule, ReactiveFormsModule, AlertComponent],
-    templateUrl: './reset-password.component.html',
-    styleUrl: './reset-password.component.css'
+  selector: 'pc-reset-password',
+  imports: [FormsModule, ReactiveFormsModule, AlertComponent],
+  templateUrl: './reset-password.component.html',
+  styleUrl: './reset-password.component.css',
 })
 export class ResetPasswordComponent {
   private fb = inject(FormBuilder);

@@ -1,13 +1,12 @@
-
 import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 
 @Component({
-    selector: 'pc-breadcrumb',
-    imports: [],
-    templateUrl: './breadcrumb.component.html',
-    styleUrl: './breadcrumb.component.css'
+  selector: 'pc-breadcrumb',
+  imports: [],
+  templateUrl: './breadcrumb.component.html',
+  styleUrl: './breadcrumb.component.css',
 })
 export class BreadcrumbComponent {
   private router = inject(Router);

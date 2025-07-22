@@ -1,13 +1,12 @@
-
 import { Component, input } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@pipes/svg-html.pipe';
 import { IconName, icons } from './icons';
 
 @Component({
-    selector: 'pc-icon',
-    imports: [BypassHtmlSanitizerPipe],
-    templateUrl: './icons.component.html',
-    styleUrl: './icons.component.css'
+  selector: 'pc-icon',
+  imports: [BypassHtmlSanitizerPipe],
+  templateUrl: './icons.component.html',
+  styleUrl: './icons.component.css',
 })
 export class IconsComponent {
   public name = input.required<IconName>();

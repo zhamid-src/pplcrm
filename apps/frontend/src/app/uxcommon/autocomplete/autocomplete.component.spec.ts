@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { AutocompleteComponent } from "./autocomplete.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { AutocompleteComponent } from './autocomplete.component';
 
-describe("AutocompleteComponent", () => {
+describe('AutocompleteComponent', () => {
   let component: AutocompleteComponent;
   let fixture: ComponentFixture<AutocompleteComponent>;
 
@@ -15,7 +15,7 @@ describe("AutocompleteComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });

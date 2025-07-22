@@ -1,4 +1,3 @@
-
 import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
@@ -7,10 +6,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
-    selector: 'pc-form-input',
-    imports: [IconsComponent, ReactiveFormsModule],
-    templateUrl: './formInput.component.html',
-    styleUrl: './formInput.component.css'
+  selector: 'pc-form-input',
+  imports: [IconsComponent, ReactiveFormsModule],
+  templateUrl: './formInput.component.html',
+  styleUrl: './formInput.component.css',
 })
 export class FormInputComponent implements OnInit {
   private rootFormGroup = inject(FormGroupDirective);
@@ -50,9 +49,7 @@ export class FormInputComponent implements OnInit {
   private checkLastAddedChar(value: string): string {
     const newValue = value && this.removeDisallowedChars(value);
     if (newValue !== value) {
-      this.alertSvc.showError(
-        `Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`,
-      );
+      this.alertSvc.showError(`Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`);
       this.form.get(this.control())?.setValue(newValue);
     }
     return newValue;
