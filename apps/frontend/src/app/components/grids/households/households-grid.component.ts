@@ -1,11 +1,7 @@
-import { Component, NgZone, inject } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
+import { Component } from "@angular/core";
 import { UpdateHouseholdsObj } from "@common";
-import { AlertService } from "@services/alert.service";
 import { AbstractAPIService } from "@services/backend/abstract.service";
 import { HouseholdsService } from "@services/backend/households.service";
-import { SearchService } from "@services/search.service";
-import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { TagsCellRendererComponent } from "../tags-cell-renderer/tagsCellRenderer.component";
 

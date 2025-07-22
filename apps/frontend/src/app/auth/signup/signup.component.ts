@@ -1,74 +1,73 @@
-import { CommonModule } from '@angular/common';
-import { HttpClientModule } from '@angular/common/http';
-import { Component, signal, inject } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
-import { signUpInputType } from '@common';
-import { AlertService } from '@services/alert.service';
-import { AuthService } from '@services/backend/auth.service';
-import { PasswordCheckerModule } from '@triangular/password-checker';
-import { AlertComponent } from '@uxcommon/alert/alert.component';
-import { IconsComponent } from '@uxcommon/icons/icons.component';
+import { CommonModule } from "@angular/common";
+import { Component, signal, inject } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { Router, RouterModule } from "@angular/router";
+import { signUpInputType } from "@common";
+import { AlertService } from "@services/alert.service";
+import { AuthService } from "@services/backend/auth.service";
+import { PasswordCheckerModule } from "@triangular/password-checker";
+import { AlertComponent } from "@uxcommon/alert/alert.component";
+import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 @Component({
-    selector: 'pc-signup',
-    imports: [
-        CommonModule,
-        PasswordCheckerModule,
-        HttpClientModule,
-        ReactiveFormsModule,
-        IconsComponent,
-        RouterModule,
-        AlertComponent,
-    ],
-    templateUrl: './signup.component.html',
-    styleUrl: './signup.component.css'
+  selector: "pc-signup",
+  imports: [
+    CommonModule,
+    PasswordCheckerModule,
+    ReactiveFormsModule,
+    IconsComponent,
+    RouterModule,
+    AlertComponent,
+  ],
+  templateUrl: "./signup.component.html",
+  styleUrl: "./signup.component.css",
 })
 export class SignUpComponent {
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
-  private router = inject(Router);
   private alertSvc = inject(AlertService);
 
   protected form = this.fb.group({
-    organization: ['', [Validators.required]],
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
-    first_name: ['', [Validators.required]],
-    middle_names: [''],
-    last_name: [''],
-    terms: [''],
+    organization: ["", [Validators.required]],
+    email: ["", [Validators.required, Validators.email]],
+    password: ["", [Validators.required, Validators.minLength(8)]],
+    first_name: ["", [Validators.required]],
+    middle_names: [""],
+    last_name: [""],
+    terms: [""],
   });
   protected hidePassword = true;
   protected processing = signal(false);
 
   public get email() {
-    return this.form.get('email');
+    return this.form.get("email");
   }
 
   public get firstName() {
-    return this.form.get('first_name');
+    return this.form.get("first_name");
   }
 
   public get organization() {
-    return this.form.get('organization');
+    return this.form.get("organization");
   }
 
   public get password() {
-    return this.form.get('password');
+    return this.form.get("password");
   }
 
   public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
+    return this.hidePassword ? "password" : "text";
   }
 
   public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
+    return this.hidePassword ? "eye-slash" : "eye";
   }
 
   public async join() {
     if (this.form.invalid)
-      return this.alertSvc.showError('Please enter all information before continuing.');
+      return this.alertSvc.showError(
+        "Please enter all information before continuing.",
+      );
 
     this.processing.set(true);
 
@@ -78,7 +77,7 @@ export class SignUpComponent {
       .signUp(formObj)
       .then((user) => {
         if (!user) {
-          this.alertSvc.showError('Unknown error'); // TODO: better error msg
+          this.alertSvc.showError("Unknown error"); // TODO: better error msg
         }
       })
       .catch((err) => this.alertSvc.showError(err.message))

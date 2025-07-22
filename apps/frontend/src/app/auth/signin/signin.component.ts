@@ -33,10 +33,6 @@ export class SignInComponent {
 
   constructor() {
     effect(() => {
-      console.log(
-        "******************************** User changed:",
-        this.authService.user(),
-      );
       if (this.authService.user()) this.router.navigate(["console", "summary"]);
     });
   }
@@ -78,14 +74,8 @@ export class SignInComponent {
 
     return this.authService
       .signIn({ email, password })
-      .catch((err) => {
-        console.log("================= error", err);
-        this.alertSvc.showError(err.message);
-      })
-      .finally(() => {
-        console.log("=================== finally ");
-        this.processing.set(false);
-      });
+      .catch((err) => this.alertSvc.showError(err.message))
+      .finally(() => this.processing.set(false));
   }
 
   public togglePersistence(target: EventTarget | null) {

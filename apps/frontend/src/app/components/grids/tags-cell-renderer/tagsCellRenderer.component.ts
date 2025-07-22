@@ -1,20 +1,21 @@
-import { ICellRendererAngularComp } from '@ag-grid-community/angular';
-import { GridApi, ICellRendererParams } from '@ag-grid-community/core';
+import { ICellRendererAngularComp } from "@ag-grid-community/angular";
+import { GridApi, ICellRendererParams } from "@ag-grid-community/core";
 
-import { Component } from '@angular/core';
-import { AbstractAPIService } from '@services/backend/abstract.service';
-import { TagsComponent } from '@uxcommon/tags/tags.component';
-import { Models } from 'common/src/lib/kysely.models';
+import { Component } from "@angular/core";
+import { AbstractAPIService } from "@services/backend/abstract.service";
+import { TagsComponent } from "@uxcommon/tags/tags.component";
+import { Models } from "common/src/lib/kysely.models";
 
-interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererParams {
+interface MyCellRendererParams<T extends keyof Models, U>
+  extends ICellRendererParams {
   service?: AbstractAPIService<T, U>;
 }
 
 @Component({
-    selector: 'pc-tags-cell-renderer',
-    imports: [TagsComponent],
-    templateUrl: './tagsCellRenderer.component.html',
-    styleUrl: './tagsCellRenderer.component.css'
+  selector: "pc-tags-cell-renderer",
+  imports: [TagsComponent],
+  templateUrl: "./tagsCellRenderer.component.html",
+  styleUrl: "./tagsCellRenderer.component.css",
 })
 export class TagsCellRendererComponent<T extends keyof Models, U>
   implements ICellRendererAngularComp

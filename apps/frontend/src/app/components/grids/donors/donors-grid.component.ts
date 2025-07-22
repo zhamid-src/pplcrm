@@ -1,13 +1,9 @@
 import { CellDoubleClickedEvent, ColDef } from "@ag-grid-community/core";
 
-import { Component, NgZone, inject } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
+import { Component } from "@angular/core";
 import { UpdatePersonsObj, UpdatePersonsType } from "@common";
-import { AlertService } from "@services/alert.service";
 import { AbstractAPIService } from "@services/backend/abstract.service";
 import { PersonsService, TYPE } from "@services/backend/persons.service";
-import { SearchService } from "@services/search.service";
-import { ThemeService } from "@services/theme.service";
 import { DatagridComponent } from "@uxcommon/datagrid/datagrid.component";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 import { TagsCellRendererComponent } from "../tags-cell-renderer/tagsCellRenderer.component";
