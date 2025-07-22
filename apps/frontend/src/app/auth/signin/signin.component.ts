@@ -1,4 +1,4 @@
-import { Component, effect, signal } from "@angular/core";
+import { Component, effect, signal, inject } from "@angular/core";
 import { IconsComponent } from "@uxcommon/icons/icons.component";
 
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
@@ -16,6 +16,12 @@ import { AlertComponent } from "@uxcommon/alert/alert.component";
   styleUrl: "./signin.component.css",
 })
 export class SignInComponent {
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private tokenService = inject(TokenService);
+  private router = inject(Router);
+  private alertSvc = inject(AlertService);
+
   public form = this.fb.group({
     email: ["", [Validators.required, Validators.email]],
     password: ["", [Validators.required, Validators.minLength(8)]],
@@ -25,13 +31,7 @@ export class SignInComponent {
   protected persistence = this.tokenService.persistence;
   protected processing = signal(false);
 
-  constructor(
-    private fb: FormBuilder,
-    private authService: AuthService,
-    private tokenService: TokenService,
-    private router: Router,
-    private alertSvc: AlertService,
-  ) {
+  constructor() {
     effect(() => {
       console.log(
         "******************************** User changed:",

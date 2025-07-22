@@ -1,4 +1,4 @@
-import { SelectExpression, Transaction, UpdateResult, sql } from "kysely";
+import { Transaction, UpdateResult, sql } from "kysely";
 import {
   GetOperandType,
   Models,

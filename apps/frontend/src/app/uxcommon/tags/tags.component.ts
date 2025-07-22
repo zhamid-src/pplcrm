@@ -1,5 +1,5 @@
 
-import { Component, EventEmitter, Output, input } from '@angular/core';
+import { Component, EventEmitter, Output, input, inject } from '@angular/core';
 import { TagsService } from '@services/backend/tags.service';
 import { AutocompleteComponent } from '@uxcommon/autocomplete/autocomplete.component';
 import { TagComponent } from '@uxcommon/tag/tag.component';
@@ -11,6 +11,8 @@ import { TagComponent } from '@uxcommon/tag/tag.component';
     styleUrl: './tags.component.css'
 })
 export class TagsComponent {
+  tagSvc = inject(TagsService);
+
   /**
    * If the list of tags can be deleted. It adds or remove the x button.
    * The default is true.
@@ -61,8 +63,6 @@ export class TagsComponent {
    * If the user removes a tag then this event is emitted with the tag that was removed.
    */
   @Output() public tagRemoved = new EventEmitter<string>();
-
-  constructor(public tagSvc: TagsService) {}
 
   /**
    * This adds a tag to the list of tags, removing any duplicates

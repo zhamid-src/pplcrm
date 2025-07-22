@@ -1,5 +1,5 @@
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 import { IconsComponent } from '@uxcommon/icons/icons.component';
@@ -12,10 +12,9 @@ import { SwapComponent } from '@uxcommon/swap/swap.component';
     styleUrl: './sidebar.component.css'
 })
 export class SidebarComponent {
-  constructor(
-    private sidebarSvc: SidebarService,
-    protected router: Router,
-  ) {}
+  private sidebarSvc = inject(SidebarService);
+  protected router = inject(Router);
+
 
   public get items() {
     return this.sidebarSvc.items;

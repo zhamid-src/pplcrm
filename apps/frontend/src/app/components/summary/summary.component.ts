@@ -1,5 +1,5 @@
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { AlertService } from '@services/alert.service';
 import { TagsComponent } from '@uxcommon/tags/tags.component';
 
@@ -10,11 +10,11 @@ import { TagsComponent } from '@uxcommon/tags/tags.component';
     styleUrl: './summary.component.css'
 })
 export class SummaryComponent {
+  private alert = inject(AlertService);
+
   public allowDetele = true;
   public readonly = false;
   public tags = ['hello', 'you', 'fool'];
-
-  constructor(private alert: AlertService) {}
 
   public Error() {
     this.alert.show({

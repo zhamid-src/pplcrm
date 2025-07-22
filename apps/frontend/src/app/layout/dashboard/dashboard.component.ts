@@ -1,5 +1,5 @@
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 import { AlertComponent } from '@uxcommon/alert/alert.component';
@@ -20,7 +20,8 @@ import { SidebarComponent } from '../sidebar/sidebar.component';
     styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent {
-  constructor(private sidebarSvc: SidebarService) {}
+  private sidebarSvc = inject(SidebarService);
+
 
   public isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();

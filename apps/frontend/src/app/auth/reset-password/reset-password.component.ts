@@ -1,5 +1,5 @@
 
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject } from '@angular/core';
 
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -14,6 +14,11 @@ import { AlertComponent } from '@uxcommon/alert/alert.component';
     styleUrl: './reset-password.component.css'
 })
 export class ResetPasswordComponent {
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private router = inject(Router);
+  private alertSvc = inject(AlertService);
+
   public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
   });
@@ -21,13 +26,6 @@ export class ResetPasswordComponent {
   protected emailSent = signal(false);
   protected processing = signal(false);
   protected success: string | undefined;
-
-  constructor(
-    private fb: FormBuilder,
-    private authService: AuthService,
-    private router: Router,
-    private alertSvc: AlertService,
-  ) {}
 
   public get email() {
     return this.form.get('email');

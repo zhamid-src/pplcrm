@@ -1,5 +1,5 @@
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { SidebarService } from '@services/sidebar.service';
 
@@ -10,12 +10,12 @@ import { SidebarService } from '@services/sidebar.service';
     styleUrl: './breadcrumb.component.css'
 })
 export class BreadcrumbComponent {
+  private router = inject(Router);
+  private sidebarSvc = inject(SidebarService);
+
   protected crumbs: string[] = [];
 
-  constructor(
-    private router: Router,
-    private sidebarSvc: SidebarService,
-  ) {
+  constructor() {
     this.router.events.subscribe(() => (this.crumbs = this.router.url.split('/').slice(1)));
   }
 

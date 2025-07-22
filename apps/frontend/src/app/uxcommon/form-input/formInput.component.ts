@@ -1,5 +1,5 @@
 
-import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { AlertService } from '@services/alert.service';
 import { IconName } from '@uxcommon/icons/icons';
@@ -13,6 +13,9 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
     styleUrl: './formInput.component.css'
 })
 export class FormInputComponent implements OnInit {
+  private rootFormGroup = inject(FormGroupDirective);
+  private alertSvc = inject(AlertService);
+
   public control = input.required<string>();
   public debounceTime = input<number>(300);
   public disallowedChars = input<string[]>([]);
@@ -25,11 +28,6 @@ export class FormInputComponent implements OnInit {
 
   protected form!: FormGroup;
   protected inputValue: string = '';
-
-  constructor(
-    private rootFormGroup: FormGroupDirective,
-    private alertSvc: AlertService,
-  ) {}
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;

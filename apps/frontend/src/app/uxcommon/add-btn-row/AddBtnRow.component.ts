@@ -1,5 +1,5 @@
 
-import { Component, EventEmitter, OnInit, Output, input } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IconName } from '@uxcommon/icons/icons';
@@ -12,6 +12,10 @@ import { IconsComponent } from '@uxcommon/icons/icons.component';
     styleUrl: './AddBtnRow.component.css'
 })
 export class AddBtnRowComponent implements OnInit {
+  private rootFormGroup = inject(FormGroupDirective);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+
   @Output() public btn1Clicked = new EventEmitter();
   public btn1Icon = input<IconName>('arrow-down-tray');
   public btn1Text = input<string>('SAVE');
@@ -22,12 +26,6 @@ export class AddBtnRowComponent implements OnInit {
   protected form!: FormGroup;
 
   private stay = false;
-
-  constructor(
-    private rootFormGroup: FormGroupDirective,
-    private router: Router,
-    private route: ActivatedRoute,
-  ) {}
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;

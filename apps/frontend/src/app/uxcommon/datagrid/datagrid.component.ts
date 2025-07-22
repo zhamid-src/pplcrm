@@ -12,7 +12,7 @@ import {
   SideBarDef,
 } from '@ag-grid-community/core';
 
-import { Component, EventEmitter, NgZone, Output, effect, input } from '@angular/core';
+import { Component, EventEmitter, NgZone, Output, effect, input, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@services/alert.service';
 import { AbstractAPIService } from '@services/backend/abstract.service';
@@ -65,6 +65,14 @@ import { ShortcutCellRendererComponent } from './shortcut-cell-renderer/shortcut
  */
 // TODO: these are not the correct generics
 export class DatagridComponent<T extends keyof Models, U> {
+  protected router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private themeSvc = inject(ThemeService);
+  private serachSvc = inject(SearchService);
+  protected alertSvc = inject(AlertService);
+  protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  private ngZone = inject(NgZone);
+
   /**
    * If given, we enable an "add" button that allows new rows to be added.
    * Clicking the button takes the user to the route given here.
@@ -243,15 +251,7 @@ export class DatagridComponent<T extends keyof Models, U> {
 
   private lastRowHovered: string | undefined;
 
-  constructor(
-    protected router: Router,
-    private route: ActivatedRoute,
-    private themeSvc: ThemeService,
-    private serachSvc: SearchService,
-    protected alertSvc: AlertService,
-    protected gridSvc: AbstractAPIService<T, U>,
-    private ngZone: NgZone,
-  ) {
+  constructor() {
     /**
      * Whenever the search text changes, we update the grid options
      * and filter by the search string.
