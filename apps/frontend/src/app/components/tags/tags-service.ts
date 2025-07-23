@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
-import { Tags } from 'common/src/lib/kysely.models';
+
 import { AbstractAPIService } from '../../abstract.service';
+import { Tags } from 'common/src/lib/kysely.models';
 
 /**
  * `TagsService` handles all CRUD operations and utility methods for managing tags
@@ -75,16 +76,6 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   }
 
   /**
-   * Searches for tags that match a given name.
-   *
-   * @param name - Partial or full name to match.
-   * @returns A Promise resolving with the matching tags.
-   */
-  public findByName(name: string) {
-    return this.api.tags.findByName.query(name);
-  }
-
-  /**
    * Filters tags by partial match on name.
    *
    * @param key - The search key.
@@ -93,6 +84,16 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   public async filter(key: string) {
     const names = (await this.findByName(key)) as AddTagType[];
     return names.map((m) => m.name);
+  }
+
+  /**
+   * Searches for tags that match a given name.
+   *
+   * @param name - Partial or full name to match.
+   * @returns A Promise resolving with the matching tags.
+   */
+  public findByName(name: string) {
+    return this.api.tags.findByName.query(name);
   }
 
   /**

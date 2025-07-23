@@ -1,11 +1,12 @@
-import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from '@common';
-import { TRPCError } from '@trpc/server';
-import { OperationDataType } from 'common/src/lib/kysely.models';
-import { QueryParams } from '../repositories/base.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { TagsRepo } from '../repositories/tags.repo';
-import { BaseController } from './base.controller';
+import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from "@common";
+import { TRPCError } from "@trpc/server";
+
+import { QueryParams } from "../repositories/base.repo";
+import { MapPersonsTagRepo } from "../repositories/map-persons-tags.repo";
+import { PersonsRepo } from "../repositories/persons.repo";
+import { TagsRepo } from "../repositories/tags.repo";
+import { BaseController } from "./base.controller";
+import { OperationDataType } from "common/src/lib/kysely.models";
 
 /**
  * Controller for managing persons and their associated tags.

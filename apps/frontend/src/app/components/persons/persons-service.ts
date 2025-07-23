@@ -1,8 +1,7 @@
-import { Injectable } from '@angular/core';
-import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
-import { AbstractAPIService } from '../../abstract.service';
+import { Injectable } from "@angular/core";
+import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from "@common";
 
-export type DATA_TYPE = 'persons' | 'households';
+import { AbstractAPIService } from "../../abstract.service";
 
 /**
  * Service for interacting with the `persons` data source.
@@ -97,6 +96,25 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
+   * Get all people in a household by ID with optional filtering.
+   *
+   * @param id - Household ID
+   * @param options - Optional query options
+   */
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  /**
+   * Get a single person by ID.
+   *
+   * @param id - Person ID
+   */
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  /**
    * Get people associated with a specific household and return them
    * with their full name computed.
    *
@@ -121,25 +139,6 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
-   * Get all people in a household by ID with optional filtering.
-   *
-   * @param id - Household ID
-   * @param options - Optional query options
-   */
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  /**
-   * Get a single person by ID.
-   *
-   * @param id - Person ID
-   */
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  /**
    * Get tags for a person.
    *
    * @param id - Person ID
@@ -160,3 +159,5 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.update.mutate({ id: id, data });
   }
 }
+
+export type DATA_TYPE = 'persons' | 'households';

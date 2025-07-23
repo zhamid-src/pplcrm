@@ -1,10 +1,10 @@
-import { Component, signal, inject } from '@angular/core';
-
+import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/alert-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { Alert } from '@uxcommon/alert';
+import { AlertService } from '@uxcommon/alert-service';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
  * Component for sending a password reset email.
@@ -16,15 +16,10 @@ import { Alert } from '@uxcommon/alert';
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
-  private fb = inject(FormBuilder);
-  private authService = inject(AuthService);
-  private router = inject(Router);
   private alertSvc = inject(AlertService);
-
-  /** Reactive form with a single email input */
-  public form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-  });
+  private authService = inject(AuthService);
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
 
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
@@ -34,6 +29,11 @@ export class ResetPasswordPage {
 
   /** Success message string */
   protected success: string | undefined;
+
+  /** Reactive form with a single email input */
+  public form = this.fb.group({
+    email: ['', [Validators.required, Validators.email]],
+  });
 
   /**
    * Getter for the email form control.

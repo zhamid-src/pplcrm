@@ -1,15 +1,14 @@
 import { Injectable } from '@angular/core';
-import { ISidebarItem, SidebarItems } from './sidebar-items';
 
-type DrawerStates = 'full' | 'half';
+import { ISidebarItem, SidebarItems } from './sidebar-items';
 
 @Injectable({
   providedIn: 'root',
 })
 export class SidebarService {
   private _drawerState: DrawerStates = this.getState();
-  private _items = SidebarItems;
   private _isMobileOpen = false;
+  private _items = SidebarItems;
 
   /**
    * Get all the sidebar items.
@@ -101,3 +100,5 @@ export class SidebarService {
     return this._drawerState;
   }
 }
+
+type DrawerStates = 'full' | 'half';

@@ -1,15 +1,16 @@
-import { CommonModule } from '@angular/common';
-import { Component, OnInit, signal, inject } from '@angular/core';
+import { CommonModule } from "@angular/common";
+import { Component, OnInit, inject, signal } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { ActivatedRoute, Params, Router, RouterLink } from "@angular/router";
+import { PasswordCheckerModule } from "@triangular/password-checker";
+import { TRPCError } from "@trpc/server";
+import { Alert } from "@uxcommon/alert";
+import { AlertService } from "@uxcommon/alert-service";
+import { Icon } from "@uxcommon/icon";
 
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/alert-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { PasswordCheckerModule } from '@triangular/password-checker';
-import { TRPCError } from '@trpc/server';
-import { Alert } from '@uxcommon/alert';
-import { Icon } from '@uxcommon/icon';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom } from "rxjs";
+
+import { AuthService } from "apps/frontend/src/app/auth/auth-service";
 
 @Component({
   selector: 'pc-new-password',
@@ -17,15 +18,17 @@ import { firstValueFrom } from 'rxjs';
   templateUrl: './new-password-page.html',
 })
 export class NewPasswordPage implements OnInit {
-  private fb = inject(FormBuilder);
-  private authService = inject(AuthService);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
   private alertSvc = inject(AlertService);
+  private authService = inject(AuthService);
 
-  public form = this.fb.group({
-    password: ['', [Validators.required, Validators.minLength(8)]],
-  });
+  /** Reset code extracted from query params */
+  private code: string | null = null;
+  private fb = inject(FormBuilder);
+
+  /** Flag to control password visibility toggle */
+  private hidePassword = true;
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   /** Error state to control UI feedback */
   protected error = signal(false);
@@ -36,27 +39,15 @@ export class NewPasswordPage implements OnInit {
   /** Success message to show after successful password reset */
   protected success: string | undefined;
 
-  /** Reset code extracted from query params */
-  private code: string | null = null;
-
-  /** Flag to control password visibility toggle */
-  private hidePassword = true;
+  public form = this.fb.group({
+    password: ['', [Validators.required, Validators.minLength(8)]],
+  });
 
   /**
    * Get the password form control.
    */
   public get password() {
     return this.form.get('password');
-  }
-
-  public async ngOnInit() {
-    const params: Params = await firstValueFrom(this.route.queryParams);
-
-    if (!params['code']) {
-      this.error.set(true);
-    }
-
-    this.code = params['code'];
   }
 
   /**
@@ -73,6 +64,16 @@ export class NewPasswordPage implements OnInit {
    */
   public getVisibilityIcon() {
     return this.hidePassword ? 'eye-slash' : 'eye';
+  }
+
+  public async ngOnInit() {
+    const params: Params = await firstValueFrom(this.route.queryParams);
+
+    if (!params['code']) {
+      this.error.set(true);
+    }
+
+    this.code = params['code'];
   }
 
   /**

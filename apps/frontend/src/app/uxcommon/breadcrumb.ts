@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
+
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
 
 /**

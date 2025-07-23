@@ -3,9 +3,10 @@ import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
 import { Icon } from '@uxcommon/icon';
-import { TagsCellRenderer } from '../tags/tags-cell-renderer';
-import { PersonsService, DATA_TYPE } from './persons-service';
+
 import { AbstractAPIService } from '../../abstract.service';
+import { TagsCellRenderer } from '../tags/tags-cell-renderer';
+import { DATA_TYPE, PersonsService } from './persons-service';
 
 interface ParamsType {
   value: string[];
@@ -25,6 +26,12 @@ interface ParamsType {
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /**
+   * Stores the household ID when a user tries to change an address,
+   * so it can be used in the confirmation dialog logic.
+   */
+  private addressChangeModalId: string | null = null;
+
   /**
    * Column definitions for the grid.
    * Includes editable fields, tag rendering, and double-click address confirmation.
@@ -95,12 +102,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-
-  /**
-   * Stores the household ID when a user tries to change an address,
-   * so it can be used in the confirmation dialog logic.
-   */
-  private addressChangeModalId: string | null = null;
 
   constructor() {
     super();

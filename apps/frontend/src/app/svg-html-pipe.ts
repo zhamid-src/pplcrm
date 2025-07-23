@@ -24,7 +24,7 @@ export class BypassHtmlSanitizerPipe implements PipeTransform {
    * @param html - The raw HTML string to trust and render.
    * @returns A `SafeHtml` object that Angular considers safe for binding.
    */
-  transform(html: string): SafeHtml {
+  public transform(html: string): SafeHtml {
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 }

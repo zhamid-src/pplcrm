@@ -17,12 +17,10 @@ const HouseholdsType = {
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };
-
 const household = {
   type: 'object',
   properties: HouseholdsType,
 };
-
 const households = {
   type: 'array',
   items: HouseholdsType,
@@ -32,7 +30,17 @@ export const IdParam = {
   type: 'object',
   properties: { id: { type: 'string' } },
 };
-
+export const count = {
+  schema: {
+    response: { 200: { type: 'number' } },
+  },
+};
+export const findFromId = {
+  schema: {
+    params: IdParam,
+    response: { 200: household },
+  },
+};
 export const getAll = {
   schema: {
     response: {
@@ -40,20 +48,6 @@ export const getAll = {
     },
   },
 };
-
-export const findFromId = {
-  schema: {
-    params: IdParam,
-    response: { 200: household },
-  },
-};
-
-export const count = {
-  schema: {
-    response: { 200: { type: 'number' } },
-  },
-};
-
 export const update = {
   schema: {
     body: {

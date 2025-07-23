@@ -1,4 +1,4 @@
-import { Injectable, signal, Signal } from '@angular/core';
+import { Injectable, Signal, signal } from '@angular/core';
 
 /**
  * A shared service for managing and distributing a search term across components.

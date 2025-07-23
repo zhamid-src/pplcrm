@@ -1,4 +1,4 @@
-import { FastifyRequest } from "fastify";
+import { FastifyRequest } from 'fastify';
 
 export type IdParam = FastifyRequest<{
   Params: { id: string };

@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
+
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 
 /**

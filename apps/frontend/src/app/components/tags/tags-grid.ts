@@ -1,8 +1,9 @@
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
-import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
 import { DataGrid } from '@uxcommon/datagrid';
+
 import { AbstractAPIService } from '../../abstract.service';
+import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
 
 /**
  * `TagsGridComponent` displays a data grid of tags with editable fields.
@@ -24,7 +25,6 @@ import { AbstractAPIService } from '../../abstract.service';
  * - `use_count_people`: Number of people using this tag (read-only)
  * - `use_count_households`: Number of households using this tag (read-only)
  */
-
 @Component({
   selector: 'pc-tags-grid',
   imports: [DataGrid],

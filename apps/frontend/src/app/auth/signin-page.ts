@@ -1,13 +1,12 @@
-import { Component, effect, signal, inject } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
+import { Alert } from '@uxcommon/alert';
+import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-
-import { Router, RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/alert-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { TokenService } from 'apps/frontend/src/app/data/token-service';
-import { Alert } from '@uxcommon/alert';
 
 /**
  * Sign-in page component for user login.
@@ -19,17 +18,11 @@ import { Alert } from '@uxcommon/alert';
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
-  private fb = inject(FormBuilder);
-  private authService = inject(AuthService);
-  private tokenService = inject(TokenService);
-  private router = inject(Router);
   private alertSvc = inject(AlertService);
-
-  /** Login form group with email and password fields */
-  public form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
-  });
+  private authService = inject(AuthService);
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
+  private tokenService = inject(TokenService);
 
   /** Controls whether the password is visible or masked */
   protected hidePassword = true;
@@ -39,6 +32,12 @@ export class SignInPage {
 
   /** Signal indicating whether login processing is in progress */
   protected processing = signal(false);
+
+  /** Login form group with email and password fields */
+  public form = this.fb.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(8)]],
+  });
 
   constructor() {
     // Redirects to dashboard if user is already logged in

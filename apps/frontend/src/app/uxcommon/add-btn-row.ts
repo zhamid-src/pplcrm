@@ -1,8 +1,8 @@
-import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IconName } from '@uxcommon/svg-icons-list';
 import { Icon } from '@uxcommon/icon';
+import { IconName } from '@uxcommon/svg-icons-list';
 
 @Component({
   selector: 'pc-add-btn-row',
@@ -11,8 +11,11 @@ import { Icon } from '@uxcommon/icon';
 })
 export class AddBtnRow implements OnInit {
   private rootFormGroup = inject(FormGroupDirective);
-  private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private stay = false;
+
+  protected form!: FormGroup;
 
   /**
    * Emits when the first button (e.g., SAVE or SAVE & ADD MORE) is clicked.
@@ -51,16 +54,6 @@ export class AddBtnRow implements OnInit {
    */
   public processing = input.required<boolean>();
 
-  protected form!: FormGroup;
-  private stay = false;
-
-  /**
-   * Initializes the component by linking to the parent form group.
-   */
-  public ngOnInit() {
-    this.form = this.rootFormGroup.control;
-  }
-
   /**
    * Navigates the user back to the previous route.
    * Used by the cancel button.
@@ -84,6 +77,13 @@ export class AddBtnRow implements OnInit {
   public handleBtn2Clicked() {
     this.stay = true;
     this.handleBtn1Clicked();
+  }
+
+  /**
+   * Initializes the component by linking to the parent form group.
+   */
+  public ngOnInit() {
+    this.form = this.rootFormGroup.control;
   }
 
   /**

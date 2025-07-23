@@ -1,6 +1,18 @@
+import * as bcrypt from 'bcrypt';
+
 import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
-import * as bcrypt from 'bcrypt';
+
+import { createDecoder, createSigner } from 'fast-jwt';
+import { QueryResult, Transaction } from 'kysely';
+import nodemailer from 'nodemailer';
+
+import { AuthUsersRepo } from '../repositories/authusers.repo';
+import { QueryParams } from '../repositories/base.repo';
+import { SessionsRepo } from '../repositories/sessions.repo';
+import { TenantsRepo } from '../repositories/tenants.repo';
+import { UserPofiles } from '../repositories/userprofiles.repo';
+import { BaseController } from './base.controller';
 import {
   AuthUsersType,
   GetOperandType,
@@ -9,15 +21,6 @@ import {
   OperationDataType,
   TablesOperationMap,
 } from 'common/src/lib/kysely.models';
-import { createDecoder, createSigner } from 'fast-jwt';
-import { QueryResult, Transaction } from 'kysely';
-import nodemailer from 'nodemailer';
-import { AuthUsersRepo } from '../repositories/authusers.repo';
-import { QueryParams } from '../repositories/base.repo';
-import { SessionsRepo } from '../repositories/sessions.repo';
-import { TenantsRepo } from '../repositories/tenants.repo';
-import { UserPofiles } from '../repositories/userprofiles.repo';
-import { BaseController } from './base.controller';
 
 /**
  * Controller responsible for user authentication, sign-up, token management,

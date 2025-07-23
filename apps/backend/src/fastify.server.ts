@@ -1,16 +1,14 @@
-import { default as fastify } from 'fastify';
-import * as pino from 'pino';
-import cors from '@fastify/cors';
-import sensible from '@fastify/sensible';
-import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import * as pino from "pino";
 
-import { routes } from './app/routes';
-import { trpcRouters } from './app/trpc.routers';
-import { createContext } from './context';
+import cors from "@fastify/cors";
+import sensible from "@fastify/sensible";
+import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 
-// Set default host and port if not defined in environment
-const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+import { default as fastify } from "fastify";
+
+import { routes } from "./app/routes";
+import { trpcRouters } from "./app/trpc.routers";
+import { createContext } from "./context";
 
 /**
  * Wrapper class for a Fastify server instance.
@@ -84,3 +82,7 @@ export class FastifyServer {
     });
   }
 }
+
+// Set default host and port if not defined in environment
+const host = process.env.HOST ?? 'localhost';
+const port = process.env.PORT ? Number(process.env.PORT) : 3000;

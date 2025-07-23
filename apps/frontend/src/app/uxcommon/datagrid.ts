@@ -1,3 +1,4 @@
+// tsco:ignore
 import { AgGridModule } from '@ag-grid-community/angular';
 import {
   CellDoubleClickedEvent,
@@ -11,18 +12,18 @@ import {
   GridState,
   SideBarDef,
 } from '@ag-grid-community/core';
-
-import { Component, EventEmitter, NgZone, Output, effect, input, inject } from '@angular/core';
+import { Component, EventEmitter, NgZone, Output, effect, inject, input } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alert-service';
-import { SearchService } from 'apps/frontend/src/app/data/search-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
-import { IconName } from '@uxcommon/svg-icons-list';
 import { Icon } from '@uxcommon/icon';
-import { Models } from 'common/src/lib/kysely.models';
+import { IconName } from '@uxcommon/svg-icons-list';
+
+import { AbstractAPIService } from '../abstract.service';
 import { LoadingOverlayComponent } from './loading-overlay';
 import { ShortcutCellRenderer } from './shortcut-cell-renderer';
-import { AbstractAPIService } from '../abstract.service';
+import { SearchService } from 'apps/frontend/src/app/data/search-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
+import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
@@ -64,76 +65,11 @@ import { AbstractAPIService } from '../abstract.service';
  */
 // TODO: these are not the correct generics
 export class DataGrid<T extends keyof Models, U> {
-  protected router = inject(Router);
-  private route = inject(ActivatedRoute);
-  private themeSvc = inject(ThemeService);
-  private serachSvc = inject(SearchService);
-  protected alertSvc = inject(AlertService);
-  protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  private lastRowHovered: string | undefined;
   private ngZone = inject(NgZone);
-
-  /**
-   * If given, we enable an "add" button that allows new rows to be added.
-   * Clicking the button takes the user to the route given here.
-   * The component in that route is responsible for adding.
-   */
-  public addRoute = input<string | null>(null);
-  /**
-   * The list of columns to display in the grid. Without anything given,
-   * the list of columns will be empty.
-   */
-  public colDefs = input<ColDef[]>([]);
-  /**
-   * Whether delete should be enabled or disabled. Not all grids support
-   * deleting of rows. The default is true, so by default delete is disabled.
-   */
-  public disableDelete = input<boolean>(true);
-  /**
-   * Whether export should be enabled or disabled. Not all grids support
-   * exporting of rows. The default is false, so by default export is enabled.
-   * The export is done based on the columns that are loaded in the grid.
-   *
-   * So if the grid is showing only a subset of the columns, then only those
-   * columns will be exported.
-   *
-   * Also if the grid shows columns from multiple tables, then the export
-   * will be done based on the columns from those tables.
-   */
-  public disableExport = input<boolean>(false);
-  /**
-   * Whether import should be enabled or disabled. Not all grids support
-   * importing of rows. The default is true, so by default import is disabled.
-   */
-  public disableImport = input<boolean>(true);
-  /**
-   * Whether refresh should be enabled or disabled. Not all grids support
-   * refreshing of rows. The default is false, so by default refresh is enabled.
-   */
-  public disableRefresh = input<boolean>(false);
-  /**
-   * Whether the view route is disabled or not.
-   *
-   * Default: true
-   */
-  public disableView = input<boolean>(true);
-  /**
-   * The event emitter that contains the list of filter that the user applied
-   */
-  @Output() public filter = new EventEmitter();
-  /**
-   * The lst of grid options to use or override.
-   * @see https://www.ag-grid.com/javascript-grid-properties/
-   */
-  public gridOptions = input<GridOptions<Partial<T>>>({});
-  /**
-   * Emit the name of the CSV file that was imported by the user.
-   */
-  @Output() public importCSV = new EventEmitter<string>();
-  /**
-   * The list of tags to limit the grid to.
-   */
-  public limitToTags = input<string[]>([]);
-  public plusIcon = input<IconName>('plus');
+  private route = inject(ActivatedRoute);
+  private serachSvc = inject(SearchService);
+  private themeSvc = inject(ThemeService);
 
   protected _defaultColDef: ColDef = {
     filter: 'agMultiColumnFilter',
@@ -179,10 +115,13 @@ export class DataGrid<T extends keyof Models, U> {
     ],
     defaultToolPanel: 'filters',
   };
+  protected alertSvc = inject(AlertService);
+
   /**
    * The AG Grid API that can be used to interact with the grid.
    */
   protected api: GridApi<Partial<T>> | undefined;
+
   /** This is the default column (or columns) every grid starts off with.
    * The parent component can extend this by providing colDefs.
    */
@@ -213,6 +152,7 @@ export class DataGrid<T extends keyof Models, U> {
       cellRenderer: ShortcutCellRenderer,
     },
   ];
+
   /** The default options we start with. This can be overridden
    * by the parent component providing gridOptions.
    * @see gridOptions
@@ -246,9 +186,82 @@ export class DataGrid<T extends keyof Models, U> {
     onCellMouseOver: this.onCellMouseOver.bind(this),
   };
   protected distinctTags: string[] = [];
+  protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected processing = false;
+  protected router = inject(Router);
 
-  private lastRowHovered: string | undefined;
+  /**
+   * If given, we enable an "add" button that allows new rows to be added.
+   * Clicking the button takes the user to the route given here.
+   * The component in that route is responsible for adding.
+   */
+  public addRoute = input<string | null>(null);
+
+  /**
+   * The list of columns to display in the grid. Without anything given,
+   * the list of columns will be empty.
+   */
+  public colDefs = input<ColDef[]>([]);
+
+  /**
+   * Whether delete should be enabled or disabled. Not all grids support
+   * deleting of rows. The default is true, so by default delete is disabled.
+   */
+  public disableDelete = input<boolean>(true);
+
+  /**
+   * Whether export should be enabled or disabled. Not all grids support
+   * exporting of rows. The default is false, so by default export is enabled.
+   * The export is done based on the columns that are loaded in the grid.
+   *
+   * So if the grid is showing only a subset of the columns, then only those
+   * columns will be exported.
+   *
+   * Also if the grid shows columns from multiple tables, then the export
+   * will be done based on the columns from those tables.
+   */
+  public disableExport = input<boolean>(false);
+
+  /**
+   * Whether import should be enabled or disabled. Not all grids support
+   * importing of rows. The default is true, so by default import is disabled.
+   */
+  public disableImport = input<boolean>(true);
+
+  /**
+   * Whether refresh should be enabled or disabled. Not all grids support
+   * refreshing of rows. The default is false, so by default refresh is enabled.
+   */
+  public disableRefresh = input<boolean>(false);
+
+  /**
+   * Whether the view route is disabled or not.
+   *
+   * Default: true
+   */
+  public disableView = input<boolean>(true);
+
+  /**
+   * The event emitter that contains the list of filter that the user applied
+   */
+  @Output() public filter = new EventEmitter();
+
+  /**
+   * The lst of grid options to use or override.
+   * @see https://www.ag-grid.com/javascript-grid-properties/
+   */
+  public gridOptions = input<GridOptions<Partial<T>>>({});
+
+  /**
+   * Emit the name of the CSV file that was imported by the user.
+   */
+  @Output() public importCSV = new EventEmitter<string>();
+
+  /**
+   * The list of tags to limit the grid to.
+   */
+  public limitToTags = input<string[]>([]);
+  public plusIcon = input<IconName>('plus');
 
   constructor() {
     /**

@@ -1,16 +1,17 @@
-import { Component, OnInit, input, signal, inject } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { UpdatePersonsType } from '@common';
-import { AlertService } from '@uxcommon/alert-service';
-import { AddBtnRow } from '@uxcommon/add-btn-row';
-import { FormInput } from '@uxcommon/formInput';
-import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
-import { Tags } from 'apps/frontend/src/app/components/tags/tags';
-import { TextArea } from '@uxcommon/textarea';
-import { AddressType, Persons } from 'common/src/lib/kysely.models';
-import { PersonsService } from './persons-service';
-import { HouseholdsService } from '../households/households-service';
+import { Component, OnInit, inject, input, signal } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule } from "@angular/forms";
+import { ActivatedRoute, Router, RouterModule } from "@angular/router";
+import { UpdatePersonsType } from "@common";
+import { AddBtnRow } from "@uxcommon/add-btn-row";
+import { AlertService } from "@uxcommon/alert-service";
+import { FormInput } from "@uxcommon/formInput";
+import { TextArea } from "@uxcommon/textarea";
+
+import { HouseholdsService } from "../households/households-service";
+import { PersonsService } from "./persons-service";
+import { PeopleInHousehold } from "apps/frontend/src/app/components/persons/people-in-household";
+import { Tags } from "apps/frontend/src/app/components/tags/tags";
+import { AddressType, Persons } from "common/src/lib/kysely.models";
 
 /**
  * Component for displaying and editing a single person's details.
@@ -22,16 +23,14 @@ import { HouseholdsService } from '../households/households-service';
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
-  private personsSvc = inject(PersonsService);
-  private householdsSvc = inject(HouseholdsService);
   private alertSvc = inject(AlertService);
+  private fb = inject(FormBuilder);
+  private householdsSvc = inject(HouseholdsService);
+  private personsSvc = inject(PersonsService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
-  /** Determines if this component is in 'edit' or 'new' mode */
-  public mode = input<'new' | 'edit'>('edit');
-
+  protected _person = signal<Persons | null>(null);
   protected addressString = signal<string | null>(null);
 
   /** Reactive form group for person data */
@@ -55,8 +54,17 @@ export class PersonDetail implements OnInit {
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
+  protected processing = signal(false);
+  protected tags: string[] = [];
 
-  protected _person = signal<Persons | null>(null);
+  /** Determines if this component is in 'edit' or 'new' mode */
+  public mode = input<'new' | 'edit'>('edit');
+
+  constructor() {
+    if (this.mode() === 'edit') {
+      this.id = this.route.snapshot.paramMap.get('id');
+    }
+  }
 
   /** Getter for the current person */
   protected get person() {
@@ -66,15 +74,6 @@ export class PersonDetail implements OnInit {
   /** Setter for the current person */
   protected set person(person: Persons | null) {
     this._person.set(person);
-  }
-
-  protected processing = signal(false);
-  protected tags: string[] = [];
-
-  constructor() {
-    if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
   }
 
   /** Lifecycle hook to initialize the component and load person data */

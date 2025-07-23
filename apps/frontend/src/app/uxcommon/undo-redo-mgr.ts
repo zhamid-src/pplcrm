@@ -1,7 +1,5 @@
 import { GridApi } from '@ag-grid-community/core';
 
-type UNDOTYPE = 'aggrid' | 'custom';
-
 interface UndoElement<T> {
   rows: Partial<T>[];
   type: UNDOTYPE;
@@ -128,3 +126,5 @@ export class UndoManager<T> {
     this.undoStack = this.undoStack.filter((element) => element.type !== 'aggrid');
   }
 }
+
+type UNDOTYPE = 'aggrid' | 'custom';

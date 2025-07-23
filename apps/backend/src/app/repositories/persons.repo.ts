@@ -1,6 +1,7 @@
-import { Models, TypeTableColumns } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
+
 import { BaseRepository, JoinedQueryParams, QueryParams } from './base.repo';
+import { Models, TypeTableColumns } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `persons` table.

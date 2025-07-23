@@ -1,4 +1,4 @@
-import {  FastifyPluginCallback } from 'fastify';
+import { FastifyPluginCallback } from 'fastify';
 
 /**
  * No public HTTP routes for authentication
@@ -8,6 +8,6 @@ import {  FastifyPluginCallback } from 'fastify';
  */
 const routes: FastifyPluginCallback = (fastify, _, done) => {
   done();
-}
+};
 
 export default routes;

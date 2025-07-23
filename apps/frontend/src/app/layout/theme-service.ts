@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal } from "@angular/core";
 
 /**
  * A service to manage application theme (light or dark) in a reactive and persistent way.

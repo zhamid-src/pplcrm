@@ -19,20 +19,19 @@ import { Icon } from '@uxcommon/icon';
  * ## Usage
  * Used in tag lists or input interfaces to represent individual tags with interaction capabilities.
  */
-
 @Component({
   selector: 'pc-singletag',
   imports: [Icon],
   templateUrl: './singletag.html',
 })
 export class SingleTag {
+  protected destroy = false;
+
   public allowDetele = input<boolean>(true);
   public animate = input<boolean>(true);
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();
   public name = input.required<string>();
-
-  protected destroy = false;
 
   public emitClick() {
     this.clickEvent.emit(this.name());

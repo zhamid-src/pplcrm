@@ -1,18 +1,19 @@
-import { Component, OnInit, input, signal, inject } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
-import { AlertService } from '@uxcommon/alert-service';
-import { AddBtnRow } from '@uxcommon/add-btn-row';
-import { FormInput } from '@uxcommon/formInput';
-import { Input } from '@uxcommon/input';
-import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
-import { Tags } from 'apps/frontend/src/app/components/tags/tags';
-import { TextArea } from '@uxcommon/textarea';
-import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
-import { Households } from 'common/src/lib/kysely.models';
-import { HouseholdsService } from './households-service';
-import { PersonsService } from '../persons/persons-service';
+import { Component, OnInit, inject, input, signal } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule } from "@angular/forms";
+import { ActivatedRoute } from "@angular/router";
+import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from "@common";
+import { AddBtnRow } from "@uxcommon/add-btn-row";
+import { AlertService } from "@uxcommon/alert-service";
+import { FormInput } from "@uxcommon/formInput";
+import { Input } from "@uxcommon/input";
+import { TextArea } from "@uxcommon/textarea";
+
+import { PersonsService } from "../persons/persons-service";
+import { HouseholdsService } from "./households-service";
+import { PeopleInHousehold } from "apps/frontend/src/app/components/persons/people-in-household";
+import { Tags } from "apps/frontend/src/app/components/tags/tags";
+import { parseAddress } from "apps/frontend/src/app/utils/googlePlacesAddressMapper";
+import { Households } from "common/src/lib/kysely.models";
 
 /**
  * Component for displaying and managing the details of a household.
@@ -24,17 +25,20 @@ import { PersonsService } from '../persons/persons-service';
   templateUrl: './Household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
+  private alertSvc = inject(AlertService);
   private fb = inject(FormBuilder);
-  private route = inject(ActivatedRoute);
   private householdsSvc = inject(HouseholdsService);
   private personsSvc = inject(PersonsService);
-  private alertSvc = inject(AlertService);
+  private route = inject(ActivatedRoute);
 
-  /** Component mode: 'edit' or 'new' */
-  public mode = input<'new' | 'edit'>('edit');
+  /** Reactive signal for storing the loaded household */
+  protected _household = signal<Households | null>(null);
 
   /** Whether the address has been verified via Places API */
   protected addressVerified = false;
+
+  /** List of associated tag strings */
+  protected tags: string[] = [];
 
   /** Reactive form group to handle household data */
   protected form = this.fb.group({
@@ -61,19 +65,6 @@ export class HouseholdDetail implements OnInit {
     }),
   });
 
-  /** Reactive signal for storing the loaded household */
-  protected _household = signal<Households | null>(null);
-
-  /** Getter for current household */
-  protected get household() {
-    return this._household();
-  }
-
-  /** Setter for current household */
-  protected set household(household: Households | null) {
-    this._household.set(household);
-  }
-
   /** ID of the household being edited */
   protected id: string | null = null;
 
@@ -83,8 +74,8 @@ export class HouseholdDetail implements OnInit {
   /** Whether a background operation is in progress */
   protected processing = signal(false);
 
-  /** List of associated tag strings */
-  protected tags: string[] = [];
+  /** Component mode: 'edit' or 'new' */
+  public mode = input<'new' | 'edit'>('edit');
 
   constructor() {
     if (this.mode() === 'edit') {
@@ -92,11 +83,14 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Lifecycle hook that initializes the component.
-   */
-  public async ngOnInit() {
-    await this.loadHousehold();
+  /** Getter for current household */
+  protected get household() {
+    return this._household();
+  }
+
+  /** Setter for current household */
+  protected set household(household: Households | null) {
+    this._household.set(household);
   }
 
   /**
@@ -116,6 +110,13 @@ export class HouseholdDetail implements OnInit {
     this.addressVerified = true;
     console.log(address);
     this.processing.set(false);
+  }
+
+  /**
+   * Lifecycle hook that initializes the component.
+   */
+  public async ngOnInit() {
+    await this.loadHousehold();
   }
 
   /**

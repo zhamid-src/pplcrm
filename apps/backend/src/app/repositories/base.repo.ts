@@ -1,3 +1,8 @@
+// tsco:ignore
+
+import { INow } from '@common';
+
+import { promises as fs } from 'fs';
 import {
   FileMigrationProvider,
   InsertQueryBuilder,
@@ -15,9 +20,8 @@ import {
   UpdateQueryBuilder,
   sql,
 } from 'kysely';
-import { Pool } from 'pg';
 import path from 'path';
-import { promises as fs } from 'fs';
+
 import {
   Models,
   OperationDataType,
@@ -26,40 +30,7 @@ import {
   TypeTableColumns,
   TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
-import { INow } from '@common';
-
-/**
- * The options that can be passed to query the database,
- * allowing you to select columns, limit, offset, order, and group the results.
- */
-export type QueryParams<T extends keyof Models> = {
-  columns?: ReferenceExpression<Models, T>[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, T, object>[];
-  groupBy?: (keyof Models[T])[];
-};
-
-/**
- * Extended version of QueryParams for joined tables with looser typing.
- */
-export type JoinedQueryParams = {
-  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, keyof Models, object>[];
-  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
-};
-
-/**
- * Helper to create a typed reference expression to a column in a table.
- */
-export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
-  table: TTable,
-  column: TColumn,
-): ReferenceExpression<Models, TTable> {
-  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
-}
+import { Pool } from 'pg';
 
 const dialect = new PostgresDialect({
   pool: new Pool({
@@ -85,11 +56,10 @@ const dialect = new PostgresDialect({
  * }
  */
 export class BaseRepository<T extends keyof Models> {
-  protected readonly table: T;
-
   private static db = new Kysely<Models>({ dialect });
-
   private static migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+
+  protected readonly table: T;
 
   /**
    * Static migrator object for running Kysely migrations.
@@ -105,6 +75,13 @@ export class BaseRepository<T extends keyof Models> {
 
   constructor(tableIn: T) {
     this.table = tableIn;
+  }
+
+  /**
+   * Insert a single row.
+   */
+  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
+    return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
   }
 
   /**
@@ -144,10 +121,17 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   /**
-   * Insert a single row.
+   * Count number of rows for the given tenant.
    */
-  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
+  public async count(
+    tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>,
+    trx?: Transaction<Models>,
+  ): Promise<number> {
+    const result = await this.getSelect(trx)
+      .select(({ fn }) => [fn.countAll<number>().as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .executeTakeFirst();
+    return result?.count ?? 0;
   }
 
   /**
@@ -164,6 +148,40 @@ export class BaseRepository<T extends keyof Models> {
     const deleteQuery = this.getDelete(trx) as unknown as ReturnType<typeof BaseRepository.prototype.getDelete>;
     const result = await deleteQuery.where('id', 'in', input.ids).where('tenant_id', '=', input.tenant_id).execute();
     return result !== null;
+  }
+
+  /**
+   * Check whether any row exists that matches the key and column.
+   */
+  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
+    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
+
+    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
+
+    return result.length > 0;
+  }
+
+  /**
+   * Return top 3 rows matching key for autocomplete.
+   */
+  public async find(
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      key: string;
+      column: ReferenceExpression<Models, T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const options: QueryParams<T> = {
+      columns: [input.column],
+      limit: 3,
+    };
+
+    return this.getSelectWithColumns(options, trx)
+      .where(input.column, 'ilike', input.key + '%')
+      .where('tenant_id', '=', input.tenant_id)
+      .limit(3)
+      .execute();
   }
 
   /**
@@ -197,31 +215,6 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   /**
-   * Check whether any row exists that matches the key and column.
-   */
-  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
-    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
-
-    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
-
-    return result.length > 0;
-  }
-
-  /**
-   * Count number of rows for the given tenant.
-   */
-  public async count(
-    tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>,
-    trx?: Transaction<Models>,
-  ): Promise<number> {
-    const result = await this.getSelect(trx)
-      .select(({ fn }) => [fn.countAll<number>().as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .executeTakeFirst();
-    return result?.count ?? 0;
-  }
-
-  /**
    * Return the current timestamp from the DB.
    */
   public async nowTime(): Promise<QueryResult<INow>> {
@@ -229,26 +222,10 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   /**
-   * Return top 3 rows matching key for autocomplete.
+   * Start a transaction.
    */
-  public async find(
-    input: {
-      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-      key: string;
-      column: ReferenceExpression<Models, T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const options: QueryParams<T> = {
-      columns: [input.column],
-      limit: 3,
-    };
-
-    return this.getSelectWithColumns(options, trx)
-      .where(input.column, 'ilike', input.key + '%')
-      .where('tenant_id', '=', input.tenant_id)
-      .limit(3)
-      .execute();
+  public transaction() {
+    return BaseRepository.db.transaction();
   }
 
   /**
@@ -268,13 +245,6 @@ export class BaseRepository<T extends keyof Models> {
       .where('tenant_id', '=', input.tenant_id as TypeColumnValue<T, 'tenant_id'>)
       .returningAll()
       .executeTakeFirst();
-  }
-
-  /**
-   * Start a transaction.
-   */
-  public transaction() {
-    return BaseRepository.db.transaction();
   }
 
   /**
@@ -327,4 +297,37 @@ export class BaseRepository<T extends keyof Models> {
     const ret = trx ? trx.updateTable(this.table) : BaseRepository.db.updateTable(this.table);
     return ret as unknown as UpdateQueryBuilder<Models, T, keyof Models, object>;
   }
+}
+
+/**
+ * Extended version of QueryParams for joined tables with looser typing.
+ */
+export type JoinedQueryParams = {
+  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
+  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, keyof Models, object>[];
+};
+
+/**
+ * The options that can be passed to query the database,
+ * allowing you to select columns, limit, offset, order, and group the results.
+ */
+export type QueryParams<T extends keyof Models> = {
+  columns?: ReferenceExpression<Models, T>[];
+  groupBy?: (keyof Models[T])[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, T, object>[];
+};
+
+/**
+ * Helper to create a typed reference expression to a column in a table.
+ */
+export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
+  table: TTable,
+  column: TColumn,
+): ReferenceExpression<Models, TTable> {
+  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
 }

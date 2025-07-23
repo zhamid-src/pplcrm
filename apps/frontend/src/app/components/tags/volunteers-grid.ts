@@ -1,12 +1,12 @@
 import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
-
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
 import { Icon } from '@uxcommon/icon';
-import { TagsCellRenderer } from './tags-cell-renderer';
-import { PersonsService, DATA_TYPE } from '../persons/persons-service';
+
 import { AbstractAPIService } from '../../abstract.service';
+import { DATA_TYPE, PersonsService } from '../persons/persons-service';
+import { TagsCellRenderer } from './tags-cell-renderer';
 
 interface ParamsType {
   value: string[];
@@ -27,6 +27,12 @@ interface ParamsType {
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /**
+   * Stores the `household_id` of the selected row when address edit is triggered.
+   * Used to route the user after confirmation.
+   */
+  private addressChangeModalId: string | null = null;
+
   /**
    * Column definitions for the ag-grid table.
    * Includes editable fields and custom tag rendering with comparator logic.
@@ -97,12 +103,6 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-
-  /**
-   * Stores the `household_id` of the selected row when address edit is triggered.
-   * Used to route the user after confirmation.
-   */
-  private addressChangeModalId: string | null = null;
 
   constructor() {
     super();

@@ -1,16 +1,17 @@
 import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
-
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
 import { Icon } from '@uxcommon/icon';
-import { TagsCellRenderer } from '../tags/tags-cell-renderer';
-import { PersonsService, DATA_TYPE } from '../persons/persons-service';
+
 import { AbstractAPIService } from '../../abstract.service';
+import { DATA_TYPE, PersonsService } from '../persons/persons-service';
+import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 
 interface ParamsType {
   value: string[];
 }
+
 /**
  * A data grid component to display and edit donor (person) records.
  * Inherits generic grid logic from `DataGrid`, including editing,
@@ -23,6 +24,9 @@ interface ParamsType {
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /** Household ID to use when routing after confirming address change */
+  private addressChangeModalId: string | null = null;
+
   /**
    * Column definitions for the ag-grid, including editable fields,
    * custom renderers, double-click actions, and comparison logic.
@@ -93,9 +97,6 @@ export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
-
-  /** Household ID to use when routing after confirming address change */
-  private addressChangeModalId: string | null = null;
 
   constructor() {
     super();

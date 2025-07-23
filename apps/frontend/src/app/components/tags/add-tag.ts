@@ -1,11 +1,12 @@
-import { Component, ViewChild, signal, inject } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AddTagType } from '@common';
-import { AlertService } from '@uxcommon/alert-service';
-import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
-import { TRPCError } from '@trpc/server';
-import { AddBtnRow } from '@uxcommon/add-btn-row';
-import { FormInput } from '@uxcommon/formInput';
+import { Component, ViewChild, inject, signal } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { AddTagType } from "@common";
+import { TRPCError } from "@trpc/server";
+import { AddBtnRow } from "@uxcommon/add-btn-row";
+import { AlertService } from "@uxcommon/alert-service";
+import { FormInput } from "@uxcommon/formInput";
+
+import { TagsService } from "apps/frontend/src/app/components/tags/tags-service";
 
 /**
  * A component for adding new tags to the system.
@@ -18,21 +19,14 @@ import { FormInput } from '@uxcommon/formInput';
   templateUrl: './add-tag.html',
 })
 export class AddTag {
+  /** Injected service to display alerts for success or error states */
+  private readonly alertSvc = inject(AlertService);
+
   /** Angular FormBuilder instance for constructing the form */
   private readonly fb = inject(FormBuilder);
 
   /** Injected service for interacting with the backend tag API */
   private readonly tagSvc = inject(TagsService);
-
-  /** Injected service to display alerts for success or error states */
-  private readonly alertSvc = inject(AlertService);
-
-  /**
-   * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
-   * Populated after view initialization.
-   */
-  @ViewChild(AddBtnRow)
-  public addBtnRow!: AddBtnRow;
 
   /**
    * Reactive form for tag creation.
@@ -48,6 +42,13 @@ export class AddTag {
    * Signal to track form submission (used to show spinners or disable form).
    */
   protected processing = signal(false);
+
+  /**
+   * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
+   * Populated after view initialization.
+   */
+  @ViewChild(AddBtnRow)
+  public addBtnRow!: AddBtnRow;
 
   /**
    * Submits the form to create a new tag.

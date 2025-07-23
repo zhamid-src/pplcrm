@@ -1,9 +1,10 @@
-import { ICellRendererAngularComp } from '@ag-grid-community/angular';
-import { ICellRendererParams } from '@ag-grid-community/core';
-import { Component, ViewEncapsulation } from '@angular/core';
-import { Icon } from '@uxcommon/icon';
-import { Models } from 'common/src/lib/kysely.models';
-import { DataGrid } from './datagrid';
+import { ICellRendererAngularComp } from "@ag-grid-community/angular";
+import { ICellRendererParams } from "@ag-grid-community/core";
+import { Component, ViewEncapsulation } from "@angular/core";
+import { Icon } from "@uxcommon/icon";
+
+import { DataGrid } from "./datagrid";
+import { Models } from "common/src/lib/kysely.models";
 
 /**
  * A custom cell renderer used by the AG Grid to render shortcut actions like
@@ -48,6 +49,15 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
   }
 
   /**
+   * Called by AG Grid when it wants to refresh the cell.
+   *
+   * @returns False, since this cell does not support dynamic refresh.
+   */
+  public refresh(/*params: ICellRendererParams*/) {
+    return false;
+  }
+
+  /**
    * Determines whether the delete shortcut button should be shown.
    *
    * @returns True if delete is enabled in the parent grid.
@@ -70,14 +80,5 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
    */
   public view() {
     this.parent?.view();
-  }
-
-  /**
-   * Called by AG Grid when it wants to refresh the cell.
-   *
-   * @returns False, since this cell does not support dynamic refresh.
-   */
-  public refresh(/*params: ICellRendererParams*/) {
-    return false;
   }
 }

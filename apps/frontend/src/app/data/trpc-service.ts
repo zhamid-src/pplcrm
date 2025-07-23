@@ -5,9 +5,11 @@ import { refreshTokenLink } from '@pyncz/trpc-refresh-token-link';
 import { TRPCClientError, TRPCLink, createTRPCProxyClient, httpBatchLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import { TRPC_ERROR_CODES_BY_KEY } from '@trpc/server/rpc';
-import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
+
 import { get, set } from 'idb-keyval';
+
 import { TokenService } from './token-service';
+import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
 
 /**
  * A base service that wraps a TRPC proxy client with support for:
@@ -19,8 +21,6 @@ import { TokenService } from './token-service';
   providedIn: 'root',
 })
 export class TRPCService<T> {
-  protected tokenService = inject(TokenService);
-  protected router = inject(Router);
   protected ac = new AbortController();
 
   /**
@@ -28,6 +28,8 @@ export class TRPCService<T> {
    * It is available to child services via `this.api`.
    */
   protected api;
+  protected router = inject(Router);
+  protected tokenService = inject(TokenService);
 
   constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({
