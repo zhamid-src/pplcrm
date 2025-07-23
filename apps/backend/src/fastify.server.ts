@@ -1,50 +1,79 @@
-import { default as fastify } from "fastify";
-import * as pino from "pino";
-import cors from "@fastify/cors";
-import sensible from "@fastify/sensible";
-import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
+import { default as fastify } from 'fastify';
+import * as pino from 'pino';
+import cors from '@fastify/cors';
+import sensible from '@fastify/sensible';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 
-import { routes } from "./app/routes";
-import { trpcRouters } from "./app/trpc.routers";
-import { createContext } from "./context";
+import { routes } from './app/routes';
+import { trpcRouters } from './app/trpc.routers';
+import { createContext } from './context';
 
-const host = process.env.HOST ?? "localhost";
+// Set default host and port if not defined in environment
+const host = process.env.HOST ?? 'localhost';
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 /**
- * Fastify server
+ * Wrapper class for a Fastify server instance.
+ *
+ * Registers core plugins, routes, and tRPC integration.
  */
 export class FastifyServer {
   private readonly server;
 
+  /**
+   * Initializes the Fastify server with sensible defaults, logging,
+   * CORS, and tRPC support.
+   *
+   * @param {pino.Logger} logger - Pino logger instance (currently unused).
+   * @param {object} [opts={}] - Optional configuration for CORS and plugin options.
+   */
   constructor(logger: pino.Logger, opts: object = {}) {
+    // Create Fastify instance with logging and common config
     this.server = fastify({
       logger: {
-        level: "info",
+        level: 'info',
         transport: {
-          target: "pino-pretty",
+          target: 'pino-pretty', // Prettified logging output
         },
       },
       ignoreTrailingSlash: true,
       exposeHeadRoutes: false,
     });
 
+    // Register REST routes
     this.server.register(routes);
 
-    // This loads all plugins defined in the plugins folder
+    // Register core Fastify plugins
     this.server.register(cors, { ...opts });
     this.server.register(sensible);
+
+    // Register tRPC plugin for RPC-based APIs
     this.server.register(fastifyTRPCPlugin, {
-      prefix: "/",
-      trpcOptions: { router: trpcRouters, createContext },
+      prefix: '/',
+      trpcOptions: {
+        router: trpcRouters,
+        createContext,
+      },
     });
   }
 
-  public async close() {
+  /**
+   * Gracefully shuts down the server.
+   *
+   * @returns {Promise<void>} Resolves when shutdown completes.
+   */
+  public async close(): Promise<void> {
     return await this.server.close();
   }
 
-  public async serve() {
+  /**
+   * Starts the Fastify server and listens on the configured host and port.
+   *
+   * Logs success or exits on error.
+   *
+   * @returns {Promise<void>}
+   */
+  public async serve(): Promise<void> {
     await this.server.listen({ port, host }, (err) => {
       if (err) {
         this.server.log.error(err);

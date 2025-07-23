@@ -2,17 +2,26 @@ import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 import { BaseRepository } from './base.repo';
 
+/**
+ * Repository for interacting with the `tags` table and related mapping tables.
+ */
 export class TagsRepo extends BaseRepository<'tags'> {
   constructor() {
     super('tags');
   }
 
-  public override async deleteMany(input: {
-    tenant_id: TypeTenantId<'tags'>;
-    ids: TypeId<'tags'>;
-  }) {
+  /**
+   * Deletes tags by ID, along with their associated mapping records.
+   * Only tags marked as deletable are removed.
+   *
+   * @param input.tenant_id - Tenant scope
+   * @param input.ids - Tag IDs to delete
+   * @returns `true` if deletion query ran successfully
+   */
+  public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'> }) {
     return await this.transaction().execute(async (trx) => {
       const tag_ids = input.ids;
+
       await trx
         .deleteFrom('map_households_tags')
         .where('tag_id', 'in', tag_ids as TypeId<'map_households_tags'>)
@@ -23,16 +32,17 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .where('tag_id', 'in', tag_ids as TypeId<'map_peoples_tags'>)
         .execute();
 
-      return (
-        (await trx
-          .deleteFrom('tags')
-          .where('id', 'in', tag_ids)
-          .where('deletable', '=', true)
-          .execute()) !== null
-      );
+      return (await trx.deleteFrom('tags').where('id', 'in', tag_ids).where('deletable', '=', true).execute()) !== null;
     });
   }
 
+  /**
+   * Retrieves all tags for a tenant, including usage counts from both people and households.
+   *
+   * @param input.tenant_id - Tenant scope
+   * @param trx - Optional Kysely transaction
+   * @returns A list of tags with usage statistics
+   */
   public getAllWithCounts(
     input: {
       tenant_id: string;
@@ -55,6 +65,14 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .execute();
   }
 
+  /**
+   * Returns the ID of a tag by its name and tenant.
+   *
+   * @param input.name - Tag name to match
+   * @param input.tenant_id - Tenant scope
+   * @param trx - Optional Kysely transaction
+   * @returns Tag row containing only the `id`, or undefined if not found
+   */
   public getIdByName(input: { tenant_id: string; name: string }, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .select('id')
