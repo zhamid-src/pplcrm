@@ -1,9 +1,14 @@
-import { router } from '../trpc';
-import { AuthRouter } from './trpc-routers/auth.router';
-import { HouseholdsRouter } from './trpc-routers/households.router';
-import { PersonsRouter } from './trpc-routers/persons.router';
-import { TagsRouter } from './trpc-routers/tags.router';
-import { UserProfilesRouter } from './trpc-routers/userprofiles.router';
+import { router } from "../trpc";
+import { AuthRouter } from "./trpc-routers/auth.router";
+import { HouseholdsRouter } from "./trpc-routers/households.router";
+import { PersonsRouter } from "./trpc-routers/persons.router";
+import { TagsRouter } from "./trpc-routers/tags.router";
+import { UserProfilesRouter } from "./trpc-routers/userprofiles.router";
+
+/**
+ * Inferred type representing the full structure of the tRPC API.
+ */
+export type TRPCRouters = typeof trpcRouters;
 
 /**
  * Registers and groups all tRPC routers for the application.
@@ -22,8 +27,3 @@ export const trpcRouters = router({
   persons: PersonsRouter,
   tags: TagsRouter,
 });
-
-/**
- * Inferred type representing the full structure of the tRPC API.
- */
-export type TRPCRouters = typeof trpcRouters;

@@ -1,6 +1,6 @@
-import { Component, signal, inject } from '@angular/core';
-import { ALERTTYPE, AlertService } from '@uxcommon/alert-service';
-import { Icon } from '@uxcommon/icon';
+import { Component, inject, signal } from "@angular/core";
+import { ALERTTYPE, AlertService } from "@uxcommon/alert-service";
+import { Icon } from "@uxcommon/icon";
 
 @Component({
   selector: 'pc-alert',
@@ -15,17 +15,7 @@ export class Alert {
    * The position of the alert container.
    * Can be 'top', 'bottom', or 'relative' to context.
    */
-  position = signal<'top' | 'bottom' | 'relative'>('relative');
-
-  /**
-   * Returns a list of active alerts, reversed if position is 'top'.
-   * Used to control the visual order of alerts.
-   *
-   * @returns Array of active alerts
-   */
-  protected alerts() {
-    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
-  }
+  public position = signal<'top' | 'bottom' | 'relative'>('relative');
 
   /**
    * Handles click on the OK button of an alert.
@@ -65,5 +55,15 @@ export class Alert {
         : type === 'error'
           ? 'x-circle'
           : 'exclamation-circle';
+  }
+
+  /**
+   * Returns a list of active alerts, reversed if position is 'top'.
+   * Used to control the visual order of alerts.
+   *
+   * @returns Array of active alerts
+   */
+  protected alerts() {
+    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
   }
 }

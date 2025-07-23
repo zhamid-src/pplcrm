@@ -1,11 +1,12 @@
-import { Component, HostListener, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SearchService } from 'apps/frontend/src/app/data/search-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
-import { Icon } from '@uxcommon/icon';
-import { Swap } from '@uxcommon/swap';
+import { Component, HostListener, inject } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import { Icon } from "@uxcommon/icon";
+import { Swap } from "@uxcommon/swap";
+
+import { AuthService } from "apps/frontend/src/app/auth/auth-service";
+import { SearchService } from "apps/frontend/src/app/data/search-service";
+import { SidebarService } from "apps/frontend/src/app/layout/sidebar-service";
+import { ThemeService } from "apps/frontend/src/app/layout/theme-service";
 
 @Component({
   selector: 'pc-navbar',
@@ -15,12 +16,15 @@ import { Swap } from '@uxcommon/swap';
 export class Navbar {
   /** Handles authentication-related operations. */
   private readonly auth = inject(AuthService);
-  /** Controls the current visual theme (light/dark). */
-  protected readonly themeSvc = inject(ThemeService);
+
   /** Manages shared search input across components. */
   private readonly searchSvc = inject(SearchService);
+
   /** Controls sidebar visibility on mobile and desktop. */
   private readonly sideBarSvc = inject(SidebarService);
+
+  /** Controls the current visual theme (light/dark). */
+  protected readonly themeSvc = inject(ThemeService);
 
   /** Indicates whether the search input is visible on mobile view. */
   protected searchOnMobile = false;
@@ -29,11 +33,20 @@ export class Navbar {
   protected searchStr = '';
 
   /**
+   * Clears the current search input and resets the mobile search bar state.
+   */
+  public clearSearch(): void {
+    this.searchOnMobile = false;
+    this.searchStr = '';
+    this.searchSvc.clearSearch();
+  }
+
+  /**
    * Listen for Ctrl + K or Cmd + K to open search.
    * Prevents default browser behavior.
    */
   @HostListener('window:keydown', ['$event'])
-  handleKeyDown(event: KeyboardEvent): void {
+  public handleKeyDown(event: KeyboardEvent): void {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
     const isK = event.key.toLowerCase() === 'k';
 
@@ -43,15 +56,6 @@ export class Navbar {
       // TODO: have to move the cursor to search
       this.showSearchonMobile();
     }
-  }
-
-  /**
-   * Clears the current search input and resets the mobile search bar state.
-   */
-  public clearSearch(): void {
-    this.searchOnMobile = false;
-    this.searchStr = '';
-    this.searchSvc.clearSearch();
   }
 
   /**

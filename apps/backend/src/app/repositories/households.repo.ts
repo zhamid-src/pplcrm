@@ -1,6 +1,7 @@
-import { Models } from 'common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
+
 import { BaseRepository } from './base.repo';
+import { Models } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `households` table.

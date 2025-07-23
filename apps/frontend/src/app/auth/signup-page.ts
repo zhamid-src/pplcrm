@@ -1,13 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
-import { AlertService } from '@uxcommon/alert-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { Alert } from '@uxcommon/alert';
+import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
  * Component responsible for user sign-up.
@@ -20,9 +21,9 @@ import { Icon } from '@uxcommon/icon';
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
-  private fb = inject(FormBuilder);
-  private authService = inject(AuthService);
   private alertSvc = inject(AlertService);
+  private authService = inject(AuthService);
+  private fb = inject(FormBuilder);
 
   /** Reactive form with user registration fields */
   protected form = this.fb.group({

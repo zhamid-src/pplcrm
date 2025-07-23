@@ -1,8 +1,9 @@
-import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
-import { AlertService } from '@uxcommon/alert-service';
-import { IconName } from '@uxcommon/svg-icons-list';
-import { debounceTime, distinctUntilChanged } from 'rxjs';
+import { Component, EventEmitter, OnInit, Output, inject, input } from "@angular/core";
+import { FormGroup, FormGroupDirective, ReactiveFormsModule } from "@angular/forms";
+import { AlertService } from "@uxcommon/alert-service";
+import { IconName } from "@uxcommon/svg-icons-list";
+
+import { debounceTime, distinctUntilChanged } from "rxjs";
 
 @Component({
   selector: 'pc-form-input',
@@ -10,8 +11,18 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
   template: './formInput.html',
 })
 export class FormInput implements OnInit {
-  private rootFormGroup = inject(FormGroupDirective);
   private alertSvc = inject(AlertService);
+  private rootFormGroup = inject(FormGroupDirective);
+
+  /**
+   * The parent form group this input belongs to.
+   */
+  protected form!: FormGroup;
+
+  /**
+   * Local cache of the current input value.
+   */
+  protected inputValue: string = '';
 
   /**
    * The name of the FormControl inside the parent FormGroup.
@@ -62,16 +73,6 @@ export class FormInput implements OnInit {
    */
   @Output()
   public valueChange = new EventEmitter<string>();
-
-  /**
-   * The parent form group this input belongs to.
-   */
-  protected form!: FormGroup;
-
-  /**
-   * Local cache of the current input value.
-   */
-  protected inputValue: string = '';
 
   /**
    * Initialize the component by connecting it to the parent form group

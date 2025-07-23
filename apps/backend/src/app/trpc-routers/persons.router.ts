@@ -1,10 +1,10 @@
 import { UpdatePersonsObj, getAllOptions } from '@common';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+
 import { z } from 'zod';
+
 import { authProcedure, router } from '../../trpc';
 import { PersonsController } from '../controllers/persons.controller';
-
-const persons = new PersonsController();
+import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Add a new person to the database.
@@ -109,6 +109,8 @@ function update() {
     }),
   );
 }
+
+const persons = new PersonsController();
 
 /**
  * Persons endpoints

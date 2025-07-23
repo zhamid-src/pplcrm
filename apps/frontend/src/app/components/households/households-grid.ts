@@ -1,9 +1,10 @@
 import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
+
+import { AbstractAPIService } from '../../abstract.service';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 import { HouseholdsService } from './households-service';
-import { AbstractAPIService } from '../../abstract.service';
 
 interface ParamsType {
   value: string[];

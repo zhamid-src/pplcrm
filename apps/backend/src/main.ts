@@ -1,17 +1,20 @@
-import closeWithGrace from "close-with-grace";
-import * as pino from "pino";
-import { FastifyServer } from "./fastify.server";
-import { migrateToLatest } from "./app/kyselyinit";
+import * as pino from 'pino';
 
-process.on("SIGTERM", closeWithGrace);
-process.on("SIGINT", closeWithGrace);
+import closeWithGrace from 'close-with-grace';
+
+import { migrateToLatest } from './app/kyselyinit';
+import { FastifyServer } from './fastify.server';
+
+process.on('SIGTERM', closeWithGrace);
+
+process.on('SIGINT', closeWithGrace);
 
 /**
  * Create the logger with pino-pretty
  */
 const logger: pino.Logger = pino.pino({
   transport: {
-    target: "pino-pretty",
+    target: 'pino-pretty',
   },
 });
 
@@ -24,6 +27,7 @@ const logger: pino.Logger = pino.pino({
  * Create the server and serve
  */
 const server = new FastifyServer(logger);
+
 (async () => await server.serve())();
 
 /**

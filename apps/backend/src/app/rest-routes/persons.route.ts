@@ -20,6 +20,6 @@ const routes: FastifyPluginCallback = (fastify, _, done) => {
   fastify.delete('/:id', schema.findFromId, (req: IdParam) => persons.delete(req.params.id));
 */
   done();
-}
+};
 
 export default routes;

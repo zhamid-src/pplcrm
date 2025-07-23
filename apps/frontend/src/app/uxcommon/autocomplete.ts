@@ -1,18 +1,5 @@
-import { Component, EventEmitter, Output, input, signal } from '@angular/core';
-import { Input } from '@uxcommon/input';
-
-/**
- * Type definition for a service that provides filtered results
- * based on a user-provided string key.
- */
-type TFILTER = {
-  /**
-   * Function that filters a string and returns a Promise of matching results.
-   *
-   * @param arg0 - the string to filter by
-   */
-  filter: (arg0: string) => Promise<string[]>;
-};
+import { Component, EventEmitter, Output, input, signal } from "@angular/core";
+import { Input } from "@uxcommon/input";
 
 @Component({
   selector: 'pc-autocomplete',
@@ -24,6 +11,11 @@ export class AutoComplete {
    * Whether to hide the autocomplete list.
    */
   protected hideAutoComplete = true;
+
+  /**
+   * A reactive list of autocomplete matches.
+   */
+  protected matches = signal<string[]>([]);
 
   /**
    * A filtering service that provides suggestions based on user input.
@@ -40,11 +32,6 @@ export class AutoComplete {
    * Emits the selected value when a user selects or types something meaningful.
    */
   @Output() public valueChange = new EventEmitter<string>();
-
-  /**
-   * A reactive list of autocomplete matches.
-   */
-  protected matches = signal<string[]>([]);
 
   /**
    * Shows the autocomplete list with matches based on the provided key.
@@ -68,6 +55,16 @@ export class AutoComplete {
   protected handleClick(key: string) {
     this.valueChange.emit(key);
     this.reset();
+  }
+
+  /**
+   * Hides the autocomplete list after a short delay.
+   *
+   * This delay is important to allow click events on the suggestions
+   * to be registered before the list disappears (avoiding lost focus issues).
+   */
+  protected hideAutoCompleteList() {
+    setTimeout(() => (this.hideAutoComplete = true), 200);
   }
 
   /**
@@ -101,14 +98,17 @@ export class AutoComplete {
   protected showAutoCompleteList() {
     this.hideAutoComplete = false;
   }
-
-  /**
-   * Hides the autocomplete list after a short delay.
-   *
-   * This delay is important to allow click events on the suggestions
-   * to be registered before the list disappears (avoiding lost focus issues).
-   */
-  protected hideAutoCompleteList() {
-    setTimeout(() => (this.hideAutoComplete = true), 200);
-  }
 }
+
+/**
+ * Type definition for a service that provides filtered results
+ * based on a user-provided string key.
+ */
+type TFILTER = {
+  /**
+   * Function that filters a string and returns a Promise of matching results.
+   *
+   * @param arg0 - the string to filter by
+   */
+  filter: (arg0: string) => Promise<string[]>;
+};

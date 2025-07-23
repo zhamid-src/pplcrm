@@ -1,8 +1,7 @@
 import { Transaction, UpdateResult, sql } from 'kysely';
+
 import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
-
-type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 
 /**
  * Repository for managing operations on the `authusers` table.
@@ -105,3 +104,5 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       .executeTakeFirst() as unknown as UpdateResult;
   }
 }
+
+type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;

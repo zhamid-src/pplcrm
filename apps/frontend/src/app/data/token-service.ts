@@ -1,9 +1,6 @@
 import { Injectable } from '@angular/core';
 import { IToken } from '@common';
 
-const AUTHTOKEN = 'ppl-crm-auth-token';
-const REFRESHTOKEN = 'ppl-crm-refresh-token';
-
 /**
  * A service that manages storing, retrieving, and clearing auth tokens
  * in either sessionStorage or localStorage, depending on user preference.
@@ -156,3 +153,6 @@ export class TokenService {
     this.persistence ? localStorage.setItem(item, token) : sessionStorage.setItem(item, token);
   }
 }
+
+const AUTHTOKEN = 'ppl-crm-auth-token';
+const REFRESHTOKEN = 'ppl-crm-refresh-token';

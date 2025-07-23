@@ -1,6 +1,7 @@
-import { Component, effect, input, inject } from '@angular/core';
+import { Component, effect, inject, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
+
 import { PersonsService } from './persons-service';
 
 /**
@@ -21,11 +22,11 @@ import { PersonsService } from './persons-service';
 export class PeopleInHousehold {
   private personsSvc = inject(PersonsService);
 
-  /** The ID of the household whose members should be listed. */
-  public householdId = input.required<string | null>();
-
   /** List of people retrieved for the specified household. */
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
+
+  /** The ID of the household whose members should be listed. */
+  public householdId = input.required<string | null>();
 
   constructor() {
     // TODO:Zee Effect isn't ideal here.  We gotta fix it.

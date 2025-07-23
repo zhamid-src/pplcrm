@@ -1,7 +1,8 @@
 import { Component, EventEmitter, Output, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { IconName } from './svg-icons-list';
+
 import { Icon } from './icon';
+import { IconName } from './svg-icons-list';
 
 /**
  * A reusable toggle/swap component that switches between two icons.

@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { getAllOptionsType } from '@common';
+
 import { TRPCService } from 'apps/frontend/src/app/data/trpc-service';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -21,6 +22,7 @@ import { Models } from 'common/src/lib/kysely.models';
 })
 export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
   public abstract add(row: U): Promise<Partial<T> | unknown>;
+
   /**
    * Add all given rows to the database.
    *
@@ -29,7 +31,9 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param rows The rows to add to the grid
    */
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
+
   public abstract attachTag(id: string, tag_name: string): Promise<unknown>;
+
   /**
    * Delete the row with the given id from the database.
    *
@@ -39,7 +43,11 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param id The id of the row to delete
    */
   public abstract delete(id: string): Promise<boolean>;
+
   public abstract deleteMany(ids: string[]): Promise<boolean>;
+
+  public abstract detachTag(id: string, tag_name: string): Promise<never | boolean>;
+
   /**
    * Return all rows from the database that matches the given options.
    * If no options are given then return all rows.
@@ -52,6 +60,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param options
    */
   public abstract getAll(options?: getAllOptionsType): Promise<T[] | unknown>;
+
   /**
    * Return the first row that matches the given ID. Typically the ID is the primary key,
    * so this should match only one row.
@@ -62,8 +71,9 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param id - The id of the row to find
    */
   public abstract getById(id: string): Promise<Record<never, never> | undefined>;
+
   public abstract getTags(id: string): Promise<string[]>;
-  public abstract detachTag(id: string, tag_name: string): Promise<never | boolean>;
+
   /**
    * Update the row with the given ID with the given data.
    *

@@ -1,10 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
 import { Alert } from '@uxcommon/alert';
 import { Breadcrumb } from '@uxcommon/breadcrumb';
+
 import { Navbar } from './navbar';
 import { Sidebar } from './sidebar';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
 
 @Component({
   selector: 'pc-dashboard',

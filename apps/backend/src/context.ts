@@ -1,6 +1,7 @@
 import { IAuthKeyPayload } from '@common';
 import { inferAsyncReturnType } from '@trpc/server';
 import { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
+
 import { createVerifier } from 'fast-jwt';
 
 /**

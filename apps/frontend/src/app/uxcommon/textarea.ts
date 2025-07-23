@@ -1,6 +1,5 @@
-import { Component, EventEmitter, OnInit, Output, input, inject } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { AlertService } from '@uxcommon/alert-service';
 
 /**
  * A textarea form control component that integrates with Angular Reactive Forms.
@@ -13,7 +12,11 @@ import { AlertService } from '@uxcommon/alert-service';
 })
 export class TextArea implements OnInit {
   private rootFormGroup = inject(FormGroupDirective);
-  private alertSvc = inject(AlertService);
+
+  /**
+   * The form group retrieved from the parent using `FormGroupDirective`.
+   */
+  protected form!: FormGroup;
 
   /**
    * The name of the form control in the parent form group.
@@ -35,11 +38,6 @@ export class TextArea implements OnInit {
    * Emits the current value of the textarea when the user types.
    */
   @Output() public valueChange = new EventEmitter<string>();
-
-  /**
-   * The form group retrieved from the parent using `FormGroupDirective`.
-   */
-  protected form!: FormGroup;
 
   /**
    * Initializes the form group from the parent context.

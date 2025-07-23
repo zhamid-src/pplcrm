@@ -1,9 +1,9 @@
-import { AddTagObj, UpdateTagObj } from '@common';
-import { z } from 'zod';
-import { authProcedure, router } from '../../trpc';
-import { TagsController } from '../controllers/tags.controller';
+import { AddTagObj, UpdateTagObj } from "@common";
 
-const tags = new TagsController();
+import { z } from "zod";
+
+import { authProcedure, router } from "../../trpc";
+import { TagsController } from "../controllers/tags.controller";
 
 /**
  * Add a new tag to the database.
@@ -20,6 +20,15 @@ function deleteTag() {
 }
 
 /**
+ * Delete multiple tags by their IDs.
+ */
+function deleteTags() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => tags.deleteMany(ctx.auth!.tenant_id!, input));
+}
+
+/**
  * Find tags by partial or full name (autocomplete).
  */
 function findByName() {
@@ -31,6 +40,13 @@ function findByName() {
  */
 function getAll() {
   return authProcedure.query(({ ctx }) => tags.getAll(ctx.auth!.tenant_id!));
+}
+
+/**
+ * Get all tags along with counts of their usage in people and households.
+ */
+function getAllWithCounts() {
+  return authProcedure.query(({ ctx }) => tags.getAllWithCounts(ctx.auth!.tenant_id!));
 }
 
 /**
@@ -51,21 +67,7 @@ function update() {
     .mutation(({ input, ctx }) => tags.updateTag(input.id, input.data, ctx.auth!));
 }
 
-/**
- * Get all tags along with counts of their usage in people and households.
- */
-function getAllWithCounts() {
-  return authProcedure.query(({ ctx }) => tags.getAllWithCounts(ctx.auth!.tenant_id!));
-}
-
-/**
- * Delete multiple tags by their IDs.
- */
-function deleteTags() {
-  return authProcedure
-    .input(z.array(z.string()))
-    .mutation(({ input, ctx }) => tags.deleteMany(ctx.auth!.tenant_id!, input));
-}
+const tags = new TagsController();
 
 /**
  * Tags endpoints

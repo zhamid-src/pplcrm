@@ -1,8 +1,31 @@
-import { config } from 'dotenv';
-import { BaseRepository } from './repositories/base.repo';
+import { config } from "dotenv";
 
-// Load environment variables from a .env file into process.env
-config();
+import { BaseRepository } from "./repositories/base.repo";
+
+/**
+ * Rolls back the most recent database migration.
+ *
+ * This is useful for undoing the last migration applied, especially in
+ * testing or development environments. Logs results and exits on failure.
+ *
+ * @returns {Promise<void>}
+ */
+export async function migrateDown(): Promise<void> {
+  const { error, results } = await BaseRepository.migrator.migrateDown();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`migration down"${it.migrationName}" successsful`);
+    } else if (it.status === 'Error') {
+      console.error(`failed to execute migration down"${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('failed to migrate down: ', error);
+    process.exit(1);
+  }
+}
 
 /**
  * Runs all pending database migrations to bring the schema up to date.
@@ -32,30 +55,8 @@ export async function migrateToLatest(): Promise<void> {
   }
 }
 
-/**
- * Rolls back the most recent database migration.
- *
- * This is useful for undoing the last migration applied, especially in
- * testing or development environments. Logs results and exits on failure.
- *
- * @returns {Promise<void>}
- */
-export async function migrateDown(): Promise<void> {
-  const { error, results } = await BaseRepository.migrator.migrateDown();
-
-  results?.forEach((it) => {
-    if (it.status === 'Success') {
-      console.log(`migration down"${it.migrationName}" successsful`);
-    } else if (it.status === 'Error') {
-      console.error(`failed to execute migration down"${it.migrationName}"`);
-    }
-  });
-
-  if (error) {
-    console.error('failed to migrate down: ', error);
-    process.exit(1);
-  }
-}
+// Load environment variables from a .env file into process.env
+config();
 
 // Automatically run migration when script is executed directly
 migrateToLatest();

@@ -1,8 +1,8 @@
 import { FastifyPluginCallback } from 'fastify';
 
-import personsRoute from './rest-routes/persons.route';
-import householdsRoute from './rest-routes/households.route';
 import authRoute from './rest-routes/auth.route';
+import householdsRoute from './rest-routes/households.route';
+import personsRoute from './rest-routes/persons.route';
 
 /**
  * Registers all REST API routes for the application.

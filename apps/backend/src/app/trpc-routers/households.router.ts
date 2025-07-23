@@ -1,10 +1,10 @@
 import { UpdateHouseholdsObj } from '@common';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+
 import { z } from 'zod';
+
 import { authProcedure, router } from '../../trpc';
 import { HouseholdsController } from '../controllers/households.controller';
-
-const households = new HouseholdsController();
+import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Add a new household to the system.
@@ -99,6 +99,8 @@ function update() {
     }),
   );
 }
+
+const households = new HouseholdsController();
 
 /**
  * HouseholdsRouter: All endpoints for managing household data

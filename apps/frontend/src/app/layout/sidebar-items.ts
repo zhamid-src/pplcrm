@@ -8,39 +8,48 @@ export interface ISidebarItem {
    * If true then only admins can see this item
    */
   adminOnly?: boolean;
+
   /**
    * The badge to show on the item
    */
   badge?: string;
+
   /**
    * The color of the badge. Default is 'primary'
    */
   badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
+
   /**
    * Whether the component should be hidden or not
    */
   hidden?: boolean;
+
   /**
    * The icon to show on the item
    */
   icon?: IconName;
+
   /**
    * The name of the item. It's shown on the sidebar
    */
   name: string;
+
   /**
    * The parent of this item. If this is not set then it's a top level item
    */
   parent?: ISidebarItem;
+
   /**
    * Whether the path should be matched exactly or not. It is used with the
    * Angular route
    */
   pathMatchExact?: boolean;
+
   /**
    * The route to navigate to when the item is clicked
    */
   route?: string;
+
   /**
    * Whether this is a component or a heading. If it's a heading then it's
    * not clickable

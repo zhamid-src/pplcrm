@@ -1,9 +1,9 @@
 import { signInInputObj, signUpInputObj } from '@common';
+
 import z from 'zod';
+
 import { authProcedure, publicProcedure, router } from '../../trpc';
 import { AuthController } from '../controllers/auth.controller';
-
-const controller = new AuthController();
 
 /**
  * Get the currently authenticated user.
@@ -78,6 +78,8 @@ function signOut() {
 function signUp() {
   return publicProcedure.input(signUpInputObj).mutation(async ({ input }) => controller.signUp(input));
 }
+
+const controller = new AuthController();
 
 /**
  * AuthRouter endpoints

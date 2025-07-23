@@ -15,6 +15,6 @@ const routes: FastifyPluginCallback = (fastify, _, done) => {
   */
 
   done();
-}
+};
 
 export default routes;

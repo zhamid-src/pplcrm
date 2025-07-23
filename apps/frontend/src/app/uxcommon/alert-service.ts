@@ -1,29 +1,9 @@
 import { Injectable, signal } from '@angular/core';
 
 /**
- * The type of the alert. Determines styling and icon used.
- */
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-
-/**
  * The options used to configure an alert message.
  */
 export interface AlertMessage {
-  /** Unique ID for the alert (auto-assigned if not provided). */
-  id?: string;
-
-  /** Main alert message text. */
-  text: string;
-
-  /** Optional title for the alert. */
-  title?: string;
-
-  /** Alert type for styling and icon. */
-  type?: ALERTTYPE;
-
-  /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
-  duration?: number;
-
   /** Label for the primary (OK) button. */
   OKBtn?: string;
 
@@ -35,6 +15,21 @@ export interface AlertMessage {
 
   /** Callback when the secondary button is clicked. */
   btn2Callback?: () => void;
+
+  /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
+  duration?: number;
+
+  /** Unique ID for the alert (auto-assigned if not provided). */
+  id?: string;
+
+  /** Main alert message text. */
+  text: string;
+
+  /** Optional title for the alert. */
+  title?: string;
+
+  /** Alert type for styling and icon. */
+  type?: ALERTTYPE;
 }
 
 @Injectable({
@@ -133,3 +128,8 @@ export class AlertService {
     this._alerts.update((arr) => arr.filter((m) => m.id !== id));
   }
 }
+
+/**
+ * The type of the alert. Determines styling and icon used.
+ */
+export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';

@@ -1,6 +1,7 @@
 import { Component, input } from '@angular/core';
-import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
+
 import { IconName, icons } from './svg-icons-list';
+import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
 
 @Component({
   selector: 'pc-icon',
