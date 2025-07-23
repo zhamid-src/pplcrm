@@ -1,14 +1,14 @@
-import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors, withInterceptorsFromDi } from "@angular/common/http";
-import { ApplicationConfig, inject, provideAppInitializer } from "@angular/core";
-import { provideAnimations } from "@angular/platform-browser/animations";
-import { RouteReuseStrategy, provideRouter } from "@angular/router";
-import { Loader } from "@googlemaps/js-api-loader";
+import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
+import { ApplicationConfig, inject, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
+import { provideAnimations } from '@angular/platform-browser/animations';
+import { RouteReuseStrategy, provideRouter } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
 
-import { appRoutes } from "./app.routes";
-import { CustomRouteReuseStrategy } from "./components/route-reuse-strategy";
-import { ErrorCatchingInterceptor } from "./http-errors-interceptor";
-import { httpInterceptor } from "./http-interceptor";
-import { AuthService } from "apps/frontend/src/app/auth/auth-service";
+import { appRoutes } from './app.routes';
+import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
+import { ErrorCatchingInterceptor } from './http-errors-interceptor';
+import { httpInterceptor } from './http-interceptor';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
  * Initializes the user session during app startup.
@@ -67,6 +67,11 @@ export const appConfig: ApplicationConfig = {
      * Enables browser animations (required for Angular Material and others).
      */
     provideAnimations(),
+
+    /**
+     * Make it zoneless
+     */
+    provideZoneChangeDetection({ eventCoalescing: true }),
 
     /**
      * Provides HTTP client with custom interceptors (request manipulation, headers, etc.).
