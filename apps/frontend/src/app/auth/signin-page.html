@@ -5,9 +5,7 @@
     </div>
     <pc-alert />
     <div class="card-body">
-      <label class="label text-base text-neutral-600"
-        >Enter your email and password to sign in</label
-      >
+      <label class="label text-base text-neutral-600">Enter your email and password to sign in</label>
       <form [formGroup]="form">
         <div class="space-y-3">
           <label class="relative block">
@@ -28,7 +26,7 @@
           </label>
 
           @if (email?.dirty && email?.invalid) {
-            <span class="label-text-alt text-error">Please enter a valid email</span>
+          <span class="label-text-alt text-error">Please enter a valid email</span>
           }
 
           <label class="group relative block">
@@ -70,14 +68,10 @@
                 [checked]="persistence"
                 (change)="togglePersistence($event.target)"
               />
-              <label for="remember_me" class="ml-2 block text-sm text-neutral-600">
-                Remember me
-              </label>
+              <label for="remember_me" class="ml-2 block text-sm text-neutral-600"> Remember me </label>
             </div>
             <div class="text-sm">
-              <a routerLink="/resetpassword" class="link link-hover text-neutral-600">
-                Forgot your password?
-              </a>
+              <a routerLink="/resetpassword" class="link link-hover text-neutral-600"> Forgot your password? </a>
             </div>
           </div>
           <div>
@@ -88,10 +82,8 @@
               [disabled]="processing() || (form.dirty && form.invalid)"
             >
               @if (processing()) {
-                <span class="loading loading-dots loading-lg text-primary"></span>
-              } @else {
-                SIGN IN
-              }
+              <span class="loading loading-dots loading-lg text-primary"></span>
+              } @else { SIGN IN }
             </button>
           </div>
         </div>
@@ -102,9 +94,7 @@
       <div class="text-center text-xs text-neutral-500">
         <span>
           Copyright © 2024
-          <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover"
-            >CampaignRaven</a
-          ></span
+          <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a></span
         >
       </div>
     </div>

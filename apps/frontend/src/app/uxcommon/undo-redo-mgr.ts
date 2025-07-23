@@ -8,35 +8,48 @@ interface UndoElement<T> {
 }
 
 /**
- * An undo/redo manager for ag-grid.
+ * An undo/redo manager for ag-Grid.
+ * Supports both AG Grid’s built-in undo (`aggrid`) and custom row-based actions (`custom`).
  */
 export class UndoManager<T> {
+  /**
+   * AG Grid API instance.
+   */
   private api: GridApi<Partial<T>> | undefined;
+
+  /**
+   * Stack to keep track of redoable actions.
+   */
   private redoStack: UndoElement<T>[] = [];
+
+  /**
+   * Stack to keep track of undoable actions.
+   */
   private undoStack: UndoElement<T>[] = [];
 
   /**
-   * @description Add the current action to the undo stack.
+   * Pushes a redo action onto the stack.
    *
-   * @param {UNDOTYPE} type - The type of action.
-   * @param {Partial<T>[]} [rows=[]]
+   * @param type - Type of the action ('aggrid' or 'custom').
+   * @param rows - The rows affected by the action (optional).
    */
   public pushRedo(type: UNDOTYPE, rows: Partial<T>[] = []) {
     this.redoStack.push({ type, rows });
   }
 
   /**
-   * Add the current action to the undo stack.
+   * Pushes an undo action onto the stack.
    *
-   * @param {UNDOTYPE} type - The type of action.
-   * @param {Partial<T>[]} [rows=[]]
+   * @param type - Type of the action ('aggrid' or 'custom').
+   * @param rows - The rows affected by the action (optional).
    */
   public pushUndo(type: UNDOTYPE, rows: Partial<T>[] = []) {
     this.undoStack.push({ type, rows });
   }
 
   /**
-   * Redoes the last undone action
+   * Redoes the last undone action and moves it to the undo stack.
+   * Supports both ag-Grid and custom redo.
    */
   public redo() {
     if (!this.redoLength()) return;
@@ -45,8 +58,7 @@ export class UndoManager<T> {
     if (redoElement.type === 'aggrid') {
       this.api?.redoCellEditing();
     } else {
-      const rows = redoElement.rows;
-      this.api?.applyTransaction({ remove: rows });
+      this.api?.applyTransaction({ remove: redoElement.rows });
     }
     this.pushUndo(redoElement.type, redoElement.rows);
 
@@ -54,59 +66,65 @@ export class UndoManager<T> {
   }
 
   /**
-   * @description Get the length of the redo stack
-   *
-   * @returns {boolean} - Length of the redo stack
+   * Returns the number of redo actions in the stack.
    */
-  public redoLength() {
+  public redoLength(): number {
     return this.redoStack.length;
   }
 
-  public reset() {
+  /**
+   * Clears both the undo and redo stacks.
+   */
+  public reset(): void {
     this.undoStack = [];
     this.redoStack = [];
   }
 
   /**
-   * Creates an instance of UndoManager. Should be called before using the undo manager.
+   * Assigns the AG Grid API instance to the manager.
+   *
+   * @param api - The grid API to use.
    */
-  public setAPI(api: GridApi<Partial<T>>) {
+  public setAPI(api: GridApi<Partial<T>>): void {
     this.api = api;
   }
 
   /**
-   * Undoes the last action.
+   * Undoes the last action and moves it to the redo stack.
+   * Supports both ag-Grid and custom undo.
    */
-  public undo() {
+  public undo(): void {
     if (!this.undoLength()) return;
 
     const undoElement = this.undoStack.pop()!;
     if (undoElement.type === 'aggrid') {
       this.api?.undoCellEditing();
     } else {
-      const rows = undoElement.rows;
-      this.api?.applyTransaction({ add: rows });
+      this.api?.applyTransaction({ add: undoElement.rows });
     }
     this.pushRedo(undoElement.type, undoElement.rows);
 
-    // redo action can reset the undo stack.
     if (this.api?.getCurrentUndoSize() === 0) this.removeAgGridUndo();
   }
 
   /**
-   * @description Get the length of the undo stack
-   *
-   * @returns {boolean} - Length of the undo stack
+   * Returns the number of undo actions in the stack.
    */
-  public undoLength() {
+  public undoLength(): number {
     return this.undoStack.length;
   }
 
-  private removeAgGridRedo() {
+  /**
+   * Removes all AG Grid redo actions from the stack.
+   */
+  private removeAgGridRedo(): void {
     this.redoStack = this.redoStack.filter((element) => element.type !== 'aggrid');
   }
 
-  private removeAgGridUndo() {
+  /**
+   * Removes all AG Grid undo actions from the stack.
+   */
+  private removeAgGridUndo(): void {
     this.undoStack = this.undoStack.filter((element) => element.type !== 'aggrid');
   }
 }

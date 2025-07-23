@@ -4,38 +4,36 @@
     <fieldset [disabled]="processing()">
       <div class="flex flex-col gap-4">
         @if (!household || !household.id) {
-          <label class="label text-base font-light"
-            >All fields are optional, but try to add as much as possible
-          </label>
+        <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
         } @else {
-          <div class="text-center">
-            <div class="stats stats-vertical md:stats-horizontal shadow mr-2 mb-10">
-              <div class="stat">
-                <div class="stat-title">People in Household</div>
-                <div class="stat-value">{{ peopleInHousehold.length }}</div>
-                <div class="stat-desc">Jan 1st - Feb 1st</div>
-              </div>
-
-              <div class="stat">
-                <div class="stat-title">Interactions</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↘︎ 90 (14%)</div>
-              </div>
+        <div class="text-center">
+          <div class="stats stats-vertical md:stats-horizontal shadow mr-2 mb-10">
+            <div class="stat">
+              <div class="stat-title">People in Household</div>
+              <div class="stat-value">{{ peopleInHousehold.length }}</div>
+              <div class="stat-desc">Jan 1st - Feb 1st</div>
             </div>
-            <div class="stats stats-vertical md:stats-horizontal shadow mb-10">
-              <div class="stat">
-                <div class="stat-title">Household Donations</div>
-                <div class="stat-value">$0</div>
-                <div class="stat-desc">Jan 1st - Feb 1st</div>
-              </div>
 
-              <div class="stat">
-                <div class="stat-title">Household Volunteers</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↗︎ 400 (22%)</div>
-              </div>
+            <div class="stat">
+              <div class="stat-title">Interactions</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↘︎ 90 (14%)</div>
             </div>
           </div>
+          <div class="stats stats-vertical md:stats-horizontal shadow mb-10">
+            <div class="stat">
+              <div class="stat-title">Household Donations</div>
+              <div class="stat-value">$0</div>
+              <div class="stat-desc">Jan 1st - Feb 1st</div>
+            </div>
+
+            <div class="stat">
+              <div class="stat-title">Household Volunteers</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↗︎ 400 (22%)</div>
+            </div>
+          </div>
+        </div>
         }
 
         <pc-input
@@ -52,12 +50,7 @@
         </div>
         <div class="flex flex-col md:flex-row gap-2">
           <pc-form-input class="basis-1/2" control="city" placeholder="City" />
-          <pc-form-input
-            class="basis-1/2"
-            type="state"
-            control="state"
-            placeholder="State / Province"
-          />
+          <pc-form-input class="basis-1/2" type="state" control="state" placeholder="State / Province" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
           <pc-form-input class="basis-1/2" control="country" placeholder="Country" />
@@ -77,8 +70,8 @@
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
 
         @if (household && household.id) {
-          <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
-          <pc-people-in-household [householdId]="id"></pc-people-in-household>
+        <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
+        <pc-people-in-household [householdId]="id"></pc-people-in-household>
         }
 
         <pc-add-btn-row

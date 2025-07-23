@@ -17,8 +17,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alert-service';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
-import { IconName } from '@uxcommon/icons';
-import { IconsComponent } from '@uxcommon/icons.component';
+import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@uxcommon/icon';
 import { Models } from 'common/src/lib/kysely.models';
 import { LoadingOverlayComponent } from './loading-overlay';
 import { ShortcutCellRenderer } from './shortcut-cell-renderer';
@@ -26,7 +26,7 @@ import { AbstractAPIService } from '../abstract.service';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [AgGridModule, IconsComponent],
+  imports: [AgGridModule, Icon],
   templateUrl: './datagrid.html',
 })
 

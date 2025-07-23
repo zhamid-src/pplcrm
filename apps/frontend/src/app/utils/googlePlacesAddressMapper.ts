@@ -1,13 +1,17 @@
 import { AddressType } from 'common/src/lib/kysely.models';
 
+/**
+ * Maps the internal `AddressType` keys to the corresponding Google Places component types.
+ * This helps prioritize which parts of the Google response to use for each address field.
+ */
 type AddressTypeMapInterface = {
   [key in keyof AddressType]: string[];
 };
 
-// Google Places returns an array with objects that contain different pieces
-// of the address. This map tells us which object maps to what. We use
-// them in priority order. So if it has "locality" and "sublocality" then
-// we'll take locality because it occurs first.
+/**
+ * Google Places returns multiple types of address components.
+ * This map defines the priority of those types for each internal address field.
+ */
 const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
   apt: ['subpremise'],
   street_num: ['street_number'],
@@ -31,13 +35,27 @@ const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
   country: ['country'],
 };
 
+/**
+ * Parses a Google Maps PlaceResult object into a custom AddressType.
+ *
+ * @param place - The result object returned from the Google Places API.
+ * @returns An AddressType object with mapped fields like `city`, `state`, `country`, etc.
+ *
+ * The function:
+ * - Loops through Google's address components
+ * - Matches each component to the desired AddressType key using a prioritized map
+ * - Uses `short_name` for `country`, `long_name` for all others
+ * - Extracts lat/lng and formatted address if available
+ */
 export function parseAddress(place: google.maps.places.PlaceResult): AddressType {
   const address: AddressType = {};
 
   if (!place.address_components || place.address_components.length === 0) {
     return address;
   }
+
   const address_components: google.maps.GeocoderAddressComponent[] = place.address_components;
+
   address_components.forEach((component) => {
     for (const mapKey in googleAddressToAddressTypeMap) {
       const key = mapKey as keyof typeof googleAddressToAddressTypeMap;

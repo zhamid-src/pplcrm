@@ -2,7 +2,7 @@ import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
-import { IconsComponent } from '@uxcommon/icons.component';
+import { Icon } from '@uxcommon/icon';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 import { PersonsService, DATA_TYPE } from './persons-service';
 import { AbstractAPIService } from '../../abstract.service';
@@ -11,13 +11,24 @@ interface ParamsType {
   value: string[];
 }
 
+/**
+ * PersonsGrid component displays a grid of people with editable fields and tags.
+ * It extends the common DataGrid and integrates address confirmation and tag functionality.
+ *
+ * @see {@link DataGrid}
+ * @see {@link TagsCellRenderer}
+ */
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, IconsComponent],
+  imports: [DataGrid, Icon],
   templateUrl: './persons-grid.html',
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /**
+   * Column definitions for the grid.
+   * Includes editable fields, tag rendering, and double-click address confirmation.
+   */
   protected col: ColDef[] = [
     { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
@@ -82,21 +93,34 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       editable: false,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
-
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  /**
+   * Stores the household ID when a user tries to change an address,
+   * so it can be used in the confirmation dialog logic.
+   */
   private addressChangeModalId: string | null = null;
 
   constructor() {
     super();
   }
 
+  /**
+   * Handles double-click events on address-related cells.
+   * Triggers a modal confirmation dialog before navigating to household edit view.
+   *
+   * @param event - The ag-Grid cell event
+   */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
+  /**
+   * Navigates to the households detail page for the selected address.
+   * Closes the modal dialog before navigating.
+   */
   protected routeToHouseholds() {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
@@ -107,8 +131,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   }
 
   /**
-   * Confirm if the user actually wants to change the address
-   *
+   * Opens a modal dialog asking the user to confirm address redirection.
    */
   private confirmAddressChange(): void {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;

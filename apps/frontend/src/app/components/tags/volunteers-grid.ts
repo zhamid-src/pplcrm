@@ -3,8 +3,8 @@ import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
-import { IconsComponent } from '@uxcommon/icons.component';
-import { TagsCellRenderer } from '../tags/tags-cell-renderer';
+import { Icon } from '@uxcommon/icon';
+import { TagsCellRenderer } from './tags-cell-renderer';
 import { PersonsService, DATA_TYPE } from '../persons/persons-service';
 import { AbstractAPIService } from '../../abstract.service';
 
@@ -12,13 +12,25 @@ interface ParamsType {
   value: string[];
 }
 
+/**
+ * A grid component for displaying and editing volunteer information using the `DataGrid` base class.
+ *
+ * This component extends `DataGrid` and defines columns such as name, contact info, tags, and address fields.
+ * It also handles double-click events to confirm address edits and navigate to associated household details.
+ *
+ * It uses `PersonsService` as its backing API service.
+ */
 @Component({
   selector: 'pc-volunteers-grid',
-  imports: [DataGrid, IconsComponent],
+  imports: [DataGrid, Icon],
   templateUrl: './volunteers-grid.html',
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /**
+   * Column definitions for the ag-grid table.
+   * Includes editable fields and custom tag rendering with comparator logic.
+   */
   protected col: ColDef[] = [
     { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
@@ -83,21 +95,34 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       editable: false,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
-
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  /**
+   * Stores the `household_id` of the selected row when address edit is triggered.
+   * Used to route the user after confirmation.
+   */
   private addressChangeModalId: string | null = null;
 
   constructor() {
     super();
   }
 
+  /**
+   * Triggered when an address-related cell is double-clicked.
+   * Opens a confirmation modal and stores the related household ID.
+   *
+   * @param event - The cell double-click event containing row data.
+   */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
+  /**
+   * Called after the user confirms they want to edit an address.
+   * Closes the modal and navigates to the relevant household detail page.
+   */
   protected routeToHouseholds() {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
@@ -108,8 +133,8 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   }
 
   /**
-   * Confirm if the user actually wants to change the address
-   *
+   * Opens the address confirmation modal to confirm user intent
+   * before routing to household details.
    */
   private confirmAddressChange(): void {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;

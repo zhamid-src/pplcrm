@@ -1,4 +1,5 @@
 import { Route } from '@angular/router';
+
 import { NotFound } from '@uxcommon/not-found';
 import { AddTag } from 'apps/frontend/src/app/components/tags/add-tag';
 import { NewPasswordPage } from './auth/new-password-page';
@@ -11,27 +12,51 @@ import { HouseholdsGrid } from './components/households/households-grid';
 import { PersonDetail } from './components/persons/person-detail';
 import { PersonsGrid } from './components/persons/persons-grid';
 import { TagsGridComponent } from './components/tags/tags-grid';
-import { VolunteersGrid } from './components/volunteers/volunteers-grid';
+import { VolunteersGrid } from './components/tags/volunteers-grid';
 import { Summary } from './temp/summary';
+
 import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login-guard';
 import { Dashboard } from './layout/dashboard';
 
+/**
+ * The main route configuration for the application.
+ *
+ * Includes routing for authentication, dashboard, and fallback routes.
+ */
 export const appRoutes: Route[] = [
+  /**
+   * Default redirect to summary page inside the dashboard.
+   */
   { path: '', redirectTo: 'console/summary', pathMatch: 'full' },
+
+  /**
+   * Auth pages (sign-in, sign-up, reset password).
+   */
   { path: 'signin', component: SignInPage, canActivate: [loginGuard] },
   { path: 'signup', component: SignUpPage },
   { path: 'resetpassword', component: ResetPasswordPage },
   { path: 'newpassword', component: NewPasswordPage },
+
+  /**
+   * Main dashboard protected by authGuard.
+   */
   {
     path: 'console',
     component: Dashboard,
     canActivate: [authGuard],
     children: [
+      /**
+       * Dashboard summary page.
+       */
       {
         path: 'summary',
         component: Summary,
       },
+
+      /**
+       * People management routes.
+       */
       {
         path: 'people',
         children: [
@@ -50,6 +75,10 @@ export const appRoutes: Route[] = [
           },
         ],
       },
+
+      /**
+       * Household management routes.
+       */
       {
         path: 'households',
         children: [
@@ -68,6 +97,10 @@ export const appRoutes: Route[] = [
           },
         ],
       },
+
+      /**
+       * Tag management routes.
+       */
       {
         path: 'tags',
         children: [
@@ -82,6 +115,10 @@ export const appRoutes: Route[] = [
           },
         ],
       },
+
+      /**
+       * Volunteer management route.
+       */
       {
         path: 'volunteers',
         children: [
@@ -92,6 +129,10 @@ export const appRoutes: Route[] = [
           },
         ],
       },
+
+      /**
+       * Donor management route.
+       */
       {
         path: 'donors',
         children: [
@@ -104,6 +145,10 @@ export const appRoutes: Route[] = [
       },
     ],
   },
+
+  /**
+   * Fallback route for undefined paths.
+   */
   {
     path: '**',
     component: NotFound,

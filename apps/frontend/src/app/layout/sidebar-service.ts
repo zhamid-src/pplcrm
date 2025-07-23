@@ -9,7 +9,7 @@ type DrawerStates = 'full' | 'half';
 export class SidebarService {
   private _drawerState: DrawerStates = this.getState();
   private _items = SidebarItems;
-  private _mobileOpen = false;
+  private _isMobileOpen = false;
 
   /**
    * Get all the sidebar items.
@@ -30,7 +30,7 @@ export class SidebarService {
    * Close the sidebar on mobile
    */
   public closeMobile() {
-    this._mobileOpen = false;
+    this._isMobileOpen = false;
   }
 
   /**
@@ -66,7 +66,7 @@ export class SidebarService {
    * Is the drawer open on mobile
    */
   public isMobileOpen() {
-    return this._mobileOpen;
+    return this._isMobileOpen;
   }
 
   /**
@@ -80,7 +80,7 @@ export class SidebarService {
    * Toggle the drawer on mobile
    */
   public toggleMobile() {
-    this._mobileOpen = !this._mobileOpen;
+    this._isMobileOpen = !this._isMobileOpen;
   }
 
   /**

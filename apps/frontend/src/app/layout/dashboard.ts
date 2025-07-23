@@ -12,9 +12,17 @@ import { Sidebar } from './sidebar';
   templateUrl: './dashboard.html',
 })
 export class Dashboard {
-  private sidebarSvc = inject(SidebarService);
+  /**
+   * Service that manages the sidebar visibility and toggling logic.
+   */
+  private readonly sidebarSvc = inject(SidebarService);
 
-  public isMobileOpen() {
+  /**
+   * Returns whether the mobile sidebar is currently open.
+   *
+   * @returns `true` if the sidebar is open on mobile, otherwise `false`.
+   */
+  public isMobileOpen(): boolean {
     return this.sidebarSvc.isMobileOpen();
   }
 }

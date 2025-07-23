@@ -6,9 +6,7 @@
     <pc-alert />
     <div class="card-body">
       <form [formGroup]="form" class="flex flex-col gap-3">
-        <label class="label text-base text-neutral-600"
-          >Enter basic info to create your account
-        </label>
+        <label class="label text-base text-neutral-600">Enter basic info to create your account </label>
         <label class="relative block">
           <pc-icon
             [size]="4"
@@ -27,7 +25,7 @@
           />
         </label>
         @if (firstName?.dirty && firstName?.invalid) {
-          <span class="label-text-alt text-error -my-2 pb-2">First name is required</span>
+        <span class="label-text-alt text-error -my-2 pb-2">First name is required</span>
         }
 
         <label class="relative block">
@@ -42,17 +40,16 @@
             placeholder="Organization name (or self)"
             formControlName="organization"
             aria-placeholder="organization"
-            class="input-pplcrm  pl-11 text-sm"
+            class="input-pplcrm pl-11 text-sm"
             autocomplete="organization"
             required
           />
         </label>
         @if (organization?.dirty && organization?.invalid) {
-          <span class="label-text-alt text-error -my-2 pb-2"
-            >Organization name is required. If you are solo then you can simply write "Self". If you
-            are trying to join an existing organization then please ask them to send you an
-            invitation.</span
-          >
+        <span class="label-text-alt text-error -my-2 pb-2"
+          >Organization name is required. If you are solo then you can simply write "Self". If you are trying to join an
+          existing organization then please ask them to send you an invitation.</span
+        >
         }
 
         <label class="relative block">
@@ -67,14 +64,14 @@
             placeholder="Enter your email"
             formControlName="email"
             aria-placeholder="email"
-            class="input-pplcrm  pl-11 text-sm"
+            class="input-pplcrm pl-11 text-sm"
             autocomplete="email"
             required
           />
         </label>
 
         @if (email?.dirty && email?.invalid) {
-          <span class="label-text-alt text-error -my-2 pb-2">Please enter a valid email</span>
+        <span class="label-text-alt text-error -my-2 pb-2">Please enter a valid email</span>
         }
 
         <label class="group relative block">
@@ -86,7 +83,7 @@
 
           <input
             pwnedPasswordValidator
-            class="input-pplcrm  pl-11 pr-8 text-sm"
+            class="input-pplcrm pl-11 pr-8 text-sm"
             [type]="getVisibility()"
             formControlName="password"
             autocomplete="new-password"
@@ -104,34 +101,32 @@
         </label>
 
         @if (passwordInBreach()) {
-          <span class="label-text-alt text-error -my-2 pb-2"
-            >This is not a safe password as it has been in
-            <span class="font-bold">{{ passwordBreachNumber() | number: '1.0-0' }}</span>
-            data breaches before. You should select a different password.</span
-          >
-          <!--
+        <span class="label-text-alt text-error -my-2 pb-2"
+          >This is not a safe password as it has been in
+          <span class="font-bold">{{ passwordBreachNumber() | number: '1.0-0' }}</span>
+          data breaches before. You should select a different password.</span
+        >
+        <!--
         } @else if (password?.dirty && password?.invalid) {
           <span class="label-text-alt text-error -my-2 pb-2"
             >Your password should have at least 8 characters</span
           >
           -->
         } @else {
-          <span
-            class="label-text-alt -my-2 pb-2 pr-1 text-right"
-            [class.text-error]="
+        <span
+          class="label-text-alt -my-2 pb-2 pr-1 text-right"
+          [class.text-error]="
               (this.password?.value?.length || 0) > 0 && (this.password?.value?.length || 0) < 8
             "
-            [class.text-success]="(this.password?.value?.length || 0) >= 8"
-            >{{ this.password?.value?.length || 0 }}/8</span
-          >
+          [class.text-success]="(this.password?.value?.length || 0) >= 8"
+          >{{ this.password?.value?.length || 0 }}/8</span
+        >
         }
 
         <button class="btn btn-primary" (click)="join()" [disabled]="processing()">
           @if (processing()) {
-            <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else {
-            JOIN →
-          }
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { JOIN → }
         </button>
         <span class="label-text-alt -my-2 pb-2 text-center"
           >By joining, you agree to the <a href="#" class="link">Terms & Conditions</a> and

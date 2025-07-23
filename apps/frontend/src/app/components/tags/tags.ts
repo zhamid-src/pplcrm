@@ -63,9 +63,10 @@ export class Tags {
   @Output() public tagRemoved = new EventEmitter<string>();
 
   /**
-   * This adds a tag to the list of tags, removing any duplicates
-   * and whitespaces. It also emits the new list of tags, if it has changed.
-   * @param rawTag - the new tag to end to the list
+   * Add a new tag to the list after cleaning input. If tag already exists, it is ignored.
+   * Triggers `tagsChange` and `tagAdded` if a tag is added.
+   *
+   * @param tag - The raw tag string to be added.
    */
   protected add(tag: string) {
     // If the user types really quickly then we might get a comma in the middle of the word.
@@ -80,6 +81,12 @@ export class Tags {
     }
   }
 
+  /**
+   * Fetch tag suggestions based on user input using the backend TagsService.
+   *
+   * @param key - The input string to filter suggestions with.
+   * @returns A promise that resolves to a list of tag name strings.
+   */
   public async filter(key: string) {
     if (!key || key.length === 0) {
       return [];
@@ -113,9 +120,9 @@ export class Tags {
   }
 
   /**
-   * Remove the tag from the list of tags and emit the new list of tags.
+   * Remove a tag from the internal list and emit `tagsChange` and `tagRemoved`.
    *
-   * @param tag - the tag to remove
+   * @param tag - The tag to be removed.
    */
   protected remove(tag: string) {
     const index = this.tags().indexOf(tag);

@@ -14,6 +14,10 @@ import { Households } from 'common/src/lib/kysely.models';
 import { HouseholdsService } from './households-service';
 import { PersonsService } from '../persons/persons-service';
 
+/**
+ * Component for displaying and managing the details of a household.
+ * It supports both creating a new household and editing an existing one.
+ */
 @Component({
   selector: 'pc-household-detail',
   imports: [FormInput, ReactiveFormsModule, Input, Tags, AddBtnRow, TextArea, PeopleInHousehold],
@@ -26,9 +30,13 @@ export class HouseholdDetail implements OnInit {
   private personsSvc = inject(PersonsService);
   private alertSvc = inject(AlertService);
 
+  /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
 
+  /** Whether the address has been verified via Places API */
   protected addressVerified = false;
+
+  /** Reactive form group to handle household data */
   protected form = this.fb.group({
     formatted_address: [''],
     type: [''],
@@ -52,16 +60,30 @@ export class HouseholdDetail implements OnInit {
       updated_at: [''],
     }),
   });
+
+  /** Reactive signal for storing the loaded household */
   protected _household = signal<Households | null>(null);
+
+  /** Getter for current household */
   protected get household() {
     return this._household();
   }
+
+  /** Setter for current household */
   protected set household(household: Households | null) {
     this._household.set(household);
   }
+
+  /** ID of the household being edited */
   protected id: string | null = null;
+
+  /** List of people linked to the household */
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
+
+  /** Whether a background operation is in progress */
   protected processing = signal(false);
+
+  /** List of associated tag strings */
   protected tags: string[] = [];
 
   constructor() {
@@ -70,10 +92,17 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
+  /**
+   * Lifecycle hook that initializes the component.
+   */
   public async ngOnInit() {
     await this.loadHousehold();
   }
 
+  /**
+   * Handles address selection and parses Google Places data into form.
+   * @param place - Google PlaceResult object from address input
+   */
   public handleAddressChange(place: google.maps.places.PlaceResult) {
     this.processing.set(true);
     if (!place?.address_components?.length) {
@@ -90,12 +119,8 @@ export class HouseholdDetail implements OnInit {
   }
 
   /**
-   * Apply the edits the user did on the grid. This is done by calling the
-   * backend service to update the row in the database.
-   *
-   * @param id
-   * @param data
-   * @returns Boolean indicating whether the edit was successful or not
+   * Applies an inline edit made in a grid-like interface to the household.
+   * @param input - Object containing the changed field and value
    */
   protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
     if (input.changed) {
@@ -104,27 +129,44 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
+  /** Returns the creation date of the household */
   protected getCreatedAt() {
     return this.household?.created_at;
   }
 
+  /** Returns the last updated date of the household */
   protected getUpdatedAt() {
     return this.household?.updated_at;
   }
 
+  /**
+   * Save the household, calling either update or add depending on mode
+   */
   protected save() {
     const data = this.form.getRawValue() as UpdateHouseholdsType;
     return this.id ? this.update(data) : this.add(data);
   }
 
+  /**
+   * Called when a tag is added in the UI
+   * @param tag - The tag to attach to the household
+   */
   protected tagAdded(tag: string) {
     this.id && this.householdsSvc.attachTag(this.id, tag);
   }
 
+  /**
+   * Called when a tag is removed in the UI
+   * @param tag - The tag to detach from the household
+   */
   protected tagRemoved(tag: string) {
     this.id && this.householdsSvc.detachTag(this.id, tag);
   }
 
+  /**
+   * Add a new household using the backend service
+   * @param data - The household data to submit
+   */
   private add(data: UpdateHouseholdsType) {
     this.processing.set(true);
     this.householdsSvc
@@ -134,6 +176,9 @@ export class HouseholdDetail implements OnInit {
       .finally(() => this.processing.set(false));
   }
 
+  /**
+   * Loads tags associated with the current household
+   */
   private async getTags() {
     if (!this.household || !this.id) {
       return;
@@ -141,6 +186,9 @@ export class HouseholdDetail implements OnInit {
     this.tags = await this.householdsSvc.getTags(this.id);
   }
 
+  /**
+   * Loads the household data from the backend and initializes the form
+   */
   private async loadHousehold() {
     if (!this.id) {
       return;
@@ -155,6 +203,9 @@ export class HouseholdDetail implements OnInit {
     this.processing.set(false);
   }
 
+  /**
+   * Populates the form with household data
+   */
   private refreshForm() {
     if (!this.household) {
       return;
@@ -162,6 +213,10 @@ export class HouseholdDetail implements OnInit {
     this.form.patchValue(this.household);
   }
 
+  /**
+   * Updates an existing household using the backend service
+   * @param data - Partial update object for the household
+   */
   private update(data: Partial<UpdateHouseholdsType>) {
     if (!this.id) {
       return;
