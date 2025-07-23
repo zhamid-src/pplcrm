@@ -1,4 +1,4 @@
-import { IconName } from '@uxcommon/icons';
+import { IconName } from '@uxcommon/svg-icons-list';
 
 /**
  * The sidebar items are defined here. They go in the order they're added

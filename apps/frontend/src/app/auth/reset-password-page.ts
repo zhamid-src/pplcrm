@@ -6,6 +6,10 @@ import { AlertService } from '@uxcommon/alert-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { Alert } from '@uxcommon/alert';
 
+/**
+ * Component for sending a password reset email.
+ * Allows users to enter their email and request a reset link.
+ */
 @Component({
   selector: 'pc-reset-password',
   imports: [FormsModule, ReactiveFormsModule, Alert],
@@ -17,18 +21,33 @@ export class ResetPasswordPage {
   private router = inject(Router);
   private alertSvc = inject(AlertService);
 
+  /** Reactive form with a single email input */
   public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
   });
 
+  /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
+
+  /** Signal indicating whether the form is processing */
   protected processing = signal(false);
+
+  /** Success message string */
   protected success: string | undefined;
 
+  /**
+   * Getter for the email form control.
+   * @returns The email AbstractControl from the form.
+   */
   public get email() {
     return this.form.get('email');
   }
 
+  /**
+   * Submits the password reset request.
+   * If the email is valid, it calls the AuthService and shows a success message.
+   * Otherwise, shows an error message.
+   */
   public async submit() {
     if (!this.email?.valid) {
       return this.alertSvc.showError('Please check the email address and try again.');

@@ -9,19 +9,26 @@ import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
 import { get, set } from 'idb-keyval';
 import { TokenService } from './token-service';
 
+/**
+ * A base service that wraps a TRPC proxy client with support for:
+ * - Token-based authentication with automatic refresh
+ * - Local caching of API responses using IndexedDB
+ * - Error interception and messaging
+ */
 @Injectable({
   providedIn: 'root',
 })
 export class TRPCService<T> {
   protected tokenService = inject(TokenService);
   protected router = inject(Router);
-
   protected ac = new AbortController();
-  protected api;
 
   /**
-   * Create the TRPC proxy client that's used by the derived classes
+   * The proxy client created using TRPC.
+   * It is available to child services via `this.api`.
    */
+  protected api;
+
   constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({
       links: [loggerLink(), refreshLink(this.tokenService, this.router), errorLink, httpLink(this.tokenService)],
@@ -29,23 +36,20 @@ export class TRPCService<T> {
   }
 
   /**
-   * Public function to abort the TRPC call
+   * Aborts any ongoing TRPC call associated with this service.
    */
   public abort() {
     this.ac.abort();
   }
 
   /**
-   * Instead of directly calling the API, the derived classes can make
-   * a cached call. It creates a hash from the API name and options
-   * and saves the result in the local storage. Next time someone
-   * runs the cache call with the same options, it'll grab the
-   * data from the cache instead of the backend
-   * @param apiCall
-   * @param apiName
-   * @param options
-   * @param refresh - Boolean to indicate if we should refresh the cache
-   * @returns
+   * Executes a TRPC call and caches the result using a hash of the API name and options.
+   *
+   * @param apiCall - The promise representing the API call
+   * @param apiName - A name for the API being called
+   * @param options - Parameters passed to the API call
+   * @param refresh - If true, bypasses the cache and refreshes from the backend
+   * @returns A list of results, either from the cache or from the server
    */
   protected async runCachedCall(
     apiCall: Promise<Partial<T>[]>,
@@ -67,8 +71,11 @@ export class TRPCService<T> {
   }
 
   /**
-   * Private function that takes the number of days and returns the
-   * expiry date. It's used to add expiry to the cache
+   * Adds the specified number of days to the current date.
+   * Used to set expiry timestamps for cached API responses.
+   *
+   * @param days - The number of days to add
+   * @returns A future date object
    */
   private addDays(days: number) {
     const date = new Date(Date.now());
@@ -76,35 +83,45 @@ export class TRPCService<T> {
     return date;
   }
 
-  // The hash isn't secure, but it's good enough for our purposes
-  // It allows us to not use the entire stringified json as the key
-  private hash(str: string) {
+  /**
+   * Generates a simple 32-bit hash for a string. Used to compress long cache keys.
+   *
+   * @param str - A string to hash
+   * @returns A base-36 encoded short hash string
+   */
+  private hash(str: string): string {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash &= hash; // Convert to 32bit integer
+      hash |= 0;
     }
     return (hash >>> 0).toString(36);
   }
 }
 
+/**
+ * Creates a TRPC HTTP batch link with the auth token included in headers.
+ *
+ * @param tokenSvc - The TokenService instance
+ */
 function httpLink(tokenSvc: TokenService) {
   return httpBatchLink({
     url: 'http://localhost:3000',
     headers() {
       const authToken = tokenSvc.getAuthToken();
-      return authToken
-        ? {
-            Authorization: `Bearer ${authToken}`,
-          }
-        : {};
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
     },
   });
 }
 
+/**
+ * Handles automatic refresh of access tokens using a refresh token.
+ *
+ * @param tokenSvc - The TokenService for managing token storage
+ * @param router - Angular router to redirect on unauthorized
+ */
 function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouters> {
   return refreshTokenLink({
-    // Get locally stored refresh token
     getRefreshToken: () => tokenSvc.getRefreshToken() as string | undefined,
     fetchJwtPairByRefreshToken: async (refreshToken) => {
       const auth_token = tokenSvc.getAuthToken() || '';
@@ -124,11 +141,11 @@ function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRoute
   });
 }
 
+/**
+ * A TRPC link that intercepts errors and replaces BAD_REQUEST messages with friendlier ones.
+ */
 const errorLink: TRPCLink<TRPCRouters> = () => {
-  // here we just got initialized in the app - this happens once per app
-  // useful for storing cache for instance
   return ({ next, op }) => {
-    // each link needs to return an observable which propagates results
     return observable((observer) => {
       const unsubscribe = next(op).subscribe({
         next(value) {
@@ -150,12 +167,12 @@ const errorLink: TRPCLink<TRPCRouters> = () => {
     });
   };
 };
-// This is a proxy client that skips all the hooks and stuff
-// We use it to refresh the auth token
+
+/**
+ * A standalone TRPC client used exclusively for refreshing auth tokens.
+ * It uses no auth or refresh links to avoid recursion.
+ */
 const trpcRetryClient = createTRPCProxyClient<TRPCRouters>({
-  links: [
-    httpBatchLink({
-      url: `http://localhost:3000`,
-    }),
-  ],
+  // TODO: Add environment.devURL instead of hardcoding
+  links: [httpBatchLink({ url: `http://localhost:3000` })],
 });

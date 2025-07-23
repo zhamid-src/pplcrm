@@ -1,12 +1,12 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
-import { IconsComponent } from '@uxcommon/icons.component';
+import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [IconsComponent, RouterLink, Swap],
+  imports: [Icon, RouterLink, Swap],
   templateUrl: './sidebar.html',
   styles: [
     `

@@ -2,13 +2,13 @@ import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magi
 
 import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from '@angular/core';
 import { FormsModule, NgModel, ReactiveFormsModule } from '@angular/forms';
-import { IconName } from '@uxcommon/icons';
-import { IconsComponent } from '@uxcommon/icons.component';
+import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@uxcommon/icon';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'pc-input',
-  imports: [IconsComponent, FormsModule, ReactiveFormsModule, NgxGpAutocompleteModule],
+  imports: [Icon, FormsModule, ReactiveFormsModule, NgxGpAutocompleteModule],
   templateUrl: './input.html',
 })
 export class Input implements AfterViewInit {

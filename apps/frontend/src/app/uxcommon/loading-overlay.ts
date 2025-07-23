@@ -16,13 +16,28 @@ import { Component } from '@angular/core';
   standalone: false,
 })
 export class LoadingOverlayComponent implements ILoadingOverlayAngularComp {
+  /**
+   * The parameters provided by AG Grid when the overlay is initialized.
+   * This typically contains a `context` object which can include
+   * custom methods like `sendAbort` to cancel grid actions.
+   */
   public params: ILoadingOverlayParams | undefined;
 
+  /**
+   * Called once after the overlay is created by AG Grid.
+   * Used to initialize any parameters passed by the grid.
+   *
+   * @param params - Parameters supplied by AG Grid for the loading overlay.
+   */
   public agInit(params: ILoadingOverlayParams): void {
     this.params = params;
   }
 
-  public sendAbort() {
+  /**
+   * Cancels the current data fetching operation.
+   * Calls the `sendAbort()` method on the AG Grid context if it exists.
+   */
+  public sendAbort(): void {
     this.params?.context?.sendAbort();
   }
 }

@@ -1,41 +1,69 @@
 import { Component, EventEmitter, Output, input, signal } from '@angular/core';
 import { Input } from '@uxcommon/input';
 
+/**
+ * Type definition for a service that provides filtered results
+ * based on a user-provided string key.
+ */
 type TFILTER = {
+  /**
+   * Function that filters a string and returns a Promise of matching results.
+   *
+   * @param arg0 - the string to filter by
+   */
   filter: (arg0: string) => Promise<string[]>;
 };
+
 @Component({
   selector: 'pc-autocomplete',
   imports: [Input],
   templateUrl: './autocomplete.html',
 })
 export class AutoComplete {
+  /**
+   * Whether to hide the autocomplete list.
+   */
   protected hideAutoComplete = true;
+
+  /**
+   * A filtering service that provides suggestions based on user input.
+   * Must implement a `filter()` method that returns a list of matches.
+   */
   public filterSvc = input<TFILTER | null>(null);
+
+  /**
+   * The placeholder text for the input element.
+   */
   public placeholder = input('');
 
+  /**
+   * Emits the selected value when a user selects or types something meaningful.
+   */
   @Output() public valueChange = new EventEmitter<string>();
 
+  /**
+   * A reactive list of autocomplete matches.
+   */
   protected matches = signal<string[]>([]);
 
   /**
-   * Show the autocomplete list of tags that match the key.
+   * Shows the autocomplete list with matches based on the provided key.
    *
-   * @param key - the key to match
-   * @returns
+   * @param key - The string to filter matches by
    */
   protected async autoComplete(key: string) {
     const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      return;
-    }
+    if (!filterSvc || !key?.length) return;
+
     const matches = await filterSvc.filter(key);
     this.matches.set(matches);
   }
 
   /**
-   * The user clicked on an item in the autocomplete list
-   * We emit it for the parent to decide what to do with it
+   * Handles user click on a suggestion in the autocomplete list.
+   * Emits the selected value and resets the list.
+   *
+   * @param key - The selected suggestion
    */
   protected handleClick(key: string) {
     this.valueChange.emit(key);
@@ -43,11 +71,11 @@ export class AutoComplete {
   }
 
   /**
-   * The event that's fired on every key press.
-   * If the key is Enter or comma then we add the tag.
-   * If the key is anything else then we show the autocomplete list.
+   * Handles keyboard input in the input field.
+   * Emits the value when Enter or comma is pressed.
+   * Otherwise, updates the autocomplete list.
    *
-   * @param event
+   * @param event - The keyboard event triggered on input
    */
   protected onKey(event: KeyboardEvent) {
     const target = event.target as HTMLInputElement;
@@ -61,22 +89,25 @@ export class AutoComplete {
   }
 
   /**
-   * Reset the autocomplete list
+   * Clears the list of autocomplete matches.
    */
   protected reset() {
     this.matches.set([]);
   }
 
+  /**
+   * Displays the autocomplete list.
+   */
   protected showAutoCompleteList() {
     this.hideAutoComplete = false;
   }
 
-  //$hack:
-  // This is a hack to hide the autocomplete list when the user clicks outside of the list.
-  // We can't immediately hide because if the lost focus happens due to the user clicking
-  // on an item in the autocomplete then the click event on the item will not fire.
-  // By adding the delay, we make sure that the autocomplete list stays up for long enough
-  // for the click event to fire.
+  /**
+   * Hides the autocomplete list after a short delay.
+   *
+   * This delay is important to allow click events on the suggestions
+   * to be registered before the list disappears (avoiding lost focus issues).
+   */
   protected hideAutoCompleteList() {
     setTimeout(() => (this.hideAutoComplete = true), 200);
   }

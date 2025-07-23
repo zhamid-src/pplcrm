@@ -4,6 +4,10 @@ import { IToken } from '@common';
 const AUTHTOKEN = 'ppl-crm-auth-token';
 const REFRESHTOKEN = 'ppl-crm-refresh-token';
 
+/**
+ * A service that manages storing, retrieving, and clearing auth tokens
+ * in either sessionStorage or localStorage, depending on user preference.
+ */
 @Injectable({
   providedIn: 'root',
 })
@@ -14,12 +18,22 @@ export class TokenService {
     this.persistence = !!localStorage.getItem('pc-persistence');
   }
 
-  public get persistence() {
+  /**
+   * Gets whether token persistence is enabled.
+   * If `true`, tokens are stored in localStorage (persist across tabs and reloads).
+   * If `false`, tokens are stored in sessionStorage (cleared when tab closes).
+   */
+  public get persistence(): boolean {
     return this._persistence;
   }
 
+  /**
+   * Sets the persistence mode for token storage.
+   * If persistence changes, it clears tokens from the old storage type.
+   *
+   * @param persistence - `true` to use localStorage, `false` to use sessionStorage
+   */
   public set persistence(persistence: boolean) {
-    // first clear
     if (this.persistence && !persistence) {
       this.clearPersistentStorage();
     } else if (!this.persistence && persistence) {
@@ -29,11 +43,19 @@ export class TokenService {
     localStorage.setItem('pc-persistence', persistence ? '1' : '0');
   }
 
-  public clearAll() {
+  /**
+   * Clears tokens from both sessionStorage and localStorage.
+   */
+  public clearAll(): void {
     this.clearPersistentStorage();
     this.clearSessionStorage();
   }
 
+  /**
+   * Returns both auth and refresh tokens.
+   *
+   * @returns An object containing both tokens.
+   */
   public get(): IToken {
     return {
       auth_token: this.getAuthToken(),
@@ -41,50 +63,96 @@ export class TokenService {
     };
   }
 
-  public getAuthToken() {
+  /**
+   * Gets the current auth token based on persistence mode.
+   */
+  public getAuthToken(): string | null {
     return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
   }
 
-  public getRefreshToken() {
+  /**
+   * Gets the current refresh token based on persistence mode.
+   */
+  public getRefreshToken(): string | null {
     return this.persistence ? localStorage.getItem(REFRESHTOKEN) : sessionStorage.getItem(REFRESHTOKEN);
   }
 
-  public removeAuthToken() {
+  /**
+   * Removes the auth token from storage.
+   */
+  public removeAuthToken(): void {
     this.removeToken(AUTHTOKEN);
   }
 
-  public removeRefreshToken() {
+  /**
+   * Removes the refresh token from storage.
+   */
+  public removeRefreshToken(): void {
     this.removeToken(REFRESHTOKEN);
   }
 
-  public set(token: IToken) {
+  /**
+   * Stores both the auth and refresh tokens.
+   * Automatically removes any token that is falsy.
+   *
+   * @param token - Object containing auth and/or refresh tokens.
+   */
+  public set(token: IToken): void {
     token.auth_token ? this.setAuthToken(token.auth_token) : this.removeAuthToken();
+
     token.refresh_token ? this.setRefreshToken(token.refresh_token) : this.removeRefreshToken();
   }
 
-  public setAuthToken(token: string) {
+  /**
+   * Stores the auth token using the current persistence mode.
+   *
+   * @param token - The auth token value to store.
+   */
+  public setAuthToken(token: string): void {
     this.setToken(AUTHTOKEN, token);
   }
 
-  public setRefreshToken(token: string) {
+  /**
+   * Stores the refresh token using the current persistence mode.
+   *
+   * @param token - The refresh token value to store.
+   */
+  public setRefreshToken(token: string): void {
     this.setToken(REFRESHTOKEN, token);
   }
 
-  private clearPersistentStorage() {
+  /**
+   * Removes tokens from localStorage.
+   */
+  private clearPersistentStorage(): void {
     localStorage.removeItem(AUTHTOKEN);
     localStorage.removeItem(REFRESHTOKEN);
   }
 
-  private clearSessionStorage() {
+  /**
+   * Removes tokens from sessionStorage.
+   */
+  private clearSessionStorage(): void {
     sessionStorage.removeItem(AUTHTOKEN);
     sessionStorage.removeItem(REFRESHTOKEN);
   }
 
-  private removeToken(item: string) {
+  /**
+   * Removes a specific token key from the active storage.
+   *
+   * @param item - The key of the token to remove.
+   */
+  private removeToken(item: string): void {
     this.persistence ? localStorage.removeItem(item) : sessionStorage.removeItem(item);
   }
 
-  private setToken(item: string, token: string) {
+  /**
+   * Stores a token in the appropriate storage based on persistence.
+   *
+   * @param item - The key under which to store the token.
+   * @param token - The token string to store.
+   */
+  private setToken(item: string, token: string): void {
     this.persistence ? localStorage.setItem(item, token) : sessionStorage.setItem(item, token);
   }
 }

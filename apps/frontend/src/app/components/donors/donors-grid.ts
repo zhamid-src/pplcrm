@@ -3,7 +3,7 @@ import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
-import { IconsComponent } from '@uxcommon/icons.component';
+import { Icon } from '@uxcommon/icon';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 import { PersonsService, DATA_TYPE } from '../persons/persons-service';
 import { AbstractAPIService } from '../../abstract.service';
@@ -11,14 +11,22 @@ import { AbstractAPIService } from '../../abstract.service';
 interface ParamsType {
   value: string[];
 }
-
+/**
+ * A data grid component to display and edit donor (person) records.
+ * Inherits generic grid logic from `DataGrid`, including editing,
+ * custom renderers, and navigation behaviors.
+ */
 @Component({
   selector: 'pc-donors-grid',
-  imports: [DataGrid, IconsComponent],
+  imports: [DataGrid, Icon],
   templateUrl: './donors-grid.html',
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  /**
+   * Column definitions for the ag-grid, including editable fields,
+   * custom renderers, double-click actions, and comparison logic.
+   */
   protected col: ColDef[] = [
     { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
@@ -83,21 +91,30 @@ export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       editable: false,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
-
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  /** Household ID to use when routing after confirming address change */
   private addressChangeModalId: string | null = null;
 
   constructor() {
     super();
   }
 
+  /**
+   * Handle double-click on address-related fields.
+   * Stores the `household_id` and prompts confirmation modal.
+   *
+   * @param event - The cell double-click event
+   */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
+  /**
+   * Navigates to the household route after user confirms address change.
+   */
   protected routeToHouseholds() {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
@@ -108,8 +125,8 @@ export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   }
 
   /**
-   * Confirm if the user actually wants to change the address
-   *
+   * Opens the confirmation modal dialog to ask if the user
+   * truly intends to edit the address.
    */
   private confirmAddressChange(): void {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;

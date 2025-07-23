@@ -1,23 +1,40 @@
 import { Injectable, signal } from '@angular/core';
 
 /**
- * The type of the alert. This is used to determine the color of the alert
- * and the icon to show.
+ * The type of the alert. Determines styling and icon used.
  */
 export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 
 /**
- * The customizations that can be performed on the alert.
+ * The options used to configure an alert message.
  */
 export interface AlertMessage {
-  OKBtn?: string;
-  OKBtnCallback?: () => void;
-  btn2?: string;
-  btn2Callback?: () => void;
-  duration?: number;
+  /** Unique ID for the alert (auto-assigned if not provided). */
+  id?: string;
+
+  /** Main alert message text. */
   text: string;
+
+  /** Optional title for the alert. */
   title?: string;
+
+  /** Alert type for styling and icon. */
   type?: ALERTTYPE;
+
+  /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
+  duration?: number;
+
+  /** Label for the primary (OK) button. */
+  OKBtn?: string;
+
+  /** Callback when OK button is clicked. */
+  OKBtnCallback?: () => void;
+
+  /** Label for a secondary button. */
+  btn2?: string;
+
+  /** Callback when the secondary button is clicked. */
+  btn2Callback?: () => void;
 }
 
 @Injectable({
@@ -27,107 +44,92 @@ export class AlertService {
   private _alerts = signal<AlertMessage[]>([]);
 
   /**
-   * The alerts that are currently shown.
+   * Returns a list of all currently active alerts.
    */
-  public get alerts() {
+  public get alerts(): AlertMessage[] {
     return this._alerts();
   }
 
   /**
-   * When the OK button is clicked on the alert with the given text, then
-   * call the given callback for the matching alert.
-   *
-   * @param text
-   * @returns
+   * Invokes the OK button callback for the alert with the specified ID.
+   * @param id - ID of the alert whose OK button was clicked.
    */
-  public OKBtnCallback(text: string) {
-    const alertToRemove = this.alerts.find((m) => m.text === text);
-    if (!alertToRemove) return;
-
-    alertToRemove.OKBtnCallback?.();
+  public OKBtnCallback(id: string): void {
+    const alert = this.alerts.find((m) => m.id === id);
+    alert?.OKBtnCallback?.();
   }
 
   /**
-   * When the second button is clicked on the alert with the given text, then
-   * call the given callback for the matching alert.
-   *
-   * @param text
-   * @returns
+   * Invokes the secondary button callback for the alert with the specified ID.
+   * @param id - ID of the alert whose second button was clicked.
    */
-  public btn2Callback(text: string) {
-    const alertToRemove = this.alerts.find((m) => m.text === text);
-    if (!alertToRemove) return;
-
-    alertToRemove.btn2Callback?.();
+  public btn2Callback(id: string): void {
+    const alert = this.alerts.find((m) => m.id === id);
+    alert?.btn2Callback?.();
   }
 
   /**
-   * Dismiss the alert with the given text.
-   *
-   * @param text
+   * Dismisses the alert with the specified ID.
+   * @param id - ID of the alert to dismiss.
    */
-  public dismiss(text: string) {
-    this.removeAlert({ text });
+  public dismiss(id: string): void {
+    this.removeAlertById(id);
   }
 
   /**
-   * Show the given alert.
-   *
-   * If the alert is already shown, then it will not be shown again.
-   * Every alert will be removed after a default duration that can
-   * be overridden via options.
-   *
-   * @see {@link AlertMessage} for more information about the options.
-   *
-   * @param alert
-   * @returns
+   * Shows a new alert if not already present.
+   * @param alert - Alert options to display.
    */
-  public show(alert: AlertMessage) {
-    // Ignore if duplicate
-    if (this.alerts.find((m) => m.text === alert.text)) {
-      return;
-    }
-    const messageWithMeta = { ...alert, createdAt: Date.now() };
+  public show(alert: AlertMessage): void {
+    if (this.alerts.find((m) => m.text === alert.text)) return;
 
-    this._alerts.update((arr: AlertMessage[]) => {
-      arr.unshift(messageWithMeta);
-      return arr.slice(0);
-    });
+    const messageWithMeta: AlertMessage = {
+      ...alert,
+      id: alert.id || crypto.randomUUID(),
+    };
 
-    // start the timer to remove
-    setTimeout(() => this.removeAlert(messageWithMeta), messageWithMeta.duration || 3000, messageWithMeta);
+    this._alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
+
+    setTimeout(() => this.removeAlertById(messageWithMeta.id!), messageWithMeta.duration ?? 3000);
   }
 
-  public showError(text: string) {
+  /**
+   * Displays an error alert.
+   * @param text - The error message to show.
+   */
+  public showError(text: string): void {
     this.show({ text, type: 'error' });
   }
 
-  public showInfo(text: string) {
+  /**
+   * Displays an info alert.
+   * @param text - The information message to show.
+   */
+  public showInfo(text: string): void {
     this.show({ text, type: 'info' });
   }
 
-  public showSuccess(text: string) {
+  /**
+   * Displays a success alert.
+   * @param text - The success message to show.
+   */
+  public showSuccess(text: string): void {
     this.show({ text, type: 'success' });
   }
 
-  public showWarn(text: string) {
+  /**
+   * Displays a warning alert.
+   * @param text - The warning message to show.
+   */
+  public showWarn(text: string): void {
     this.show({ text, type: 'warning' });
   }
 
   /**
-   * Remove the given alert from the list of alerts.
-   *
-   * @param alert
-   * @returns
+   * Removes an alert from the list by its ID.
+   * @param id - ID of the alert to remove.
    */
-  private removeAlert(alert: AlertMessage) {
-    const alertToRemove = this.alerts.find((m) => m.text === alert.text);
-    if (!alertToRemove) return;
-
-    const index = this.alerts.indexOf(alertToRemove);
-    this._alerts.update((arr) => {
-      arr.splice(index, 1);
-      return arr.slice(0);
-    });
+  private removeAlertById(id: string): void {
+    this._alerts.update((arr) => arr.filter((m) => m.id !== id));
   }
 }

@@ -3,24 +3,45 @@ import { ApplicationConfig, inject, provideAppInitializer } from '@angular/core'
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
+
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
 import { httpInterceptor } from './http-interceptor';
 import { ErrorCatchingInterceptor } from './http-errors-interceptor';
 
+/**
+ * Initializes the user session during app startup.
+ * Used with `provideAppInitializer` to ensure AuthService runs before the app loads.
+ *
+ * @param authService - The authentication service to initialize.
+ * @returns An async function to initialize session.
+ */
 export function initSession(authService: AuthService) {
   return async () => {
     await authService.init();
   };
 }
 
+/**
+ * Returns the current stored auth token from localStorage.
+ * Used by interceptors or JWT-based auth libraries.
+ *
+ * @returns The auth token or null if not found.
+ */
 export function tokenGetter() {
   return localStorage.getItem('auth-token');
 }
 
+/**
+ * Application configuration for the Angular standalone app.
+ * Sets up routing, animations, HTTP interceptors, Google Maps, and app initialization.
+ */
 export const appConfig: ApplicationConfig = {
   providers: [
+    /**
+     * Provides Google Maps API Loader globally with the 'places' library.
+     */
     {
       provide: Loader,
       useValue: new Loader({
@@ -28,19 +49,47 @@ export const appConfig: ApplicationConfig = {
         libraries: ['places'],
       }),
     },
+
+    /**
+     * Provides app-level routing.
+     */
     provideRouter(appRoutes),
+
+    /**
+     * Overrides Angular's default route reuse strategy with a custom one.
+     */
     {
       provide: RouteReuseStrategy,
       useClass: CustomRouteReuseStrategy,
     },
+
+    /**
+     * Enables browser animations (required for Angular Material and others).
+     */
     provideAnimations(),
+
+    /**
+     * Provides HTTP client with custom interceptors (request manipulation, headers, etc.).
+     */
     provideHttpClient(withInterceptors([httpInterceptor])),
+
+    /**
+     * Registers global error-catching interceptor for all HTTP calls.
+     */
     {
       provide: HTTP_INTERCEPTORS,
       useClass: ErrorCatchingInterceptor,
       multi: true,
     },
+
+    /**
+     * Allows DI-provided interceptors to be included dynamically.
+     */
     provideHttpClient(withInterceptorsFromDi()),
+
+    /**
+     * Initializes the user session before app startup completes.
+     */
     provideAppInitializer(() => {
       const initializerFn = initSession(inject(AuthService));
       return initializerFn();
