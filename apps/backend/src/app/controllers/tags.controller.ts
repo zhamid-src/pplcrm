@@ -1,15 +1,22 @@
-import { AddTagType, IAuthKeyPayload, UpdateTagType } from "@common";
-import { OperationDataType } from "common/src/lib/kysely.models";
-import { TagsRepo } from "../repositories/tags.repo";
-import { BaseController } from "./base.controller";
+import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
+import { OperationDataType } from 'common/src/lib/kysely.models';
+import { TagsRepo } from '../repositories/tags.repo';
+import { BaseController } from './base.controller';
 
-export class TagsController extends BaseController<"tags", TagsRepo> {
+/**
+ * Controller for managing tags: creation, updating, searching, and reporting.
+ */
+export class TagsController extends BaseController<'tags', TagsRepo> {
   constructor() {
     super(new TagsRepo());
   }
 
   /**
-   * Add the new tag to the database.
+   * Add a new tag to the database for the authenticated tenant.
+   *
+   * @param payload - Tag data (name, description)
+   * @param auth - Authenticated user's context
+   * @returns The inserted tag
    */
   public addTag(payload: AddTagType, auth: IAuthKeyPayload) {
     const row = {
@@ -17,33 +24,52 @@ export class TagsController extends BaseController<"tags", TagsRepo> {
       description: payload.description,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
-    } as OperationDataType<"tags", "insert">;
-    return this.add(row);
+    };
+    return this.add(row as OperationDataType<'tags', 'insert'>);
   }
 
   /**
-   * Given the key, return the first three tags that match the key.
+   * Search for tags by name prefix. Returns up to 3 matches.
+   *
+   * @param name - Name prefix to search for
+   * @param auth - Authenticated user's context
+   * @returns Array of matching tags (up to 3)
    */
   public findByName(name: string, auth: IAuthKeyPayload) {
-    return this.find({ tenant_id: auth.tenant_id, key: name, column: "name" });
+    return this.find({
+      tenant_id: auth.tenant_id,
+      key: name,
+      column: 'name',
+    });
   }
 
+  /**
+   * Get all tags in the tenant along with how many entities use each tag.
+   *
+   * @param tenant_id - Tenant ID
+   * @returns Tags with usage counts
+   */
   public getAllWithCounts(tenant_id: string) {
     return this.getRepo().getAllWithCounts({ tenant_id });
   }
 
   /**
-   * Update the tag that matches the given ID
+   * Update an existing tag by ID.
+   *
+   * @param id - Tag ID to update
+   * @param row - Updated tag data (name, description, etc.)
+   * @param auth - Authenticated user's context
+   * @returns The updated tag
    */
   public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = {
       ...row,
       updatedby_id: auth.user_id,
-    } as OperationDataType<"tags", "insert">;
+    };
     return this.update({
       tenant_id: auth.tenant_id,
       id,
-      row: rowWithUpdatedBy,
+      row: rowWithUpdatedBy as OperationDataType<'tags', 'update'>,
     });
   }
 }

@@ -1,13 +1,19 @@
 import { config } from 'dotenv';
 import { BaseRepository } from './repositories/base.repo';
 
-// import configs from env via dotenv
+// Load environment variables from a .env file into process.env
 config();
 
-// Run the migrations
-
-// Migration function
-export async function migrateToLatest() {
+/**
+ * Runs all pending database migrations to bring the schema up to date.
+ *
+ * This function uses the migrator from the BaseRepository to execute
+ * all unapplied migrations. It logs the result of each migration and
+ * exits the process with code 1 on error.
+ *
+ * @returns {Promise<void>}
+ */
+export async function migrateToLatest(): Promise<void> {
   console.log('Migration starting');
 
   const { error, results } = await BaseRepository.migrator.migrateToLatest();
@@ -27,9 +33,14 @@ export async function migrateToLatest() {
 }
 
 /**
- * Migrate down to the previous version
+ * Rolls back the most recent database migration.
+ *
+ * This is useful for undoing the last migration applied, especially in
+ * testing or development environments. Logs results and exits on failure.
+ *
+ * @returns {Promise<void>}
  */
-export async function migrateDown() {
+export async function migrateDown(): Promise<void> {
   const { error, results } = await BaseRepository.migrator.migrateDown();
 
   results?.forEach((it) => {
@@ -46,4 +57,5 @@ export async function migrateDown() {
   }
 }
 
+// Automatically run migration when script is executed directly
 migrateToLatest();

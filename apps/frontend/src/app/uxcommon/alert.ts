@@ -44,9 +44,11 @@ export class Alert {
    *
    * @param text - The alert text to identify the alert
    */
-  public btn2Click(id: string): void {
-    this.alertSvc.btn2Callback(id);
-    this.alertSvc.dismiss(id);
+  public btn2Click(id: string | undefined): void {
+    if (id) {
+      this.alertSvc.btn2Callback(id);
+      this.alertSvc.dismiss(id);
+    }
   }
 
   /**
