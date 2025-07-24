@@ -1,5 +1,5 @@
 import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
-import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 
 /**
  * A textarea form control component that integrates with Angular Reactive Forms.
@@ -7,7 +7,7 @@ import { FormGroup, FormGroupDirective, FormsModule, ReactiveFormsModule } from 
  */
 @Component({
   selector: 'pc-textarea',
-  imports: [ReactiveFormsModule, FormsModule],
+  imports: [ReactiveFormsModule],
   templateUrl: './textarea.html',
 })
 export class TextArea implements OnInit {

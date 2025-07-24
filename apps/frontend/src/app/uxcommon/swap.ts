@@ -1,5 +1,5 @@
 import { Component, EventEmitter, Output, input } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ReactiveFormsModule } from '@angular/forms';
 
 import { Icon } from './icon';
 import { IconName } from './svg-icons-list';
@@ -10,7 +10,7 @@ import { IconName } from './svg-icons-list';
  */
 @Component({
   selector: 'pc-swap',
-  imports: [FormsModule, Icon],
+  imports: [ReactiveFormsModule, Icon],
   templateUrl: './swap.html',
 })
 export class Swap {

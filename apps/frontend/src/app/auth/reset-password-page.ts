@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Alert } from '@uxcommon/alert';
 import { AlertService } from '@uxcommon/alert-service';
@@ -12,7 +12,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-reset-password',
-  imports: [FormsModule, ReactiveFormsModule, Alert],
+  imports: [ReactiveFormsModule, Alert],
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
