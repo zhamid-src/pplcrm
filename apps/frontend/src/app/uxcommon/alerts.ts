@@ -5,7 +5,7 @@ import { Icon } from '@uxcommon/icon';
 @Component({
   selector: 'pc-alerts',
   imports: [Icon],
-  templateUrl: './alert.html',
+  templateUrl: './alerts.html',
 })
 export class Alerts {
   /** Injected alert service to handle alert logic */

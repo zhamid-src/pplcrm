@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { TRPCError } from '@trpc/server';
-import { Alerts } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alerts';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 

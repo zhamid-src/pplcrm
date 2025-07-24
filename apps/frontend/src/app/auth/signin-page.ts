@@ -1,7 +1,7 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { Alerts } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alerts';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 
