@@ -19,7 +19,6 @@
     "@ag-grid-enterprise/range-selection": "^31.0.1",
     "@ag-grid-enterprise/set-filter": "^31.0.1",
     "@angular-magic/ngx-gp-autocomplete": "^2.0.0",
-    "@angular/animations": "20.1.2",
     "@angular/common": "20.1.2",
     "@angular/forms": "20.1.2",
     "@angular/platform-browser": "20.1.2",

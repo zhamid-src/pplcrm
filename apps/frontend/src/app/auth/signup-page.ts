@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
 import { PasswordCheckerModule } from '@triangular/password-checker';
-import { Alert } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alert';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 
@@ -17,7 +17,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-signup',
-  imports: [CommonModule, PasswordCheckerModule, ReactiveFormsModule, Icon, RouterModule, Alert],
+  imports: [CommonModule, PasswordCheckerModule, ReactiveFormsModule, Icon, RouterModule, Alerts],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {

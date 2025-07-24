@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { Alert } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alert';
 import { Breadcrumb } from '@uxcommon/breadcrumb';
 
 import { Navbar } from './navbar';
@@ -9,7 +9,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
 
 @Component({
   selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alert],
+  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {

@@ -1,20 +1,35 @@
-@import "@ag-grid-community/styles/ag-grid.css";
-@import "@ag-grid-community/styles/ag-theme-quartz.css";
+@import '@ag-grid-community/styles/ag-grid.css';
+@import '@ag-grid-community/styles/ag-theme-quartz.css';
 
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "daisyui";
 
 @plugin "daisyui/theme" {
-  name: "light";
+  name: 'light';
   default: true;
-  --color-primary: "#0ea5e9";
-  --color-secondary: "#14e8a6";
-  --color-accent: "#0c506e";
+  --color-primary: '#0ea5e9';
+  --color-secondary: '#14e8a6';
+  --color-accent: '#0c506e';
   --color-neutral:
-    "#cbd5e1" --color-neutral-content: "#1f2937", --color-base-100: "#ffffff",
-    --color-base-300: "#f0f0f0", --color-info: "#38bdf8",
-    --color-success: "#2dd4bf", --color-warning: "#e5c963",
-    --color-error: "#f37373";
+    '#cbd5e1' --color-neutral-content: '#1f2937', --color-base-100: '#ffffff', --color-base-300: '#f0f0f0',
+    --color-info: '#38bdf8', --color-success: '#2dd4bf', --color-warning: '#e5c963', --color-error: '#f37373';
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  --color-primary: #00b5ff;
+  --color-primary-content: #ffffff;
+  --color-secondary: #00dfff;
+  --color-accent: #0c506e;
+  --color-neutral: #040404;
+  --color-neutral-content: #d1d5db;
+  --color-base-100: #12232e;
+  --color-base-300: #334f61;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-warning: #e5c963;
+  --color-error: #ef4444;
 }
 
 html,
@@ -23,11 +38,11 @@ body {
 }
 
 body {
-  font-family: "Roboto", sans-serif;
+  font-family: 'Roboto', sans-serif;
 }
 
 .bg-image {
-  background-image: url("assets/bg.jpg");
+  background-image: url('assets/bg.jpg');
 }
 
 .input-pplcrm {
@@ -42,10 +57,104 @@ body {
 }
 
 .ag-theme-quartz {
-  --ag-font-family: "Roboto", sans-serif;
+  --ag-font-family: 'Roboto', sans-serif;
   --ag-modal-overlay-background-color: rgba(255, 255, 255, 0.9);
 }
 
 .ag-theme-quartz-dark {
   --ag-modal-overlay-background-color: rgba(18, 35, 46, 0.95);
+}
+
+@layer utilities {
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.2s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.2s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.2s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 0.3s linear infinite;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.2s ease-in-out forwards;
+  }
 }

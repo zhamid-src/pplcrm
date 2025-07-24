@@ -6,7 +6,6 @@ import {
   provideZoneChangeDetection,
   provideZonelessChangeDetection,
 } from '@angular/core';
-import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 
@@ -41,7 +40,7 @@ export function tokenGetter() {
 
 /**
  * Application configuration for the Angular standalone app.
- * Sets up routing, animations, HTTP interceptors, Google Maps, and app initialization.
+ * Sets up routing, HTTP interceptors, Google Maps, and app initialization.
  */
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -68,11 +67,6 @@ export const appConfig: ApplicationConfig = {
       provide: RouteReuseStrategy,
       useClass: CustomRouteReuseStrategy,
     },
-
-    /**
-     * Enables browser animations (required for Angular Material and others).
-     */
-    provideAnimations(),
 
     /**
      * Make it zoneless
