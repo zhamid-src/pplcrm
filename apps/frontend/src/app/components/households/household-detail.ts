@@ -1,19 +1,19 @@
-import { Component, OnInit, inject, input, signal } from "@angular/core";
-import { FormBuilder, ReactiveFormsModule } from "@angular/forms";
-import { ActivatedRoute } from "@angular/router";
-import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from "@common";
-import { AddBtnRow } from "@uxcommon/add-btn-row";
-import { AlertService } from "@uxcommon/alert-service";
-import { FormInput } from "@uxcommon/formInput";
-import { Input } from "@uxcommon/input";
-import { TextArea } from "@uxcommon/textarea";
+import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
+import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
+import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { AlertService } from '@uxcommon/alert-service';
+import { FormInput } from '@uxcommon/formInput';
+import { PPlCrmInput } from '@uxcommon/input';
+import { TextArea } from '@uxcommon/textarea';
 
-import { PersonsService } from "../persons/persons-service";
-import { HouseholdsService } from "./households-service";
-import { PeopleInHousehold } from "apps/frontend/src/app/components/persons/people-in-household";
-import { Tags } from "apps/frontend/src/app/components/tags/tags";
-import { parseAddress } from "apps/frontend/src/app/utils/googlePlacesAddressMapper";
-import { Households } from "common/src/lib/kysely.models";
+import { PersonsService } from '../persons/persons-service';
+import { HouseholdsService } from './households-service';
+import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
+import { Tags } from 'apps/frontend/src/app/components/tags/tags';
+import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
+import { Households } from 'common/src/lib/kysely.models';
 
 /**
  * Component for displaying and managing the details of a household.
@@ -21,7 +21,7 @@ import { Households } from "common/src/lib/kysely.models";
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormInput, ReactiveFormsModule, Input, Tags, AddBtnRow, TextArea, PeopleInHousehold],
+  imports: [FormInput, ReactiveFormsModule, PPlCrmInput, Tags, AddBtnRow, TextArea, PeopleInHousehold],
   templateUrl: './Household-detail.html',
 })
 export class HouseholdDetail implements OnInit {

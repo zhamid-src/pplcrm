@@ -1,16 +1,16 @@
-import { Component, HostListener, inject } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { Icon } from "@uxcommon/icon";
-import { Swap } from "@uxcommon/swap";
+import { Component, HostListener, inject } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@uxcommon/icon';
+import { Swap } from '@uxcommon/swap';
 
-import { AuthService } from "apps/frontend/src/app/auth/auth-service";
-import { SearchService } from "apps/frontend/src/app/data/search-service";
-import { SidebarService } from "apps/frontend/src/app/layout/sidebar-service";
-import { ThemeService } from "apps/frontend/src/app/layout/theme-service";
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SearchService } from 'apps/frontend/src/app/data/search-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, FormsModule],
+  imports: [Icon, Swap, ReactiveFormsModule],
   templateUrl: './navbar.html',
 })
 export class Navbar {
@@ -31,6 +31,18 @@ export class Navbar {
 
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
+
+  /**
+   * Handles user input from the search field.
+   * Updates the `searchStr` property and triggers the search logic.
+   *
+   * @param event - The input event triggered when the user types in the search box.
+   */
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr = input.value;
+    this.search();
+  }
 
   /**
    * Clears the current search input and resets the mobile search bar state.

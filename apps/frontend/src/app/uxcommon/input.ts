@@ -1,17 +1,17 @@
-import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from "@angular-magic/ngx-gp-autocomplete";
-import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from "@angular/core";
-import { FormsModule, NgModel, ReactiveFormsModule } from "@angular/forms";
-import { Icon } from "@uxcommon/icon";
-import { IconName } from "@uxcommon/svg-icons-list";
+import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
+import { AfterViewInit, Component, EventEmitter, Output, ViewChild, input } from '@angular/core';
+import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@uxcommon/icon';
+import { IconName } from '@uxcommon/svg-icons-list';
 
-import { debounceTime, distinctUntilChanged } from "rxjs";
+import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'pc-input',
-  imports: [Icon, FormsModule, ReactiveFormsModule, NgxGpAutocompleteModule],
+  imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule],
   templateUrl: './input.html',
 })
-export class Input implements AfterViewInit {
+export class PPlCrmInput implements AfterViewInit {
   protected inputClass: string =
     'peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px] border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2 focus:border-t-transparent invalid:border-error invalid:border-t-transparent disabled:bg-base-300 disabled:cursor-not-allowed transition-all placeholder-shown:border placeholder-shown:border-blue-gray-200 placeholder-shown:border-t-blue-gray-200 border';
   protected inputValue: string = '';
@@ -32,6 +32,8 @@ export class Input implements AfterViewInit {
   public type = input<string>('text');
   @Output() public valueChange = new EventEmitter<string>();
 
+  inputControl = new FormControl('');
+
   constructor() {}
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
@@ -49,6 +51,10 @@ export class Input implements AfterViewInit {
 
   public handleKeyup(value: string) {
     this.valueChange?.emit(value);
+  }
+
+  protected get inputLength(): number {
+    return this.inputControl.value?.length ?? 0;
   }
 
   public ngAfterViewInit() {

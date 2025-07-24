@@ -1,5 +1,11 @@
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
-import { ApplicationConfig, inject, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
+import {
+  ApplicationConfig,
+  inject,
+  provideAppInitializer,
+  provideZoneChangeDetection,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -71,7 +77,7 @@ export const appConfig: ApplicationConfig = {
     /**
      * Make it zoneless
      */
-    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideZonelessChangeDetection(),
 
     /**
      * Provides HTTP client with custom interceptors (request manipulation, headers, etc.).

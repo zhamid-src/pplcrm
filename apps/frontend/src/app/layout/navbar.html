@@ -15,8 +15,8 @@
         type="text"
         placeholder="Search"
         class="input-pplcrm w-42 pl-10 pr-6 md:w-80"
-        [(ngModel)]="searchStr"
-        (ngModelChange)="search()"
+        [value]="searchStr"
+        (input)="onSearchInput($event)"
       />
 
       <pc-icon

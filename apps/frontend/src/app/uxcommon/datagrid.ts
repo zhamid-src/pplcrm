@@ -12,7 +12,7 @@ import {
   GridState,
   SideBarDef,
 } from '@ag-grid-community/core';
-import { Component, EventEmitter, NgZone, Output, effect, inject, input } from '@angular/core';
+import { Component, EventEmitter, Output, effect, inject, input } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
@@ -66,7 +66,6 @@ import { Models } from 'common/src/lib/kysely.models';
 // TODO: these are not the correct generics
 export class DataGrid<T extends keyof Models, U> {
   private lastRowHovered: string | undefined;
-  private ngZone = inject(NgZone);
   private route = inject(ActivatedRoute);
   private serachSvc = inject(SearchService);
   private themeSvc = inject(ThemeService);
@@ -397,7 +396,7 @@ export class DataGrid<T extends keyof Models, U> {
     if (id || !this.disableView()) {
       const rowId = id || this.lastRowHovered;
       if (rowId) {
-        this.ngZone.run(() => this.router.navigate([rowId], { relativeTo: this.route }));
+        this.router.navigate([rowId], { relativeTo: this.route });
       }
     }
   }
@@ -490,7 +489,7 @@ export class DataGrid<T extends keyof Models, U> {
   }
 
   protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.ngZone.run(() => this.openEdit(event.data.id));
+    this.openEdit(event.data.id);
   }
 
   protected async refresh() {

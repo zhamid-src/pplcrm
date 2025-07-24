@@ -1,9 +1,9 @@
-import { Component, EventEmitter, Output, input, signal } from "@angular/core";
-import { Input } from "@uxcommon/input";
+import { Component, EventEmitter, Output, input, signal } from '@angular/core';
+import { PPlCrmInput } from '@uxcommon/input';
 
 @Component({
   selector: 'pc-autocomplete',
-  imports: [Input],
+  imports: [PPlCrmInput],
   templateUrl: './autocomplete.html',
 })
 export class AutoComplete {
