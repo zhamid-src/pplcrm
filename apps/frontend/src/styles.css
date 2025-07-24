@@ -145,6 +145,26 @@ body {
       opacity: 0;
     }
   }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
 
   .animate-up {
     animation: up 0.2s ease-in-out both;
@@ -169,5 +189,11 @@ body {
   }
   .animate-exit-down {
     animation: exitDown 0.2s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.2s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.2s ease-in-out forwards;
   }
 }
