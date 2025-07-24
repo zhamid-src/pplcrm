@@ -4,35 +4,32 @@
     <pc-icon name="bars-4"></pc-icon>
   </div>
   <!-- Search bar -->
-  <div class="sm:visible sm:flex-1" [class.invisible]="!this.searchOnMobile">
-    <label class="group relative block">
-      <pc-icon
-        class="group-focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-4 w-4 -translate-y-1/2 transform pt-1 text-sm text-gray-300"
-        name="magnifying-glass"
-      />
-
+  <div class="sm:flex-1" [class.invisible]="!searchBarVisible()">
+    <label class="input">
+      <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
       <input
+        #searchInput
         type="text"
         placeholder="Search"
-        class="input-pplcrm w-42 pl-10 pr-6 md:w-80"
+        class="grow w-full"
+        (blur)="onBlurSearchBar()"
         [value]="searchStr"
         (input)="onSearchInput($event)"
       />
-
-      <pc-icon
-        class="absolute right-3 top-1/3 h-4 w-4 -translate-y-1/2 transform cursor-pointer pt-1 text-sm text-gray-400/0 group-focus-within:text-gray-400 group-hover:text-gray-400"
-        name="x-mark"
-        (click)="clearSearch()"
-      />
+      <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
+      <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
     </label>
   </div>
-  <div class="flex-none gap-4" [class.hidden]="isMobileOpen()" (click)="this.showSearchonMobile()">
+
+  <div class="flex items-center gap-4" [class.hidden]="isMobileOpen()">
     <!-- Search icon -->
     <pc-icon
-      class="hover:text-primary text-base-400 cursor-pointer sm:hidden"
-      [class.hidden]="this.searchOnMobile"
+      class="hover:text-primary text-base-400 cursor-pointer"
+      [class.hidden]="searchBarVisible()"
+      (click)="showSearchBar()"
       name="magnifying-glass"
     ></pc-icon>
+
     <!-- light / dark theme switcher -->
     <pc-swap
       swapOnIcon="sun"
