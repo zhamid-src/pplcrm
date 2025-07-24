@@ -3,25 +3,31 @@
   <div class="flex-1 sm:hidden" (click)="toggleMobile()">
     <pc-icon name="bars-4"></pc-icon>
   </div>
-  <!-- Search bar -->
-  <div class="sm:flex-1" [class.invisible]="!searchBarVisible()">
-    <label class="input">
-      <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-      <input
-        #searchInput
-        type="text"
-        placeholder="Search"
-        class="grow w-full"
-        (blur)="onBlurSearchBar()"
-        [value]="searchStr"
-        (input)="onSearchInput($event)"
-      />
-      <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-      <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
-    </label>
-  </div>
 
-  <div class="flex items-center gap-4" [class.hidden]="isMobileOpen()">
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Search bar -->
+    @if (searchBarVisible() || searchBarRemoving()) {
+    <div
+      class="flex-1 max-w-full animate-exit-right"
+      [class.animate-left]="!searchBarRemoving()"
+      [class.animate-exit-right]="searchBarRemoving()"
+    >
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr"
+          (input)="onSearchInput($event)"
+        />
+        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
+        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
+      </label>
+    </div>
+    }
     <!-- Search icon -->
     <pc-icon
       class="hover:text-primary text-base-400 cursor-pointer"
@@ -43,9 +49,9 @@
 
     <!-- profile drop down -->
     <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
         <div
-          class="bg-base-100 border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 p-1 hover:border-2"
+          class="bg-base-100 border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2"
         >
           <img alt="User Profile Picture" src="assets/sq.svg" />
         </div>

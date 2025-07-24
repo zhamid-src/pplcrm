@@ -34,17 +34,19 @@ export class Navbar {
   /** Indicates whether the search input is visible or not */
   protected searchBarVisible = signal(false);
 
+  /** Indicates whether the search bar is being removed (for animation) */
+  protected searchBarRemoving = signal(false);
+
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
 
   constructor() {
     // Move focus to the search bar whenever it becomes visible
     effect(() => {
-      if (this.searchBarVisible()) {
+      if (this.searchBarVisible())
         queueMicrotask(() => {
           this.searchInputRef?.nativeElement?.focus();
         });
-      }
     });
   }
 
@@ -82,6 +84,9 @@ export class Navbar {
       event.preventDefault();
 
       this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
     }
   }
 
@@ -138,7 +143,11 @@ export class Navbar {
    * Hide the search bar
    */
   protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
+    this.searchBarRemoving.set(true);
+    setTimeout(() => {
+      this.searchBarVisible.set(false);
+      this.searchBarRemoving.set(false);
+    }, 200);
   }
 
   /**
@@ -146,6 +155,7 @@ export class Navbar {
    * input text bar is empty
    */
   protected onBlurSearchBar() {
+    console.log(this.searchStr);
     if (!this.searchStr.length) {
       this.hideSearchBar();
     }
