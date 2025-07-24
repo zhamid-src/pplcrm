@@ -1,4 +1,4 @@
-import { Component, HostListener, inject } from '@angular/core';
+import { Component, effect, ElementRef, HostListener, inject, signal, ViewChild } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
@@ -14,6 +14,8 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
   templateUrl: './navbar.html',
 })
 export class Navbar {
+  @ViewChild('searchInput') searchInputRef!: ElementRef<HTMLInputElement>;
+
   /** Handles authentication-related operations. */
   private readonly auth = inject(AuthService);
 
@@ -29,8 +31,22 @@ export class Navbar {
   /** Indicates whether the search input is visible on mobile view. */
   protected searchOnMobile = false;
 
+  /** Indicates whether the search input is visible or not */
+  protected searchBarVisible = signal(false);
+
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible()) {
+        queueMicrotask(() => {
+          this.searchInputRef?.nativeElement?.focus();
+        });
+      }
+    });
+  }
 
   /**
    * Handles user input from the search field.
@@ -65,50 +81,73 @@ export class Navbar {
     if (isCtrlOrCmd && isK) {
       event.preventDefault();
 
-      // TODO: have to move the cursor to search
-      this.showSearchonMobile();
+      this.showSearchBar();
     }
   }
 
   /**
    * Returns whether the mobile sidebar is currently open.
    */
-  public isMobileOpen(): boolean {
+  protected isMobileOpen(): boolean {
     return this.sideBarSvc.isMobileOpen();
   }
 
   /**
    * Triggers the search using the current value in the search bar.
    */
-  public search(): void {
+  protected search(): void {
     this.searchSvc.doSearch(this.searchStr);
   }
 
   /**
    * Signs the current user out and clears auth tokens.
    */
-  public signOut(): void {
+  protected signOut(): void {
     this.auth.signOut();
   }
 
   /**
    * Toggles the sidebar open/closed in mobile view.
    */
-  public toggleMobile(): void {
+  protected toggleMobile(): void {
     this.sideBarSvc.toggleMobile();
   }
 
   /**
    * Switches the visual theme between light and dark mode.
    */
-  public toggleTheme(): void {
+  protected toggleTheme(): void {
     this.themeSvc.toggleTheme();
   }
 
   /**
-   * Enables the mobile search input field.
+   * Show or hide the search bar
    */
-  protected showSearchonMobile(): void {
-    this.searchOnMobile = true;
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  /**
+   * Show the search bar
+   */
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  /**
+   * Hide the search bar
+   */
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  /**
+   * Hide the search bar on losing focus if the
+   * input text bar is empty
+   */
+  protected onBlurSearchBar() {
+    if (!this.searchStr.length) {
+      this.hideSearchBar();
+    }
   }
 }
