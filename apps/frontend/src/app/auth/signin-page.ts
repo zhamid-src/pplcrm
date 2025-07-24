@@ -1,7 +1,7 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { Alert } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alert';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 
@@ -14,7 +14,7 @@ import { TokenService } from 'apps/frontend/src/app/data/token-service';
  */
 @Component({
   selector: 'pc-login',
-  imports: [ReactiveFormsModule, RouterLink, Icon, Alert],
+  imports: [ReactiveFormsModule, RouterLink, Icon, Alerts],
   templateUrl: './signin-page.html',
 })
 export class SignInPage {

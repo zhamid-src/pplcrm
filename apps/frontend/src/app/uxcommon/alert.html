@@ -1,18 +1,19 @@
 <div
-  class="z-50 top-0 absolute w-full"
-  [class.absolute]="position() !== 'relative'"
-  [class.top-0]="position() === 'top'"
-  [class.bottom-0]="position() === 'bottom'"
+  class="z-50 top-0 absolute w-full left-0"
+  [class.absolute]="!isPositionRelative()"
+  [class.top-0]="isPositionTop()"
+  [class.bottom-0]="isPositionBottom()"
 >
-  @for (alert of alerts(); track alert) {
+  @for (alert of alerts(); track alert.id) {
   <div
     class="alert rounded-none"
-    [class.only-of-type:rounded-b-2xl]="position() === 'top'"
-    [class.last-of-type:rounded-b-2xl]="position() === 'top'"
-    [class.only-of-type:rounded-t-2xl]="position() === 'bottom'"
-    [class.first-of-type:rounded-t-2xl]="position() === 'bottom'"
-    [class.animate-up]="position() === 'bottom'"
-    [class.animate-down]="position() === 'top'"
+    [class.animate-up]="isPositionBottom()"
+    [class.animate-down]="isPositionTop() || isPositionRelative()"
+    [class.animate-exit-up]="isAlertRemoving(alert.id)"
+    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
+    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
+    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
+    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
     [class.alert-info]="alert.type === 'info'"
     [class.alert-warning]="alert.type === 'warning'"
     [class.alert-success]="alert.type === 'success'"
@@ -31,7 +32,7 @@
       [class.btn-success]="alert.type === 'success'"
       [class.btn-error]="alert.type === 'error'"
       [class.hidden]="!alert.OKBtn"
-      (click)="OKBtnClick(alert.text)"
+      (click)="OKBtnClick(alert.id)"
     >
       {{ alert.OKBtn }}
     </button>

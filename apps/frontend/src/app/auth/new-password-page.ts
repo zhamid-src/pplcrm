@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { TRPCError } from '@trpc/server';
-import { Alert } from '@uxcommon/alert';
+import { Alerts } from '@uxcommon/alert';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 
@@ -14,7 +14,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-new-password',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordCheckerModule, Icon, Alert],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordCheckerModule, Icon, Alerts],
   templateUrl: './new-password-page.html',
 })
 export class NewPasswordPage implements OnInit {
