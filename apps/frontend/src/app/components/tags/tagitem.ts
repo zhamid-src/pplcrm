@@ -1,13 +1,6 @@
 import { Component, EventEmitter, Output, Signal, input, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icon';
 
-export class TagModel {
-  constructor(
-    public name: string,
-    public invisible = signal(false),
-  ) {}
-}
-
 /**
  * The `tagitem` component displays a single tag UI element with optional delete functionality and animation.
  *
