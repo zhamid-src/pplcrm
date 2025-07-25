@@ -10,7 +10,7 @@ import { Tags } from 'apps/frontend/src/app/components/tags/tags';
 export class Summary {
   private alert = inject(AlertService);
 
-  public allowDetele = true;
+  public canDelete = true;
   public readonly = false;
   public tags = ['hello', 'you', 'fool'];
 

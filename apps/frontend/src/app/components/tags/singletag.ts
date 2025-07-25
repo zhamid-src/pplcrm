@@ -13,7 +13,7 @@ export class TagModel {
  *
  * ## Inputs
  * - `name`: The label or name of the tag (required).
- * - `allowDetele`: Whether to show a delete icon (defaults to `true`).
+ * - `canDelete`: Whether to show a delete icon (defaults to `true`).
  *
  * ## Outputs
  * - `clickEvent`: Emits the tag name when the tag is clicked.
@@ -31,7 +31,7 @@ export class TagModel {
   templateUrl: './singletag.html',
 })
 export class SingleTag {
-  public allowDetele = input<boolean>(true);
+  public canDelete = input<boolean>(true);
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();
   public name = input.required<string>();
