@@ -165,12 +165,23 @@ body {
       opacity: 0;
     }
   }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
 
   .animate-up {
-    animation: up 0.2s ease-in-out both;
+    animation: up 0.3s ease-in-out both;
   }
   .animate-down {
-    animation: down 0.2s ease-in-out both;
+    animation: down 0.3s ease-in-out both;
   }
   .animate-right {
     animation: right 0.3s ease-in-out both;
@@ -179,21 +190,24 @@ body {
     animation: left 0.3s ease-in-out both;
   }
   .animate-drop {
-    animation: drop 0.2s ease-in-out both;
+    animation: drop 0.3s ease-in-out both;
   }
   .animate-flash {
     animation: flash 0.3s linear infinite;
   }
   .animate-exit-up {
-    animation: exitUp 0.2s ease-in-out forwards;
+    animation: exitUp 0.3s ease-in-out forwards;
   }
   .animate-exit-down {
-    animation: exitDown 0.2s ease-in-out forwards;
+    animation: exitDown 0.3s ease-in-out forwards;
   }
   .animate-exit-left {
-    animation: exitLeft 0.2s ease-in-out forwards;
+    animation: exitLeft 0.3s ease-in-out forwards;
   }
   .animate-exit-right {
-    animation: exitRight 0.2s ease-in-out forwards;
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
   }
 }

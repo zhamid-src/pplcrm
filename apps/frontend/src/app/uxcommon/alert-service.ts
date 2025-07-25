@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { effect, Injectable, signal } from '@angular/core';
 
 /**
  * The options used to configure an alert message.
@@ -31,8 +31,12 @@ export class AlertMessage {
   /** Alert type for styling and icon. */
   type?: ALERTTYPE;
 
-  /** Is the alert being removed? Used for exit animation */
-  private _removing = signal(true);
+  /** Is the alert visible? Used for exit animation directive */
+  visible = signal(true);
+
+  pulse = signal(false);
+
+  timeoutId: NodeJS.Timeout | undefined;
 
   constructor(init?: Partial<AlertMessage>) {
     Object.assign(this, init);
@@ -40,14 +44,6 @@ export class AlertMessage {
     this.OKBtn = init?.OKBtn ?? 'OK';
     this.duration = init?.duration ?? 3000;
     this.text = init?.text ?? 'Alert';
-    this.removing = init?.removing ?? false;
-  }
-
-  get removing() {
-    return this._removing();
-  }
-  set removing(value: boolean) {
-    this._removing.set(value);
   }
 }
 
@@ -56,6 +52,8 @@ export class AlertMessage {
 })
 export class AlertService {
   private _alerts = signal<AlertMessage[]>([]);
+
+  constructor() {}
 
   /**
    * Returns a list of all currently active alerts.
@@ -89,31 +87,44 @@ export class AlertService {
   public dismiss(id: string): void {
     const alert = this.findById(id);
 
-    // We need the delay here to animate the exit.
-    if (alert) {
-      alert.removing = true;
-      setTimeout(() => this._alerts.update((arr) => arr.filter((m) => m.id !== id)), 200);
-    }
+    if (!alert) return;
+
+    // Clear any pending removal timeout
+    clearTimeout(alert.timeoutId);
+    alert.timeoutId = undefined;
+
+    alert.visible.set(false);
+
+    // Have to let the animation do its thing first
+    setTimeout(() => this._alerts.update((alerts) => alerts.filter((alert) => alert.id !== id)), 300);
   }
 
   private findById(id: string) {
     return this.alerts.find((m) => m.id === id);
-  }
-
-  public isAlertRemoving(id: string) {
-    const alert = this.findById(id);
-    return alert?.removing;
   }
   /**
    * Shows a new alert if not already present.
    * @param alert - Alert options to display.
    */
   public show(alert: Partial<AlertMessage>): void {
-    if (this.alerts.find((m) => m.text === alert.text)) return;
+    // If the same text is shown then ignore it. // TODO: right behaviour?
+    const existing = this.alerts.find((m) => m.text === alert.text);
 
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    this._alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
-    setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
+    if (existing) {
+      // Retrigger the pulse animation
+      existing.pulse.set(false); // ← reset first
+
+      // Re-set to true in next frame (or ~immediately)
+      setTimeout(() => existing.pulse.set(true), 0);
+
+      // Extend dismissal timeout by 1 second
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration + 1000);
+    } else {
+      const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
+      this._alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
+      messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
+    }
   }
 
   /**

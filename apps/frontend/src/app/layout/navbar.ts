@@ -1,5 +1,6 @@
 import { Component, effect, ElementRef, HostListener, inject, signal, ViewChild } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
+import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
 import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
 
@@ -10,7 +11,7 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule],
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective],
   templateUrl: './navbar.html',
 })
 export class Navbar {
@@ -33,9 +34,6 @@ export class Navbar {
 
   /** Indicates whether the search input is visible or not */
   protected searchBarVisible = signal(false);
-
-  /** Indicates whether the search bar is being removed (for animation) */
-  protected searchBarRemoving = signal(false);
 
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
@@ -143,11 +141,7 @@ export class Navbar {
    * Hide the search bar
    */
   protected hideSearchBar(): void {
-    this.searchBarRemoving.set(true);
-    setTimeout(() => {
-      this.searchBarVisible.set(false);
-      this.searchBarRemoving.set(false);
-    }, 200);
+    this.searchBarVisible.set(false);
   }
 
   /**
@@ -155,7 +149,6 @@ export class Navbar {
    * input text bar is empty
    */
   protected onBlurSearchBar() {
-    console.log(this.searchStr);
     if (!this.searchStr.length) {
       this.hideSearchBar();
     }

@@ -1,10 +1,12 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { ALERTTYPE, AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
+import { AnimateIfDirective } from './animate-if.directive';
 
 @Component({
   selector: 'pc-alerts',
-  imports: [Icon],
+  standalone: true,
+  imports: [Icon, AnimateIfDirective],
   templateUrl: './alerts.html',
 })
 export class Alerts {
@@ -25,10 +27,6 @@ export class Alerts {
   protected OKBtnClick(id: string): void {
     this.alertSvc.OKBtnCallback(id);
     this.alertSvc.dismiss(id);
-  }
-
-  protected isAlertRemoving(id: string) {
-    return this.alertSvc.isAlertRemoving(id);
   }
 
   /**
@@ -75,5 +73,11 @@ export class Alerts {
   }
   protected isPositionRelative() {
     return this.position() === 'relative';
+  }
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
   }
 }

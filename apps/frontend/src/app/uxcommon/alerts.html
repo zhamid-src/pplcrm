@@ -5,12 +5,10 @@
   [class.bottom-0]="isPositionBottom()"
 >
   @for (alert of alerts(); track alert.id) {
+
   <div
     class="alert rounded-none"
-    [class.animate-up]="isPositionBottom()"
-    [class.animate-down]="isPositionTop() || isPositionRelative()"
-    [class.animate-exit-up]="isAlertRemoving(alert.id) && (isPositionTop() || isPositionRelative())"
-    [class.animate-exit-down]="isAlertRemoving(alert.id) && isPositionBottom()"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
     [class.only-of-type:rounded-b-2xl]="isPositionTop()"
     [class.last-of-type:rounded-b-2xl]="isPositionTop()"
     [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
@@ -19,6 +17,8 @@
     [class.alert-warning]="alert.type === 'warning'"
     [class.alert-success]="alert.type === 'success'"
     [class.alert-error]="alert.type === 'error'"
+    [class.animate-bounce]="isPositionBottom()"
+    [class.animate-flash]="alert.pulse()"
   >
     <pc-icon [name]="icon(alert.type!)" class="mr-2"></pc-icon>
     <div>
@@ -32,7 +32,6 @@
       [class.btn-warning]="alert.type === 'warning'"
       [class.btn-success]="alert.type === 'success'"
       [class.btn-error]="alert.type === 'error'"
-      [class.hidden]="!alert.OKBtn"
       (click)="OKBtnClick(alert.id)"
     >
       {{ alert.OKBtn }}
