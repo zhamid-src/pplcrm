@@ -1,12 +1,12 @@
-import { Component, ViewChild, inject, signal } from "@angular/core";
-import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
-import { AddTagType } from "@common";
-import { TRPCError } from "@trpc/server";
-import { AddBtnRow } from "@uxcommon/add-btn-row";
-import { AlertService } from "@uxcommon/alert-service";
-import { FormInput } from "@uxcommon/formInput";
+import { Component, ViewChild, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AddTagType } from '@common';
+import { TRPCError } from '@trpc/server';
+import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { AlertService } from '@uxcommon/alert-service';
+import { FormInput } from '@uxcommon/formInput';
 
-import { TagsService } from "apps/frontend/src/app/components/tags/tags-service";
+import { TagsService } from '@uxcommon/tags/tags-service';
 
 /**
  * A component for adding new tags to the system.

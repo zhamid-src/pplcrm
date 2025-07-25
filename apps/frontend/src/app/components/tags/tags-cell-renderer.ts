@@ -3,7 +3,7 @@ import { GridApi, ICellRendererParams } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 
 import { AbstractAPIService } from '../../abstract.service';
-import { Tags } from 'apps/frontend/src/app/components/tags/tags';
+import { Tags } from '@uxcommon/tags/tags';
 import { Models } from 'common/src/lib/kysely.models';
 
 interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererParams {

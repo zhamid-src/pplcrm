@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, OnInit, Output, inject, input } from '@angular/core';
 import { AutoComplete } from '@uxcommon/autocomplete';
 
-import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
+import { TagsService } from '@uxcommon/tags/tags-service';
 import { TagItem } from './tagitem';
 import { TagModel } from './tag-model';
 

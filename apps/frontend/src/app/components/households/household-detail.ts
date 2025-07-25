@@ -11,7 +11,7 @@ import { TextArea } from '@uxcommon/textarea';
 import { PersonsService } from '../persons/persons-service';
 import { HouseholdsService } from './households-service';
 import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
-import { Tags } from 'apps/frontend/src/app/components/tags/tags';
+import { Tags } from '@uxcommon/tags/tags';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 import { Households } from 'common/src/lib/kysely.models';
 
