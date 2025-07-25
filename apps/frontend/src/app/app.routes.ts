@@ -16,7 +16,7 @@ import { TagsGridComponent } from './components/tags/tags-grid';
 import { VolunteersGrid } from './components/volunteers/volunteers-grid';
 import { Dashboard } from './layout/dashboard';
 import { Summary } from './temp/summary';
-import { AddTag } from 'apps/frontend/src/app/components/tags/add-tag';
+import { AddTag } from '@uxcommon/tags/add-tag';
 
 /**
  * The main route configuration for the application.

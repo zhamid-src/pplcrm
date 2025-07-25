@@ -3,7 +3,7 @@ import { AddTagType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid';
 
 import { AbstractAPIService } from '../../abstract.service';
-import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
+import { TagsService } from '@uxcommon/tags/tags-service';
 
 /**
  * `TagsGridComponent` displays a data grid of tags with editable fields.

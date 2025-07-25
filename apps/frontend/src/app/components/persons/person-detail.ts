@@ -1,17 +1,17 @@
-import { Component, OnInit, inject, input, signal } from "@angular/core";
-import { FormBuilder, ReactiveFormsModule } from "@angular/forms";
-import { ActivatedRoute, Router, RouterModule } from "@angular/router";
-import { UpdatePersonsType } from "@common";
-import { AddBtnRow } from "@uxcommon/add-btn-row";
-import { AlertService } from "@uxcommon/alert-service";
-import { FormInput } from "@uxcommon/formInput";
-import { TextArea } from "@uxcommon/textarea";
+import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { UpdatePersonsType } from '@common';
+import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { AlertService } from '@uxcommon/alert-service';
+import { FormInput } from '@uxcommon/formInput';
+import { TextArea } from '@uxcommon/textarea';
 
-import { HouseholdsService } from "../households/households-service";
-import { PersonsService } from "./persons-service";
-import { PeopleInHousehold } from "apps/frontend/src/app/components/persons/people-in-household";
-import { Tags } from "apps/frontend/src/app/components/tags/tags";
-import { AddressType, Persons } from "common/src/lib/kysely.models";
+import { HouseholdsService } from '../households/households-service';
+import { PersonsService } from './persons-service';
+import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
+import { Tags } from '@uxcommon/tags/tags';
+import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
 /**
  * Component for displaying and editing a single person's details.
