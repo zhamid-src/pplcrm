@@ -61,7 +61,7 @@
         </div>
         <div class="divider mb-1">ADDITIONAL</div>
         <pc-tags
-          [(tags)]="this.tags"
+          [tagNames]="this.tags"
           [enableAutoComplete]="true"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"

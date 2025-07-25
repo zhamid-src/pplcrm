@@ -5,7 +5,7 @@
     [class.swap-rotate]="animation() === 'rotate'"
   >
     <input type="checkbox" (click)="emitClick()" [checked]="checked()" />
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" />
-    <pc-icon [name]="swapOffIcon()!" class="swap-off" />
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
+    <pc-icon [name]="swapOffIcon()!" class="swap-off" [size]="size()" />
   </label>
 </div>

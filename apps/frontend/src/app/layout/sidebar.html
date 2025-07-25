@@ -1,10 +1,12 @@
 <div
+  (mouseenter)="onSidebarHover(true)"
+  (mouseleave)="onSidebarHover(false)"
   class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
-  [class.w-16]="this.isDrawerHalf() && !this.isMobileOpen()"
+  [class.w-18]="this.isDrawerHalf() && !this.isMobileOpen()"
 >
-  <!-- First, add logo (full or square) -->
+  <!-- Logo: Full or Compact -->
   <div
     [class.hidden]="!this.isDrawerFull()"
     class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
@@ -19,35 +21,65 @@
     <img src="../../assets/sq.svg" class="w-24 h-auto p-2" />
   </div>
 
-  <!-- Sidebar content here -->
-  @for (item of items; track item.name; let idx = $index) {
-    <div class="flex-none px-2" [class.bg-base-200]="this.router.url === item['route']">
-      @if (item['type'] === 'subheading') {
-        <span
-          class="text-base-400 py-2 pl-2 capitalize group-hover:text-xs"
-          [class.text-[9px]]="this.isDrawerHalf()"
-          [class.text-xs]="this.isDrawerFull()"
-          >{{ item['name'] }}</span
-        >
-      } @else {
-        <a
-          class="hover:bg-base-200 flex flex-auto py-1 pl-2 tracking-widest hover:rounded-lg"
-          (click)="this.closeMobile()"
-          routerLink="{{ item['route'] }}"
-        >
-          <pc-icon class="hover:text-primary text-xs" [name]="item['icon']!"></pc-icon>
-          <span
-            class="pl-3 pt-1 group-hover:md:visible"
-            [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-          >
-            {{ item['name'] }}</span
-          ></a
-        >
+  <!-- Sidebar Items -->
+  @for (item of items; track item.name) {
+  <div class="flex-none px-2">
+    @if (item['type'] === 'subheading') {
+    <!-- Subheading with collapsible children -->
+    <div
+      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span [class.text-[10px]]="isDrawerHalf() && !isHoveringSidebar()"> {{ item.name }} </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="rotate-90 invisible mr-2"
+        [class.visible]="isDrawerFull() || isMobileOpen() || isHoveringSidebar()"
+        swapOnIcon="chevron-double-right"
+        swapOffIcon="chevron-double-left"
+        animation="flip"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (clickEvent)="toggleCollapse(item.name)"
+      ></pc-swap>
+
       }
     </div>
+
+    @if (item.children && isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <a
+        class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+        (click)="this.closeMobile()"
+        routerLink="{{ child.route }}"
+        [class.bg-base-200]="this.router.url === child.route"
+      >
+        <pc-icon class="hover:text-primary text-xs" [name]="child.icon!"></pc-icon>
+        <span class="pl-3 pt-1 group-hover:md:visible" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
+          {{ child.name }}
+        </span>
+      </a>
+      }
+    </div>
+    } } @else {
+    <!-- Regular item without subheading -->
+    <a
+      class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+      (click)="this.closeMobile()"
+      routerLink="{{ item.route }}"
+      [class.bg-base-200]="this.router.url === item.route"
+    >
+      <pc-icon class="hover:text-primary text-xs" [name]="item.icon!"></pc-icon>
+      <span class="pl-3 pt-1 group-hover:md:visible" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
+        {{ item.name }}
+      </span>
+    </a>
+    }
+  </div>
   }
 
-  <!-- Finally, the toggle drawer icon -->
+  <!-- Toggle Drawer Button -->
   <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap

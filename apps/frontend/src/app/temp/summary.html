@@ -2,7 +2,7 @@
 <p class="min-h-max w-full pt-72 text-center text-3xl">Summary module</p>
 
 <pc-tags
-  [(tags)]="this.tags"
+  [tagNames]="this.tags"
   (tagsChange)="tagsChanged($event)"
   [readonly]="readonly"
   [allowDetele]="allowDetele"

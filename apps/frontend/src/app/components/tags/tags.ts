@@ -1,21 +1,21 @@
-import { Component, EventEmitter, Output, inject, input } from "@angular/core";
-import { AutoComplete } from "@uxcommon/autocomplete";
+import { Component, EventEmitter, Input, OnInit, Output, inject, input } from '@angular/core';
+import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
+import { AutoComplete } from '@uxcommon/autocomplete';
 
-import { SingleTag } from "apps/frontend/src/app/components/tags/singletag";
-import { TagsService } from "apps/frontend/src/app/components/tags/tags-service";
+import { SingleTag, TagModel } from 'apps/frontend/src/app/components/tags/singletag';
+import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
 
 @Component({
   selector: 'pc-tags',
-  imports: [SingleTag, AutoComplete],
+  imports: [SingleTag, AutoComplete, AnimateIfDirective],
   templateUrl: './tags.html',
 })
-export class Tags {
+export class Tags implements OnInit {
   /**
    * If the list of tags can be deleted. It adds or remove the x button.
    * The default is true.
    */
   public allowDetele = input<boolean>(true);
-  public animate = input<boolean>(true);
   public animateRemoval = input<boolean>(true);
 
   /**
@@ -57,7 +57,8 @@ export class Tags {
    * In case the parent wants to give a list of tags to start with.
    * This can also be used as a two-way binding
    */
-  public tags = input<string[]>([]);
+  public tags = input<TagModel[]>([]);
+  @Input() public tagNames: string[] = [];
 
   /**
    * If the list of tags changes then this event is emitted with the new list of tags.
@@ -65,6 +66,12 @@ export class Tags {
    * if the parent uses tags as a two-way binding.
    */
   @Output() public tagsChange = new EventEmitter<string[]>();
+
+  ngOnInit() {
+    for (const name of this.tagNames) {
+      this.add(name);
+    }
+  }
 
   /**
    * Fetch tag suggestions based on user input using the backend TagsService.
@@ -76,8 +83,6 @@ export class Tags {
     if (!key || key.length === 0) {
       return [];
     }
-    console.log('filter', key);
-    console.log(this.tagSvc);
     const names = (await this.tagSvc.findByName(key)) as { name: string }[];
     return names.map((m) => m.name);
   }
@@ -88,17 +93,31 @@ export class Tags {
    *
    * @param tag - The raw tag string to be added.
    */
-  protected add(tag: string) {
-    // If the user types really quickly then we might get a comma in the middle of the word.
-    // We want to remove the comma and add the word.
-    if (tag.indexOf(',') >= 0) {
-      tag = tag.replace(',', '').trim();
+  protected add(tagName: string) {
+    if (tagName.indexOf(',') >= 0) {
+      tagName = tagName.replace(',', '').trim();
     }
-    if (tag.length > 0 && !this.tags().includes(tag)) {
+
+    if (tagName.length === 0) return;
+
+    const index = this.getTagIndexByName(tagName);
+    if (index === -1) {
+      const tag = new TagModel(tagName);
       this.tags().unshift(tag);
-      this.tagsChange.emit(this.tags());
-      this.tagAdded.emit(tag);
+      this.tagsChange.emit(this.getTagNamesArray());
+      this.tagAdded.emit(tagName);
+    } else {
+      // Bring tag that maches to the front.
+      const [tag] = this.tags().splice(index, 1); // remove it
+      this.tags().unshift(tag); // move to front
     }
+  }
+
+  private getTagNamesArray() {
+    return this.tags().map((tag) => tag.name);
+  }
+  private getTagIndexByName(name: string): number {
+    return this.tags().findIndex((tag) => tag.name === name);
   }
 
   /**
@@ -119,8 +138,7 @@ export class Tags {
    * @param tag - the tag that was closed
    */
   protected closed(tag: string) {
-    const duration = this.animateRemoval() ? 500 : 100;
-    setTimeout(() => this.remove(tag), duration);
+    this.remove(tag);
   }
 
   /**
@@ -128,12 +146,12 @@ export class Tags {
    *
    * @param tag - The tag to be removed.
    */
-  protected remove(tag: string) {
-    const index = this.tags().indexOf(tag);
+  protected remove(tagName: string) {
+    const index = this.getTagIndexByName(tagName);
     if (index > -1) {
       this.tags().splice(index, 1);
-      this.tagsChange.emit(this.tags());
-      this.tagRemoved.emit(tag);
+      this.tagsChange.emit(this.getTagNamesArray());
+      this.tagRemoved.emit(tagName);
     }
   }
 }

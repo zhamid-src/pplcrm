@@ -11,11 +11,10 @@
   } @for (tag of tags(); track tag) {
   <pc-singletag
     class="mr-1"
-    [name]="tag"
+    [name]="tag.name"
     [allowDetele]="allowDetele()"
-    (clickEvent)="clicked(tag)"
-    (closeEvent)="closed(tag)"
-    [animate]="animate()"
+    (clickEvent)="clicked(tag.name)"
+    (closeEvent)="closed(tag.name)"
   ></pc-singletag>
   }
 </div>

@@ -20,7 +20,10 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
 export class Sidebar {
   private sidebarSvc = inject(SidebarService);
 
+  protected collapsedItems = new Set<string>();
   protected router = inject(Router);
+
+  public hoveringSidebar = false;
 
   public get items() {
     return this.sidebarSvc.items;
@@ -42,7 +45,27 @@ export class Sidebar {
     return this.sidebarSvc.isMobileOpen();
   }
 
+  public onSidebarHover(state: boolean) {
+    this.hoveringSidebar = state;
+  }
+
+  protected isHoveringSidebar() {
+    return this.hoveringSidebar;
+  }
+
   public toggleDrawer() {
     return this.sidebarSvc.toggleDrawer();
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.collapsedItems.has(name);
+  }
+
+  protected toggleCollapse(name: string) {
+    if (this.collapsedItems.has(name)) {
+      this.collapsedItems.delete(name);
+    } else {
+      this.collapsedItems.add(name);
+    }
   }
 }

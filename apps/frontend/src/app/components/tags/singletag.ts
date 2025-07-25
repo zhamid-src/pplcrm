@@ -1,5 +1,12 @@
-import { Component, EventEmitter, Output, input } from '@angular/core';
+import { Component, EventEmitter, Output, Signal, input, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icon';
+
+export class TagModel {
+  constructor(
+    public name: string,
+    public invisible = signal(false),
+  ) {}
+}
 
 /**
  * The `SingleTag` component displays a single tag UI element with optional delete functionality and animation.
@@ -7,7 +14,6 @@ import { Icon } from '@uxcommon/icon';
  * ## Inputs
  * - `name`: The label or name of the tag (required).
  * - `allowDetele`: Whether to show a delete icon (defaults to `true`).
- * - `animate`: Whether to animate the removal (defaults to `true`).
  *
  * ## Outputs
  * - `clickEvent`: Emits the tag name when the tag is clicked.
@@ -25,13 +31,13 @@ import { Icon } from '@uxcommon/icon';
   templateUrl: './singletag.html',
 })
 export class SingleTag {
-  protected destroy = false;
-
   public allowDetele = input<boolean>(true);
-  public animate = input<boolean>(true);
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();
   public name = input.required<string>();
+  public invisible = input<Signal<boolean>>(signal(false));
+
+  constructor() {}
 
   public emitClick() {
     this.clickEvent.emit(this.name());
@@ -41,7 +47,6 @@ export class SingleTag {
     // Destroy here sets the animation by adding the class 'destroy' to the tag
     // It does mean that the tag should be removed from the array in the parent component
     // after some delay, so that the animation can complete
-    this.destroy = true;
     this.closeEvent.emit(this.name());
   }
 }
