@@ -1,22 +1,22 @@
-import { Route } from "@angular/router";
-import { NotFound } from "@uxcommon/not-found";
+import { Route } from '@angular/router';
+import { NotFound } from '@uxcommon/not-found';
 
-import { authGuard } from "./auth/auth-guard";
-import { loginGuard } from "./auth/login-guard";
-import { NewPasswordPage } from "./auth/new-password-page";
-import { ResetPasswordPage } from "./auth/reset-password-page";
-import { SignInPage } from "./auth/signin-page";
-import { SignUpPage } from "./auth/signup-page";
-import { DonorsGrid } from "./components/donors/donors-grid";
-import { HouseholdDetail } from "./components/households/household-detail";
-import { HouseholdsGrid } from "./components/households/households-grid";
-import { PersonDetail } from "./components/persons/person-detail";
-import { PersonsGrid } from "./components/persons/persons-grid";
-import { TagsGridComponent } from "./components/tags/tags-grid";
-import { VolunteersGrid } from "./components/tags/volunteers-grid";
-import { Dashboard } from "./layout/dashboard";
-import { Summary } from "./temp/summary";
-import { AddTag } from "apps/frontend/src/app/components/tags/add-tag";
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login-guard';
+import { NewPasswordPage } from './auth/new-password-page';
+import { ResetPasswordPage } from './auth/reset-password-page';
+import { SignInPage } from './auth/signin-page';
+import { SignUpPage } from './auth/signup-page';
+import { DonorsGrid } from './components/donors/donors-grid';
+import { HouseholdDetail } from './components/households/household-detail';
+import { HouseholdsGrid } from './components/households/households-grid';
+import { PersonDetail } from './components/persons/person-detail';
+import { PersonsGrid } from './components/persons/persons-grid';
+import { TagsGridComponent } from './components/tags/tags-grid';
+import { VolunteersGrid } from './components/volunteers/volunteers-grid';
+import { Dashboard } from './layout/dashboard';
+import { Summary } from './temp/summary';
+import { AddTag } from 'apps/frontend/src/app/components/tags/add-tag';
 
 /**
  * The main route configuration for the application.

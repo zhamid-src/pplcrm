@@ -7,7 +7,7 @@ import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service'
 
 @Component({
   selector: 'pc-tags',
-  imports: [SingleTag, AutoComplete, AnimateIfDirective],
+  imports: [SingleTag, AutoComplete],
   templateUrl: './tags.html',
 })
 export class Tags implements OnInit {
