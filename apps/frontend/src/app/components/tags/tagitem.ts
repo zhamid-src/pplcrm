@@ -9,7 +9,7 @@ export class TagModel {
 }
 
 /**
- * The `SingleTag` component displays a single tag UI element with optional delete functionality and animation.
+ * The `tagitem` component displays a single tag UI element with optional delete functionality and animation.
  *
  * ## Inputs
  * - `name`: The label or name of the tag (required).
@@ -26,11 +26,11 @@ export class TagModel {
  * Used in tag lists or input interfaces to represent individual tags with interaction capabilities.
  */
 @Component({
-  selector: 'pc-singletag',
+  selector: 'pc-tagitem',
   imports: [Icon],
-  templateUrl: './singletag.html',
+  templateUrl: './tagitem.html',
 })
-export class SingleTag {
+export class TagItem {
   public canDelete = input<boolean>(true);
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();

@@ -9,13 +9,13 @@
   @if (!readonly()) {
   <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
   } @for (tag of tags(); track tag) {
-  <pc-singletag
+  <pc-tagitem
     class="mr-1"
     [name]="tag.name"
     [canDelete]="canDelete()"
     (clickEvent)="clicked(tag.name)"
     (closeEvent)="closed(tag.name)"
-  ></pc-singletag>
+  ></pc-tagitem>
   }
 </div>
 }
