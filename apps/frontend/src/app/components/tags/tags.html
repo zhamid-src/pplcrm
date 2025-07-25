@@ -12,7 +12,7 @@
   <pc-singletag
     class="mr-1"
     [name]="tag.name"
-    [allowDetele]="allowDetele()"
+    [canDelete]="canDelete()"
     (clickEvent)="clicked(tag.name)"
     (closeEvent)="closed(tag.name)"
   ></pc-singletag>

@@ -15,7 +15,7 @@ export class Tags implements OnInit {
    * If the list of tags can be deleted. It adds or remove the x button.
    * The default is true.
    */
-  public allowDetele = input<boolean>(true);
+  public canDelete = input<boolean>(true);
   public animateRemoval = input<boolean>(true);
 
   /**
