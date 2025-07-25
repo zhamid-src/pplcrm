@@ -7,6 +7,8 @@ const HouseholdsType = {
   file_id: { type: 'string' },
   name: { type: 'string' },
   home_phone: { type: 'string' },
+  apt: { type: 'string' },
+  street_num: { type: 'string' },
   street1: { type: 'string' },
   street2: { type: 'string' },
   city: { type: 'string' },

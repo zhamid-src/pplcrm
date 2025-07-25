@@ -12,6 +12,8 @@ const PersonType = {
   work_phone: { type: 'string' },
   email: { type: 'string' },
   email2: { type: 'string' },
+  apt: { type: 'string' },
+  street_num: { type: 'string' },
   street1: { type: 'string' },
   street2: { type: 'string' },
   city: { type: 'string' },

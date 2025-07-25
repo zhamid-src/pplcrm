@@ -48,6 +48,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('home_phone', 'text')
     .addColumn('mobile', 'text')
     .addColumn('email2', 'text')
+    .addColumn('apt', 'text')
+    .addColumn('street_num', 'text')
     .addColumn('street1', 'text')
     .addColumn('street2', 'text')
     .addColumn('city', 'text')
@@ -59,9 +61,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .execute();
 
-  db.schema
-    .alterTable('profiles')
-    .addForeignKeyConstraint('profile_id_authusers', ['id'], 'authusers', ['id']);
+  db.schema.alterTable('profiles').addForeignKeyConstraint('profile_id_authusers', ['id'], 'authusers', ['id']);
 
   await db.schema
     .createTable('tenants')
@@ -72,12 +72,15 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('mobile', 'text')
     .addColumn('email', 'text')
     .addColumn('email2', 'text')
+    .addColumn('apt', 'text')
+    .addColumn('street_num', 'text')
     .addColumn('street1', 'text')
     .addColumn('street2', 'text')
     .addColumn('city', 'text')
     .addColumn('state', 'text')
     .addColumn('zip', 'text')
     .addColumn('country', 'text')
+    .addColumn('billing_street_num', 'text')
     .addColumn('billing_street1', 'text')
     .addColumn('billing_street2', 'text')
     .addColumn('billing_city', 'text')
@@ -114,17 +117,9 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await db.schema.createIndex('sessions_user_index').on('sessions').column('user_id').execute();
 
-  await db.schema
-    .createIndex('sessions_refresh_token_index')
-    .on('sessions')
-    .column('refresh_token')
-    .execute();
+  await db.schema.createIndex('sessions_refresh_token_index').on('sessions').column('refresh_token').execute();
 
-  await db.schema
-    .createIndex('sessions_session_id_index')
-    .on('sessions')
-    .column('session_id')
-    .execute();
+  await db.schema.createIndex('sessions_session_id_index').on('sessions').column('session_id').execute();
 
   /*
   await db.schema
@@ -193,11 +188,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addPrimaryKeyConstraint('campaigns_id_tenantid', ['id', 'tenant_id'])
     .execute();
 
-  await db.schema
-    .createIndex('campaigns_tenant_index')
-    .on('campaigns')
-    .column('tenant_id')
-    .execute();
+  await db.schema.createIndex('campaigns_tenant_index').on('campaigns').column('tenant_id').execute();
 
   await db.schema
     .createTable('map_campaigns_users')
@@ -233,6 +224,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('createdby_id', 'bigint', (col) => col.notNull())
     .addColumn('file_id', 'bigint')
     .addColumn('home_phone', 'text')
+    .addColumn('apt', 'text')
+    .addColumn('street_num', 'text')
     .addColumn('street1', 'text')
     .addColumn('street2', 'text')
     .addColumn('city', 'text')
@@ -366,7 +359,8 @@ export async function up(db: Kysely<any>): Promise<void> {
       admin_id: 1,
       createdby_id: 1,
       name: 'Zeeshan Hamid Organization',
-      billing_street1: '174 Fennamore Terrace',
+      street_num: '174',
+      billing_street1: 'Fennamore Terrace',
       billing_street2: '',
       billing_city: 'Milton',
       billing_state: 'ON',

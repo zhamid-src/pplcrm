@@ -42,7 +42,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.mobile',
         'persons.notes',
         'name as tags',
-        sql<string>`concat(households.apt, '-', households.street_num, ' ', households.street, ','households.city')`.as(
+        sql<string>`concat(households.apt, '-', households.street_num, ' ', households.street1, ',', households.street2, ','households.city')`.as(
           'address',
         ),
       ] as TypeTableColumns<'persons' | 'households' | 'tags' | 'map_peoples_tags'>[]);
@@ -64,7 +64,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.state',
         'households.home_phone',
         'households.city',
-        'households.street',
+        'households.street1',
         'households.street_num',
         'households.apt',
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
@@ -84,7 +84,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.state',
         'households.home_phone',
         'households.city',
-        'households.street',
+        'households.street1',
         'households.street_num',
         'households.apt',
       ])

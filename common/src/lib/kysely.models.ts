@@ -128,7 +128,8 @@ export interface AddressType {
   type?: string;
   apt?: string;
   street_num?: string;
-  street?: string;
+  street1?: string;
+  street2?: string;
   city?: string;
   state?: string;
   country?: string;

@@ -37,7 +37,8 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     },
     { field: 'street_num', headerName: 'Street Number', editable: true },
     { field: 'apt', headerName: 'Apt', editable: true },
-    { field: 'street', headerName: 'Street', editable: true },
+    { field: 'street1', headerName: 'Street 1', editable: true },
+    { field: 'street2', headerName: 'Street 2', editable: true },
     { field: 'city', headerName: 'City', editable: true },
     {
       field: 'tags',

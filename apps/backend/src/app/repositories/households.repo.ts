@@ -31,7 +31,9 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.state',
         'households.home_phone',
         'households.city',
-        'households.street',
+        'households.apt',
+        'households.street1',
+        'households.street2',
         'households.street_num',
         'households.apt',
         'households.notes',
@@ -46,7 +48,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
       .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
       .select(({ fn }) => [fn.agg<string[]>('array_agg', ['tags.name']).as('tags')])
-      .groupBy(['households.tenant_id', 'households.id', 'households.country', 'households.city', 'households.street'])
+      .groupBy(['households.tenant_id', 'households.id', 'households.country', 'households.city', 'households.street1'])
       .execute();
   }
 
