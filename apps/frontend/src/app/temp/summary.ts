@@ -43,6 +43,7 @@ export class Summary {
   }
 
   public tagsChanged(e: string[]) {
+    this.tags = e;
     console.log(e, this.tags);
   }
 }

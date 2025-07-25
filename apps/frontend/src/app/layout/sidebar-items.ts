@@ -4,6 +4,8 @@ import { IconName } from '@uxcommon/svg-icons-list';
  * The sidebar items are defined here. They go in the order they're added
  */
 export interface ISidebarItem {
+  children?: ISidebarItem[];
+
   /**
    * If true then only admins can see this item
    */
@@ -72,117 +74,126 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `PEOPLE`,
     type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/console/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/console/households',
+        icon: 'house-modern',
+      },
+      {
+        name: 'Emails',
+        route: '/console/emails',
+        icon: 'envelope',
+      },
+      {
+        name: 'Segments',
+        route: '/console/segments',
+        icon: 'chart-pie',
+      },
+      {
+        name: 'Lists',
+        route: '/console/lists',
+        icon: 'queue-list',
+      },
+    ],
   },
-  {
-    name: `People`,
-    route: '/console/people',
-    icon: 'identification',
-  },
-  {
-    name: `Households`,
-    route: '/console/households',
-    icon: 'house-modern',
-  },
-  {
-    name: 'Emails',
-    route: '/console/emails',
-    icon: 'envelope',
-  },
-  {
-    name: 'Segments',
-    route: '/console/segments',
-    icon: 'chart-pie',
-  },
-  {
-    name: 'Lists',
-    route: '/console/lists',
-    icon: 'queue-list',
-  },
+
   {
     name: `OUTREACH`,
     type: 'subheading',
-  },
-  {
-    name: 'Campaigns',
-    route: '/console/campaigns',
-    icon: 'megaphone',
-  },
-  {
-    name: 'Canvassing',
-    route: '/console/canvassing',
-    icon: 'map',
-  },
-  {
-    name: 'Map',
-    route: '/console/map',
-    icon: 'globe-americas',
+    children: [
+      {
+        name: 'Campaigns',
+        route: '/console/campaigns',
+        icon: 'megaphone',
+      },
+      {
+        name: 'Canvassing',
+        route: '/console/canvassing',
+        icon: 'map',
+      },
+      {
+        name: 'Map',
+        route: '/console/map',
+        icon: 'globe-americas',
+      },
+    ],
   },
   {
     name: `TEAMS`,
     type: 'subheading',
-  },
-  {
-    name: 'Volunteers',
-    route: '/console/volunteers',
-    icon: 'briefcase',
-  },
-  {
-    name: 'Teams',
-    route: '/console/teams',
-    icon: 'user-group',
-  },
-  {
-    name: 'Schedule',
-    route: '/console/schedule',
-    icon: 'clock',
-  },
-  {
-    name: 'Donors',
-    route: '/console/donors',
-    icon: 'banknotes',
-  },
-  {
-    name: 'Donations',
-    route: '/console/donations',
-    icon: 'currency-dollar',
+    children: [
+      {
+        name: 'Volunteers',
+        route: '/console/volunteers',
+        icon: 'briefcase',
+      },
+      {
+        name: 'Teams',
+        route: '/console/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Schedule',
+        route: '/console/schedule',
+        icon: 'clock',
+      },
+      {
+        name: 'Donors',
+        route: '/console/donors',
+        icon: 'banknotes',
+      },
+      {
+        name: 'Donations',
+        route: '/console/donations',
+        icon: 'currency-dollar',
+      },
+    ],
   },
   {
     name: `ADMIN`,
     type: 'subheading',
-  },
-  {
-    name: 'Export',
-    route: '/console/export',
-    icon: 'arrow-down-tray',
-  },
-  {
-    name: `Tasks`,
-    route: '/console/tasks',
-    icon: 'square-3-stack-3d',
-  },
-  {
-    name: 'Tags',
-    route: '/console/tags',
-    icon: 'tag',
-  },
-  {
-    name: 'Forms',
-    route: '/console/forms',
-    icon: 'clipboard-document-list',
-  },
-  {
-    name: 'Users',
-    route: '/console/users',
-    icon: 'users',
-  },
-  {
-    name: 'Billing',
-    route: '/console/billing',
-    icon: 'credit-card',
-  },
-  {
-    name: 'Settings',
-    route: '/console/settings',
-    icon: 'cog-6-tooth',
+    children: [
+      {
+        name: 'Export',
+        route: '/console/export',
+        icon: 'arrow-down-tray',
+      },
+      {
+        name: `Tasks`,
+        route: '/console/tasks',
+        icon: 'square-3-stack-3d',
+      },
+      {
+        name: 'Tags',
+        route: '/console/tags',
+        icon: 'tag',
+      },
+      {
+        name: 'Forms',
+        route: '/console/forms',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Users',
+        route: '/console/users',
+        icon: 'users',
+      },
+      {
+        name: 'Billing',
+        route: '/console/billing',
+        icon: 'credit-card',
+      },
+      {
+        name: 'Settings',
+        route: '/console/settings',
+        icon: 'cog-6-tooth',
+      },
+    ],
   },
 ];

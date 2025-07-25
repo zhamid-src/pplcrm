@@ -1,13 +1,10 @@
-<div
-  class="badge text-neutral-content rounded-lg px-0 gap-1 pl-2 h-6 bordered border-gray-300 transition-opacity duration-500"
-  [class.animate-drop]="animate()"
-  [class.opacity-10]="destroy"
->
+<div class="badge rounded-lg px-0 gap-1 pl-2 h-6 bordered border-gray-300">
   <span
     (click)="emitClick()"
-    class="hover:text-primary cursor-pointer font-light pr-1"
+    class="text-gray-400 hover:text-primary cursor-pointer font-light pr-1"
     [class.pr-2]="!allowDetele()"
-    >{{ name() }}</span
+  >
+    {{ name() }}</span
   >
   <pc-icon
     name="x-mark"

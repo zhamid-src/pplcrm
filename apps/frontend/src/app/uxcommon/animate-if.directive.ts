@@ -10,6 +10,26 @@ import {
   inject,
 } from '@angular/core';
 
+/**
+ * Structural directive to animate insertion and removal of an element based on a reactive condition.
+ *
+ * ### Usage:
+ * ```html
+ * <div
+ *   *pcAnimateIf="mySignal; enter: 'animate-left'; exit: 'animate-exit-right'"
+ * >
+ *   I appear and disappear with animation!
+ * </div>
+ * ```
+ *
+ * ### Inputs:
+ * - `*pcAnimateIf="mySignal"`: A `Signal<boolean>` controlling visibility.
+ * - `pcAnimateIfEnter`: CSS class for entry animation (default: `'animate-left'`).
+ * - `pcAnimateIfExit`: CSS class for exit animation (default: `'animate-exit-right'`).
+ * - `duration`: Duration in milliseconds before the element is removed after exit animation (default: `300`).
+ *
+ * This directive assumes the animated element is the root node of the template.
+ */
 @Directive({
   selector: '[pcAnimateIf]',
   standalone: true,
@@ -35,23 +55,43 @@ export class AnimateIfDirective implements OnDestroy {
     });
   }
 
+  /**
+   * Main reactive condition controlling visibility.
+   * Must be a `Signal<boolean>`.
+   */
   @Input()
   set pcAnimateIf(condition: Signal<boolean>) {
     this.conditionSignal = condition;
   }
 
+  /**
+   * CSS class applied on element entry (insertion).
+   * Default: `'animate-left'`.
+   */
   @Input('pcAnimateIfEnter') set enter(className: string) {
     this._enterClass = className;
   }
 
+  /**
+   * CSS class applied on element exit (removal).
+   * Default: `'animate-exit-right'`.
+   */
   @Input('pcAnimateIfExit') set exit(className: string) {
     this._exitClass = className;
   }
 
+  /**
+   * Duration in milliseconds to wait before destroying the element after the exit animation.
+   * Default: `300`.
+   */
   @Input() set duration(ms: number) {
     this._animationDuration = ms;
   }
 
+  /**
+   * Show or hide the template with appropriate animations.
+   * @param condition - Whether the element should be shown.
+   */
   private toggle(condition: boolean) {
     if (condition === this._condition) return;
 
@@ -62,8 +102,7 @@ export class AnimateIfDirective implements OnDestroy {
   }
 
   /**
-   * Remove the entry animation and add the exit animation, then set timeout for destruction
-   * @returns void
+   * Performs the exit animation, then removes the view after a delay.
    */
   private animatedExit() {
     if (!this.view?.rootNodes[0]) return;
@@ -85,7 +124,7 @@ export class AnimateIfDirective implements OnDestroy {
   }
 
   /**
-   * Add the entry animation
+   * Renders the template and applies the entry animation.
    */
   private animatedEntry() {
     this.vcr.clear();
@@ -94,6 +133,9 @@ export class AnimateIfDirective implements OnDestroy {
     requestAnimationFrame(() => el?.classList.add(this._enterClass));
   }
 
+  /**
+   * Cleanup any pending timeouts and remove animation classes.
+   */
   ngOnDestroy(): void {
     clearTimeout(this.timeoutId);
 

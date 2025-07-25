@@ -15,10 +15,9 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
   imports: [Tags],
   template: `<pc-tags
     [animateRemoval]="false"
-    [tags]="this.tags"
+    [tagNames]="this.tags"
     [readonly]="true"
     (tagRemoved)="removeTag($event)"
-    [animate]="false"
   ></pc-tags>`,
 })
 export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendererAngularComp {

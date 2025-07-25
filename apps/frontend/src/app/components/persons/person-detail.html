@@ -4,57 +4,55 @@
     <fieldset [disabled]="processing()">
       <div class="flex flex-col gap-4">
         @if (!person || !person.id) {
-          <label class="label text-base font-light"
-            >All fields are optional, but try to add as much as possible
-          </label>
+        <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
         } @else {
-          <div>
-            <div class="divider mb-1">{{ getFormName() }}</div>
-            <div class="font-light text-xs text-center text-gray-500">
-              <span>(Added by Zeeshan Hamid on 12/21/2024. Last updated on blah by blah.)</span>
+        <div>
+          <div class="divider mb-1">{{ getFormName() }}</div>
+          <div class="font-light text-xs text-center text-gray-500">
+            <span>(Added by Zeeshan Hamid on 12/21/2024. Last updated on blah by blah.)</span>
+          </div>
+        </div>
+
+        <div class="text-center">
+          <div class="stats stats-vertical md:stats-horizontal shadow mr-2 mb-10">
+            <div class="stat">
+              <div class="stat-title">Emails sent</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">Jan 1st - Feb 1st</div>
+            </div>
+
+            <div class="stat">
+              <div class="stat-title">Emails read</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↗︎ 400 (22%)</div>
+            </div>
+
+            <div class="stat">
+              <div class="stat-title">Interactions</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↘︎ 90 (14%)</div>
             </div>
           </div>
-
-          <div class="text-center">
-            <div class="stats stats-vertical md:stats-horizontal shadow mr-2 mb-10">
-              <div class="stat">
-                <div class="stat-title">Emails sent</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">Jan 1st - Feb 1st</div>
-              </div>
-
-              <div class="stat">
-                <div class="stat-title">Emails read</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↗︎ 400 (22%)</div>
-              </div>
-
-              <div class="stat">
-                <div class="stat-title">Interactions</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↘︎ 90 (14%)</div>
-              </div>
+          <div class="stats stats-vertical md:stats-horizontal shadow mb-10">
+            <div class="stat">
+              <div class="stat-title">Donations</div>
+              <div class="stat-value">$0</div>
+              <div class="stat-desc">Jan 1st - Feb 1st</div>
             </div>
-            <div class="stats stats-vertical md:stats-horizontal shadow mb-10">
-              <div class="stat">
-                <div class="stat-title">Donations</div>
-                <div class="stat-value">$0</div>
-                <div class="stat-desc">Jan 1st - Feb 1st</div>
-              </div>
 
-              <div class="stat">
-                <div class="stat-title">Volunteered</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↗︎ 400 (22%)</div>
-              </div>
+            <div class="stat">
+              <div class="stat-title">Volunteered</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↗︎ 400 (22%)</div>
+            </div>
 
-              <div class="stat">
-                <div class="stat-title">Tasks</div>
-                <div class="stat-value">0</div>
-                <div class="stat-desc">↘︎ 90 (14%)</div>
-              </div>
+            <div class="stat">
+              <div class="stat-title">Tasks</div>
+              <div class="stat-value">0</div>
+              <div class="stat-desc">↘︎ 90 (14%)</div>
             </div>
           </div>
+        </div>
         }
         <div class="flex flex-col md:flex-row gap-2">
           <pc-form-input class="basis-1/3" control="first_name" placeholder="First Name" />
@@ -71,14 +69,10 @@
         </div>
         <div class="text-sm pl-1">
           Address: <span class="font-light">{{ addressString() }}</span>
-          <span
-            (click)="navigateToHousehold()"
-            class="link text-primary font-light hover:no-underline pl-2"
-            >Edit</span
-          >
+          <span (click)="navigateToHousehold()" class="link text-primary font-light hover:no-underline pl-2">Edit</span>
         </div>
         <pc-tags
-          [(tags)]="this.tags"
+          [tagNames]="this.tags"
           [enableAutoComplete]="true"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"
@@ -87,8 +81,8 @@
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
 
         @if (person && person.household_id) {
-          <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
-          <pc-people-in-household [householdId]="person.household_id"></pc-people-in-household>
+        <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
+        <pc-people-in-household [householdId]="person.household_id"></pc-people-in-household>
         }
 
         <pc-add-btn-row
