@@ -1,9 +1,9 @@
 import { Component, EventEmitter, Input, OnInit, Output, inject, input } from '@angular/core';
-import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
 import { AutoComplete } from '@uxcommon/autocomplete';
 
-import { TagItem, TagModel } from 'apps/frontend/src/app/components/tags/tagitem';
 import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
+import { TagItem } from './tagitem';
+import { TagModel } from './tag-model';
 
 @Component({
   selector: 'pc-tags',
