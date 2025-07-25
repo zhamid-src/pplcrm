@@ -2,12 +2,12 @@ import { Component, EventEmitter, Input, OnInit, Output, inject, input } from '@
 import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
 import { AutoComplete } from '@uxcommon/autocomplete';
 
-import { SingleTag, TagModel } from 'apps/frontend/src/app/components/tags/singletag';
+import { TagItem, TagModel } from 'apps/frontend/src/app/components/tags/tagitem';
 import { TagsService } from 'apps/frontend/src/app/components/tags/tags-service';
 
 @Component({
   selector: 'pc-tags',
-  imports: [SingleTag, AutoComplete],
+  imports: [TagItem, AutoComplete],
   templateUrl: './tags.html',
 })
 export class Tags implements OnInit {
