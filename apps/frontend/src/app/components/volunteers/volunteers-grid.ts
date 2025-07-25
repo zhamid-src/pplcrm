@@ -6,7 +6,7 @@ import { Icon } from '@uxcommon/icon';
 
 import { AbstractAPIService } from '../../abstract.service';
 import { DATA_TYPE, PersonsService } from '../persons/persons-service';
-import { TagsCellRenderer } from './tags-cell-renderer';
+import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 
 interface ParamsType {
   value: string[];
