@@ -72,8 +72,14 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
-      field: 'street',
-      headerName: 'Street',
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
       editable: false,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },

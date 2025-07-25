@@ -16,7 +16,7 @@ const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
   apt: ['subpremise'],
   street_num: ['street_number'],
   zip: ['postal_code'],
-  street: ['street_address', 'route'],
+  street1: ['street_address', 'route'],
   city: [
     'locality',
     'sublocality',

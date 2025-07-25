@@ -207,7 +207,8 @@ export const UpdatePersonsObj = z.object({
 export const UpdateHouseholdsObj = z.object({
   home_phone: z.string().optional(),
   street_num: z.string().optional(),
-  street: z.string().optional(),
+  street1: z.string().optional(),
+  street2: z.string().optional(),
   apt: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
