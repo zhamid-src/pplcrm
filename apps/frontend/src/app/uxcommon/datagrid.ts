@@ -24,6 +24,24 @@ import { ShortcutCellRenderer } from './shortcut-cell-renderer';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
+import { UndoManager } from './undo-redo-mgr';
+import { BASE_GRID_CONFIG } from './grid-defaults';
+
+const SELECTION_COLUMN: ColDef = {
+  checkboxSelection: true,
+  filter: false,
+  sortable: false,
+  cellClass: 'pl-1 pr-0 w-auto',
+  resizable: false,
+  suppressCellFlash: true,
+  lockVisible: true,
+  lockPosition: true,
+  suppressMovable: true,
+  suppressMenu: true,
+  pinned: 'left',
+  lockPinned: true,
+  cellRenderer: ShortcutCellRenderer,
+};
 
 @Component({
   selector: 'pc-datagrid',
@@ -67,60 +85,13 @@ import { Models } from 'common/src/lib/kysely.models';
 export class DataGrid<T extends keyof Models, U> {
   private lastRowHovered: string | undefined;
   private route = inject(ActivatedRoute);
-  private serachSvc = inject(SearchService);
+  private searchSvc = inject(SearchService);
   private themeSvc = inject(ThemeService);
 
-  private readonly undoSize = signal(0);
-  private readonly redoSize = signal(0);
-
   protected readonly isRowSelected = signal(false);
-  protected readonly canUndo = computed(() => this.undoSize() > 0);
-  protected readonly canRedo = computed(() => this.redoSize() > 0);
+  protected readonly undoMgr = new UndoManager();
+  private readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
-  protected _defaultColDef: ColDef = {
-    filter: 'agMultiColumnFilter',
-    flex: 1,
-    enableValue: true,
-    enablePivot: true,
-  };
-  protected _initialState: GridState = {
-    sideBar: {
-      openToolPanel: null,
-      position: 'right',
-      visible: true,
-      toolPanels: {},
-    },
-  };
-  protected _sideBar: SideBarDef = {
-    toolPanels: [
-      {
-        id: 'filters',
-        labelDefault: 'Filters',
-        labelKey: 'filters',
-        iconKey: 'filter',
-        toolPanel: 'agFiltersToolPanel',
-        toolPanelParams: {
-          suppressExpandAll: true,
-          suppressFilterSearch: true,
-        },
-      },
-      {
-        id: 'columns',
-        labelDefault: 'Columns',
-        labelKey: 'columns',
-        iconKey: 'columns',
-        toolPanel: 'agColumnsToolPanel',
-        toolPanelParams: {
-          suppressRowGroups: true,
-          suppressValues: true,
-          suppressPivots: true,
-          suppressPivotMode: true,
-          suppressColumnSelectAll: true,
-        },
-      },
-    ],
-    defaultToolPanel: 'filters',
-  };
   protected alertSvc = inject(AlertService);
 
   /**
@@ -131,33 +102,7 @@ export class DataGrid<T extends keyof Models, U> {
   /** This is the default column (or columns) every grid starts off with.
    * The parent component can extend this by providing colDefs.
    */
-  protected colDefsWithEdit: ColDef[] = [
-    /*
-    {
-      checkboxSelection: true,
-      filter: false,
-      sortable: false,
-      resizable: false,
-      maxWidth: 30,
-      suppressCellFlash: true,
-    },
-    */
-    {
-      checkboxSelection: true,
-      filter: false,
-      sortable: false,
-      cellClass: 'pl-1 pr-0 w-auto',
-      resizable: false,
-      suppressCellFlash: true,
-      lockVisible: true,
-      lockPosition: true,
-      suppressMovable: true,
-      suppressMenu: true,
-      pinned: 'left',
-      lockPinned: true,
-      cellRenderer: ShortcutCellRenderer,
-    },
-  ];
+  protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
 
   /** The default options we start with. This can be overridden
    * by the parent component providing gridOptions.
@@ -167,31 +112,22 @@ export class DataGrid<T extends keyof Models, U> {
     animateRows: true,
     autoSizeStrategy: { type: 'fitCellContents' },
     context: this,
-    defaultColDef: this._defaultColDef,
+    defaultColDef: BASE_GRID_CONFIG.defaultColDef,
+    initialState: BASE_GRID_CONFIG.initialState,
+    sideBar: BASE_GRID_CONFIG.sideBar,
     enableCellChangeFlash: true,
     enableRangeSelection: true,
     copyHeadersToClipboard: true,
     enableCellEditingOnBackspace: true,
-    initialState: this._initialState,
     pagination: true,
     paginationAutoPageSize: true,
     rowSelection: 'multiple',
     rowStyle: { cursor: 'pointer' },
-    sideBar: this._sideBar,
     stopEditingWhenCellsLoseFocus: true,
     undoRedoCellEditing: true,
-
     loadingOverlayComponent: LoadingOverlayComponent,
-    onCellValueChanged: this.onCellValueChanged.bind(this),
-    onUndoStarted: this.onUndoStarted.bind(this),
-    onUndoEnded: this.onUndoEnded.bind(this),
-    onRedoStarted: this.onRedoStarted.bind(this),
-    onRedoEnded: this.onRedoEnded.bind(this),
-    onRowDataUpdated: this.onRowDataUpdated.bind(this),
-    onRowValueChanged: this.onRowValueChanged.bind(this),
-    onCellMouseOver: this.onCellMouseOver.bind(this),
-    onSelectionChanged: this.onSelectionChanged.bind(this),
   };
+
   protected distinctTags: string[] = [];
   protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected processing = false;
@@ -270,18 +206,24 @@ export class DataGrid<T extends keyof Models, U> {
   public limitToTags = input<string[]>([]);
   public plusIcon = input<IconName>('plus');
 
-  constructor() {
-    /**
-     * Whenever the search text changes, we update the grid options
-     * and filter by the search string.
-     *
-     * This makes the search / filter global so as the user switches
-     * grids, the search text is preserved and filters the new grid.
-     */
-    effect(() => {
-      const quickFilterText = this.serachSvc.search;
-      this.api?.updateGridOptions({ quickFilterText });
-    });
+  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
+    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
+  }
+
+  private handleDeleteErrors(rows: Partial<T>[], deletableRows: Partial<T>[]) {
+    if (!rows.length) {
+      this.alertSvc.showError('Please select at least one row to delete.');
+      return true;
+    }
+    if (deletableRows.length !== rows.length) {
+      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
+    }
+    return deletableRows.length === 0;
+  }
+
+  protected showDialogById(id: string): void {
+    const dialog = document.querySelector<HTMLDialogElement>(`#${id}`);
+    dialog?.showModal();
   }
 
   /**
@@ -293,8 +235,7 @@ export class DataGrid<T extends keyof Models, U> {
       return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
     }
 
-    const dialog = document.querySelector('#confirmDelete') as HTMLDialogElement;
-    dialog.showModal();
+    this.showDialogById('confirmDelete');
   }
 
   public onCellMouseOver(event: CellMouseOverEvent) {
@@ -320,27 +261,22 @@ export class DataGrid<T extends keyof Models, U> {
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: string };
 
-    if ('deletable' in row && row.deletable === false && key === 'name') {
-      this.undo();
+    if (this.shouldBlockEdit(row, key)) {
+      this.undoMgr.undo();
       return this.alertSvc.showError('This cell cannot be edited or deleted.');
     }
+
     const payload = this.createPayload(row, key);
     const edited = await this.applyEdit(row.id, payload);
-    if (!edited) {
-      this.alertSvc.showError('Could not edit the row. Please try again later.');
-      this.undo();
-    } else {
-      this.api?.flashCells({
-        rowNodes: [event.node!],
-        columns: [event.column],
-      });
-    }
-    this.updateUndoRedoSize();
-  }
 
-  private updateUndoRedoSize() {
-    this.undoSize.set(this.api?.getCurrentUndoSize() ?? 0);
-    this.redoSize.set(this.api?.getCurrentRedoSize() ?? 0);
+    if (!edited) {
+      this.undoMgr.undo();
+      return this.alertSvc.showError('Could not edit the row. Please try again later.');
+    }
+
+    this.api?.flashCells({ rowNodes: [event.node!], columns: [event.column] });
+
+    this.undoMgr.updateSizes();
   }
 
   /**
@@ -353,32 +289,11 @@ export class DataGrid<T extends keyof Models, U> {
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
     this.api = params.api;
-    this.updateUndoRedoSize();
-    this.api.updateGridOptions(this.gridOptions());
+    this.undoMgr.initialize(this.api);
+
+    this.api.updateGridOptions(this.getMergedGridOptions());
 
     this.refresh();
-  }
-
-  public onRedoEnded(/*event: RedoEndedEvent*/) {
-    this.redoSize.set(this.api?.getCurrentRedoSize() ?? 0);
-  }
-
-  public onRedoStarted(/*event: RedoStartedEvent*/) {}
-
-  public onRowDataUpdated(/*event: RowDataUpdatedEvent*/) {
-    this.updateUndoRedoSize();
-  }
-
-  public onRowValueChanged(/*event: RowValueChangedEvent*/) {
-    this.updateUndoRedoSize();
-  }
-
-  public onUndoEnded(/*event: UndoEndedEvent*/) {
-    this.undoSize.set(this.api?.getCurrentUndoSize() ?? 0);
-  }
-
-  public onUndoStarted(/*event: UndoStartedEvent*/) {
-    //console.log("undoStarted", event);
   }
 
   public openEdit(id: string) {
@@ -389,7 +304,7 @@ export class DataGrid<T extends keyof Models, U> {
    * Redo the operation that was undone.
    */
   public redo() {
-    this.canRedo() && this.api?.redoCellEditing();
+    this.undoMgr.redo();
   }
 
   /**
@@ -405,29 +320,28 @@ export class DataGrid<T extends keyof Models, U> {
    * Undo the operation that was done.
    */
   public undo() {
-    this.canUndo() && this.api?.undoCellEditing();
+    this.undoMgr.undo();
+  }
+
+  private navigateIfValid(path: string | null | undefined): void {
+    if (path) {
+      this.router.navigate([path], { relativeTo: this.route });
+    }
   }
 
   /**
    * If a view is not disabled then go there to view the row.
    */
   public view(id?: string) {
-    // If an ID is explicitly given then we route to that ID
-    // But if it's not given then we route to the last hovered
-    // row provided that viewing isn't disabled
-    if (id || !this.disableView()) {
-      const rowId = id || this.lastRowHovered;
-      if (rowId) {
-        this.router.navigate([rowId], { relativeTo: this.route });
-      }
-    }
+    if (id) return this.navigateIfValid(id);
+    if (!this.disableView()) this.navigateIfValid(this.lastRowHovered);
   }
 
   /**
    * If an addRoute is given then go there to add a new row.
    */
   protected add() {
-    this.addRoute() && this.router.navigate([this.addRoute()], { relativeTo: this.route });
+    this.navigateIfValid(this.addRoute());
   }
 
   /**
@@ -436,8 +350,21 @@ export class DataGrid<T extends keyof Models, U> {
    * user intends to do.
    */
   protected confirmExport(): void {
-    const dialog = document.querySelector('#confirmExport') as HTMLDialogElement;
-    dialog.showModal();
+    this.showDialogById('confirmExport');
+  }
+
+  private getMergedGridOptions(): GridOptions<Partial<T>> {
+    return {
+      ...this.defaultGridOptions,
+      ...this.gridOptions(),
+      onCellValueChanged: this.onCellValueChanged.bind(this),
+      onCellMouseOver: this.onCellMouseOver.bind(this),
+      onSelectionChanged: this.onSelectionChanged.bind(this),
+      onUndoEnded: this.updateUndoSizes,
+      onRedoEnded: this.updateUndoSizes,
+      onRowDataUpdated: this.updateUndoSizes,
+      onRowValueChanged: this.updateUndoSizes,
+    };
   }
 
   /**
@@ -447,36 +374,49 @@ export class DataGrid<T extends keyof Models, U> {
    */
   protected async deleteSelectedRows() {
     const rows = this.getSelectedRows();
-    const deletableRows = rows.filter((row) => !('deletable' in row) || row.deletable !== false);
-    if (!rows?.length) {
-      return this.alertSvc.showError('Please select at least one row to delete.');
-    } else if (deletableRows.length !== rows.length) {
-      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
-    }
+    const deletableRows = this.getDeletableRows(rows);
 
-    if (deletableRows.length === 0) {
+    if (this.handleDeleteErrors(rows, deletableRows)) {
       return;
     }
 
     this.processing = true;
-
     const ids = deletableRows.map((row) => row.id);
+
     const deleted = this.gridSvc.deleteMany(ids);
 
     if (!deleted) {
       this.alertSvc.showError('Could not delete. Please try again later.');
     } else {
-      this.api?.applyTransaction({ remove: deletableRows });
-
-      this.alertSvc.show({
-        text: 'Deleted successfully. Click Undo to undo delete',
-        type: 'success',
-        OKBtn: 'Undo',
-        duration: 3500,
-        OKBtnCallback: () => this.undoDeleteRows(),
-      });
+      this.api!.applyTransaction({ remove: deletableRows });
+      this.showUndoSuccess();
     }
+
     this.processing = false;
+  }
+
+  constructor() {
+    /**
+     * Whenever the search text changes, we update the grid options
+     * and filter by the search string.
+     *
+     * This makes the search / filter global so as the user switches
+     * grids, the search text is preserved and filters the new grid.
+     */
+    effect(() => {
+      const quickFilterText = this.searchSvc.search;
+      this.api?.updateGridOptions({ quickFilterText });
+    });
+  }
+
+  private showUndoSuccess() {
+    this.alertSvc.show({
+      text: 'Deleted successfully. Click Undo to undo delete',
+      type: 'success',
+      OKBtn: 'Undo',
+      duration: 3500,
+      OKBtnCallback: () => this.undoDeleteRows(),
+    });
   }
 
   protected doImportCSV() {
@@ -509,15 +449,17 @@ export class DataGrid<T extends keyof Models, U> {
     this.openEdit(event.data.id);
   }
 
-  protected async refresh() {
-    this.api!.showLoadingOverlay();
-    let rows = [] as Partial<T>[];
+  protected async refresh(): Promise<void> {
     try {
-      rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
-    } catch {
+      this.api!.setGridOption('loading', true);
+
+      const rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
+      this.api!.setGridOption('rowData', rows);
+    } catch (error) {
       this.alertSvc.showError('Could not load the data. Please try again later.');
+    } finally {
+      this.api!.setGridOption('loading', false);
     }
-    this.api!.setGridOption('rowData', rows);
   }
 
   protected tagArrayEquals(tagsA: string[], tagsB: string[]): number {
@@ -569,14 +511,11 @@ export class DataGrid<T extends keyof Models, U> {
    * @param key
    * @returns
    */
-  private createPayload<T>(row: Partial<T>, key: keyof T): Partial<Pick<T, typeof key>> {
-    const payload: Partial<Pick<T, typeof key>> = {};
+  private createPayload(row: Partial<T>, key: keyof T): Partial<T> {
+    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
+  }
 
-    // Check if the key exists in the row and is not undefined
-    if (key in row && row[key] !== undefined) {
-      payload[key] = row[key];
-    }
-
-    return payload;
+  private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
+    return 'deletable' in row && row.deletable === false && key === 'name';
   }
 }
