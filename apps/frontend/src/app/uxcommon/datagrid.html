@@ -26,11 +26,11 @@
     </li>
     <li
       class="tooltip tooltip-accent"
-      (click)="undo()"
+      (click)="undoMgr.undo()"
       data-tip="Undo"
-      [class.disabled]="!canUndo()"
-      [class.cursor-not-allowed]="!canUndo()"
-      [class.text-neutral-300]="!canUndo()"
+      [class.disabled]="!undoMgr.canUndo()"
+      [class.cursor-not-allowed]="!undoMgr.canUndo()"
+      [class.text-neutral-300]="!undoMgr.canUndo()"
     >
       <a>
         <pc-icon name="arrow-uturn-left"></pc-icon>
@@ -39,10 +39,10 @@
     <li
       class="tooltip tooltip-accent"
       data-tip="Redo"
-      [class.text-neutral-300]="!canRedo()"
-      [class.disabled]="!canRedo()"
-      [class.cursor-not-allowed]="!canRedo()"
-      (click)="redo()"
+      [class.text-neutral-300]="!undoMgr.canRedo()"
+      [class.disabled]="!undoMgr.canRedo()"
+      [class.cursor-not-allowed]="!undoMgr.canRedo()"
+      (click)="undoMgr.redo()"
     >
       <a>
         <pc-icon name="arrow-uturn-right"></pc-icon>
