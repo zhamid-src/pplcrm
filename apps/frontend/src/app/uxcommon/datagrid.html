@@ -4,6 +4,7 @@
       class="tooltip-accent"
       [class.tooltip]="addRoute()"
       [class.disabled]="!addRoute()"
+      [class.text-neutral-300]="!addRoute()"
       (click)="addRoute() && add()"
       data-tip="Add"
     >
@@ -15,6 +16,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableRefresh()"
       [class.disabled]="disableRefresh()"
+      [class.text-neutral-300]="disableRefresh()"
       (click)="!disableRefresh() && refresh()"
       data-tip="Refresh the grid"
     >
@@ -27,6 +29,7 @@
       (click)="undo()"
       data-tip="Undo"
       [class.disabled]="api?.getCurrentUndoSize() === 0"
+      [class.text-neutral-300]="api?.getCurrentUndoSize() === 0"
     >
       <a>
         <pc-icon name="arrow-uturn-left"></pc-icon>
@@ -37,6 +40,7 @@
       (click)="redo()"
       data-tip="Redo"
       [class.disabled]="api?.getCurrentRedoSize() === 0"
+      [class.text-neutral-300]="api?.getCurrentRedoSize() === 0"
     >
       <a>
         <pc-icon name="arrow-uturn-right"></pc-icon>
@@ -46,6 +50,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableImport()"
       [class.disabled]="disableImport()"
+      [class.text-neutral-300]="disableImport()"
       (click)="!disableImport() && doImportCSV()"
       data-tip="Import data from CSV"
     >
@@ -57,6 +62,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableExport()"
       [class.disabled]="disableExport()"
+      [class.text-neutral-300]="disableExport()"
       (click)="!disableExport() && confirmExport()"
       data-tip="Download as CSV"
     >
@@ -68,6 +74,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableDelete()"
       [class.disabled]="disableDelete() || !isRowSelected()"
+      [class.text-neutral-300]="disableDelete() || !isRowSelected()"
       (click)="!disableDelete() && isRowSelected() && confirmDelete()"
       data-tip="Deleted selected row(s)"
     >
@@ -100,14 +107,12 @@
   <div class="modal-box">
     <h3 class="text-lg font-bold">Export limitation</h3>
     <p class="pt-4 pb-6 font-light">
-      This only exports the columns visible in the grid. If you'd like to export everything then
-      please use the Export component from the sidebar.
+      This only exports the columns visible in the grid. If you'd like to export everything then please use the Export
+      component from the sidebar.
     </p>
 
     <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="exportToCSV()">
-        <pc-icon name="arrow-down-tray" />Accept
-      </button>
+      <button class="btn btn-primary" (click)="exportToCSV()"><pc-icon name="arrow-down-tray" />Accept</button>
       <button class="btn"><pc-icon name="x-circle" />Cancel</button>
     </form>
   </div>
@@ -116,9 +121,7 @@
 <dialog id="confirmDelete" class="modal">
   <div class="modal-box">
     <h3 class="text-lg font-bold">Are you sure?</h3>
-    <p class="pt-4 pb-6 font-light">
-      The selected rows will be deleted permanantly. You cannot undo this.
-    </p>
+    <p class="pt-4 pb-6 font-light">The selected rows will be deleted permanantly. You cannot undo this.</p>
 
     <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
       <button class="btn btn-error" (click)="deleteSelectedRows()">
