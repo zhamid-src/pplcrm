@@ -28,8 +28,9 @@
       class="tooltip tooltip-accent"
       (click)="undo()"
       data-tip="Undo"
-      [class.disabled]="api?.getCurrentUndoSize() === 0"
-      [class.text-neutral-300]="api?.getCurrentUndoSize() === 0"
+      [class.disabled]="!canUndo()"
+      [class.cursor-not-allowed]="!canUndo()"
+      [class.text-neutral-300]="!canUndo()"
     >
       <a>
         <pc-icon name="arrow-uturn-left"></pc-icon>
@@ -37,10 +38,11 @@
     </li>
     <li
       class="tooltip tooltip-accent"
-      (click)="redo()"
       data-tip="Redo"
-      [class.disabled]="api?.getCurrentRedoSize() === 0"
-      [class.text-neutral-300]="api?.getCurrentRedoSize() === 0"
+      [class.text-neutral-300]="!canRedo()"
+      [class.disabled]="!canRedo()"
+      [class.cursor-not-allowed]="!canRedo()"
+      (click)="redo()"
     >
       <a>
         <pc-icon name="arrow-uturn-right"></pc-icon>
@@ -50,6 +52,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableImport()"
       [class.disabled]="disableImport()"
+      [class.cursor-not-allowed]="disableImport()"
       [class.text-neutral-300]="disableImport()"
       (click)="!disableImport() && doImportCSV()"
       data-tip="Import data from CSV"
@@ -62,6 +65,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableExport()"
       [class.disabled]="disableExport()"
+      [class.cursor-not-allowed]="disableExport()"
       [class.text-neutral-300]="disableExport()"
       (click)="!disableExport() && confirmExport()"
       data-tip="Download as CSV"
@@ -71,9 +75,9 @@
       </a>
     </li>
     <li
-      class="tooltip-accent"
-      [class.tooltip]="!disableDelete()"
+      class="tooltip tooltip-accent"
       [class.disabled]="disableDelete() || !isRowSelected()"
+      [class.cursor-not-allowed]="disableDelete() || !isRowSelected()"
       [class.text-neutral-300]="disableDelete() || !isRowSelected()"
       (click)="!disableDelete() && isRowSelected() && confirmDelete()"
       data-tip="Deleted selected row(s)"
