@@ -12,7 +12,7 @@ import {
   GridState,
   SideBarDef,
 } from '@ag-grid-community/core';
-import { Component, EventEmitter, Output, effect, inject, input } from '@angular/core';
+import { Component, EventEmitter, Output, computed, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
@@ -69,6 +69,13 @@ export class DataGrid<T extends keyof Models, U> {
   private route = inject(ActivatedRoute);
   private serachSvc = inject(SearchService);
   private themeSvc = inject(ThemeService);
+
+  private readonly undoSize = signal(0);
+  private readonly redoSize = signal(0);
+
+  protected readonly isRowSelected = signal(false);
+  protected readonly canUndo = computed(() => this.undoSize() > 0);
+  protected readonly canRedo = computed(() => this.redoSize() > 0);
 
   protected _defaultColDef: ColDef = {
     filter: 'agMultiColumnFilter',
@@ -183,6 +190,7 @@ export class DataGrid<T extends keyof Models, U> {
     onRowDataUpdated: this.onRowDataUpdated.bind(this),
     onRowValueChanged: this.onRowValueChanged.bind(this),
     onCellMouseOver: this.onCellMouseOver.bind(this),
+    onSelectionChanged: this.onSelectionChanged.bind(this),
   };
   protected distinctTags: string[] = [];
   protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
@@ -293,6 +301,10 @@ export class DataGrid<T extends keyof Models, U> {
     this.lastRowHovered = event?.data?.id;
   }
 
+  public onSelectionChanged(/* */) {
+    this.isRowSelected.set(this.getSelectedRows().length > 0);
+  }
+
   /**
    * Handle the cell value changed event.
    *
@@ -307,10 +319,6 @@ export class DataGrid<T extends keyof Models, U> {
   public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
     const key = event.colDef.field as keyof T;
     const row = event.data as Partial<T> & { id: string };
-
-    console.log('**************');
-    console.log(event);
-    console.log(key);
 
     if ('deletable' in row && row.deletable === false && key === 'name') {
       this.undo();
@@ -327,6 +335,12 @@ export class DataGrid<T extends keyof Models, U> {
         columns: [event.column],
       });
     }
+    this.updateUndoRedoSize();
+  }
+
+  private updateUndoRedoSize() {
+    this.undoSize.set(this.api?.getCurrentUndoSize() ?? 0);
+    this.redoSize.set(this.api?.getCurrentRedoSize() ?? 0);
   }
 
   /**
@@ -339,20 +353,28 @@ export class DataGrid<T extends keyof Models, U> {
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
     this.api = params.api;
+    this.updateUndoRedoSize();
     this.api.updateGridOptions(this.gridOptions());
+
     this.refresh();
   }
 
-  public onRedoEnded(/*event: RedoEndedEvent*/) {}
+  public onRedoEnded(/*event: RedoEndedEvent*/) {
+    this.redoSize.set(this.api?.getCurrentRedoSize() ?? 0);
+  }
 
   public onRedoStarted(/*event: RedoStartedEvent*/) {}
 
-  public onRowDataUpdated(/*event: RowDataUpdatedEvent*/) {}
+  public onRowDataUpdated(/*event: RowDataUpdatedEvent*/) {
+    this.updateUndoRedoSize();
+  }
 
-  public onRowValueChanged(/*event: RowValueChangedEvent*/) {}
+  public onRowValueChanged(/*event: RowValueChangedEvent*/) {
+    this.updateUndoRedoSize();
+  }
 
   public onUndoEnded(/*event: UndoEndedEvent*/) {
-    //console.log("undoEnded", event);
+    this.undoSize.set(this.api?.getCurrentUndoSize() ?? 0);
   }
 
   public onUndoStarted(/*event: UndoStartedEvent*/) {
@@ -367,7 +389,7 @@ export class DataGrid<T extends keyof Models, U> {
    * Redo the operation that was undone.
    */
   public redo() {
-    this.api?.getCurrentRedoSize() && this.api?.redoCellEditing();
+    this.canRedo() && this.api?.redoCellEditing();
   }
 
   /**
@@ -383,7 +405,7 @@ export class DataGrid<T extends keyof Models, U> {
    * Undo the operation that was done.
    */
   public undo() {
-    this.api?.getCurrentUndoSize() && this.api?.undoCellEditing();
+    this.canUndo() && this.api?.undoCellEditing();
   }
 
   /**
@@ -483,11 +505,6 @@ export class DataGrid<T extends keyof Models, U> {
     return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
   }
 
-  protected isRowSelected() {
-    const rows = this.getSelectedRows();
-    return rows?.length > 0;
-  }
-
   protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.openEdit(event.data.id);
   }
@@ -532,7 +549,6 @@ export class DataGrid<T extends keyof Models, U> {
    * @returns Boolean indicating whether the edit was successful or not
    */
   private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
-    console.log(data);
     return this.gridSvc
       .update(id, data as U)
       .then(() => true)
