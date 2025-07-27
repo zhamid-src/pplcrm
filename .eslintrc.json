@@ -1,12 +1,23 @@
 {
   "root": true,
-  "ignorePatterns": ["**/*"],
-  "plugins": ["@nx"],
+  "ignorePatterns": ["node_modules", "dist"],
+  "plugins": ["@nx", "@typescript-eslint"],
   "overrides": [
     {
       "files": ["*.ts", "*.tsx"],
+      "parser": "@typescript-eslint/parser",
       "extends": ["plugin:@nx/typescript", "prettier"],
-      "rules": {}
+      "rules": {
+        "@typescript-eslint/naming-convention": [
+          "error",
+          {
+            "selector": "classProperty",
+            "modifiers": ["private"],
+            "format": ["camelCase"],
+            "leadingUnderscore": "require"
+          }
+        ]
+      }
     },
     {
       "files": ["*.js", "*.jsx"],
