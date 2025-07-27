@@ -14,7 +14,7 @@ import { PersonDetail } from './components/persons/person-detail';
 import { PersonsGrid } from './components/persons/persons-grid';
 import { TagsGridComponent } from './components/tags/tags-grid';
 import { VolunteersGrid } from './components/volunteers/volunteers-grid';
-import { Dashboard } from './layout/dashboard';
+import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './temp/summary';
 import { AddTag } from '@uxcommon/tags/add-tag';
 

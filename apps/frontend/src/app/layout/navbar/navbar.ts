@@ -6,7 +6,7 @@ import { Swap } from '@uxcommon/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 
 @Component({

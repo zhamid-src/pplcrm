@@ -3,9 +3,9 @@ import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/alerts/alerts';
 import { Breadcrumb } from '@uxcommon/breadcrumb';
 
-import { Navbar } from './navbar';
-import { Sidebar } from './sidebar';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
+import { Navbar } from '../navbar/navbar';
+import { Sidebar } from '../sidebar/sidebar';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 
 @Component({
   selector: 'pc-dashboard',
