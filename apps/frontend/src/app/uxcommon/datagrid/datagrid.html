@@ -4,7 +4,7 @@
       class="tooltip-accent"
       [class.tooltip]="addRoute()"
       [class.disabled]="!addRoute()"
-      [class.text-neutral-300]="!addRoute()"
+      [class.text-neutral-400]="!addRoute()"
       (click)="addRoute() && add()"
       data-tip="Add"
     >
@@ -16,7 +16,7 @@
       class="tooltip-accent"
       [class.tooltip]="!disableRefresh()"
       [class.disabled]="disableRefresh()"
-      [class.text-neutral-300]="disableRefresh()"
+      [class.text-neutral-400]="disableRefresh()"
       (click)="!disableRefresh() && refresh()"
       data-tip="Refresh the grid"
     >
@@ -30,7 +30,7 @@
       data-tip="Undo"
       [class.disabled]="!undoMgr.canUndo()"
       [class.cursor-not-allowed]="!undoMgr.canUndo()"
-      [class.text-neutral-300]="!undoMgr.canUndo()"
+      [class.text-neutral-400]="!undoMgr.canUndo()"
     >
       <a>
         <pc-icon name="arrow-uturn-left"></pc-icon>
@@ -39,7 +39,7 @@
     <li
       class="tooltip tooltip-accent"
       data-tip="Redo"
-      [class.text-neutral-300]="!undoMgr.canRedo()"
+      [class.text-neutral-400]="!undoMgr.canRedo()"
       [class.disabled]="!undoMgr.canRedo()"
       [class.cursor-not-allowed]="!undoMgr.canRedo()"
       (click)="undoMgr.redo()"
@@ -53,7 +53,7 @@
       [class.tooltip]="!disableImport()"
       [class.disabled]="disableImport()"
       [class.cursor-not-allowed]="disableImport()"
-      [class.text-neutral-300]="disableImport()"
+      [class.text-neutral-400]="disableImport()"
       (click)="!disableImport() && doImportCSV()"
       data-tip="Import data from CSV"
     >
@@ -66,7 +66,7 @@
       [class.tooltip]="!disableExport()"
       [class.disabled]="disableExport()"
       [class.cursor-not-allowed]="disableExport()"
-      [class.text-neutral-300]="disableExport()"
+      [class.text-neutral-400]="disableExport()"
       (click)="!disableExport() && confirmExport()"
       data-tip="Download as CSV"
     >
@@ -78,7 +78,7 @@
       class="tooltip tooltip-accent"
       [class.disabled]="disableDelete() || !isRowSelected()"
       [class.cursor-not-allowed]="disableDelete() || !isRowSelected()"
-      [class.text-neutral-300]="disableDelete() || !isRowSelected()"
+      [class.text-neutral-400]="disableDelete() || !isRowSelected()"
       (click)="!disableDelete() && isRowSelected() && confirmDelete()"
       data-tip="Deleted selected row(s)"
     >
