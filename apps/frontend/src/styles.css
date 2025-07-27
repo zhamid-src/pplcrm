@@ -132,14 +132,17 @@ body {
     }
   }
   @keyframes flash {
-    0%,
-    100% {
-      opacity: 1;
+    0% {
+      background-color: #cbd5e1;
     }
     50% {
-      opacity: 0;
+      background-color: rgba(226, 227, 228, 1);
+    }
+    100% {
+      background-color: transparent;
     }
   }
+
   @keyframes exitUp {
     0% {
       transform: translateY(0%);
@@ -180,17 +183,6 @@ body {
       opacity: 0;
     }
   }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
 
   .animate-up {
     animation: up 0.3s ease-in-out both;
@@ -208,7 +200,7 @@ body {
     animation: drop 0.3s ease-in-out both;
   }
   .animate-flash {
-    animation: flash 0.3s linear infinite;
+    animation: flash 1s ease-in-out;
   }
   .animate-exit-up {
     animation: exitUp 0.3s ease-in-out forwards;
