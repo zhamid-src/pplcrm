@@ -1,6 +1,6 @@
 import { ColDef, GridOptions, GridState, SideBarDef } from '@ag-grid-community/core';
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
-import { LoadingOverlayComponent } from '../loading-overlay';
+import { LoadingOverlayComponent } from './loading-overlay';
 
 /**
  * The default selection column shown in all AG Grid tables.
