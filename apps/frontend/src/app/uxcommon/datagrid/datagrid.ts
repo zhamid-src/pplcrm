@@ -271,7 +271,6 @@ export class DataGrid<T extends keyof Models, U> {
   private getMergedGridOptions(): GridOptions<Partial<T>> {
     return {
       context: this,
-      ...defaultGridOptions,
       ...this.gridOptions(),
       onCellValueChanged: this.onCellValueChanged.bind(this),
       onCellMouseOver: this.onCellMouseOver.bind(this),
