@@ -91,7 +91,7 @@ export class SignInPage {
     this.processing.set(true);
 
     return this._authService
-      .signIn({ email: this.email!.value || '', password: this.password!.value || '' })
+      .signIn({ email: this.email?.value || '', password: this.password?.value || '' })
       .catch((err) => this._alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }

@@ -61,8 +61,7 @@ Follow these steps if you're setting up your development environment from scratc
 To install all required dependencies, initialize Nx, and set up PostgreSQL automatically, run the following script from your project root:
 
 1. Make the script executable:
-
-chmod +x setup.sh
+   chmod +x setup.sh
 
 2. Run it:
 
@@ -205,13 +204,13 @@ nx affected:lint
 nx affected:build
 ```
 
-# pplcrm Backend Architecture
+## pplcrm Backend Architecture
 
 The backend for `pplcrm` is a modular, type-safe system built using **Fastify**, **tRPC**, **Kysely**, and **PostgreSQL**. It is part of an **Nx monorepo**, and built with **esbuild** for performance.
 
 ---
 
-## 📁 Directory Structure
+### 📁 Directory Structure
 
 - **apps/backend/**
   - **src/**
@@ -226,30 +225,30 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## 🧱 Architectural Layers
+### 🧱 Architectural Layers
 
-### 1. Controller Layer (tRPC)
+#### 1. Controller Layer (tRPC)
 
 - Located in `app/controllers/`
 - Each controller corresponds to a database table (e.g. Tags, Users)
 - Controllers inherit from a generic `BaseController`
 - Handles business input validation and calls services or repositories
 
-### 2. Repository Layer (Kysely)
+#### 2. Repository Layer (Kysely)
 
 - Located in `app/repositories/`
 - Each table has a corresponding repository (e.g. `TagsRepo`)
 - Extends a generic `BaseRepository<T>` with CRUD operations
 - All type-safe via `Models` interface from `kysely.models.ts`
 
-### 3. Service Layer
+#### 3. Service Layer
 
 - Located in `app/services/`
 - Encapsulates business logic (auth, profile merging, etc.)
 - Services call one or more repositories
 - Also responsible for sending emails or managing sessions
 
-### 4. Auth Layer
+#### 4. Auth Layer
 
 - Located in `app/auth/`
 - Uses `fast-jwt` to sign/verify access and refresh tokens
@@ -257,7 +256,7 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## ⚙️ Tooling
+### ⚙️ Tooling
 
 | Tool          | Purpose                   |
 | ------------- | ------------------------- |
@@ -273,7 +272,7 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## 🔐 Authentication
+### 🔐 Authentication
 
 - Passwords are hashed using `bcrypt`
 - Tokens (access and refresh) are signed with `fast-jwt`
@@ -282,7 +281,7 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## ✅ Example Flow: Update a Row
+### ✅ Example Flow: Update a Row
 
 1. Frontend calls `tags.update({ id, name })`
 2. `TagsController.update()` is invoked
@@ -292,7 +291,7 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## 🧪 Testing & Dev
+### 🧪 Testing & Dev
 
 - Currently no testing framework set up (suggested: `vitest`)
 - Local `.env` file holds credentials like DB connection and JWT secrets
@@ -300,7 +299,7 @@ The backend for `pplcrm` is a modular, type-safe system built using **Fastify**,
 
 ---
 
-## 🚀 Running Locally
+### 🚀 Running Locally
 
 pnpm install  
 pnpm start backend
@@ -311,21 +310,21 @@ nx serve backend
 
 ---
 
-## 📦 Deployment
+### 📦 Deployment
 
 - Built into `dist/apps/backend`
 - Can be deployed via Docker, PM2, or systemd
 - You can serve it behind a reverse proxy like Nginx or Caddy
 
-# People CRM – Frontend
+## People CRM – Frontend
 
 This is the frontend for **People CRM**, a modern Angular 20 application using standalone components and signals. It is structured to support scalability, maintainability, and modularity in a campaign-focused CRM tool.
 
 ---
 
-## 🏗️ Architecture
+### 🏗️ Architecture
 
-### Framework & Tools
+#### Framework & Tools
 
 - **Angular 20** (Standalone APIs, Signals, Zone-less mode)
 - **Nx Monorepo** for project structure and tooling
@@ -336,30 +335,28 @@ This is the frontend for **People CRM**, a modern Angular 20 application using s
 
 ---
 
-## 🧱 Directory Structure
+### 🧱 Directory Structure
 
-```
 apps/frontend/
 ├── src/
-│   ├── app/
-│   │   ├── auth/              # Authentication components
-│   │   ├── components/        # Reusable UI components (tags, modals, etc.)
-│   │   ├── data/              # Data stores and services
-│   │   ├── layout/            # App layout, themes, navigation
-│   │   ├── pages/             # Feature-specific pages
-│   │   ├── uxcommon/          # Common UI elements (icons, alerts, etc.)
-│   │   ├── app.config.ts      # Angular application config
-│   │   ├── app.routes.ts      # Route configuration
-│   │   ├── app.ts             # Root component
-│   │   └── main.ts            # Bootstrap entry point
-├── assets/                    # Static assets
-├── environments/              # Environment configs
-└── index.html                 # Base HTML
-```
+│ ├── app/
+│ │ ├── auth/ # Authentication components
+│ │ ├── components/ # Reusable UI components (tags, modals, etc.)
+│ │ ├── data/ # Data stores and services
+│ │ ├── layout/ # App layout, themes, navigation
+│ │ ├── pages/ # Feature-specific pages
+│ │ ├── uxcommon/ # Common UI elements (icons, alerts, etc.)
+│ │ ├── app.config.ts # Angular application config
+│ │ ├── app.routes.ts # Route configuration
+│ │ ├── app.ts # Root component
+│ │ └── main.ts # Bootstrap entry point
+├── assets/ # Static assets
+├── environments/ # Environment configs
+└── index.html # Base HTML
 
 ---
 
-## 🧩 Key Features
+### 🧩 Key Features
 
 - **Zone-less Angular** using `provideZoneChangeDetection('noop')`
 - **Tailwind + DaisyUI** for modern styling
@@ -369,43 +366,7 @@ apps/frontend/
 
 ---
 
-## 🛠️ Development
-
-Install dependencies:
-
-    npm install
-
-Run the frontend locally:
-
-    nx serve frontend
-
-Run with debugging:
-
-    nx serve frontend --configuration=development
-
-Lint code:
-
-    nx lint frontend
-
----
-
-## 🚨 ESLint & Code Quality
-
-### Conventions:
-
-- Signal variables use the suffix `Signal` (e.g., `isLoadingSignal`)
-- Private fields prefixed with `_`
-- Prefer `readonly` wherever possible
-- Use `input()` and `output()` Angular 20 decorators instead of legacy `@Input()` and `@Output()`
-
-### Rules:
-
-- Enforced via ESLint and Prettier
-- Naming enforced via `@typescript-eslint/naming-convention`
-
----
-
-## 🔐 Authentication
+### 🔐 Backend Authentication
 
 - Stored in local/session storage
 - API token is managed via tRPC headers
@@ -413,7 +374,7 @@ Lint code:
 
 ---
 
-## 📦 API Integration
+### 📦 API Integration
 
 - Handled using `@trpc/client`
 - Strongly typed backend calls
@@ -421,22 +382,10 @@ Lint code:
 
 ---
 
-## 🧪 Testing
-
-    nx test frontend
-
-(Currently under development)
-
----
-
-## 📁 Notes
+### 📁 Notes
 
 - AG Grid customization lives in `components/datagrid/`
 - Alerts, modals, tags are in `uxcommon/`
 - Shared logic is extracted to `abstract.service.ts`, `base-datagrid.ts`, etc.
 
 ---
-
-## 📄 License
-
-MIT
