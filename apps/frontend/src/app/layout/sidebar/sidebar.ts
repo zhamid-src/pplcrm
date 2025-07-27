@@ -3,7 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
 
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 
 @Component({
   selector: 'pc-sidebar',
