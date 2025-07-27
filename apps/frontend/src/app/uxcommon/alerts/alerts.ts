@@ -1,7 +1,7 @@
 import { Component, inject, input, signal } from '@angular/core';
-import { ALERTTYPE, AlertService } from '@uxcommon/alert-service';
+import { ALERTTYPE, AlertService } from './alert-service';
 import { Icon } from '@uxcommon/icon';
-import { AnimateIfDirective } from './animate-if.directive';
+import { AnimateIfDirective } from '../animate-if.directive';
 
 @Component({
   selector: 'pc-alerts',

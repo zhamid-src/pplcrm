@@ -1,9 +1,9 @@
-import { Component, EventEmitter, OnInit, Output, inject, input } from "@angular/core";
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from "@angular/forms";
-import { AlertService } from "@uxcommon/alert-service";
-import { IconName } from "@uxcommon/svg-icons-list";
+import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
+import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
+import { AlertService } from '@uxcommon/alerts/alert-service';
+import { IconName } from '@uxcommon/svg-icons-list';
 
-import { debounceTime, distinctUntilChanged } from "rxjs";
+import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'pc-form-input',
