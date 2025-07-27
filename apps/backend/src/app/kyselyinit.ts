@@ -1,6 +1,6 @@
-import { config } from "dotenv";
+import { config } from 'dotenv';
 
-import { BaseRepository } from "./repositories/base.repo";
+import { BaseRepository } from './repositories/base.repo';
 
 /**
  * Rolls back the most recent database migration.

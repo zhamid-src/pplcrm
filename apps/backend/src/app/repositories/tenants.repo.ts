@@ -1,4 +1,4 @@
-import { BaseRepository } from "./base.repo";
+import { BaseRepository } from './base.repo';
 
 /**
  * Repository for interacting with the `tenants` table.

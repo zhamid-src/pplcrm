@@ -1,5 +1,6 @@
 import { Route } from '@angular/router';
 import { NotFound } from '@uxcommon/not-found';
+import { AddTag } from '@uxcommon/tags/add-tag';
 
 import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login-guard';
@@ -16,7 +17,6 @@ import { TagsGridComponent } from './components/tags/tags-grid';
 import { VolunteersGrid } from './components/volunteers/volunteers-grid';
 import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './temp/summary';
-import { AddTag } from '@uxcommon/tags/add-tag';
 
 /**
  * The main route configuration for the application.

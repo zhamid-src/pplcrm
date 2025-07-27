@@ -13,6 +13,13 @@ export class FormInput implements OnInit {
   private readonly _rootFormGroup = inject(FormGroupDirective);
 
   /**
+   * Initialize the component by connecting it to the parent form group
+   * and subscribing to value changes.
+   */
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastValue = '';
+
+  /**
    * The parent form group this input belongs to.
    */
   protected form!: FormGroup;
@@ -71,13 +78,6 @@ export class FormInput implements OnInit {
    */
   @Output()
   public valueChange = new EventEmitter<string>();
-
-  /**
-   * Initialize the component by connecting it to the parent form group
-   * and subscribing to value changes.
-   */
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _lastValue = '';
 
   public ngOnInit() {
     this.form = this._rootFormGroup.control;

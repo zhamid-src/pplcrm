@@ -6,6 +6,7 @@ import { migrateToLatest } from './app/kyselyinit';
 import { FastifyServer } from './fastify.server';
 
 process.on('SIGTERM', closeWithGrace);
+
 process.on('SIGINT', closeWithGrace);
 
 /**

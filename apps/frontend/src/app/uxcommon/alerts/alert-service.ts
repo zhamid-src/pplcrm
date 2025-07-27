@@ -4,39 +4,38 @@ import { Injectable, signal } from '@angular/core';
  * The options used to configure an alert message.
  */
 export class AlertMessage {
-  /** Label for the primary (OK) button. */
-  OKBtn: string;
-
-  /** Callback when OK button is clicked. */
-  OKBtnCallback?: () => void;
-
-  /** Label for a secondary button. */
-  btn2?: string;
-
-  /** Callback when the secondary button is clicked. */
-  btn2Callback?: () => void;
-
-  /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
-  duration = 3000;
-
-  /** Unique ID for the alert (auto-assigned if not provided). */
-  id: string;
-
-  /** Main alert message text. */
-  text: string;
-
-  /** Optional title for the alert. */
-  title?: string;
-
-  /** Alert type for styling and icon. */
-  type?: ALERTTYPE;
+  public readonly pulse = signal(false);
 
   /** Is the alert visible? Used for exit animation directive */
-  readonly visible = signal(true);
+  public readonly visible = signal(true);
 
-  readonly pulse = signal(false);
+  /** Label for the primary (OK) button. */
+  public OKBtn: string;
 
-  timeoutId: NodeJS.Timeout | undefined;
+  /** Callback when OK button is clicked. */
+  public OKBtnCallback?: () => void;
+
+  /** Label for a secondary button. */
+  public btn2?: string;
+
+  /** Callback when the secondary button is clicked. */
+  public btn2Callback?: () => void;
+
+  /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
+  public duration = 3000;
+
+  /** Unique ID for the alert (auto-assigned if not provided). */
+  public id: string;
+
+  /** Main alert message text. */
+  public text: string;
+  public timeoutId: NodeJS.Timeout | undefined;
+
+  /** Optional title for the alert. */
+  public title?: string;
+
+  /** Alert type for styling and icon. */
+  public type?: ALERTTYPE;
 
   constructor(init?: Partial<AlertMessage>) {
     Object.assign(this, init);
@@ -97,9 +96,6 @@ export class AlertService {
     setTimeout(() => this._alerts.update((alerts) => alerts.filter((alert) => alert.id !== id)), 300);
   }
 
-  private findById(id: string) {
-    return this.alerts.find((m) => m.id === id);
-  }
   /**
    * Shows a new alert if not already present.
    * @param alert - Alert options to display.
@@ -155,6 +151,10 @@ export class AlertService {
    */
   public showWarn(text: string): void {
     this.show(new AlertMessage({ text, type: 'warning' }));
+  }
+
+  private findById(id: string) {
+    return this.alerts.find((m) => m.id === id);
   }
 }
 

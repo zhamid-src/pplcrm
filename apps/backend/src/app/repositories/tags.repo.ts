@@ -1,7 +1,7 @@
-import { Transaction } from "kysely";
+import { Transaction } from 'kysely';
 
-import { BaseRepository } from "./base.repo";
-import { Models, TypeId, TypeTenantId } from "common/src/lib/kysely.models";
+import { BaseRepository } from './base.repo';
+import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for interacting with the `tags` table and related mapping tables.

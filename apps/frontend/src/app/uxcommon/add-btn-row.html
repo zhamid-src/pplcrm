@@ -1,32 +1,21 @@
 <div class="flex flex-col sm:flex-row gap-2 sm:pr-3 justify-end">
-  <button
-    class="btn btn-primary"
-    (click)="handleBtn1Clicked()"
-    [disabled]="processing() || form.invalid || !form.dirty"
-  >
-    @if (processing()) {
-      <span class="loading loading-dots loading-lg text-primary"></span>
+  <button class="btn btn-primary" (click)="handleBtn1Clicked()" [disabled]="loading() || form.invalid || !form.dirty">
+    @if (loading()) {
+    <span class="loading loading-dots loading-lg text-primary"></span>
     } @else {
-      <pc-icon [name]="btn1Icon()" />
-      {{ btn1Text() }}
-    }
+    <pc-icon [name]="btn1Icon()" />
+    {{ btn1Text() }} }
   </button>
 
   @if (buttonsToShow() === 'three') {
-    <button
-      class="btn btn-primary"
-      (click)="handleBtn2Clicked()"
-      [disabled]="processing() || form.invalid || !form.dirty"
-    >
-      @if (processing()) {
-        <span class="loading loading-dots loading-lg text-primary"></span>
-      } @else {
-        {{ btn2Text() }}
-      }
-    </button>
+  <button class="btn btn-primary" (click)="handleBtn2Clicked()" [disabled]="loading() || form.invalid || !form.dirty">
+    @if (loading()) {
+    <span class="loading loading-dots loading-lg text-primary"></span>
+    } @else { {{ btn2Text() }} }
+  </button>
   }
 
-  <button class="btn btn-accent" (click)="cancel()" [disabled]="processing()">
+  <button class="btn btn-accent" (click)="cancel()" [disabled]="loading()">
     <pc-icon name="x-circle" />
     CANCEL
   </button>

@@ -4,8 +4,6 @@ import { IconName } from '@uxcommon/svg-icons-list';
  * The sidebar items are defined here. They go in the order they're added
  */
 export interface ISidebarItem {
-  children?: ISidebarItem[];
-
   /**
    * If true then only admins can see this item
    */
@@ -20,6 +18,7 @@ export interface ISidebarItem {
    * The color of the badge. Default is 'primary'
    */
   badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
+  children?: ISidebarItem[];
 
   /**
    * Whether the component should be hidden or not

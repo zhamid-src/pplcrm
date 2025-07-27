@@ -1,7 +1,7 @@
 <div class="flex min-h-full flex-col bg-base-100">
-  <progress class="progress w-full" [class.hidden]="!processing()"></progress>
+  <progress class="progress w-full" [class.hidden]="!loading()"></progress>
   <form [formGroup]="form" class="mx-5 mt-10 sm:mx-10">
-    <fieldset [disabled]="processing()">
+    <fieldset [disabled]="loading()">
       <div class="flex flex-col gap-4">
         @if (!person || !person.id) {
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
@@ -86,7 +86,7 @@
         }
 
         <pc-add-btn-row
-          [processing]="processing()"
+          [loading]="loading()"
           (btn1Clicked)="save()"
           [buttonsToShow]="person?.id ? 'two' : 'three'"
         ></pc-add-btn-row>

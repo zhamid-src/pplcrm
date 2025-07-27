@@ -1,9 +1,9 @@
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
+import { TagsService } from '@uxcommon/tags/tags-service';
 
 import { AbstractAPIService } from '../../abstract-api.service';
-import { TagsService } from '@uxcommon/tags/tags-service';
 
 /**
  * `TagsGridComponent` displays a data grid of tags with editable fields.

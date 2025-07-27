@@ -10,6 +10,9 @@ import { IconName } from '@uxcommon/svg-icons-list';
   templateUrl: './input.html',
 })
 export class PPlCrmInput implements AfterViewInit {
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastEmittedValue = '';
+
   protected inputClass = `
   peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px]
   border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2
@@ -31,12 +34,15 @@ export class PPlCrmInput implements AfterViewInit {
   @Output() public googlePlacesAddressChange = new EventEmitter<google.maps.places.PlaceResult>();
   @Output() public gotFocus = new EventEmitter();
   public icon = input<IconName | null>(null);
+  public inputControl = new FormControl('');
   @Output() public lostFocus = new EventEmitter();
   public placeholder = input<string>('');
   public type = input<string>('text');
   @Output() public valueChange = new EventEmitter<string>();
 
-  inputControl = new FormControl('');
+  protected get inputLength(): number {
+    return this.inputControl.value?.length ?? 0;
+  }
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
     this.googlePlacesAddressChange?.emit(place);
@@ -54,13 +60,6 @@ export class PPlCrmInput implements AfterViewInit {
   public handleKeyup(value: string) {
     this.valueChange?.emit(value);
   }
-
-  protected get inputLength(): number {
-    return this.inputControl.value?.length ?? 0;
-  }
-
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _lastEmittedValue = '';
 
   public ngAfterViewInit() {
     if (!this.input || !this.input.valueChanges) return;

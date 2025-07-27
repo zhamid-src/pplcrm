@@ -49,16 +49,16 @@ export class Sidebar {
     this.hoveringSidebar = state;
   }
 
-  protected isHoveringSidebar() {
-    return this.hoveringSidebar;
-  }
-
   public toggleDrawer() {
     return this._sidebarSvc.toggleDrawer();
   }
 
   protected isCollapsed(name: string): boolean {
     return this.collapsedItems.has(name);
+  }
+
+  protected isHoveringSidebar() {
+    return this.hoveringSidebar;
   }
 
   protected toggleCollapse(name: string) {

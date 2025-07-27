@@ -11,7 +11,7 @@ import { AuthController } from '../controllers/auth.controller';
  * @returns The current user profile based on the access token.
  */
 function currentUser() {
-  return authProcedure.query(async ({ ctx }) => controller.currentUser(ctx.auth!));
+  return authProcedure.query(async ({ ctx }) => controller.currentUser(ctx.auth));
 }
 
 /**
@@ -66,7 +66,7 @@ function signIn() {
  * @returns A success confirmation.
  */
 function signOut() {
-  return publicProcedure.mutation(async ({ ctx }) => controller.signOut(ctx.auth!));
+  return publicProcedure.mutation(async ({ ctx }) => controller.signOut(ctx.auth));
 }
 
 /**

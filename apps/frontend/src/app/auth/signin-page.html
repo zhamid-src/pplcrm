@@ -79,9 +79,9 @@
               type="submit"
               class="btn btn-primary w-full"
               (click)="signIn()"
-              [disabled]="processing() || (form.dirty && form.invalid)"
+              [disabled]="loading() || (form.dirty && form.invalid)"
             >
-              @if (processing()) {
+              @if (loading()) {
               <span class="loading loading-dots loading-lg text-primary"></span>
               } @else { SIGN IN }
             </button>

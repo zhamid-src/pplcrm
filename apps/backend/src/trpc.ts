@@ -33,15 +33,16 @@ export const router = trpc.router;
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
 
-  // Ensure all required authentication fields are present
   if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-    });
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
 
-  // Pass along the context if auth is valid
-  return opts.next({ ctx });
+  return opts.next({
+    ctx: {
+      ...ctx,
+      auth: ctx.auth,
+    },
+  });
 });
 
 /**

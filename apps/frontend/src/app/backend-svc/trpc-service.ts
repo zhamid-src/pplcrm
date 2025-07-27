@@ -21,6 +21,9 @@ import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
   providedIn: 'root',
 })
 export class TRPCService<T> {
+  protected readonly router = inject(Router);
+  protected readonly tokenService = inject(TokenService);
+
   protected ac = new AbortController();
 
   /**
@@ -28,8 +31,6 @@ export class TRPCService<T> {
    * It is available to child services via `this.api`.
    */
   protected api;
-  protected readonly router = inject(Router);
-  protected readonly tokenService = inject(TokenService);
 
   constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({

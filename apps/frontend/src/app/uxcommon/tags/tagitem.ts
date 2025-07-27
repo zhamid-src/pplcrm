@@ -27,8 +27,8 @@ export class TagItem {
   public canDelete = input<boolean>(true);
   @Output() public clickEvent = new EventEmitter<string>();
   @Output() public closeEvent = new EventEmitter<string>();
-  public name = input.required<string>();
   public invisible = input<Signal<boolean>>(signal(false));
+  public name = input.required<string>();
 
   public emitClick() {
     this.clickEvent.emit(this.name());

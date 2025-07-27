@@ -1,4 +1,4 @@
-import { Component, EventEmitter, input, Output } from '@angular/core';
+import { Component, EventEmitter, Output, input } from '@angular/core';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
@@ -21,11 +21,10 @@ import { IconName } from '@uxcommon/svg-icons-list';
   imports: [Icon],
 })
 export class GridActionComponent {
+  @Output() public action = new EventEmitter();
   public enabled = input(true);
-  public tip = input.required<string>();
   public icon = input.required<IconName>();
-
-  @Output() action = new EventEmitter();
+  public tip = input.required<string>();
 
   public emitClick() {
     this.action.emit();

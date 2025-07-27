@@ -160,7 +160,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @param auth Auth payload containing session ID.
    * @returns Number of sessions deleted.
    */
-  public async signOut(auth: IAuthKeyPayload) {
+  public async signOut(auth: IAuthKeyPayload | null) {
     if (!auth?.session_id) {
       return null;
     }

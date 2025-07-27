@@ -10,7 +10,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
  * Add a new person to the database.
  */
 function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => persons.addPerson(input, ctx.auth!));
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => persons.addPerson(input, ctx.auth));
 }
 
 /**
@@ -19,7 +19,7 @@ function add() {
 function attachTag() {
   return authProcedure
     .input(z.object({ id: z.string(), tag_name: z.string() }))
-    .mutation(({ input, ctx }) => persons.attachTag(input.id, input.tag_name, ctx.auth!));
+    .mutation(({ input, ctx }) => persons.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
 /**
@@ -28,14 +28,14 @@ function attachTag() {
 function deleteMany() {
   return authProcedure
     .input(z.array(z.string()))
-    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth!.tenant_id!, input));
+    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth.tenant_id, input));
 }
 
 /**
  * Delete a single person by ID.
  */
 function deleteOne() {
-  return authProcedure.input(z.string()).mutation(({ input, ctx }) => persons.delete(ctx.auth!.tenant_id!, input));
+  return authProcedure.input(z.string()).mutation(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input));
 }
 
 /**
@@ -44,7 +44,7 @@ function deleteOne() {
 function detachTag() {
   return authProcedure.input(z.object({ id: z.string(), tag_name: z.string() })).mutation(({ input, ctx }) =>
     persons.detachTag({
-      tenant_id: ctx.auth!.tenant_id!,
+      tenant_id: ctx.auth.tenant_id,
       person_id: input.id,
       name: input.tag_name,
     }),
@@ -55,14 +55,14 @@ function detachTag() {
  * Get all people using the given options.
  */
 function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth!.tenant_id!, input));
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
 }
 
 /**
  * Get all people with their full address and tags.
  */
 function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth!, input));
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
 }
 
 /**
@@ -71,7 +71,7 @@ function getAllWithAddress() {
 function getByHouseholdId() {
   return authProcedure
     .input(z.object({ id: z.string(), options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth!, input.options));
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
 }
 
 /**
@@ -80,21 +80,21 @@ function getByHouseholdId() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => persons.getById({ tenant_id: ctx.auth!.tenant_id!, id: input }));
+    .query(({ input, ctx }) => persons.getById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
 /**
  * Get all distinct tags used on persons.
  */
 function getDistinctTags() {
-  return authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth!));
+  return authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth));
 }
 
 /**
  * Get all tags assigned to a specific person.
  */
 function getTags() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => persons.getTags(input, ctx.auth!));
+  return authProcedure.input(z.string()).query(({ input, ctx }) => persons.getTags(input, ctx.auth));
 }
 
 /**
@@ -103,7 +103,7 @@ function getTags() {
 function update() {
   return authProcedure.input(z.object({ id: z.string(), data: UpdatePersonsObj })).mutation(({ input, ctx }) =>
     persons.update({
-      tenant_id: ctx.auth!.tenant_id!,
+      tenant_id: ctx.auth.tenant_id,
       id: input.id,
       row: input.data as OperationDataType<'persons', 'update'>,
     }),
