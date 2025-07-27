@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { AddTagType, UpdateTagType } from '@common';
 
-import { AbstractAPIService } from '../../abstract.service';
+import { AbstractAPIService } from '../../abstract-api.service';
 import { Tags } from 'common/src/lib/kysely.models';
 
 /**

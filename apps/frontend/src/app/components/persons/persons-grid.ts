@@ -4,7 +4,7 @@ import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@uxcommon/icon';
 
-import { AbstractAPIService } from '../../abstract.service';
+import { AbstractAPIService } from '../../abstract-api.service';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 import { DATA_TYPE, PersonsService } from './persons-service';
 
