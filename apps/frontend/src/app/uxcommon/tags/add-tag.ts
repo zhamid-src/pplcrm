@@ -3,7 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRow } from '@uxcommon/add-btn-row';
-import { AlertService } from '@uxcommon/alert-service';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { FormInput } from '@uxcommon/formInput';
 
 import { TagsService } from '@uxcommon/tags/tags-service';

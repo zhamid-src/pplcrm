@@ -1,8 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { Alerts } from '@uxcommon/alerts';
-import { AlertService } from '@uxcommon/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 

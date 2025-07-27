@@ -3,7 +3,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/add-btn-row';
-import { AlertService } from '@uxcommon/alert-service';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { FormInput } from '@uxcommon/formInput';
 import { PPlCrmInput } from '@uxcommon/input';
 import { TextArea } from '@uxcommon/textarea';

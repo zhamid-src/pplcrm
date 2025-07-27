@@ -3,9 +3,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { PasswordCheckerModule } from '@triangular/password-checker';
-import { TRPCError } from '@trpc/server';
-import { Alerts } from '@uxcommon/alerts';
-import { AlertService } from '@uxcommon/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icon';
 
 import { firstValueFrom } from 'rxjs';

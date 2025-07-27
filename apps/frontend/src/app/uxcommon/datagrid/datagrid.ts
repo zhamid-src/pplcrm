@@ -11,7 +11,7 @@ import {
 } from '@ag-grid-community/core';
 import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/alert-service';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 

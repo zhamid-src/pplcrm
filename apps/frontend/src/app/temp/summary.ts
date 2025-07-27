@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { AlertService } from '@uxcommon/alert-service';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Tags } from '@uxcommon/tags/tags';
 
 @Component({
