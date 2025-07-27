@@ -10,10 +10,10 @@ import { IconName } from '@uxcommon/svg-icons-list';
   templateUrl: './add-btn-row.html',
 })
 export class AddBtnRow implements OnInit {
-  private rootFormGroup = inject(FormGroupDirective);
-  private route = inject(ActivatedRoute);
-  private router = inject(Router);
-  private stay = false;
+  private _rootFormGroup = inject(FormGroupDirective);
+  private _route = inject(ActivatedRoute);
+  private _router = inject(Router);
+  private _stay = false;
 
   protected form!: FormGroup;
 
@@ -59,7 +59,7 @@ export class AddBtnRow implements OnInit {
    * Used by the cancel button.
    */
   public cancel() {
-    this.router.navigate(['../'], { relativeTo: this.route });
+    this._router.navigate(['../'], { relativeTo: this._route });
   }
 
   /**
@@ -75,7 +75,7 @@ export class AddBtnRow implements OnInit {
    * Sets the stay flag and reuses the handler for btn1.
    */
   public handleBtn2Clicked() {
-    this.stay = true;
+    this._stay = true;
     this.handleBtn1Clicked();
   }
 
@@ -83,7 +83,7 @@ export class AddBtnRow implements OnInit {
    * Initializes the component by linking to the parent form group.
    */
   public ngOnInit() {
-    this.form = this.rootFormGroup.control;
+    this.form = this._rootFormGroup.control;
   }
 
   /**
@@ -92,6 +92,6 @@ export class AddBtnRow implements OnInit {
    * Otherwise, navigates away.
    */
   public stayOrCancel() {
-    this.stay ? this.form.reset() : this.cancel();
+    this._stay ? this.form.reset() : this.cancel();
   }
 }

@@ -17,17 +17,17 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './new-password-page.html',
 })
 export class NewPasswordPage implements OnInit {
-  private alertSvc = inject(AlertService);
-  private authService = inject(AuthService);
+  private _alertSvc = inject(AlertService);
+  private _authService = inject(AuthService);
 
   /** Reset code extracted from query params */
-  private code: string | null = null;
-  private fb = inject(FormBuilder);
+  private _code: string | null = null;
+  private _fb = inject(FormBuilder);
 
   /** Flag to control password visibility toggle */
-  private hidePassword = true;
-  private route = inject(ActivatedRoute);
-  private router = inject(Router);
+  private _hidePassword = true;
+  private _route = inject(ActivatedRoute);
+  private _router = inject(Router);
 
   /** Error state to control UI feedback */
   protected error = signal(false);
@@ -38,7 +38,7 @@ export class NewPasswordPage implements OnInit {
   /** Success message to show after successful password reset */
   protected success: string | undefined;
 
-  public form = this.fb.group({
+  public form = this._fb.group({
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
 
@@ -54,7 +54,7 @@ export class NewPasswordPage implements OnInit {
    * @returns `'password'` or `'text'`
    */
   public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
+    return this._hidePassword ? 'password' : 'text';
   }
 
   /**
@@ -62,17 +62,17 @@ export class NewPasswordPage implements OnInit {
    * @returns `'eye-slash'` or `'eye'`
    */
   public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
+    return this._hidePassword ? 'eye-slash' : 'eye';
   }
 
   public async ngOnInit() {
-    const params: Params = await firstValueFrom(this.route.queryParams);
+    const params: Params = await firstValueFrom(this._route.queryParams);
 
     if (!params['code']) {
       this.error.set(true);
     }
 
-    this.code = params['code'];
+    this._code = params['code'];
   }
 
   /**
@@ -81,21 +81,21 @@ export class NewPasswordPage implements OnInit {
    */
   public async submit() {
     if (!this.password?.valid || !this.password.value) {
-      this.alertSvc.showError('Please check the password.');
+      this._alertSvc.showError('Please check the password.');
       return;
     }
 
     this.processing.set(true);
     try {
-      const error = await this.authService.resetPassword({
-        code: this.code || '',
+      const error = await this._authService.resetPassword({
+        code: this._code || '',
         password: this.password.value,
       });
 
       if (error) this.error.set(true);
       else {
-        this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-        this.router.navigateByUrl('signin');
+        this._alertSvc.showSuccess('Password reset successfully. Please sign in again');
+        this._router.navigateByUrl('signin');
       }
     } finally {
       this.processing.set(false);
@@ -106,7 +106,7 @@ export class NewPasswordPage implements OnInit {
    * Toggle the visibility of the password input.
    */
   public toggleVisibility() {
-    this.hidePassword = !this.hidePassword;
+    this._hidePassword = !this._hidePassword;
   }
 
   /**

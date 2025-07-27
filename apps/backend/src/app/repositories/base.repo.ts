@@ -56,8 +56,8 @@ const dialect = new PostgresDialect({
  * }
  */
 export class BaseRepository<T extends keyof Models> {
-  private static db = new Kysely<Models>({ dialect });
-  private static migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+  private static _db = new Kysely<Models>({ dialect });
+  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
 
   protected readonly table: T;
 
@@ -65,11 +65,11 @@ export class BaseRepository<T extends keyof Models> {
    * Static migrator object for running Kysely migrations.
    */
   public static migrator = new Migrator({
-    db: BaseRepository.db,
+    db: BaseRepository._db,
     provider: new FileMigrationProvider({
       fs,
       path,
-      migrationFolder: BaseRepository.migrationFolder,
+      migrationFolder: BaseRepository._migrationFolder,
     }),
   });
 
@@ -218,14 +218,14 @@ export class BaseRepository<T extends keyof Models> {
    * Return the current timestamp from the DB.
    */
   public async nowTime(): Promise<QueryResult<INow>> {
-    return (await sql`select now()::timestamp`.execute(BaseRepository.db)) as QueryResult<INow>;
+    return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
   }
 
   /**
    * Start a transaction.
    */
   public transaction() {
-    return BaseRepository.db.transaction();
+    return BaseRepository._db.transaction();
   }
 
   /**
@@ -263,21 +263,21 @@ export class BaseRepository<T extends keyof Models> {
    * Get delete query builder for this table.
    */
   protected getDelete(trx?: Transaction<Models>) {
-    return trx ? trx.deleteFrom(this.table) : BaseRepository.db.deleteFrom(this.table);
+    return trx ? trx.deleteFrom(this.table) : BaseRepository._db.deleteFrom(this.table);
   }
 
   /**
    * Get insert query builder for this table.
    */
   protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
-    return trx ? trx.insertInto(this.table) : BaseRepository.db.insertInto(this.table);
+    return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
   }
 
   /**
    * Get select query builder for this table.
    */
   protected getSelect(trx?: Transaction<Models>) {
-    const ret = trx ? trx.selectFrom(this.table) : BaseRepository.db.selectFrom(this.table);
+    const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
 
     return ret as SelectQueryBuilder<Models, T, Models[T]>;
   }
@@ -294,7 +294,7 @@ export class BaseRepository<T extends keyof Models> {
    * Get update query builder for this table.
    */
   protected getUpdate(trx?: Transaction<Models>) {
-    const ret = trx ? trx.updateTable(this.table) : BaseRepository.db.updateTable(this.table);
+    const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
     return ret as unknown as UpdateQueryBuilder<Models, T, keyof Models, object>;
   }
 }

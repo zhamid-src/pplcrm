@@ -11,8 +11,8 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
   template: './formInput.html',
 })
 export class FormInput implements OnInit {
-  private alertSvc = inject(AlertService);
-  private rootFormGroup = inject(FormGroupDirective);
+  private _alertSvc = inject(AlertService);
+  private _rootFormGroup = inject(FormGroupDirective);
 
   /**
    * The parent form group this input belongs to.
@@ -79,7 +79,7 @@ export class FormInput implements OnInit {
    * and subscribing to value changes.
    */
   public ngOnInit() {
-    this.form = this.rootFormGroup.control;
+    this.form = this._rootFormGroup.control;
     this.form
       .get(this.control())
       ?.valueChanges.pipe(debounceTime(this.debounceTime()), distinctUntilChanged())
@@ -113,7 +113,7 @@ export class FormInput implements OnInit {
   private checkLastAddedChar(value: string): string {
     const newValue = value && this.removeDisallowedChars(value);
     if (newValue !== value) {
-      this.alertSvc.showError(`Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`);
+      this._alertSvc.showError(`Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`);
       this.form.get(this.control())?.setValue(newValue);
     }
     return newValue;

@@ -27,9 +27,9 @@ import {
  * and password reset workflows.
  */
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
-  private profiles: UserPofiles = new UserPofiles();
-  private sessions: SessionsRepo = new SessionsRepo();
-  private tenants: TenantsRepo = new TenantsRepo();
+  private _profiles: UserPofiles = new UserPofiles();
+  private _sessions: SessionsRepo = new SessionsRepo();
+  private _tenants: TenantsRepo = new TenantsRepo();
 
   constructor() {
     super(new AuthUsersRepo());
@@ -164,7 +164,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (!auth?.session_id) {
       return null;
     }
-    return this.sessions.deleteBySessionId(auth.session_id);
+    return this._sessions.deleteBySessionId(auth.session_id);
   }
 
   /**
@@ -180,7 +180,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.verifyUserDoesNotExist(email);
     const password = await this.hashPassword(input.password);
 
-    this.tenants.transaction().execute(async (trx) => {
+    this._tenants.transaction().execute(async (trx) => {
       const tenant_id = await this.createTenant(trx, input.organization);
       const user = await this.createUser(trx, tenant_id, password, email, input);
       const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
@@ -206,7 +206,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   private async createProfile(trx: Transaction<Models>, id: string, tenant_id: string, auth_id: string) {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
-    const profile = await this.profiles.add({ row }, trx);
+    const profile = await this._profiles.add({ row }, trx);
     if (!profile) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -225,7 +225,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   private async createTenant(trx: Transaction<Models>, name: string) {
     const row = { name } as OperationDataType<'tenants', 'insert'>;
-    const tenantAddResult = await this.tenants.add({ row }, trx);
+    const tenantAddResult = await this._tenants.add({ row }, trx);
     if (!tenantAddResult) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
@@ -243,7 +243,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   private async createTokens(input: { user_id: string; tenant_id: string; name: string; oldSession?: string }) {
     // Delete the old session
-    input.oldSession && (await this.sessions.deleteBySessionId(input.oldSession));
+    input.oldSession && (await this._sessions.deleteBySessionId(input.oldSession));
 
     const row = {
       user_id: input.user_id,
@@ -253,7 +253,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       status: 'active',
     } as OperationDataType<'sessions', 'insert'>;
 
-    const currentSession = await this.sessions.add({ row });
+    const currentSession = await this._sessions.add({ row });
 
     if (!currentSession) {
       throw new TRPCError({
@@ -395,7 +395,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   ) {
     const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
     const id = tenant_id as GetOperandType<'tenants', 'update', Keys<TablesOperationMap['tenants']['update']>>;
-    await this.tenants.update({ id, tenant_id, row }, trx);
+    await this._tenants.update({ id, tenant_id, row }, trx);
   }
 
   /**

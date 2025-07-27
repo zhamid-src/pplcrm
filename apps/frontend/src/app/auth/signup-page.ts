@@ -21,12 +21,12 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
-  private alertSvc = inject(AlertService);
-  private authService = inject(AuthService);
-  private fb = inject(FormBuilder);
+  private _alertSvc = inject(AlertService);
+  private _authService = inject(AuthService);
+  private _fb = inject(FormBuilder);
 
   /** Reactive form with user registration fields */
-  protected form = this.fb.group({
+  protected form = this._fb.group({
     organization: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
@@ -95,18 +95,18 @@ export class SignUpPage {
    * Displays alerts for error or success states.
    */
   public async join() {
-    if (this.form.invalid) return this.alertSvc.showError('Please enter all information before continuing.');
+    if (this.form.invalid) return this._alertSvc.showError('Please enter all information before continuing.');
 
     this.processing.set(true);
 
-    return this.authService
+    return this._authService
       .signUp(this.form.getRawValue() as signUpInputType)
       .then((user) => {
         if (!user) {
-          this.alertSvc.showError('Unknown error'); // TODO: better error msg
+          this._alertSvc.showError('Unknown error'); // TODO: better error msg
         }
       })
-      .catch((err) => this.alertSvc.showError(err.message))
+      .catch((err) => this._alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }
 

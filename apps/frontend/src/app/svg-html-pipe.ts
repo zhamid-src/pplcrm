@@ -16,7 +16,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
  */
 @Pipe({ standalone: true, name: 'bypassHtmlSanitizer' })
 export class BypassHtmlSanitizerPipe implements PipeTransform {
-  private sanitizer = inject(DomSanitizer);
+  private _sanitizer = inject(DomSanitizer);
 
   /**
    * Transforms a string of HTML into a `SafeHtml` object that Angular will render without sanitization.
@@ -25,6 +25,6 @@ export class BypassHtmlSanitizerPipe implements PipeTransform {
    * @returns A `SafeHtml` object that Angular considers safe for binding.
    */
   public transform(html: string): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(html);
+    return this._sanitizer.bypassSecurityTrustHtml(html);
   }
 }

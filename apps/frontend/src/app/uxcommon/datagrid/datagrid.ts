@@ -16,12 +16,11 @@ import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
 import { AbstractAPIService } from '../../abstract.service';
-
+import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
+import { UndoManager } from './undo-redo-mgr';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
-import { UndoManager } from './undo-redo-mgr';
-import { defaultGridOptions, SELECTION_COLUMN } from './grid-defaults';
 
 @Component({
   selector: 'pc-datagrid',
@@ -29,28 +28,29 @@ import { defaultGridOptions, SELECTION_COLUMN } from './grid-defaults';
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> {
+  protected readonly undoMgr = new UndoManager();
+
+  private readonly _route = inject(ActivatedRoute);
+  private readonly _searchSvc = inject(SearchService);
+  private readonly _themeSvc = inject(ThemeService);
+  private readonly _updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
+
+  // Other State
+  private _lastRowHovered: string | undefined;
+
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
+  protected readonly distinctTags: string[] = [];
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
-  protected readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly searchSvc = inject(SearchService);
-  private readonly themeSvc = inject(ThemeService);
 
   // State & UI Signals
   protected readonly isRowSelected = signal(false);
   protected readonly processing = signal(false);
-  protected readonly undoMgr = new UndoManager();
-  private readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
+  protected readonly router = inject(Router);
 
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
-
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
-
-  // Other State
-  private lastRowHovered: string | undefined;
-  protected readonly distinctTags: string[] = [];
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
@@ -60,26 +60,31 @@ export class DataGrid<T extends keyof Models, U> {
   public disableImport = input<boolean>(true);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
+  @Output() public filter = new EventEmitter();
   public gridOptions = input<GridOptions<Partial<T>>>({});
+  @Output() public importCSV = new EventEmitter<string>();
   public limitToTags = input<string[]>([]);
   public plusIcon = input<IconName>('plus');
-  @Output() public filter = new EventEmitter();
-  @Output() public importCSV = new EventEmitter<string>();
 
   constructor() {
     effect(() => {
-      const quickFilterText = this.searchSvc.search;
+      const quickFilterText = this._searchSvc.search;
       this.api?.updateGridOptions({ quickFilterText });
     });
   }
 
-  /** Called by AG Grid when ready. Sets up API, columns, and triggers refresh. */
-  public onGridReady(params: GridReadyEvent) {
-    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
-    this.api = params.api;
-    this.undoMgr.initialize(this.api);
-    this.api.updateGridOptions(this.getMergedGridOptions());
-    this.refresh();
+  /** Confirms deletion with modal. */
+  public confirmDelete(): void {
+    if (this.disableDelete()) {
+      return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
+    }
+
+    this.showDialogById('confirmDelete');
+  }
+
+  /** Called when a row is hovered. Used to track row ID. */
+  public onCellMouseOver(event: CellMouseOverEvent) {
+    this._lastRowHovered = event?.data?.id;
   }
 
   /** Called when a cell changes. Persists changes via backend and manages undo. */
@@ -104,9 +109,13 @@ export class DataGrid<T extends keyof Models, U> {
     this.undoMgr.updateSizes();
   }
 
-  /** Called when a row is hovered. Used to track row ID. */
-  public onCellMouseOver(event: CellMouseOverEvent) {
-    this.lastRowHovered = event?.data?.id;
+  /** Called by AG Grid when ready. Sets up API, columns, and triggers refresh. */
+  public onGridReady(params: GridReadyEvent) {
+    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
+    this.api = params.api;
+    this.undoMgr.initialize(this.api);
+    this.api.updateGridOptions(this.getMergedGridOptions());
+    this.refresh();
   }
 
   /** Called when selection changes. Updates selected state. */
@@ -114,10 +123,30 @@ export class DataGrid<T extends keyof Models, U> {
     this.isRowSelected.set(this.getSelectedRows().length > 0);
   }
 
+  /** Opens edit form for row. */
+  public openEdit(id: string) {
+    return this.view(id);
+  }
+
+  public redo() {
+    this.undoMgr.redo();
+  }
+
+  /** Cancels the fetch call and hides loader. */
+  public sendAbort() {
+    this.gridSvc.abort();
+    this.api!.hideOverlay();
+  }
+
+  /** Undo and redo call through the manager */
+  public undo() {
+    this.undoMgr.undo();
+  }
+
   /** Navigates to view route for given ID or last hovered ID. */
   public view(id?: string) {
     if (id) return this.navigateIfValid(id);
-    if (!this.disableView()) this.navigateIfValid(this.lastRowHovered);
+    if (!this.disableView()) this.navigateIfValid(this._lastRowHovered);
   }
 
   /** Navigates to add route. */
@@ -125,36 +154,13 @@ export class DataGrid<T extends keyof Models, U> {
     this.navigateIfValid(this.addRoute());
   }
 
-  /** Opens edit form for row. */
-  public openEdit(id: string) {
-    return this.view(id);
+  /** Confirms export with modal. */
+  protected confirmExport(): void {
+    this.showDialogById('confirmExport');
   }
 
-  /** Called when row is double-clicked. */
-  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.openEdit(event.data.id);
-  }
-
-  /** Triggers a full grid refresh via backend. */
-  protected async refresh(): Promise<void> {
-    try {
-      this.api!.setGridOption('loading', true);
-      const rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
-      this.api!.setGridOption('rowData', rows);
-    } catch (error) {
-      this.alertSvc.showError('Could not load the data. Please try again later.');
-    } finally {
-      this.api!.setGridOption('loading', false);
-    }
-  }
-
-  /** Confirms deletion with modal. */
-  public confirmDelete(): void {
-    if (this.disableDelete()) {
-      return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
-    }
-
-    this.showDialogById('confirmDelete');
+  protected defaultGridOptions() {
+    return defaultGridOptions as GridOptions<Partial<T>>;
   }
 
   /** Deletes selected rows and optionally shows undo snackbar. */
@@ -179,9 +185,9 @@ export class DataGrid<T extends keyof Models, U> {
     }
   }
 
-  /** Confirms export with modal. */
-  protected confirmExport(): void {
-    this.showDialogById('confirmExport');
+  /** Triggers the import CSV flow (placeholder only). */
+  protected doImportCSV() {
+    this.importCSV.emit('');
   }
 
   /** Actually performs export via AG Grid. */
@@ -189,29 +195,9 @@ export class DataGrid<T extends keyof Models, U> {
     this.api!.exportDataAsCsv();
   }
 
-  /** Triggers the import CSV flow (placeholder only). */
-  protected doImportCSV() {
-    this.importCSV.emit('');
-  }
-
-  /** Cancels the fetch call and hides loader. */
-  public sendAbort() {
-    this.gridSvc.abort();
-    this.api!.hideOverlay();
-  }
-
-  /** Undo and redo call through the manager */
-  public undo() {
-    this.undoMgr.undo();
-  }
-
-  public redo() {
-    this.undoMgr.redo();
-  }
-
-  /** Undoes a delete (not implemented yet). */
-  protected async undoDeleteRows() {
-    // Placeholder
+  /** Utility: sets ID for each row */
+  protected getRowId(row: GetRowIdParams) {
+    return row.data.id;
   }
 
   /** Utility: returns selected rows from grid */
@@ -219,14 +205,33 @@ export class DataGrid<T extends keyof Models, U> {
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
-  /** Utility: sets ID for each row */
-  protected getRowId(row: GetRowIdParams) {
-    return row.data.id;
-  }
-
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
-    return this.themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
+    return this._themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
+  }
+
+  /** Called when row is double-clicked. */
+  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
+    this.openEdit(event.data.id);
+  }
+
+  /** Triggers a full grid refresh via backend. */
+  protected async refresh(): Promise<void> {
+    try {
+      this.api!.setGridOption('loading', true);
+      const rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
+      this.api!.setGridOption('rowData', rows);
+    } catch (error) {
+      this.alertSvc.showError('Could not load the data. Please try again later.');
+    } finally {
+      this.api!.setGridOption('loading', false);
+    }
+  }
+
+  /** Internal helper for showing modals */
+  protected showDialogById(id: string): void {
+    const dialog = document.querySelector<HTMLDialogElement>(`#${id}`);
+    dialog?.showModal();
   }
 
   /** Compares two tag arrays */
@@ -239,63 +244,9 @@ export class DataGrid<T extends keyof Models, U> {
     return !tags || !tags[0] ? '' : tags.toString();
   }
 
-  /** Internal helper for showing modals */
-  protected showDialogById(id: string): void {
-    const dialog = document.querySelector<HTMLDialogElement>(`#${id}`);
-    dialog?.showModal();
-  }
-
-  protected defaultGridOptions() {
-    return defaultGridOptions as GridOptions<Partial<T>>;
-  }
-
-  /** Internal helper: shows undo snackbar after delete */
-  private showUndoSuccess() {
-    this.alertSvc.show({
-      text: 'Deleted successfully. Click Undo to undo delete',
-      type: 'success',
-      OKBtn: 'Undo',
-      duration: 3500,
-      OKBtnCallback: () => this.undoDeleteRows(),
-    });
-  }
-
-  /** Internal helper: merges base and input grid options */
-  private getMergedGridOptions(): GridOptions<Partial<T>> {
-    return {
-      context: this,
-      ...defaultGridOptions,
-      ...this.gridOptions(),
-      onCellValueChanged: this.onCellValueChanged.bind(this),
-      onCellMouseOver: this.onCellMouseOver.bind(this),
-      onSelectionChanged: this.onSelectionChanged.bind(this),
-      onUndoEnded: this.updateUndoSizes,
-      onRedoEnded: this.updateUndoSizes,
-      onRowDataUpdated: this.updateUndoSizes,
-      onRowValueChanged: this.updateUndoSizes,
-    } as GridOptions<Partial<T>>;
-  }
-
-  /** Navigates to route if valid */
-  private navigateIfValid(path: string | null | undefined): void {
-    if (path) this.router.navigate([path], { relativeTo: this.route });
-  }
-
-  /** Helper: filters rows eligible for deletion */
-  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
-    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
-  }
-
-  /** Helper: checks deletion rules and shows errors */
-  private handleDeleteErrors(rows: Partial<T>[], deletableRows: Partial<T>[]) {
-    if (!rows.length) {
-      this.alertSvc.showError('Please select at least one row to delete.');
-      return true;
-    }
-    if (deletableRows.length !== rows.length) {
-      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
-    }
-    return deletableRows.length === 0;
+  /** Undoes a delete (not implemented yet). */
+  protected async undoDeleteRows() {
+    // Placeholder
   }
 
   /** Helper: applies single-field patch */
@@ -311,8 +262,57 @@ export class DataGrid<T extends keyof Models, U> {
     return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
   }
 
+  /** Helper: filters rows eligible for deletion */
+  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
+    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
+  }
+
+  /** Internal helper: merges base and input grid options */
+  private getMergedGridOptions(): GridOptions<Partial<T>> {
+    return {
+      context: this,
+      ...defaultGridOptions,
+      ...this.gridOptions(),
+      onCellValueChanged: this.onCellValueChanged.bind(this),
+      onCellMouseOver: this.onCellMouseOver.bind(this),
+      onSelectionChanged: this.onSelectionChanged.bind(this),
+      onUndoEnded: this._updateUndoSizes,
+      onRedoEnded: this._updateUndoSizes,
+      onRowDataUpdated: this._updateUndoSizes,
+      onRowValueChanged: this._updateUndoSizes,
+    } as GridOptions<Partial<T>>;
+  }
+
+  /** Helper: checks deletion rules and shows errors */
+  private handleDeleteErrors(rows: Partial<T>[], deletableRows: Partial<T>[]) {
+    if (!rows.length) {
+      this.alertSvc.showError('Please select at least one row to delete.');
+      return true;
+    }
+    if (deletableRows.length !== rows.length) {
+      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
+    }
+    return deletableRows.length === 0;
+  }
+
+  /** Navigates to route if valid */
+  private navigateIfValid(path: string | null | undefined): void {
+    if (path) this.router.navigate([path], { relativeTo: this._route });
+  }
+
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
     return 'deletable' in row && row.deletable === false && key === 'name';
+  }
+
+  /** Internal helper: shows undo snackbar after delete */
+  private showUndoSuccess() {
+    this.alertSvc.show({
+      text: 'Deleted successfully. Click Undo to undo delete',
+      type: 'success',
+      OKBtn: 'Undo',
+      duration: 3500,
+      OKBtnCallback: () => this.undoDeleteRows(),
+    });
   }
 }

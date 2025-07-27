@@ -1,14 +1,14 @@
-import * as pino from "pino";
+import * as pino from 'pino';
 
-import cors from "@fastify/cors";
-import sensible from "@fastify/sensible";
-import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
+import cors from '@fastify/cors';
+import sensible from '@fastify/sensible';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 
-import { default as fastify } from "fastify";
+import { default as fastify } from 'fastify';
 
-import { routes } from "./app/routes";
-import { trpcRouters } from "./app/trpc.routers";
-import { createContext } from "./context";
+import { routes } from './app/routes';
+import { trpcRouters } from './app/trpc.routers';
+import { createContext } from './context';
 
 /**
  * Wrapper class for a Fastify server instance.
@@ -16,7 +16,7 @@ import { createContext } from "./context";
  * Registers core plugins, routes, and tRPC integration.
  */
 export class FastifyServer {
-  private readonly server;
+  private readonly _server;
 
   /**
    * Initializes the Fastify server with sensible defaults, logging,
@@ -27,7 +27,7 @@ export class FastifyServer {
    */
   constructor(logger: pino.Logger, opts: object = {}) {
     // Create Fastify instance with logging and common config
-    this.server = fastify({
+    this._server = fastify({
       logger: {
         level: 'info',
         transport: {
@@ -39,14 +39,14 @@ export class FastifyServer {
     });
 
     // Register REST routes
-    this.server.register(routes);
+    this._server.register(routes);
 
     // Register core Fastify plugins
-    this.server.register(cors, { ...opts });
-    this.server.register(sensible);
+    this._server.register(cors, { ...opts });
+    this._server.register(sensible);
 
     // Register tRPC plugin for RPC-based APIs
-    this.server.register(fastifyTRPCPlugin, {
+    this._server.register(fastifyTRPCPlugin, {
       prefix: '/',
       trpcOptions: {
         router: trpcRouters,
@@ -61,7 +61,7 @@ export class FastifyServer {
    * @returns {Promise<void>} Resolves when shutdown completes.
    */
   public async close(): Promise<void> {
-    return await this.server.close();
+    return await this._server.close();
   }
 
   /**
@@ -72,12 +72,12 @@ export class FastifyServer {
    * @returns {Promise<void>}
    */
   public async serve(): Promise<void> {
-    await this.server.listen({ port, host }, (err) => {
+    await this._server.listen({ port, host }, (err) => {
       if (err) {
-        this.server.log.error(err);
+        this._server.log.error(err);
         process.exit(1);
       } else {
-        this.server.log.info(`[ ready ] http://${host}:${port}`);
+        this._server.log.info(`[ ready ] http://${host}:${port}`);
       }
     });
   }

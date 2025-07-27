@@ -12,7 +12,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    * A map of route keys to their stored detached route handles.
    * Used to cache and restore route components.
    */
-  private handlers: { [key: string]: DetachedRouteHandle } = {};
+  private _handlers: { [key: string]: DetachedRouteHandle } = {};
 
   /**
    * Retrieves a previously stored route handle if reuse is enabled for the route.
@@ -21,7 +21,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    * @returns The stored route handle, or `false` if reuse is not enabled.
    */
   public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null | false {
-    return route.data['shouldReuse'] ? this.handlers[route.data['key']] : false;
+    return route.data['shouldReuse'] ? this._handlers[route.data['key']] : false;
   }
 
   /**
@@ -31,7 +31,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    * @returns `true` if a cached handle exists and reuse is enabled, otherwise `false`.
    */
   public shouldAttach(route: ActivatedRouteSnapshot): boolean {
-    return !!route.data['shouldReuse'] && !!this.handlers[route.data['key']];
+    return !!route.data['shouldReuse'] && !!this._handlers[route.data['key']];
   }
 
   /**
@@ -62,7 +62,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    */
   public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle): void {
     if (route.data['shouldReuse']) {
-      this.handlers[route.data['key']] = handle;
+      this._handlers[route.data['key']] = handle;
     }
   }
 }

@@ -20,7 +20,7 @@ import { PersonsService } from './persons-service';
   </ul>`,
 })
 export class PeopleInHousehold {
-  private personsSvc = inject(PersonsService);
+  private _personsSvc = inject(PersonsService);
 
   /** List of people retrieved for the specified household. */
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
@@ -31,7 +31,7 @@ export class PeopleInHousehold {
   constructor() {
     // TODO:Zee Effect isn't ideal here.  We gotta fix it.
     effect(async () => {
-      this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.householdId());
+      this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.householdId());
     });
   }
 }
