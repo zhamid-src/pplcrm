@@ -1,6 +1,8 @@
 {
   "compileOnSave": false,
   "compilerOptions": {
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "rootDir": ".",
     "sourceMap": true,
     "declaration": false,

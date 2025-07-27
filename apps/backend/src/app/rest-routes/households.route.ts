@@ -5,7 +5,7 @@ import { FastifyPluginCallback } from 'fastify';
 /**
  * Supported HTTP routes for the households endpoint
  */
-const routes: FastifyPluginCallback = (fastify, _, done) => {
+const routes: FastifyPluginCallback = (_fastify, _, done) => {
   /*
   fastify.get('', schema.getAll, () => households.getAll());
 

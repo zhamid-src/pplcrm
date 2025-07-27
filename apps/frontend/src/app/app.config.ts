@@ -1,11 +1,5 @@
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
-import {
-  ApplicationConfig,
-  inject,
-  provideAppInitializer,
-  provideZoneChangeDetection,
-  provideZonelessChangeDetection,
-} from '@angular/core';
+import { ApplicationConfig, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 

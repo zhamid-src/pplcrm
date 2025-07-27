@@ -1,11 +1,11 @@
 import { FastifyPluginCallback } from 'fastify';
 
-// const persons = new PersonsController();
+//const persons = new PersonsController();
 
 /**
  * Supported HTTP routes for the persons endpoint
  */
-const routes: FastifyPluginCallback = (fastify, _, done) => {
+const routes: FastifyPluginCallback = (_fastify, _, done) => {
   /*
   fastify.get('', schema.getAll, () => persons.getAll());
 
