@@ -1,7 +1,7 @@
 import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
-import { DataGrid } from '@uxcommon/datagrid';
+import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@uxcommon/icon';
 
 import { AbstractAPIService } from '../../abstract.service';

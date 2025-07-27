@@ -1,10 +1,10 @@
-import { ICellRendererAngularComp } from "@ag-grid-community/angular";
-import { ICellRendererParams } from "@ag-grid-community/core";
-import { Component, ViewEncapsulation } from "@angular/core";
-import { Icon } from "@uxcommon/icon";
+import { ICellRendererAngularComp } from '@ag-grid-community/angular';
+import { ICellRendererParams } from '@ag-grid-community/core';
+import { Component, ViewEncapsulation } from '@angular/core';
+import { Icon } from '@uxcommon/icon';
 
-import { DataGrid } from "./datagrid";
-import { Models } from "common/src/lib/kysely.models";
+import { DataGrid } from './datagrid/datagrid';
+import { Models } from 'common/src/lib/kysely.models';
 
 /**
  * A custom cell renderer used by the AG Grid to render shortcut actions like
