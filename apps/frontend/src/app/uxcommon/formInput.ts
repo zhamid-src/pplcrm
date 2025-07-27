@@ -22,7 +22,7 @@ export class FormInput implements OnInit {
   /**
    * Local cache of the current input value.
    */
-  protected inputValue: string = '';
+  protected inputValue = '';
 
   /**
    * The name of the FormControl inside the parent FormGroup.
