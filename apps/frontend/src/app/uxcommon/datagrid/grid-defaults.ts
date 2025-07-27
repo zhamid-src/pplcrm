@@ -1,12 +1,46 @@
-import { ColDef, GridState, SideBarDef } from '@ag-grid-community/core';
+import { ColDef, GridOptions, GridState, SideBarDef } from '@ag-grid-community/core';
+import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
+import { LoadingOverlayComponent } from '../loading-overlay';
 
-export const BASE_GRID_CONFIG = {
+/**
+ * The default selection column shown in all AG Grid tables.
+ * This column appears on the left and includes a checkbox for multi-row selection.
+ */
+export const SELECTION_COLUMN: ColDef = {
+  checkboxSelection: true,
+  filter: false,
+  sortable: false,
+  cellClass: 'pl-1 pr-0 w-auto',
+  resizable: false,
+  suppressCellFlash: true,
+  lockVisible: true,
+  lockPosition: true,
+  suppressMovable: true,
+  suppressMenu: true,
+  pinned: 'left',
+  lockPinned: true,
+  cellRenderer: ShortcutCellRenderer,
+};
+
+/**
+ * Base grid configuration including default column definition,
+ * initial grid state, and sidebar tool panel configuration.
+ * These settings are reused across all grid instances.
+ */
+const BASE_GRID_CONFIG = {
+  /**
+   * Default column definition applied to all columns unless overridden.
+   */
   defaultColDef: {
     filter: 'agMultiColumnFilter',
     flex: 1,
     enableValue: true,
     enablePivot: true,
   } as ColDef,
+
+  /**
+   * Initial grid state, including side bar position and visibility.
+   */
   initialState: {
     sideBar: {
       openToolPanel: null,
@@ -15,6 +49,10 @@ export const BASE_GRID_CONFIG = {
       toolPanels: {},
     },
   } as GridState,
+
+  /**
+   * AG Grid sidebar definition including Filters and Columns panels.
+   */
   sideBar: {
     toolPanels: [
       {
@@ -45,4 +83,27 @@ export const BASE_GRID_CONFIG = {
     ],
     defaultToolPanel: 'filters',
   } as SideBarDef,
+};
+
+/**
+ * Default grid options used to initialize AG Grid.
+ * This is intended to be the common base for all grid instances in the app.
+ */
+export const defaultGridOptions: GridOptions = {
+  animateRows: true,
+  autoSizeStrategy: { type: 'fitCellContents' },
+  defaultColDef: BASE_GRID_CONFIG.defaultColDef,
+  initialState: BASE_GRID_CONFIG.initialState,
+  sideBar: BASE_GRID_CONFIG.sideBar,
+  enableCellChangeFlash: true,
+  enableRangeSelection: true,
+  copyHeadersToClipboard: true,
+  enableCellEditingOnBackspace: true,
+  pagination: true,
+  paginationAutoPageSize: true,
+  rowSelection: 'multiple',
+  rowStyle: { cursor: 'pointer' },
+  stopEditingWhenCellsLoseFocus: true,
+  undoRedoCellEditing: true,
+  loadingOverlayComponent: LoadingOverlayComponent,
 };
