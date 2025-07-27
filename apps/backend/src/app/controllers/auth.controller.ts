@@ -11,7 +11,7 @@ import { AuthUsersRepo } from '../repositories/authusers.repo';
 import { QueryParams } from '../repositories/base.repo';
 import { SessionsRepo } from '../repositories/sessions.repo';
 import { TenantsRepo } from '../repositories/tenants.repo';
-import { UserPofiles } from '../repositories/userprofiles.repo';
+import { UserProfiles } from '../repositories/userprofiles.repo';
 import { BaseController } from './base.controller';
 import {
   AuthUsersType,
@@ -27,7 +27,7 @@ import {
  * and password reset workflows.
  */
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
-  private _profiles: UserPofiles = new UserPofiles();
+  private _profiles: UserProfiles = new UserProfiles();
   private _sessions: SessionsRepo = new SessionsRepo();
   private _tenants: TenantsRepo = new TenantsRepo();
 
