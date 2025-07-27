@@ -104,13 +104,13 @@ export class Tags implements OnInit {
     if (index === -1) {
       const tag = new TagModel(tagName);
       this.tags().unshift(tag);
-      this.tagsChange.emit(this.getTagNamesArray());
       this.tagAdded.emit(tagName);
     } else {
       // Bring tag that maches to the front.
       const [tag] = this.tags().splice(index, 1); // remove it
       this.tags().unshift(tag); // move to front
     }
+    this.tagsChange.emit(this.getTagNamesArray());
   }
 
   private getTagNamesArray() {
