@@ -53,8 +53,6 @@ export class AlertMessage {
 export class AlertService {
   private _alerts = signal<AlertMessage[]>([]);
 
-  constructor() {}
-
   /**
    * Returns a list of all currently active alerts.
    */

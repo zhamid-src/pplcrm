@@ -28,8 +28,6 @@ export class SearchService {
    */
   public readonly searchSignal: Signal<string> = this._search;
 
-  constructor() {}
-
   /**
    * Gets the current search value.
    *

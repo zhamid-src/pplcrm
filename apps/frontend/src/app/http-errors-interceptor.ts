@@ -12,8 +12,6 @@ import { Observable } from 'rxjs';
  */
 @Injectable()
 export class ErrorCatchingInterceptor implements HttpInterceptor {
-  constructor() {}
-
   /**
    * Intercepts outgoing HTTP requests and allows for custom handling of
    * the request or response.

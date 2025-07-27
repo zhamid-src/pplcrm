@@ -34,8 +34,6 @@ export class PPlCrmInput implements AfterViewInit {
 
   inputControl = new FormControl('');
 
-  constructor() {}
-
   public handleAddressChange(place: google.maps.places.PlaceResult) {
     this.googlePlacesAddressChange?.emit(place);
   }

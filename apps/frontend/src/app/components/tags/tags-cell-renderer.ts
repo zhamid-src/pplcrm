@@ -28,8 +28,6 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
 
   protected tags: string[] = [];
 
-  constructor() {}
-
   // gets called once before the renderer is used
   public agInit(params: MyCellRendererParams<T, U>): void {
     this.tags = !params.value || !params.value[0] ? [] : params.value;
