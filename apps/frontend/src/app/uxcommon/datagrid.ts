@@ -270,6 +270,7 @@ export class DataGrid<T extends keyof Models, U> {
     const edited = await this.applyEdit(row.id, payload);
 
     if (!edited) {
+      // TODO: we can't just blindly undo. What if it failed on undo? In that case we have to redo
       this.undoMgr.undo();
       return this.alertSvc.showError('Could not edit the row. Please try again later.');
     }
