@@ -36,8 +36,8 @@ import {
 })
 export class AnimateIfDirective implements OnDestroy {
   private readonly _vcr = inject(ViewContainerRef);
-  private readonly _template = inject(TemplateRef<any>);
-  private _view: EmbeddedViewRef<any> | null = null;
+  private readonly _template = inject(TemplateRef<unknown>);
+  private _view: EmbeddedViewRef<unknown> | null = null;
   private _timeoutId: NodeJS.Timeout | undefined;
 
   private _condition = false;

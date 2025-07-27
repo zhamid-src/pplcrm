@@ -1,4 +1,4 @@
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { ALERTTYPE, AlertService } from './alert-service';
 import { Icon } from '@uxcommon/icon';
 import { AnimateIfDirective } from '../animate-if.directive';

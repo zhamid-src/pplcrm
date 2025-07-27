@@ -105,7 +105,7 @@ export class DataGrid<T extends keyof Models, U> {
       return this.alertSvc.showError('Could not edit the row. Please try again later.');
     }
 
-    this.api?.flashCells({ rowNodes: [event.node!], columns: [event.column] });
+    this.api?.flashCells({ rowNodes: [event.node], columns: [event.column] });
     this.undoMgr.updateSizes();
   }
 
@@ -135,7 +135,7 @@ export class DataGrid<T extends keyof Models, U> {
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
     this.gridSvc.abort();
-    this.api!.hideOverlay();
+    this.api?.hideOverlay();
   }
 
   /** Undo and redo call through the manager */
@@ -177,7 +177,7 @@ export class DataGrid<T extends keyof Models, U> {
       if (!deleted) {
         this.alertSvc.showError('Could not delete. Please try again later.');
       } else {
-        this.api!.applyTransaction({ remove: deletableRows });
+        this.api?.applyTransaction({ remove: deletableRows });
         this.showUndoSuccess();
       }
     } finally {
@@ -192,7 +192,7 @@ export class DataGrid<T extends keyof Models, U> {
 
   /** Actually performs export via AG Grid. */
   protected exportToCSV() {
-    this.api!.exportDataAsCsv();
+    this.api?.exportDataAsCsv();
   }
 
   /** Utility: sets ID for each row */
@@ -218,13 +218,13 @@ export class DataGrid<T extends keyof Models, U> {
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
     try {
-      this.api!.setGridOption('loading', true);
+      this.api?.setGridOption('loading', true);
       const rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
-      this.api!.setGridOption('rowData', rows);
+      this.api?.setGridOption('rowData', rows);
     } catch (error) {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     } finally {
-      this.api!.setGridOption('loading', false);
+      this.api?.setGridOption('loading', false);
     }
   }
 

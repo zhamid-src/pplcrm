@@ -35,7 +35,7 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
 
     this._service = params?.service;
     this._rowId = params.data.id;
-    this._colName = params.colDef!.field!;
+    this._colName = params.colDef?.field || '';
   }
 
   // gets called whenever the user gets the cell to refresh
@@ -47,6 +47,6 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
 
   public removeTag(tag_name: string) {
     this._service?.detachTag(this._rowId, tag_name);
-    this._api!.getRowNode(this._rowId)?.setDataValue(this._colName, this.tags);
+    this._api?.getRowNode(this._rowId)?.setDataValue(this._colName, this.tags);
   }
 }
