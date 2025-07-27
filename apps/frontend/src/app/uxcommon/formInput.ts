@@ -11,8 +11,8 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
   template: './formInput.html',
 })
 export class FormInput implements OnInit {
-  private _alertSvc = inject(AlertService);
-  private _rootFormGroup = inject(FormGroupDirective);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _rootFormGroup = inject(FormGroupDirective);
 
   /**
    * The parent form group this input belongs to.

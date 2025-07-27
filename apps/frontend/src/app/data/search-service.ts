@@ -13,7 +13,7 @@ export class SearchService {
   /**
    * Internal signal that holds the current search term.
    */
-  private _search = signal<string>('');
+  private readonly _search = signal<string>('');
 
   /**
    * Public readonly signal for reactive subscriptions.

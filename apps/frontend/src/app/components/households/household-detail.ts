@@ -25,14 +25,14 @@ import { Households } from 'common/src/lib/kysely.models';
   templateUrl: './Household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
-  private _alertSvc = inject(AlertService);
-  private _fb = inject(FormBuilder);
-  private _householdsSvc = inject(HouseholdsService);
-  private _personsSvc = inject(PersonsService);
-  private _route = inject(ActivatedRoute);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _fb = inject(FormBuilder);
+  private readonly _householdsSvc = inject(HouseholdsService);
+  private readonly _personsSvc = inject(PersonsService);
+  private readonly _route = inject(ActivatedRoute);
 
   /** Reactive signal for storing the loaded household */
-  protected _household = signal<Households | null>(null);
+  protected readonly _household = signal<Households | null>(null);
 
   /** Whether the address has been verified via Places API */
   protected addressVerified = false;

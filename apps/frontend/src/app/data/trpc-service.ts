@@ -28,8 +28,8 @@ export class TRPCService<T> {
    * It is available to child services via `this.api`.
    */
   protected api;
-  protected router = inject(Router);
-  protected tokenService = inject(TokenService);
+  protected readonly router = inject(Router);
+  protected readonly tokenService = inject(TokenService);
 
   constructor() {
     this.api = createTRPCProxyClient<TRPCRouters>({

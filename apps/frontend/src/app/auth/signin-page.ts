@@ -18,11 +18,11 @@ import { TokenService } from 'apps/frontend/src/app/data/token-service';
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
-  private _alertSvc = inject(AlertService);
-  private _authService = inject(AuthService);
-  private _fb = inject(FormBuilder);
-  private _router = inject(Router);
-  private _tokenService = inject(TokenService);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _authService = inject(AuthService);
+  private readonly _fb = inject(FormBuilder);
+  private readonly _router = inject(Router);
+  private readonly _tokenService = inject(TokenService);
 
   /** Controls whether the password is visible or masked */
   protected hidePassword = true;
@@ -31,7 +31,7 @@ export class SignInPage {
   protected persistence = this._tokenService.persistence;
 
   /** Signal indicating whether login processing is in progress */
-  protected processing = signal(false);
+  protected readonly processing = signal(false);
 
   /** Login form group with email and password fields */
   public form = this._fb.group({

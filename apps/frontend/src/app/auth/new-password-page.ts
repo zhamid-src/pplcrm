@@ -17,23 +17,23 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './new-password-page.html',
 })
 export class NewPasswordPage implements OnInit {
-  private _alertSvc = inject(AlertService);
-  private _authService = inject(AuthService);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _authService = inject(AuthService);
 
   /** Reset code extracted from query params */
   private _code: string | null = null;
-  private _fb = inject(FormBuilder);
+  private readonly _fb = inject(FormBuilder);
 
   /** Flag to control password visibility toggle */
   private _hidePassword = true;
-  private _route = inject(ActivatedRoute);
-  private _router = inject(Router);
+  private readonly _route = inject(ActivatedRoute);
+  private readonly _router = inject(Router);
 
   /** Error state to control UI feedback */
-  protected error = signal(false);
+  protected readonly error = signal(false);
 
   /** Processing state to disable UI and show loading indication */
-  protected processing = signal(false);
+  protected readonly processing = signal(false);
 
   /** Success message to show after successful password reset */
   protected success: string | undefined;

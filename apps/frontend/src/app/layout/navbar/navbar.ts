@@ -26,7 +26,7 @@ export class Navbar {
   protected searchOnMobile = false;
 
   /** Indicates whether the search input is visible or not */
-  protected searchBarVisible = signal(false);
+  protected readonly searchBarVisible = signal(false);
 
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
