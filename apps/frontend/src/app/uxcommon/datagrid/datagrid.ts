@@ -9,18 +9,16 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-  GridState,
-  SideBarDef,
 } from '@ag-grid-community/core';
-import { Component, EventEmitter, Output, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alert-service';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
-import { AbstractAPIService } from '../abstract.service';
-import { LoadingOverlayComponent } from './loading-overlay';
-import { ShortcutCellRenderer } from './shortcut-cell-renderer';
+import { AbstractAPIService } from '../../abstract.service';
+import { LoadingOverlayComponent } from '../loading-overlay';
+import { ShortcutCellRenderer } from '../shortcut-cell-renderer';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 import { Models } from 'common/src/lib/kysely.models';

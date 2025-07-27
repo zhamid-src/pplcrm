@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
-import { DataGrid } from '@uxcommon/datagrid';
+import { DataGrid } from '@uxcommon/datagrid/datagrid';
 
 import { AbstractAPIService } from '../../abstract.service';
 import { TagsService } from '@uxcommon/tags/tags-service';
