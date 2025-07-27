@@ -1,0 +1,33 @@
+import { Component, EventEmitter, input, Output } from '@angular/core';
+import { Icon } from '@uxcommon/icon';
+import { IconName } from '@uxcommon/svg-icons-list';
+
+@Component({
+  selector: 'pc-grid-action',
+  standalone: true,
+  template: `
+    <li
+      class="tooltip-accent"
+      [class.tooltip]="enabled()"
+      [class.disabled]="!enabled()"
+      [class.cursor-not-allowed]="!enabled()"
+      [class.text-neutral-400]="!enabled()"
+      [attr.data-tip]="tip()"
+      (click)="enabled() && emitClick()"
+    >
+      <a><pc-icon [name]="icon()"></pc-icon></a>
+    </li>
+  `,
+  imports: [Icon],
+})
+export class GridActionComponent {
+  public enabled = input(true);
+  public tip = input.required<string>();
+  public icon = input.required<IconName>();
+
+  @Output() action = new EventEmitter();
+
+  public emitClick() {
+    this.action.emit();
+  }
+}

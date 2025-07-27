@@ -21,10 +21,11 @@ import { UndoManager } from './undo-redo-mgr';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
+import { GridActionComponent } from './tool-button';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [AgGridModule, Icon],
+  imports: [AgGridModule, Icon, GridActionComponent],
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> {
@@ -60,8 +61,8 @@ export class DataGrid<T extends keyof Models, U> {
   public disableImport = input<boolean>(true);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
-  @Output() public filter = new EventEmitter();
   public gridOptions = input<GridOptions<Partial<T>>>({});
+  @Output() public filter = new EventEmitter();
   @Output() public importCSV = new EventEmitter<string>();
   public limitToTags = input<string[]>([]);
   public plusIcon = input<IconName>('plus');
