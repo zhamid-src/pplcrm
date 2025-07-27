@@ -1,8 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { Alerts } from '@uxcommon/alerts/alerts';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -24,8 +24,8 @@ export class ResetPasswordPage {
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
 
-  /** Signal indicating whether the form is processing */
-  protected processing = signal(false);
+  /** Signal indicating whether the form is loading */
+  protected loading = signal(false);
 
   /** Success message string */
   protected success: string | undefined;
@@ -52,7 +52,7 @@ export class ResetPasswordPage {
     if (!this.email?.valid || !this.email.value)
       return this._alertSvc.showError('Please check the email address and try again.');
 
-    this.processing.set(true);
+    this.loading.set(true);
     try {
       await this._authService
         .sendPasswordResetEmail({ email: this.email.value })
@@ -63,7 +63,7 @@ export class ResetPasswordPage {
       );
       this._router.navigateByUrl('signin');
     } finally {
-      this.processing.set(false);
+      this.loading.set(false);
     }
   }
 }

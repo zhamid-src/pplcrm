@@ -13,6 +13,7 @@ export class AddBtnRow implements OnInit {
   private readonly _rootFormGroup = inject(FormGroupDirective);
   private readonly _route = inject(ActivatedRoute);
   private readonly _router = inject(Router);
+
   private _stay = false;
 
   protected form!: FormGroup;
@@ -49,10 +50,10 @@ export class AddBtnRow implements OnInit {
   public buttonsToShow = input<'two' | 'three'>('three');
 
   /**
-   * A required flag indicating whether the form is currently processing.
+   * A required flag indicating whether the form is currently loading.
    * Used to disable buttons and prevent double submissions.
    */
-  public processing = input.required<boolean>();
+  public loading = input.required<boolean>();
 
   /**
    * Navigates the user back to the previous route.

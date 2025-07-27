@@ -1,7 +1,8 @@
 import { Component, inject, input } from '@angular/core';
-import { ALERTTYPE, AlertService } from './alert-service';
 import { Icon } from '@uxcommon/icon';
+
 import { AnimateIfDirective } from '../animate-if.directive';
+import { ALERTTYPE, AlertService } from './alert-service';
 
 @Component({
   selector: 'pc-alerts',
@@ -12,6 +13,7 @@ import { AnimateIfDirective } from '../animate-if.directive';
 export class Alerts {
   /** Injected alert service to handle alert logic */
   protected alertSvc = inject(AlertService);
+
   /**
    * The position of the alert container.
    * Can be 'top', 'bottom', or 'relative' to context.
@@ -30,6 +32,16 @@ export class Alerts {
   }
 
   /**
+   * Returns a list of active alerts, reversed if position is 'top'.
+   * Used to control the visual order of alerts.
+   *
+   * @returns Array of active alerts
+   */
+  protected alerts() {
+    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
+  }
+
+  /**
    * Handles click on the second button of an alert.
    * Triggers its callback (if defined) and dismisses the alert.
    *
@@ -38,6 +50,14 @@ export class Alerts {
   protected btn2Click(id: string): void {
     this.alertSvc.btn2Callback(id);
     this.alertSvc.dismiss(id);
+  }
+
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
   }
 
   /**
@@ -56,28 +76,15 @@ export class Alerts {
           : 'exclamation-circle';
   }
 
-  /**
-   * Returns a list of active alerts, reversed if position is 'top'.
-   * Used to control the visual order of alerts.
-   *
-   * @returns Array of active alerts
-   */
-  protected alerts() {
-    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
-  }
   protected isPositionBottom() {
     return this.position() === 'bottom';
   }
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
+
   protected isPositionRelative() {
     return this.position() === 'relative';
   }
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
+
+  protected isPositionTop() {
+    return this.position() === 'top';
   }
 }

@@ -3,8 +3,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PasswordCheckerModule } from '@triangular/password-checker';
-import { Alerts } from '@uxcommon/alerts/alerts';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
 import { Icon } from '@uxcommon/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -17,21 +17,21 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 export class NewPasswordPage implements OnInit {
   private readonly _alertSvc = inject(AlertService);
   private readonly _authService = inject(AuthService);
+  private readonly _fb = inject(FormBuilder);
+  private readonly _route = inject(ActivatedRoute);
+  private readonly _router = inject(Router);
 
   /** Reset code extracted from query params */
   private _code: string | null = null;
-  private readonly _fb = inject(FormBuilder);
 
   /** Flag to control password visibility toggle */
   private _hidePassword = true;
-  private readonly _route = inject(ActivatedRoute);
-  private readonly _router = inject(Router);
 
   /** Error state to control UI feedback */
   protected readonly error = signal(false);
 
-  /** Processing state to disable UI and show loading indication */
-  protected readonly processing = signal(false);
+  /** loading state to disable UI and show loading indication */
+  protected readonly loading = signal(false);
 
   /** Success message to show after successful password reset */
   protected success: string | undefined;
@@ -84,7 +84,7 @@ export class NewPasswordPage implements OnInit {
       return;
     }
 
-    this.processing.set(true);
+    this.loading.set(true);
     try {
       const error = await this._authService.resetPassword({
         code: this._code || '',
@@ -97,7 +97,7 @@ export class NewPasswordPage implements OnInit {
         this._router.navigateByUrl('signin');
       }
     } finally {
-      this.processing.set(false);
+      this.loading.set(false);
     }
   }
 

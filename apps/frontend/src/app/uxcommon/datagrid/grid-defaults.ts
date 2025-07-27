@@ -1,25 +1,7 @@
 import { ColDef, GridOptions, GridState, SideBarDef } from '@ag-grid-community/core';
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
-import { LoadingOverlayComponent } from './loading-overlay';
 
-/**
- * The default selection column shown in all AG Grid tables.
- * This column appears on the left and includes a checkbox for multi-row selection.
- */
-export const SELECTION_COLUMN: ColDef = {
-  filter: false,
-  sortable: false,
-  cellClass: 'px-0 pt-2 mx-0 w-12',
-  resizable: false,
-  enableCellChangeFlash: true,
-  lockVisible: true,
-  lockPosition: true,
-  suppressMovable: true,
-  suppressHeaderMenuButton: true,
-  pinned: 'left',
-  lockPinned: true,
-  cellRenderer: ShortcutCellRenderer,
-};
+import { LoadingOverlayComponent } from './loading-overlay';
 
 /**
  * Base grid configuration including default column definition,
@@ -83,6 +65,25 @@ const BASE_GRID_CONFIG = {
     ],
     defaultToolPanel: 'filters',
   } as SideBarDef,
+};
+
+/**
+ * The default selection column shown in all AG Grid tables.
+ * This column appears on the left and includes a checkbox for multi-row selection.
+ */
+export const SELECTION_COLUMN: ColDef = {
+  filter: false,
+  sortable: false,
+  cellClass: 'px-0 pt-2 mx-0 w-12',
+  resizable: false,
+  enableCellChangeFlash: true,
+  lockVisible: true,
+  lockPosition: true,
+  suppressMovable: true,
+  suppressHeaderMenuButton: true,
+  pinned: 'left',
+  lockPinned: true,
+  cellRenderer: ShortcutCellRenderer,
 };
 
 /**

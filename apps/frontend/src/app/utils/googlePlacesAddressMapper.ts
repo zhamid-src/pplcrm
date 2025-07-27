@@ -9,33 +9,6 @@ type AddressTypeMapInterface = {
 };
 
 /**
- * Google Places returns multiple types of address components.
- * This map defines the priority of those types for each internal address field.
- */
-const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
-  apt: ['subpremise'],
-  street_num: ['street_number'],
-  zip: ['postal_code'],
-  street1: ['street_address', 'route'],
-  city: [
-    'locality',
-    'sublocality',
-    'sublocality_level_1',
-    'sublocality_level_2',
-    'sublocality_level_3',
-    'sublocality_level_4',
-  ],
-  state: [
-    'administrative_area_level_1',
-    'administrative_area_level_2',
-    'administrative_area_level_3',
-    'administrative_area_level_4',
-    'administrative_area_level_5',
-  ],
-  country: ['country'],
-};
-
-/**
  * Parses a Google Maps PlaceResult object into a custom AddressType.
  *
  * @param place - The result object returned from the Google Places API.
@@ -72,3 +45,30 @@ export function parseAddress(place: google.maps.places.PlaceResult): AddressType
 
   return address;
 }
+
+/**
+ * Google Places returns multiple types of address components.
+ * This map defines the priority of those types for each internal address field.
+ */
+const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
+  apt: ['subpremise'],
+  street_num: ['street_number'],
+  zip: ['postal_code'],
+  street1: ['street_address', 'route'],
+  city: [
+    'locality',
+    'sublocality',
+    'sublocality_level_1',
+    'sublocality_level_2',
+    'sublocality_level_3',
+    'sublocality_level_4',
+  ],
+  state: [
+    'administrative_area_level_1',
+    'administrative_area_level_2',
+    'administrative_area_level_3',
+    'administrative_area_level_4',
+    'administrative_area_level_5',
+  ],
+  country: ['country'],
+};

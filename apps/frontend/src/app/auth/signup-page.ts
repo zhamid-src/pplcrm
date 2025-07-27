@@ -4,8 +4,8 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
 import { PasswordCheckerModule } from '@triangular/password-checker';
-import { Alerts } from '@uxcommon/alerts/alerts';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
 import { Icon } from '@uxcommon/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -40,7 +40,7 @@ export class SignUpPage {
   protected hidePassword = true;
 
   /** Signal indicating whether form submission is in progress */
-  protected processing = signal(false);
+  protected loading = signal(false);
 
   /**
    * Getter for the email form control.
@@ -97,17 +97,14 @@ export class SignUpPage {
   public async join() {
     if (this.form.invalid) return this._alertSvc.showError('Please enter all information before continuing.');
 
-    this.processing.set(true);
+    this.loading.set(true);
 
+    // TODO: better error message
     return this._authService
       .signUp(this.form.getRawValue() as signUpInputType)
-      .then((user) => {
-        if (!user) {
-          this._alertSvc.showError('Unknown error'); // TODO: better error msg
-        }
-      })
+      .then((user) => user && this._alertSvc.showError('Unknown error'))
       .catch((err) => this._alertSvc.showError(err.message))
-      .finally(() => this.processing.set(false));
+      .finally(() => this.loading.set(false));
   }
 
   /**

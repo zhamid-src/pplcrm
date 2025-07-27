@@ -8,14 +8,14 @@ import { PPlCrmInput } from '@uxcommon/input';
 })
 export class AutoComplete {
   /**
-   * Whether to hide the autocomplete list.
-   */
-  protected hideAutoComplete = true;
-
-  /**
    * A reactive list of autocomplete matches.
    */
   protected readonly matches = signal<string[]>([]);
+
+  /**
+   * Whether to hide the autocomplete list.
+   */
+  protected hideAutoComplete = true;
 
   /**
    * A filtering service that provides suggestions based on user input.

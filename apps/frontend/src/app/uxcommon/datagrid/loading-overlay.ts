@@ -13,7 +13,6 @@ import { Component } from '@angular/core';
       <a (click)="sendAbort()" class="btn btn-link btn-sm hover:no-underline">Cancel</a>
     </div>
   `,
-  standalone: false,
 })
 export class LoadingOverlayComponent implements ILoadingOverlayAngularComp {
   /**

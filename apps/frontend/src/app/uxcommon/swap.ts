@@ -26,13 +26,12 @@ export class Swap {
    */
   public checked = input<boolean>(false);
 
-  public size = input(6);
-
   /**
    * Event emitted when the component is clicked.
    * Use this to handle toggle logic externally.
    */
   @Output() public clickEvent = new EventEmitter();
+  public size = input(6);
 
   /**
    * The icon to display when the toggle is **off**.

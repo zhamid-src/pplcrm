@@ -5,7 +5,6 @@ import { TRPCError } from '@trpc/server';
 import { AddBtnRow } from '@uxcommon/add-btn-row';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { FormInput } from '@uxcommon/formInput';
-
 import { TagsService } from '@uxcommon/tags/tags-service';
 
 /**
@@ -36,7 +35,7 @@ export class AddTag {
   /**
    * Signal to track form submission (used to show spinners or disable form).
    */
-  protected processing = signal(false);
+  protected loading = signal(false);
 
   /**
    * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
@@ -51,7 +50,7 @@ export class AddTag {
    * If successful, resets the `AddBtnRow` component's state.
    */
   protected async add() {
-    this.processing.set(true);
+    this.loading.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
 
     try {
@@ -65,7 +64,7 @@ export class AddTag {
         this._alertSvc.showError("We've hit an unknown error. Please try again.");
       }
     } finally {
-      this.processing.set(false);
+      this.loading.set(false);
     }
   }
 }

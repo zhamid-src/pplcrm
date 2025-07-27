@@ -1,11 +1,11 @@
-import { Component, effect, ElementRef, HostListener, inject, signal, ViewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
 import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SearchService } from 'apps/frontend/src/app/data/search-service';
+import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 
@@ -15,21 +15,21 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
   templateUrl: './navbar.html',
 })
 export class Navbar {
-  @ViewChild('searchInput') searchInputRef!: ElementRef<HTMLInputElement>;
-
   private readonly _auth = inject(AuthService);
   private readonly _searchSvc = inject(SearchService);
   private readonly _sideBarSvc = inject(SidebarService);
+
+  /** Indicates whether the search input is visible or not */
+  protected readonly searchBarVisible = signal(false);
   protected readonly themeSvc = inject(ThemeService);
 
   /** Indicates whether the search input is visible on mobile view. */
   protected searchOnMobile = false;
 
-  /** Indicates whether the search input is visible or not */
-  protected readonly searchBarVisible = signal(false);
-
   /** Two-way bound string input for search bar. */
   protected searchStr = '';
+
+  @ViewChild('searchInput') public searchInputRef!: ElementRef<HTMLInputElement>;
 
   constructor() {
     // Move focus to the search bar whenever it becomes visible
@@ -39,18 +39,6 @@ export class Navbar {
           this.searchInputRef?.nativeElement?.focus();
         });
     });
-  }
-
-  /**
-   * Handles user input from the search field.
-   * Updates the `searchStr` property and triggers the search logic.
-   *
-   * @param event - The input event triggered when the user types in the search box.
-   */
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr = input.value;
-    this.search();
   }
 
   /**
@@ -82,6 +70,13 @@ export class Navbar {
   }
 
   /**
+   * Hide the search bar
+   */
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  /**
    * Returns whether the mobile sidebar is currently open.
    */
   protected isMobileOpen(): boolean {
@@ -89,10 +84,39 @@ export class Navbar {
   }
 
   /**
+   * Hide the search bar on losing focus if the
+   * input text bar is empty
+   */
+  protected onBlurSearchBar() {
+    if (!this.searchStr.length) {
+      this.hideSearchBar();
+    }
+  }
+
+  /**
+   * Handles user input from the search field.
+   * Updates the `searchStr` property and triggers the search logic.
+   *
+   * @param event - The input event triggered when the user types in the search box.
+   */
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr = input.value;
+    this.search();
+  }
+
+  /**
    * Triggers the search using the current value in the search bar.
    */
   protected search(): void {
     this._searchSvc.doSearch(this.searchStr);
+  }
+
+  /**
+   * Show the search bar
+   */
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
   }
 
   /**
@@ -110,13 +134,6 @@ export class Navbar {
   }
 
   /**
-   * Switches the visual theme between light and dark mode.
-   */
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
-  }
-
-  /**
    * Show or hide the search bar
    */
   protected toggleSearch(): void {
@@ -124,26 +141,9 @@ export class Navbar {
   }
 
   /**
-   * Show the search bar
+   * Switches the visual theme between light and dark mode.
    */
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  /**
-   * Hide the search bar
-   */
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  /**
-   * Hide the search bar on losing focus if the
-   * input text bar is empty
-   */
-  protected onBlurSearchBar() {
-    if (!this.searchStr.length) {
-      this.hideSearchBar();
-    }
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
   }
 }

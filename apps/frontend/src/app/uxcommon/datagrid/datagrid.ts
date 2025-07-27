@@ -17,11 +17,11 @@ import { IconName } from '@uxcommon/svg-icons-list';
 
 import { AbstractAPIService } from '../../abstract-api.service';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
+import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
-import { SearchService } from 'apps/frontend/src/app/data/search-service';
+import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
-import { GridActionComponent } from './tool-button';
 
 @Component({
   selector: 'pc-datagrid',
@@ -29,15 +29,15 @@ import { GridActionComponent } from './tool-button';
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> {
-  protected readonly undoMgr = new UndoManager();
-
   private readonly _route = inject(ActivatedRoute);
   private readonly _searchSvc = inject(SearchService);
   private readonly _themeSvc = inject(ThemeService);
-  private readonly _updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Other State
   private _lastRowHovered: string | undefined;
+
+  protected readonly undoMgr = new UndoManager();
+  protected readonly _updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
@@ -46,7 +46,7 @@ export class DataGrid<T extends keyof Models, U> {
 
   // State & UI Signals
   protected readonly isRowSelected = signal(false);
-  protected readonly processing = signal(false);
+  protected readonly loading = signal(false);
   protected readonly router = inject(Router);
 
   // AG Grid
@@ -61,8 +61,8 @@ export class DataGrid<T extends keyof Models, U> {
   public disableImport = input<boolean>(true);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
-  public gridOptions = input<GridOptions<Partial<T>>>({});
   @Output() public filter = new EventEmitter();
+  public gridOptions = input<GridOptions<Partial<T>>>({});
   @Output() public importCSV = new EventEmitter<string>();
   public limitToTags = input<string[]>([]);
   public plusIcon = input<IconName>('plus');
@@ -128,6 +128,7 @@ export class DataGrid<T extends keyof Models, U> {
   public openEdit(id: string) {
     return this.view(id);
   }
+
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
     this.gridSvc.abort();
@@ -160,7 +161,7 @@ export class DataGrid<T extends keyof Models, U> {
     const deletableRows = this.getDeletableRows(rows);
     if (this.handleDeleteErrors(rows, deletableRows)) return;
 
-    this.processing.set(true);
+    this.loading.set(true);
     try {
       const ids = deletableRows.map((row) => row.id);
       const deleted = await this.gridSvc.deleteMany(ids);
@@ -172,7 +173,7 @@ export class DataGrid<T extends keyof Models, U> {
         this.showUndoSuccess();
       }
     } finally {
-      this.processing.set(false);
+      this.loading.set(false);
     }
   }
 

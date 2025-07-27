@@ -1,12 +1,12 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { Alerts } from '@uxcommon/alerts/alerts';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { Alerts } from '@uxcommon/alerts/alerts';
 import { Icon } from '@uxcommon/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { TokenService } from 'apps/frontend/src/app/data/token-service';
+import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
 
 /**
  * Sign-in page component for user login.
@@ -24,14 +24,14 @@ export class SignInPage {
   private readonly _router = inject(Router);
   private readonly _tokenService = inject(TokenService);
 
+  /** Signal indicating whether login loading is in progress */
+  protected readonly loading = signal(false);
+
   /** Controls whether the password is visible or masked */
   protected hidePassword = true;
 
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this._tokenService.persistence;
-
-  /** Signal indicating whether login processing is in progress */
-  protected readonly processing = signal(false);
 
   /** Login form group with email and password fields */
   public form = this._fb.group({
@@ -88,12 +88,12 @@ export class SignInPage {
 
     if (this.form.invalid) return this._alertSvc.showError('Please enter a valid email and password.');
 
-    this.processing.set(true);
+    this.loading.set(true);
 
     return this._authService
       .signIn({ email: this.email?.value || '', password: this.password?.value || '' })
       .catch((err) => this._alertSvc.showError(err.message))
-      .finally(() => this.processing.set(false));
+      .finally(() => this.loading.set(false));
   }
 
   /**

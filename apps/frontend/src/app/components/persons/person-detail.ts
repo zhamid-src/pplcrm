@@ -5,12 +5,12 @@ import { UpdatePersonsType } from '@common';
 import { AddBtnRow } from '@uxcommon/add-btn-row';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { FormInput } from '@uxcommon/formInput';
+import { Tags } from '@uxcommon/tags/tags';
 import { TextArea } from '@uxcommon/textarea';
 
 import { HouseholdsService } from '../households/households-service';
 import { PersonsService } from './persons-service';
 import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
-import { Tags } from '@uxcommon/tags/tags';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
 /**
@@ -32,6 +32,7 @@ export class PersonDetail implements OnInit {
 
   protected readonly _person = signal<Persons | null>(null);
   protected readonly addressString = signal<string | null>(null);
+  protected readonly loading = signal(false);
 
   /** Reactive form group for person data */
   protected form = this._fb.group({
@@ -54,7 +55,6 @@ export class PersonDetail implements OnInit {
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
-  protected readonly processing = signal(false);
   protected tags: string[] = [];
 
   /** Determines if this component is in 'edit' or 'new' mode */
@@ -152,12 +152,12 @@ export class PersonDetail implements OnInit {
    * @param data - Person data to be added
    */
   private add(data: UpdatePersonsType) {
-    this.processing.set(true);
+    this.loading.set(true);
     this._personsSvc
       .add(data)
       .then(() => this._alertSvc.showSuccess('Person added'))
       .catch((err) => this._alertSvc.showError(err))
-      .finally(() => this.processing.set(false));
+      .finally(() => this.loading.set(false));
   }
 
   /**
@@ -176,7 +176,7 @@ export class PersonDetail implements OnInit {
   private async loadPerson() {
     if (!this.id) return;
 
-    this.processing.set(true);
+    this.loading.set(true);
     try {
       this.person = (await this._personsSvc.getById(this.id)) as Persons;
       await this.getAddressString();
@@ -184,7 +184,7 @@ export class PersonDetail implements OnInit {
 
       this.refreshForm();
     } finally {
-      this.processing.set(false);
+      this.loading.set(false);
     }
   }
 
@@ -207,7 +207,7 @@ export class PersonDetail implements OnInit {
       return;
     }
 
-    this.processing.set(true);
+    this.loading.set(true);
     this._personsSvc
       .update(this.id, data)
       .then(() => {
@@ -215,6 +215,6 @@ export class PersonDetail implements OnInit {
         this.form.markAsPristine();
       })
       .catch((err) => this._alertSvc.showError(err))
-      .finally(() => this.processing.set(false));
+      .finally(() => this.loading.set(false));
   }
 }
