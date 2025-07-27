@@ -1,13 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { Alerts } from '@uxcommon/alerts/alerts';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icon';
-
-import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -66,13 +64,14 @@ export class NewPasswordPage implements OnInit {
   }
 
   public async ngOnInit() {
-    const params: Params = await firstValueFrom(this._route.queryParams);
+    const code = this._route.snapshot.queryParamMap.get('code');
 
-    if (!params['code']) {
+    if (!code) {
       this.error.set(true);
+      return;
     }
 
-    this._code = params['code'];
+    this._code = code;
   }
 
   /**

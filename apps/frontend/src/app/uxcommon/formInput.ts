@@ -3,8 +3,6 @@ import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/for
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { IconName } from '@uxcommon/svg-icons-list';
 
-import { debounceTime, distinctUntilChanged } from 'rxjs';
-
 @Component({
   selector: 'pc-form-input',
   imports: [ReactiveFormsModule],
@@ -78,12 +76,21 @@ export class FormInput implements OnInit {
    * Initialize the component by connecting it to the parent form group
    * and subscribing to value changes.
    */
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastValue = '';
+
   public ngOnInit() {
     this.form = this._rootFormGroup.control;
-    this.form
-      .get(this.control())
-      ?.valueChanges.pipe(debounceTime(this.debounceTime()), distinctUntilChanged())
-      .subscribe((value) => this.handleInputChange(value));
+    this.form.get(this.control())?.valueChanges.subscribe((value: string) => {
+      if (this._debounceTimer) clearTimeout(this._debounceTimer);
+
+      this._debounceTimer = setTimeout(() => {
+        if (value !== this._lastValue) {
+          this._lastValue = value;
+          this.handleInputChange(value);
+        }
+      }, this.debounceTime());
+    });
   }
 
   /**
