@@ -1,91 +1,27 @@
 <div class="flex h-full w-full flex-col">
   <ul class="menu menu-horizontal flex flex-row pt-0">
-    <li
-      class="tooltip-accent"
-      [class.tooltip]="addRoute()"
-      [class.disabled]="!addRoute()"
-      [class.text-neutral-400]="!addRoute()"
-      (click)="addRoute() && add()"
-      data-tip="Add"
-    >
-      <a>
-        <pc-icon [name]="plusIcon()"></pc-icon>
-      </a>
-    </li>
-    <li
-      class="tooltip-accent"
-      [class.tooltip]="!disableRefresh()"
-      [class.disabled]="disableRefresh()"
-      [class.text-neutral-400]="disableRefresh()"
-      (click)="!disableRefresh() && refresh()"
-      data-tip="Refresh the grid"
-    >
-      <a>
-        <pc-icon name="arrow-path"></pc-icon>
-      </a>
-    </li>
-    <li
-      class="tooltip tooltip-accent"
-      (click)="undoMgr.undo()"
-      data-tip="Undo"
-      [class.disabled]="!undoMgr.canUndo()"
-      [class.cursor-not-allowed]="!undoMgr.canUndo()"
-      [class.text-neutral-400]="!undoMgr.canUndo()"
-    >
-      <a>
-        <pc-icon name="arrow-uturn-left"></pc-icon>
-      </a>
-    </li>
-    <li
-      class="tooltip tooltip-accent"
-      data-tip="Redo"
-      [class.text-neutral-400]="!undoMgr.canRedo()"
-      [class.disabled]="!undoMgr.canRedo()"
-      [class.cursor-not-allowed]="!undoMgr.canRedo()"
-      (click)="undoMgr.redo()"
-    >
-      <a>
-        <pc-icon name="arrow-uturn-right"></pc-icon>
-      </a>
-    </li>
-    <li
-      class="tooltip-accent"
-      [class.tooltip]="!disableImport()"
-      [class.disabled]="disableImport()"
-      [class.cursor-not-allowed]="disableImport()"
-      [class.text-neutral-400]="disableImport()"
-      (click)="!disableImport() && doImportCSV()"
-      data-tip="Import data from CSV"
-    >
-      <a>
-        <pc-icon name="cloud-arrow-up"></pc-icon>
-      </a>
-    </li>
-    <li
-      class="tooltip-accent"
-      [class.tooltip]="!disableExport()"
-      [class.disabled]="disableExport()"
-      [class.cursor-not-allowed]="disableExport()"
-      [class.text-neutral-400]="disableExport()"
-      (click)="!disableExport() && confirmExport()"
-      data-tip="Download as CSV"
-    >
-      <a>
-        <pc-icon name="arrow-down-tray" />
-      </a>
-    </li>
-    <li
-      class="tooltip tooltip-accent"
-      [class.disabled]="disableDelete() || !isRowSelected()"
-      [class.cursor-not-allowed]="disableDelete() || !isRowSelected()"
-      [class.text-neutral-400]="disableDelete() || !isRowSelected()"
-      (click)="!disableDelete() && isRowSelected() && confirmDelete()"
-      data-tip="Deleted selected row(s)"
-    >
-      <a>
-        <pc-icon name="trash" />
-      </a>
-    </li>
+    <pc-grid-action [enabled]="!!addRoute()" [tip]="'Add'" [icon]="plusIcon()" (action)="add()" />
+    <pc-grid-action [enabled]="!disableRefresh()" [tip]="'Refresh the grid'" icon="arrow-path" (action)="refresh()" />
+    <pc-grid-action [enabled]="!!undoMgr.canUndo()" tip="Undo" icon="arrow-uturn-left" (action)="undoMgr.undo()" />
+    <pc-grid-action [enabled]="!!undoMgr.canRedo()" tip="Redo" icon="arrow-uturn-right" (action)="undoMgr.redo()" />
+    <pc-grid-action
+      [enabled]="!disableImport()"
+      [tip]="'Import data from CSV'"
+      icon="cloud-arrow-up"
+      (action)="doImportCSV()"
+    />
+    <pc-grid-action
+      [enabled]="!disableExport()"
+      [tip]="'Download as CSV'"
+      icon="arrow-down-tray"
+      (action)="confirmExport()"
+    />
+    <pc-grid-action
+      [enabled]="!disableDelete() && isRowSelected()"
+      [tip]="'Deleted selected row(s)'"
+      icon="trash"
+      (action)="confirmDelete()"
+    />
     <li class="grow">
       <a class="hover:text-primary ml-auto">
         <pc-icon name="information-circle"></pc-icon>
