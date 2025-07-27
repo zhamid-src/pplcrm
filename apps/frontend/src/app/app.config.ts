@@ -1,12 +1,9 @@
-import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
 import { ApplicationConfig, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
-import { ErrorCatchingInterceptor } from './http-errors-interceptor';
-import { httpInterceptor } from './http-interceptor';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
@@ -66,25 +63,6 @@ export const appConfig: ApplicationConfig = {
      * Make it zoneless
      */
     provideZonelessChangeDetection(),
-
-    /**
-     * Provides HTTP client with custom interceptors (request manipulation, headers, etc.).
-     */
-    provideHttpClient(withInterceptors([httpInterceptor])),
-
-    /**
-     * Registers global error-catching interceptor for all HTTP calls.
-     */
-    {
-      provide: HTTP_INTERCEPTORS,
-      useClass: ErrorCatchingInterceptor,
-      multi: true,
-    },
-
-    /**
-     * Allows DI-provided interceptors to be included dynamically.
-     */
-    provideHttpClient(withInterceptorsFromDi()),
 
     /**
      * Initializes the user session before app startup completes.

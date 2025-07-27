@@ -4,8 +4,6 @@ import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
-import { debounceTime, distinctUntilChanged } from 'rxjs';
-
 @Component({
   selector: 'pc-input',
   imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule],
@@ -61,15 +59,21 @@ export class PPlCrmInput implements AfterViewInit {
     return this.inputControl.value?.length ?? 0;
   }
 
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastEmittedValue = '';
+
   public ngAfterViewInit() {
-    if (!this.input) {
-      return;
-    }
+    if (!this.input || !this.input.valueChanges) return;
 
-    console.log('*****', this.icon(), this.placeholder());
+    this.input.valueChanges.subscribe((value: string) => {
+      if (this._debounceTimer) clearTimeout(this._debounceTimer);
 
-    this.input?.valueChanges?.pipe(debounceTime(this.debounceTime()), distinctUntilChanged()).subscribe((value) => {
-      this.handleKeyup(value);
+      this._debounceTimer = setTimeout(() => {
+        if (value !== this._lastEmittedValue) {
+          this._lastEmittedValue = value;
+          this.handleKeyup(value);
+        }
+      }, this.debounceTime());
     });
   }
 }
