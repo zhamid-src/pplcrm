@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { UpdateHouseholdsType } from '@common';
 
-import { AbstractAPIService } from '../../abstract.service';
+import { AbstractAPIService } from '../../abstract-api.service';
 
 /**
  * Service responsible for managing household data.

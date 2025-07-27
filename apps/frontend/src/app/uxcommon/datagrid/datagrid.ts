@@ -15,7 +15,7 @@ import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
-import { AbstractAPIService } from '../../abstract.service';
+import { AbstractAPIService } from '../../abstract-api.service';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { UndoManager } from './undo-redo-mgr';
 import { SearchService } from 'apps/frontend/src/app/data/search-service';

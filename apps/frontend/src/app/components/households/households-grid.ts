@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 
-import { AbstractAPIService } from '../../abstract.service';
+import { AbstractAPIService } from '../../abstract-api.service';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
 import { HouseholdsService } from './households-service';
 
