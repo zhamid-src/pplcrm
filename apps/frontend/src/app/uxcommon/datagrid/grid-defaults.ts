@@ -7,16 +7,15 @@ import { LoadingOverlayComponent } from './loading-overlay';
  * This column appears on the left and includes a checkbox for multi-row selection.
  */
 export const SELECTION_COLUMN: ColDef = {
-  checkboxSelection: true,
   filter: false,
   sortable: false,
-  cellClass: 'pl-1 pr-0 w-auto',
+  cellClass: 'px-0 pt-2 mx-0 w-12',
   resizable: false,
-  suppressCellFlash: true,
+  enableCellChangeFlash: true,
   lockVisible: true,
   lockPosition: true,
   suppressMovable: true,
-  suppressMenu: true,
+  suppressHeaderMenuButton: true,
   pinned: 'left',
   lockPinned: true,
   cellRenderer: ShortcutCellRenderer,
@@ -32,6 +31,7 @@ const BASE_GRID_CONFIG = {
    * Default column definition applied to all columns unless overridden.
    */
   defaultColDef: {
+    enableCellChangeFlash: true,
     filter: 'agMultiColumnFilter',
     flex: 1,
     enableValue: true,
@@ -95,13 +95,15 @@ export const defaultGridOptions: GridOptions = {
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
   initialState: BASE_GRID_CONFIG.initialState,
   sideBar: BASE_GRID_CONFIG.sideBar,
-  enableCellChangeFlash: true,
-  enableRangeSelection: true,
+  cellSelection: true,
   copyHeadersToClipboard: true,
   enableCellEditingOnBackspace: true,
   pagination: true,
   paginationAutoPageSize: true,
-  rowSelection: 'multiple',
+  rowSelection: {
+    mode: 'multiRow',
+    checkboxes: true,
+  },
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
   undoRedoCellEditing: true,
