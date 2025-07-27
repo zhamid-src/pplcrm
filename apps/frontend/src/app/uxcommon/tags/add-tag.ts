@@ -19,21 +19,16 @@ import { TagsService } from '@uxcommon/tags/tags-service';
   templateUrl: './add-tag.html',
 })
 export class AddTag {
-  /** Injected service to display alerts for success or error states */
-  private readonly alertSvc = inject(AlertService);
-
-  /** Angular FormBuilder instance for constructing the form */
-  private readonly fb = inject(FormBuilder);
-
-  /** Injected service for interacting with the backend tag API */
-  private readonly tagSvc = inject(TagsService);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _fb = inject(FormBuilder);
+  private readonly _tagSvc = inject(TagsService);
 
   /**
    * Reactive form for tag creation.
    * - `name`: required tag name.
    * - `description`: optional description for the tag.
    */
-  protected form = this.fb.group({
+  protected form = this._fb.group({
     name: ['', [Validators.required]],
     description: [''],
   });
@@ -60,14 +55,14 @@ export class AddTag {
     const formObj = this.form.getRawValue() as AddTagType;
 
     try {
-      await this.tagSvc.add(formObj);
-      this.alertSvc.showSuccess('Tag added successfully.');
+      await this._tagSvc.add(formObj);
+      this._alertSvc.showSuccess('Tag added successfully.');
       this.addBtnRow.stayOrCancel();
     } catch (err: unknown) {
       if (err instanceof TRPCError) {
-        this.alertSvc.showError(err.message);
+        this._alertSvc.showError(err.message);
       } else {
-        this.alertSvc.showError("We've hit an unknown error. Please try again.");
+        this._alertSvc.showError("We've hit an unknown error. Please try again.");
       }
     } finally {
       this.processing.set(false);

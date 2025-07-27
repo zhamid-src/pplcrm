@@ -18,7 +18,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
   ],
 })
 export class Sidebar {
-  private sidebarSvc = inject(SidebarService);
+  private _sidebarSvc = inject(SidebarService);
 
   protected collapsedItems = new Set<string>();
   protected router = inject(Router);
@@ -26,23 +26,23 @@ export class Sidebar {
   public hoveringSidebar = false;
 
   public get items() {
-    return this.sidebarSvc.items;
+    return this._sidebarSvc.items;
   }
 
   public closeMobile() {
-    this.sidebarSvc.closeMobile();
+    this._sidebarSvc.closeMobile();
   }
 
   public isDrawerFull() {
-    return this.sidebarSvc.isFull();
+    return this._sidebarSvc.isFull();
   }
 
   public isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
+    return this._sidebarSvc.isHalf();
   }
 
   public isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
+    return this._sidebarSvc.isMobileOpen();
   }
 
   public onSidebarHover(state: boolean) {
@@ -54,7 +54,7 @@ export class Sidebar {
   }
 
   public toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
+    return this._sidebarSvc.toggleDrawer();
   }
 
   protected isCollapsed(name: string): boolean {

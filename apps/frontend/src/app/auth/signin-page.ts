@@ -18,23 +18,23 @@ import { TokenService } from 'apps/frontend/src/app/data/token-service';
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
-  private alertSvc = inject(AlertService);
-  private authService = inject(AuthService);
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
-  private tokenService = inject(TokenService);
+  private _alertSvc = inject(AlertService);
+  private _authService = inject(AuthService);
+  private _fb = inject(FormBuilder);
+  private _router = inject(Router);
+  private _tokenService = inject(TokenService);
 
   /** Controls whether the password is visible or masked */
   protected hidePassword = true;
 
   /** Reference to token persistence setting (localStorage vs session) */
-  protected persistence = this.tokenService.persistence;
+  protected persistence = this._tokenService.persistence;
 
   /** Signal indicating whether login processing is in progress */
   protected processing = signal(false);
 
   /** Login form group with email and password fields */
-  public form = this.fb.group({
+  public form = this._fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
@@ -42,7 +42,7 @@ export class SignInPage {
   constructor() {
     // Redirects to dashboard if user is already logged in
     effect(() => {
-      if (this.authService.user()) this.router.navigate(['console', 'summary']);
+      if (this._authService.user()) this._router.navigate(['console', 'summary']);
     });
   }
 
@@ -84,15 +84,15 @@ export class SignInPage {
    */
   public async signIn() {
     // if we're here then we should clear the auth token
-    this.tokenService.clearAll();
+    this._tokenService.clearAll();
 
-    if (this.form.invalid) return this.alertSvc.showError('Please enter a valid email and password.');
+    if (this.form.invalid) return this._alertSvc.showError('Please enter a valid email and password.');
 
     this.processing.set(true);
 
-    return this.authService
+    return this._authService
       .signIn({ email: this.email!.value || '', password: this.password!.value || '' })
-      .catch((err) => this.alertSvc.showError(err.message))
+      .catch((err) => this._alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }
 
@@ -102,7 +102,7 @@ export class SignInPage {
    */
   public togglePersistence(target: EventTarget | null) {
     if (!target) return;
-    this.tokenService.persistence = (target as HTMLInputElement).checked;
+    this._tokenService.persistence = (target as HTMLInputElement).checked;
   }
 
   /**

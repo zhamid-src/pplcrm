@@ -29,7 +29,7 @@ import { Models } from 'common/src/lib/kysely.models';
   encapsulation: ViewEncapsulation.None,
 })
 export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRendererAngularComp {
-  private parent: DataGrid<T, U> | undefined;
+  private _parent: DataGrid<T, U> | undefined;
 
   /**
    * Called by AG Grid to initialize the cell renderer with the given parameters.
@@ -38,14 +38,14 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
    * @param params - The cell renderer parameters, including grid context.
    */
   public agInit(params: ICellRendererParams<T, number>): void {
-    this.parent = params.context;
+    this._parent = params.context;
   }
 
   /**
    * Triggers the delete confirmation flow in the parent grid.
    */
   public delete() {
-    this.parent?.confirmDelete();
+    this._parent?.confirmDelete();
   }
 
   /**
@@ -63,7 +63,7 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
    * @returns True if delete is enabled in the parent grid.
    */
   public showDelete() {
-    return !this.parent?.disableDelete();
+    return !this._parent?.disableDelete();
   }
 
   /**
@@ -72,13 +72,13 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
    * @returns True if view is enabled in the parent grid.
    */
   public showView() {
-    return !this.parent?.disableView();
+    return !this._parent?.disableView();
   }
 
   /**
    * Navigates to the view screen for the current row.
    */
   public view() {
-    this.parent?.view();
+    this._parent?.view();
   }
 }

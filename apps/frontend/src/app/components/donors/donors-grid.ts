@@ -25,7 +25,7 @@ interface ParamsType {
 })
 export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   /** Household ID to use when routing after confirming address change */
-  private addressChangeModalId: string | null = null;
+  private _addressChangeModalId: string | null = null;
 
   /**
    * Column definitions for the ag-grid, including editable fields,
@@ -115,7 +115,7 @@ export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * @param event - The cell double-click event
    */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.addressChangeModalId = event.data.household_id;
+    this._addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
@@ -126,8 +126,8 @@ export class DonorsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
 
-    if (this.addressChangeModalId !== null) {
-      this.router.navigate(['console', 'households', this.addressChangeModalId]);
+    if (this._addressChangeModalId !== null) {
+      this.router.navigate(['console', 'households', this._addressChangeModalId]);
     }
   }
 

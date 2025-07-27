@@ -8,25 +8,25 @@ import { Tags } from '@uxcommon/tags/tags';
   templateUrl: './summary.html',
 })
 export class Summary {
-  private alert = inject(AlertService);
+  private _alert = inject(AlertService);
 
   public canDelete = true;
   public readonly = false;
   public tags = ['hello', 'you', 'fool'];
 
   public Error() {
-    this.alert.show({
+    this._alert.show({
       text: 'This is an error alert',
       type: 'error',
     });
   }
 
   public Info() {
-    this.alert.showInfo("This is an <a href='/console/households' class='link'>info</a> alert");
+    this._alert.showInfo("This is an <a href='/console/households' class='link'>info</a> alert");
   }
 
   public Success() {
-    this.alert.show({
+    this._alert.show({
       text: 'This is an success alert',
       type: 'success',
       title: 'SUCCESS!',
@@ -35,7 +35,7 @@ export class Summary {
   }
 
   public Warning() {
-    this.alert.show({
+    this._alert.show({
       text: 'This is an warning alert',
       type: 'warning',
       title: 'W!',

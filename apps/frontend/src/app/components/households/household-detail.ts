@@ -25,11 +25,11 @@ import { Households } from 'common/src/lib/kysely.models';
   templateUrl: './Household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
-  private alertSvc = inject(AlertService);
-  private fb = inject(FormBuilder);
-  private householdsSvc = inject(HouseholdsService);
-  private personsSvc = inject(PersonsService);
-  private route = inject(ActivatedRoute);
+  private _alertSvc = inject(AlertService);
+  private _fb = inject(FormBuilder);
+  private _householdsSvc = inject(HouseholdsService);
+  private _personsSvc = inject(PersonsService);
+  private _route = inject(ActivatedRoute);
 
   /** Reactive signal for storing the loaded household */
   protected _household = signal<Households | null>(null);
@@ -41,7 +41,7 @@ export class HouseholdDetail implements OnInit {
   protected tags: string[] = [];
 
   /** Reactive form group to handle household data */
-  protected form = this.fb.group({
+  protected form = this._fb.group({
     formatted_address: [''],
     type: [''],
     lat: [0],
@@ -57,7 +57,7 @@ export class HouseholdDetail implements OnInit {
     home_phone: [''],
     notes: [''],
     tags: [],
-    metadata: this.fb.group({
+    metadata: this._fb.group({
       tenant_id: [''],
       createdby_id: [''],
       updatedby_id: [''],
@@ -80,7 +80,7 @@ export class HouseholdDetail implements OnInit {
 
   constructor() {
     if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
+      this.id = this._route.snapshot.paramMap.get('id');
     }
   }
 
@@ -103,7 +103,7 @@ export class HouseholdDetail implements OnInit {
 
     try {
       if (!place?.address_components?.length) {
-        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+        this._alertSvc.showError('Please select the correct address from the list or leave it blank');
         return;
       }
       // Save the address by creating the household or updating
@@ -157,7 +157,7 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to attach to the household
    */
   protected tagAdded(tag: string) {
-    this.id && this.householdsSvc.attachTag(this.id, tag);
+    this.id && this._householdsSvc.attachTag(this.id, tag);
   }
 
   /**
@@ -165,7 +165,7 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to detach from the household
    */
   protected tagRemoved(tag: string) {
-    this.id && this.householdsSvc.detachTag(this.id, tag);
+    this.id && this._householdsSvc.detachTag(this.id, tag);
   }
 
   /**
@@ -174,10 +174,10 @@ export class HouseholdDetail implements OnInit {
    */
   private add(data: UpdateHouseholdsType) {
     this.processing.set(true);
-    this.householdsSvc
+    this._householdsSvc
       .add(data)
-      .then(() => this.alertSvc.showSuccess('Household added'))
-      .catch((err) => this.alertSvc.showError(err))
+      .then(() => this._alertSvc.showSuccess('Household added'))
+      .catch((err) => this._alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
 
@@ -188,7 +188,7 @@ export class HouseholdDetail implements OnInit {
     if (!this.household || !this.id) {
       return;
     }
-    this.tags = await this.householdsSvc.getTags(this.id);
+    this.tags = await this._householdsSvc.getTags(this.id);
   }
 
   /**
@@ -200,9 +200,9 @@ export class HouseholdDetail implements OnInit {
     this.processing.set(true);
 
     try {
-      this.household = (await this.householdsSvc.getById(this.id)) as Households;
+      this.household = (await this._householdsSvc.getById(this.id)) as Households;
       await this.getTags();
-      this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
+      this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.id);
       this.refreshForm();
     } finally {
       this.processing.set(false);
@@ -229,13 +229,13 @@ export class HouseholdDetail implements OnInit {
     }
 
     this.processing.set(true);
-    this.householdsSvc
+    this._householdsSvc
       .update(this.id, data)
       .then(() => {
-        this.alertSvc.showSuccess('Household updated successfully.');
+        this._alertSvc.showSuccess('Household updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err) => this._alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
 }

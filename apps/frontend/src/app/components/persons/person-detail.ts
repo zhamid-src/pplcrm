@@ -23,18 +23,18 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
-  private alertSvc = inject(AlertService);
-  private fb = inject(FormBuilder);
-  private householdsSvc = inject(HouseholdsService);
-  private personsSvc = inject(PersonsService);
-  private route = inject(ActivatedRoute);
-  private router = inject(Router);
+  private _alertSvc = inject(AlertService);
+  private _fb = inject(FormBuilder);
+  private _householdsSvc = inject(HouseholdsService);
+  private _personsSvc = inject(PersonsService);
+  private _route = inject(ActivatedRoute);
+  private _router = inject(Router);
 
   protected _person = signal<Persons | null>(null);
   protected addressString = signal<string | null>(null);
 
   /** Reactive form group for person data */
-  protected form = this.fb.group({
+  protected form = this._fb.group({
     first_name: [''],
     middle_names: [''],
     last_name: [''],
@@ -43,7 +43,7 @@ export class PersonDetail implements OnInit {
     home_phone: [''],
     mobile: [''],
     notes: [''],
-    metadata: this.fb.group({
+    metadata: this._fb.group({
       tenant_id: [''],
       createdby_id: [''],
       updatedby_id: [''],
@@ -62,7 +62,7 @@ export class PersonDetail implements OnInit {
 
   constructor() {
     if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
+      this.id = this._route.snapshot.paramMap.get('id');
     }
   }
 
@@ -108,7 +108,7 @@ export class PersonDetail implements OnInit {
    */
   protected async getAddressString() {
     if (this.person?.household_id) {
-      const address = (await this.householdsSvc.getById(this.person.household_id)) as AddressType;
+      const address = (await this._householdsSvc.getById(this.person.household_id)) as AddressType;
       this.addressString.set(address.formatted_address || null);
     }
   }
@@ -133,18 +133,18 @@ export class PersonDetail implements OnInit {
   /** Navigates to the household detail page if the person belongs to a household */
   protected navigateToHousehold() {
     if (this.person?.household_id) {
-      this.router.navigate(['console', 'households', this.person.household_id]);
+      this._router.navigate(['console', 'households', this.person.household_id]);
     }
   }
 
   /** Attaches a tag to the person */
   protected tagAdded(tag: string) {
-    this.id && this.personsSvc.attachTag(this.id, tag);
+    this.id && this._personsSvc.attachTag(this.id, tag);
   }
 
   /** Detaches a tag from the person */
   protected tagRemoved(tag: string) {
-    this.id && this.personsSvc.detachTag(this.id, tag);
+    this.id && this._personsSvc.detachTag(this.id, tag);
   }
 
   /**
@@ -153,10 +153,10 @@ export class PersonDetail implements OnInit {
    */
   private add(data: UpdatePersonsType) {
     this.processing.set(true);
-    this.personsSvc
+    this._personsSvc
       .add(data)
-      .then(() => this.alertSvc.showSuccess('Person added'))
-      .catch((err) => this.alertSvc.showError(err))
+      .then(() => this._alertSvc.showSuccess('Person added'))
+      .catch((err) => this._alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
 
@@ -167,7 +167,7 @@ export class PersonDetail implements OnInit {
     if (!this.person) {
       return;
     }
-    this.tags = this.id ? await this.personsSvc.getTags(this.id) : [];
+    this.tags = this.id ? await this._personsSvc.getTags(this.id) : [];
   }
 
   /**
@@ -178,7 +178,7 @@ export class PersonDetail implements OnInit {
 
     this.processing.set(true);
     try {
-      this.person = (await this.personsSvc.getById(this.id)) as Persons;
+      this.person = (await this._personsSvc.getById(this.id)) as Persons;
       await this.getAddressString();
       await this.getTags();
 
@@ -208,13 +208,13 @@ export class PersonDetail implements OnInit {
     }
 
     this.processing.set(true);
-    this.personsSvc
+    this._personsSvc
       .update(this.id, data)
       .then(() => {
-        this.alertSvc.showSuccess('Person updated successfully.');
+        this._alertSvc.showSuccess('Person updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err) => this._alertSvc.showError(err))
       .finally(() => this.processing.set(false));
   }
 }

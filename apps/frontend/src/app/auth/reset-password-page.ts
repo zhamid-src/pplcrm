@@ -16,10 +16,10 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
-  private alertSvc = inject(AlertService);
-  private authService = inject(AuthService);
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
+  private _alertSvc = inject(AlertService);
+  private _authService = inject(AuthService);
+  private _fb = inject(FormBuilder);
+  private _router = inject(Router);
 
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
@@ -31,7 +31,7 @@ export class ResetPasswordPage {
   protected success: string | undefined;
 
   /** Reactive form with a single email input */
-  public form = this.fb.group({
+  public form = this._fb.group({
     email: ['', [Validators.required, Validators.email]],
   });
 
@@ -50,18 +50,18 @@ export class ResetPasswordPage {
    */
   public async submit() {
     if (!this.email?.valid || !this.email.value)
-      return this.alertSvc.showError('Please check the email address and try again.');
+      return this._alertSvc.showError('Please check the email address and try again.');
 
     this.processing.set(true);
     try {
-      await this.authService
+      await this._authService
         .sendPasswordResetEmail({ email: this.email.value })
-        .catch((err) => this.alertSvc.showError(err.message));
+        .catch((err) => this._alertSvc.showError(err.message));
 
-      this.alertSvc.showSuccess(
+      this._alertSvc.showSuccess(
         "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
       );
-      this.router.navigateByUrl('signin');
+      this._router.navigateByUrl('signin');
     } finally {
       this.processing.set(false);
     }

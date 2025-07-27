@@ -9,7 +9,7 @@ export class UndoManager<T> {
   /**
    * AG Grid API instance.
    */
-  private api: GridApi<Partial<T>> | undefined;
+  private _api: GridApi<Partial<T>> | undefined;
 
   private readonly _undoSize = signal(0);
   private readonly _redoSize = signal(0);
@@ -22,7 +22,7 @@ export class UndoManager<T> {
    * Supports both ag-Grid and custom redo.
    */
   public redo() {
-    this.canRedo() && this.api?.redoCellEditing();
+    this.canRedo() && this._api?.redoCellEditing();
   }
 
   /**
@@ -30,21 +30,21 @@ export class UndoManager<T> {
    * Supports both ag-Grid and custom redo.
    */
   public undo() {
-    this.canUndo() && this.api?.undoCellEditing();
+    this.canUndo() && this._api?.undoCellEditing();
   }
 
   /**
    * Returns the number of redo actions in the stack.
    */
   public getRedoSize(): number {
-    return this.api?.getCurrentRedoSize() ?? 0;
+    return this._api?.getCurrentRedoSize() ?? 0;
   }
 
   /**
    * Returns the number of redo actions in the stack.
    */
   public getUndoSize(): number {
-    return this.api?.getCurrentUndoSize() ?? 0;
+    return this._api?.getCurrentUndoSize() ?? 0;
   }
 
   public updateSizes() {
@@ -58,7 +58,7 @@ export class UndoManager<T> {
    * @param api - The grid API to use.
    */
   public initialize(api: GridApi<Partial<T>>): void {
-    this.api = api;
+    this._api = api;
     this.updateSizes();
   }
 }

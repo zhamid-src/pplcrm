@@ -21,10 +21,10 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
   ></pc-tags>`,
 })
 export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendererAngularComp {
-  private api!: GridApi<T>;
-  private colName!: string;
-  private rowId!: string;
-  private service?: AbstractAPIService<T, U>;
+  private _api!: GridApi<T>;
+  private _colName!: string;
+  private _rowId!: string;
+  private _service?: AbstractAPIService<T, U>;
 
   protected tags: string[] = [];
 
@@ -33,11 +33,11 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
   // gets called once before the renderer is used
   public agInit(params: MyCellRendererParams<T, U>): void {
     this.tags = !params.value || !params.value[0] ? [] : params.value;
-    this.api = params.api;
+    this._api = params.api;
 
-    this.service = params?.service;
-    this.rowId = params.data.id;
-    this.colName = params.colDef!.field!;
+    this._service = params?.service;
+    this._rowId = params.data.id;
+    this._colName = params.colDef!.field!;
   }
 
   // gets called whenever the user gets the cell to refresh
@@ -48,7 +48,7 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
   }
 
   public removeTag(tag_name: string) {
-    this.service?.detachTag(this.rowId, tag_name);
-    this.api!.getRowNode(this.rowId)?.setDataValue(this.colName, this.tags);
+    this._service?.detachTag(this._rowId, tag_name);
+    this._api!.getRowNode(this._rowId)?.setDataValue(this._colName, this.tags);
   }
 }

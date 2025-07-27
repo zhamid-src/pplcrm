@@ -1,19 +1,19 @@
-import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from "@common";
-import { TRPCError } from "@trpc/server";
+import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from '@common';
+import { TRPCError } from '@trpc/server';
 
-import { QueryParams } from "../repositories/base.repo";
-import { MapPersonsTagRepo } from "../repositories/map-persons-tags.repo";
-import { PersonsRepo } from "../repositories/persons.repo";
-import { TagsRepo } from "../repositories/tags.repo";
-import { BaseController } from "./base.controller";
-import { OperationDataType } from "common/src/lib/kysely.models";
+import { QueryParams } from '../repositories/base.repo';
+import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { TagsRepo } from '../repositories/tags.repo';
+import { BaseController } from './base.controller';
+import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Controller for managing persons and their associated tags.
  */
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private tagsRepo = new TagsRepo();
+  private _mapPersonsTagRepo = new MapPersonsTagRepo();
+  private _tagsRepo = new TagsRepo();
 
   constructor() {
     super(new PersonsRepo());
@@ -50,7 +50,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       createdby_id: auth.user_id,
     };
 
-    const tag = await this.tagsRepo.addOrGet({
+    const tag = await this._tagsRepo.addOrGet({
       row: row as OperationDataType<'tags', 'insert'>,
       onConflictColumn: 'name',
     });
@@ -69,14 +69,14 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @param input - Object containing tenant_id, person_id, and tag name
    */
   public async detachTag(input: { tenant_id: string; person_id: string; name: string }) {
-    const tag = await this.tagsRepo.getIdByName(input);
+    const tag = await this._tagsRepo.getIdByName(input);
     if (tag?.id) {
-      const id = await this.mapPersonsTagRepo.getId({
+      const id = await this._mapPersonsTagRepo.getId({
         ...input,
         tag_id: tag.id,
       });
       if (id) {
-        await this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
+        await this._mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
       }
     }
   }
@@ -154,7 +154,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       });
     }
 
-    return await this.mapPersonsTagRepo.add({
+    return await this._mapPersonsTagRepo.add({
       row: row as OperationDataType<'map_peoples_tags', 'insert'>,
     });
   }

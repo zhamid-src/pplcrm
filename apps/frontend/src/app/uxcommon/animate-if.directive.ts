@@ -35,22 +35,22 @@ import {
   standalone: true,
 })
 export class AnimateIfDirective implements OnDestroy {
-  private readonly vcr = inject(ViewContainerRef);
-  private readonly template = inject(TemplateRef<any>);
-  private view: EmbeddedViewRef<any> | null = null;
-  private timeoutId: NodeJS.Timeout | undefined;
+  private readonly _vcr = inject(ViewContainerRef);
+  private readonly _template = inject(TemplateRef<any>);
+  private _view: EmbeddedViewRef<any> | null = null;
+  private _timeoutId: NodeJS.Timeout | undefined;
 
   private _condition = false;
   private _animationDuration = 300;
   private _enterClass = 'animate-left';
   private _exitClass = 'animate-exit-right';
 
-  private conditionSignal?: Signal<boolean>;
+  private _conditionSignal?: Signal<boolean>;
 
   constructor() {
     effect(() => {
-      if (this.conditionSignal) {
-        this.toggle(this.conditionSignal());
+      if (this._conditionSignal) {
+        this.toggle(this._conditionSignal());
       }
     });
   }
@@ -61,7 +61,7 @@ export class AnimateIfDirective implements OnDestroy {
    */
   @Input()
   set pcAnimateIf(condition: Signal<boolean>) {
-    this.conditionSignal = condition;
+    this._conditionSignal = condition;
   }
 
   /**
@@ -98,16 +98,16 @@ export class AnimateIfDirective implements OnDestroy {
     this._condition = condition;
 
     if (condition) this.animatedEntry();
-    else if (this.view) this.animatedExit();
+    else if (this._view) this.animatedExit();
   }
 
   /**
    * Performs the exit animation, then removes the view after a delay.
    */
   private animatedExit() {
-    if (!this.view?.rootNodes[0]) return;
+    if (!this._view?.rootNodes[0]) return;
 
-    const el = this.view.rootNodes[0] as HTMLElement;
+    const el = this._view.rootNodes[0] as HTMLElement;
 
     // Remove entry animation in case it's still applied
     el.classList.remove(this._enterClass);
@@ -115,11 +115,11 @@ export class AnimateIfDirective implements OnDestroy {
     // Add exit animation
     el.classList.add(this._exitClass);
 
-    this.timeoutId = setTimeout(() => {
+    this._timeoutId = setTimeout(() => {
       // Cleanup all animation classes before removal
       el.classList.remove(this._enterClass, this._exitClass);
-      this.vcr.clear();
-      this.view = null;
+      this._vcr.clear();
+      this._view = null;
     }, this._animationDuration);
   }
 
@@ -127,9 +127,9 @@ export class AnimateIfDirective implements OnDestroy {
    * Renders the template and applies the entry animation.
    */
   private animatedEntry() {
-    this.vcr.clear();
-    this.view = this.vcr.createEmbeddedView(this.template);
-    const el = this.view.rootNodes[0] as HTMLElement;
+    this._vcr.clear();
+    this._view = this._vcr.createEmbeddedView(this._template);
+    const el = this._view.rootNodes[0] as HTMLElement;
     requestAnimationFrame(() => el?.classList.add(this._enterClass));
   }
 
@@ -137,10 +137,10 @@ export class AnimateIfDirective implements OnDestroy {
    * Cleanup any pending timeouts and remove animation classes.
    */
   ngOnDestroy(): void {
-    clearTimeout(this.timeoutId);
+    clearTimeout(this._timeoutId);
 
-    if (this.view?.rootNodes[0]) {
-      const el = this.view.rootNodes[0] as HTMLElement;
+    if (this._view?.rootNodes[0]) {
+      const el = this._view.rootNodes[0] as HTMLElement;
       el?.classList.remove(this._enterClass, this._exitClass);
     }
   }

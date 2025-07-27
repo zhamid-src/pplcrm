@@ -1,18 +1,18 @@
-import { IAuthKeyPayload, UpdateHouseholdsType } from "@common";
-import { TRPCError } from "@trpc/server";
+import { IAuthKeyPayload, UpdateHouseholdsType } from '@common';
+import { TRPCError } from '@trpc/server';
 
-import { HouseholdRepo } from "../repositories/households.repo";
-import { MapHouseholdsTagsRepo } from "../repositories/map-households-tags.repo";
-import { TagsRepo } from "../repositories/tags.repo";
-import { BaseController } from "./base.controller";
-import { OperationDataType } from "common/src/lib/kysely.models";
+import { HouseholdRepo } from '../repositories/households.repo';
+import { MapHouseholdsTagsRepo } from '../repositories/map-households-tags.repo';
+import { TagsRepo } from '../repositories/tags.repo';
+import { BaseController } from './base.controller';
+import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Controller for managing household records and their associated tags.
  */
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
-  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
-  private tagsRepo = new TagsRepo();
+  private _mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private _tagsRepo = new TagsRepo();
 
   constructor() {
     super(new HouseholdRepo());
@@ -49,7 +49,7 @@ export class HouseholdsController extends BaseController<'households', Household
       createdby_id: auth.user_id,
     };
 
-    const tag = await this.tagsRepo.addOrGet({
+    const tag = await this._tagsRepo.addOrGet({
       row: row as OperationDataType<'tags', 'insert'>,
       onConflictColumn: 'name',
     });
@@ -70,11 +70,11 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param tag_name - Name of the tag to remove
    */
   public async detachTag(tenant_id: string, household_id: string, tag_name: string) {
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
+    const tag = await this._tagsRepo.getIdByName({ tenant_id, name: tag_name });
     if (tag?.id) {
-      const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id);
+      const mapId = await this._mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id);
       if (mapId) {
-        await this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
+        await this._mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
       }
     }
   }
@@ -130,7 +130,7 @@ export class HouseholdsController extends BaseController<'households', Household
       });
     }
 
-    return await this.mapHouseholdsTagRepo.add({
+    return await this._mapHouseholdsTagRepo.add({
       row: row as OperationDataType<'map_households_tags', 'insert'>,
     });
   }

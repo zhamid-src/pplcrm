@@ -17,16 +17,9 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 export class Navbar {
   @ViewChild('searchInput') searchInputRef!: ElementRef<HTMLInputElement>;
 
-  /** Handles authentication-related operations. */
-  private readonly auth = inject(AuthService);
-
-  /** Manages shared search input across components. */
-  private readonly searchSvc = inject(SearchService);
-
-  /** Controls sidebar visibility on mobile and desktop. */
-  private readonly sideBarSvc = inject(SidebarService);
-
-  /** Controls the current visual theme (light/dark). */
+  private readonly _auth = inject(AuthService);
+  private readonly _searchSvc = inject(SearchService);
+  private readonly _sideBarSvc = inject(SidebarService);
   protected readonly themeSvc = inject(ThemeService);
 
   /** Indicates whether the search input is visible on mobile view. */
@@ -66,7 +59,7 @@ export class Navbar {
   public clearSearch(): void {
     this.searchOnMobile = false;
     this.searchStr = '';
-    this.searchSvc.clearSearch();
+    this._searchSvc.clearSearch();
   }
 
   /**
@@ -92,28 +85,28 @@ export class Navbar {
    * Returns whether the mobile sidebar is currently open.
    */
   protected isMobileOpen(): boolean {
-    return this.sideBarSvc.isMobileOpen();
+    return this._sideBarSvc.isMobileOpen();
   }
 
   /**
    * Triggers the search using the current value in the search bar.
    */
   protected search(): void {
-    this.searchSvc.doSearch(this.searchStr);
+    this._searchSvc.doSearch(this.searchStr);
   }
 
   /**
    * Signs the current user out and clears auth tokens.
    */
   protected signOut(): void {
-    this.auth.signOut();
+    this._auth.signOut();
   }
 
   /**
    * Toggles the sidebar open/closed in mobile view.
    */
   protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
+    this._sideBarSvc.toggleMobile();
   }
 
   /**
