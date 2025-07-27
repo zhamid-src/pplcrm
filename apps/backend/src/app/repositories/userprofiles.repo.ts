@@ -6,7 +6,7 @@ import { Models } from 'common/src/lib/kysely.models';
 /**
  * Repository for interacting with the `profiles` table.
  */
-export class UserPofiles extends BaseRepository<'profiles'> {
+export class UserProfiles extends BaseRepository<'profiles'> {
   constructor() {
     super('profiles');
   }
