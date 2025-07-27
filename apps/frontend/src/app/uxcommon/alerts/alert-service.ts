@@ -17,7 +17,7 @@ export class AlertMessage {
   btn2Callback?: () => void;
 
   /** Duration in milliseconds before the alert is auto-dismissed. Defaults to 3000. */
-  duration: number = 3000;
+  duration = 3000;
 
   /** Unique ID for the alert (auto-assigned if not provided). */
   id: string;
