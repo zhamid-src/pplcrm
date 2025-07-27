@@ -30,8 +30,6 @@ export class TagItem {
   public name = input.required<string>();
   public invisible = input<Signal<boolean>>(signal(false));
 
-  constructor() {}
-
   public emitClick() {
     this.clickEvent.emit(this.name());
   }
