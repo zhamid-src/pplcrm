@@ -100,17 +100,20 @@ export class HouseholdDetail implements OnInit {
    */
   public handleAddressChange(place: google.maps.places.PlaceResult) {
     this.processing.set(true);
-    if (!place?.address_components?.length) {
-      this.alertSvc.showError('Please select the correct address from the list or leave it blank');
-      return;
+
+    try {
+      if (!place?.address_components?.length) {
+        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+        return;
+      }
+      // Save the address by creating the household or updating
+      const address = parseAddress(place);
+      this.form.patchValue(address);
+      this.form.markAsDirty();
+      this.addressVerified = true;
+    } finally {
+      this.processing.set(false);
     }
-    // Save the address by creating the household or updating
-    const address = parseAddress(place);
-    this.form.patchValue(address);
-    this.form.markAsDirty();
-    this.addressVerified = true;
-    console.log(address);
-    this.processing.set(false);
   }
 
   /**
@@ -192,17 +195,18 @@ export class HouseholdDetail implements OnInit {
    * Loads the household data from the backend and initializes the form
    */
   private async loadHousehold() {
-    if (!this.id) {
-      return;
-    }
+    if (!this.id) return;
+
     this.processing.set(true);
 
-    this.household = (await this.householdsSvc.getById(this.id)) as Households;
-    this.getTags();
-    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
-    this.refreshForm();
-
-    this.processing.set(false);
+    try {
+      this.household = (await this.householdsSvc.getById(this.id)) as Households;
+      await this.getTags();
+      this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
+      this.refreshForm();
+    } finally {
+      this.processing.set(false);
+    }
   }
 
   /**

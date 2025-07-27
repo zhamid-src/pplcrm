@@ -69,8 +69,8 @@ export class AddTag {
       } else {
         this.alertSvc.showError("We've hit an unknown error. Please try again.");
       }
+    } finally {
+      this.processing.set(false);
     }
-
-    this.processing.set(false);
   }
 }

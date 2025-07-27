@@ -81,24 +81,26 @@ export class NewPasswordPage implements OnInit {
    * Validates the input and shows success or error messages accordingly.
    */
   public async submit() {
-    if (!this.password?.valid) {
+    if (!this.password?.valid || !this.password.value) {
       this.alertSvc.showError('Please check the password.');
       return;
     }
+
     this.processing.set(true);
+    try {
+      const error = await this.authService.resetPassword({
+        code: this.code || '',
+        password: this.password.value,
+      });
 
-    const error: TRPCError | null = await this.authService.resetPassword({
-      code: this.code as string,
-      password: this.password?.value as string,
-    });
-
-    if (error) {
-      this.error.set(true);
+      if (error) this.error.set(true);
+      else {
+        this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
+        this.router.navigateByUrl('signin');
+      }
+    } finally {
+      this.processing.set(false);
     }
-
-    this.processing.set(false);
-    this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-    this.router.navigateByUrl('signin');
   }
 
   /**
