@@ -174,18 +174,18 @@ export class PersonDetail implements OnInit {
    * Loads the person data from the backend if ID is available
    */
   private async loadPerson() {
-    if (!this.id) {
-      return;
-    }
+    if (!this.id) return;
+
     this.processing.set(true);
+    try {
+      this.person = (await this.personsSvc.getById(this.id)) as Persons;
+      await this.getAddressString();
+      await this.getTags();
 
-    this.person = (await this.personsSvc.getById(this.id)) as Persons;
-    this.getAddressString();
-    this.getTags();
-
-    this.refreshForm();
-
-    this.processing.set(false);
+      this.refreshForm();
+    } finally {
+      this.processing.set(false);
+    }
   }
 
   /**

@@ -130,7 +130,7 @@ export class DataGrid<T extends keyof Models, U> {
 
   protected distinctTags: string[] = [];
   protected gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
-  protected processing = false;
+  protected processing = signal(false);
   protected router = inject(Router);
 
   /**
@@ -376,23 +376,23 @@ export class DataGrid<T extends keyof Models, U> {
     const rows = this.getSelectedRows();
     const deletableRows = this.getDeletableRows(rows);
 
-    if (this.handleDeleteErrors(rows, deletableRows)) {
-      return;
+    if (this.handleDeleteErrors(rows, deletableRows)) return;
+
+    this.processing.set(true);
+    try {
+      const ids = deletableRows.map((row) => row.id);
+
+      const deleted = await this.gridSvc.deleteMany(ids);
+
+      if (!deleted) {
+        this.alertSvc.showError('Could not delete. Please try again later.');
+      } else {
+        this.api!.applyTransaction({ remove: deletableRows });
+        this.showUndoSuccess();
+      }
+    } finally {
+      this.processing.set(false);
     }
-
-    this.processing = true;
-    const ids = deletableRows.map((row) => row.id);
-
-    const deleted = this.gridSvc.deleteMany(ids);
-
-    if (!deleted) {
-      this.alertSvc.showError('Could not delete. Please try again later.');
-    } else {
-      this.api!.applyTransaction({ remove: deletableRows });
-      this.showUndoSuccess();
-    }
-
-    this.processing = false;
   }
 
   constructor() {

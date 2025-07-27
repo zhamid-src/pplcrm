@@ -90,16 +90,8 @@ export class SignInPage {
 
     this.processing.set(true);
 
-    // We know that email and password are defined because of the form validation
-    // So we can safely use non-null assertion here
-
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const email = this.email!.value!;
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const password = this.password!.value!;
-
     return this.authService
-      .signIn({ email, password })
+      .signIn({ email: this.email!.value || '', password: this.password!.value || '' })
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.processing.set(false));
   }

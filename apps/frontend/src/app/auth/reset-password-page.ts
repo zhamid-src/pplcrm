@@ -49,21 +49,21 @@ export class ResetPasswordPage {
    * Otherwise, shows an error message.
    */
   public async submit() {
-    if (!this.email?.valid) {
+    if (!this.email?.valid || !this.email.value)
       return this.alertSvc.showError('Please check the email address and try again.');
-    }
+
     this.processing.set(true);
+    try {
+      await this.authService
+        .sendPasswordResetEmail({ email: this.email.value })
+        .catch((err) => this.alertSvc.showError(err.message));
 
-    await this.authService
-      .sendPasswordResetEmail({
-        email: this.email.value as string,
-      })
-      .catch((err) => this.alertSvc.showError(err.message));
-
-    this.alertSvc.showSuccess(
-      "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
-    );
-    this.processing.set(false);
-    this.router.navigateByUrl('signin');
+      this.alertSvc.showSuccess(
+        "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+      );
+      this.router.navigateByUrl('signin');
+    } finally {
+      this.processing.set(false);
+    }
   }
 }

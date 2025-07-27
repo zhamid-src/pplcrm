@@ -99,10 +99,8 @@ export class SignUpPage {
 
     this.processing.set(true);
 
-    const formObj = this.form.getRawValue() as signUpInputType;
-
     return this.authService
-      .signUp(formObj)
+      .signUp(this.form.getRawValue() as signUpInputType)
       .then((user) => {
         if (!user) {
           this.alertSvc.showError('Unknown error'); // TODO: better error msg
