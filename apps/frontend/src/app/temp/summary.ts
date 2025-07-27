@@ -41,7 +41,7 @@ export class Summary {
     });
   }
 
-  public tagsChanged(e: string[]) {
+  public tagsChanged(_e: string[]) {
     // intentionally empty
   }
 }

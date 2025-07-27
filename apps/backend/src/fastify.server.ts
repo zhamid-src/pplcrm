@@ -1,5 +1,3 @@
-import * as pino from 'pino';
-
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
@@ -22,10 +20,9 @@ export class FastifyServer {
    * Initializes the Fastify server with sensible defaults, logging,
    * CORS, and tRPC support.
    *
-   * @param {pino.Logger} logger - Pino logger instance (currently unused).
    * @param {object} [opts={}] - Optional configuration for CORS and plugin options.
    */
-  constructor(logger: pino.Logger, opts: object = {}) {
+  constructor(opts: object = {}) {
     // Create Fastify instance with logging and common config
     this._server = fastify({
       logger: {

@@ -128,20 +128,10 @@ export class DataGrid<T extends keyof Models, U> {
   public openEdit(id: string) {
     return this.view(id);
   }
-
-  public redo() {
-    this.undoMgr.redo();
-  }
-
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
     this.gridSvc.abort();
     this.api?.hideOverlay();
-  }
-
-  /** Undo and redo call through the manager */
-  public undo() {
-    this.undoMgr.undo();
   }
 
   /** Navigates to view route for given ID or last hovered ID. */

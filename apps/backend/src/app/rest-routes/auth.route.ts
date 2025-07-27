@@ -6,7 +6,7 @@ import { FastifyPluginCallback } from 'fastify';
  * @param _
  * @param done
  */
-const routes: FastifyPluginCallback = (fastify, _, done) => {
+const routes: FastifyPluginCallback = (_fastify, _, done) => {
   done();
 };
 

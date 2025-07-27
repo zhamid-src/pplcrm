@@ -18,11 +18,11 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    * Get all households for a tenant with the count of people in each household
    * and the tags associated with them.
    *
-   * @param tenant_id - The tenant ID
+   * @param _tenant_id - The tenant ID
    * @param trx - Optional Kysely transaction
    * @returns List of households with person count and tags
    */
-  public async getAllWithPeopleCount(tenant_id: string, trx?: Transaction<Models>) {
+  public async getAllWithPeopleCount(_tenant_id: string, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .select([
         'households.id',

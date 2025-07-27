@@ -25,7 +25,7 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.register(authRoute, { prefix: '/auth/' });
 
   // Root health check endpoint
-  fastify.get('/', (req, res) => res.send({ message: 'API healthy.' }));
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
 
   done();
 };

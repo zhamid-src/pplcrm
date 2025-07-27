@@ -41,7 +41,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @param id - The ID of the item (unused in this context).
    * @param tag_name - The name of the tag to attach.
    */
-  public async attachTag(id: string, tag_name: string) {
+  public async attachTag(_id: string, tag_name: string) {
     await this.add({ name: tag_name });
   }
 
