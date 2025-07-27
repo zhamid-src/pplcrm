@@ -12,7 +12,6 @@ export class Summary {
 
   public canDelete = true;
   public readonly = false;
-  public tags = ['hello', 'you', 'fool'];
 
   public Error() {
     this._alert.show({
@@ -43,7 +42,6 @@ export class Summary {
   }
 
   public tagsChanged(e: string[]) {
-    this.tags = e;
-    console.log(e, this.tags);
+    // intentionally empty
   }
 }
