@@ -32,9 +32,9 @@ export class AlertMessage {
   type?: ALERTTYPE;
 
   /** Is the alert visible? Used for exit animation directive */
-  visible = signal(true);
+  readonly visible = signal(true);
 
-  pulse = signal(false);
+  readonly pulse = signal(false);
 
   timeoutId: NodeJS.Timeout | undefined;
 
@@ -51,7 +51,7 @@ export class AlertMessage {
   providedIn: 'root',
 })
 export class AlertService {
-  private _alerts = signal<AlertMessage[]>([]);
+  private readonly _alerts = signal<AlertMessage[]>([]);
 
   /**
    * Returns a list of all currently active alerts.

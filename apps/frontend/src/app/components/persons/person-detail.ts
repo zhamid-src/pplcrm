@@ -23,15 +23,15 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
-  private _alertSvc = inject(AlertService);
-  private _fb = inject(FormBuilder);
-  private _householdsSvc = inject(HouseholdsService);
-  private _personsSvc = inject(PersonsService);
-  private _route = inject(ActivatedRoute);
-  private _router = inject(Router);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _fb = inject(FormBuilder);
+  private readonly _householdsSvc = inject(HouseholdsService);
+  private readonly _personsSvc = inject(PersonsService);
+  private readonly _route = inject(ActivatedRoute);
+  private readonly _router = inject(Router);
 
-  protected _person = signal<Persons | null>(null);
-  protected addressString = signal<string | null>(null);
+  protected readonly _person = signal<Persons | null>(null);
+  protected readonly addressString = signal<string | null>(null);
 
   /** Reactive form group for person data */
   protected form = this._fb.group({
@@ -54,7 +54,7 @@ export class PersonDetail implements OnInit {
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
-  protected processing = signal(false);
+  protected readonly processing = signal(false);
   protected tags: string[] = [];
 
   /** Determines if this component is in 'edit' or 'new' mode */

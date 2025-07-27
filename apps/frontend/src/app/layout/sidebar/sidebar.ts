@@ -18,10 +18,10 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
   ],
 })
 export class Sidebar {
-  private _sidebarSvc = inject(SidebarService);
+  private readonly _sidebarSvc = inject(SidebarService);
 
-  protected collapsedItems = new Set<string>();
-  protected router = inject(Router);
+  protected readonly collapsedItems = new Set<string>();
+  protected readonly router = inject(Router);
 
   public hoveringSidebar = false;
 

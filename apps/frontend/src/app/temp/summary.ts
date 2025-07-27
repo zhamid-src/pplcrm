@@ -8,7 +8,7 @@ import { Tags } from '@uxcommon/tags/tags';
   templateUrl: './summary.html',
 })
 export class Summary {
-  private _alert = inject(AlertService);
+  private readonly _alert = inject(AlertService);
 
   public canDelete = true;
   public readonly = false;

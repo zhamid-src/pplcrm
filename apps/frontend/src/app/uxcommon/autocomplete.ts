@@ -15,7 +15,7 @@ export class AutoComplete {
   /**
    * A reactive list of autocomplete matches.
    */
-  protected matches = signal<string[]>([]);
+  protected readonly matches = signal<string[]>([]);
 
   /**
    * A filtering service that provides suggestions based on user input.

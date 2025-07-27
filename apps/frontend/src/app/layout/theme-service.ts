@@ -1,4 +1,4 @@
-import { Injectable, signal } from "@angular/core";
+import { Injectable, signal } from '@angular/core';
 
 /**
  * A service to manage application theme (light or dark) in a reactive and persistent way.
@@ -15,7 +15,7 @@ export class ThemeService {
    * Reactive signal representing the current theme ('light' or 'dark').
    * Initialized based on stored preference or system setting.
    */
-  private _theme = signal<'light' | 'dark'>(this.getStoredTheme());
+  private readonly _theme = signal<'light' | 'dark'>(this.getStoredTheme());
 
   /**
    * Sets up a listener for system theme changes (e.g., OS-level light/dark mode toggle).

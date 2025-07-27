@@ -27,12 +27,12 @@ export class Breadcrumb {
   /**
    * Injected Angular Router instance for listening to route changes and navigation.
    */
-  private _router = inject(Router);
+  private readonly _router = inject(Router);
 
   /**
    * SidebarService is used to resolve internal routes for breadcrumb navigation.
    */
-  private _sidebarSvc = inject(SidebarService);
+  private readonly _sidebarSvc = inject(SidebarService);
 
   /**
    * Array of current breadcrumb segments based on URL.

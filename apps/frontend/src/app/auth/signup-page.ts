@@ -21,9 +21,9 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
-  private _alertSvc = inject(AlertService);
-  private _authService = inject(AuthService);
-  private _fb = inject(FormBuilder);
+  private readonly _alertSvc = inject(AlertService);
+  private readonly _authService = inject(AuthService);
+  private readonly _fb = inject(FormBuilder);
 
   /** Reactive form with user registration fields */
   protected form = this._fb.group({

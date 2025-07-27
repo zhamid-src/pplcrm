@@ -10,9 +10,9 @@ import { IconName } from '@uxcommon/svg-icons-list';
   templateUrl: './add-btn-row.html',
 })
 export class AddBtnRow implements OnInit {
-  private _rootFormGroup = inject(FormGroupDirective);
-  private _route = inject(ActivatedRoute);
-  private _router = inject(Router);
+  private readonly _rootFormGroup = inject(FormGroupDirective);
+  private readonly _route = inject(ActivatedRoute);
+  private readonly _router = inject(Router);
   private _stay = false;
 
   protected form!: FormGroup;
