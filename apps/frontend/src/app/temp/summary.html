@@ -1,12 +1,7 @@
 <!-- Sidebar -->
 <p class="min-h-max w-full pt-72 text-center text-3xl">Summary module</p>
 
-<pc-tags
-  [tagNames]="['hello','you','fool']"
-  (tagsChange)="tagsChanged($event)"
-  [readonly]="readonly"
-  [canDelete]="canDelete"
-></pc-tags>
+<pc-tags [tagNames]="['hello','you','fool']" [readonly]="readonly" [canDelete]="canDelete"></pc-tags>
 
 <button class="btn" (click)="Info()">Info</button>
 <button class="btn" (click)="Success()">Success</button>

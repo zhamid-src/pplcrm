@@ -40,8 +40,4 @@ export class Summary {
       title: 'W!',
     });
   }
-
-  public tagsChanged(_e: string[]) {
-    // intentionally empty
-  }
 }
