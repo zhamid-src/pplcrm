@@ -1,6 +1,6 @@
-import { Injectable } from '@angular/core';
+import { Injectable } from "@angular/core";
 
-import { ISidebarItem, SidebarItems } from './sidebar-items';
+import { ISidebarItem, SidebarItems } from "./sidebar-items";
 
 @Injectable({
   providedIn: 'root',
@@ -33,17 +33,17 @@ export class SidebarService {
   }
 
   /**
-   * Given the name of the final destination in the route, return the route
+   * Retrieves a full route path that ends with the specified destination segment.
    *
-   * Generally used by breadcrumb to navigate.
+   * This function searches through all sidebar items, including nested children,
+   * to find the first route that matches the provided destination.
    *
-   * @example - getRoute('persons') => '/console/persons'
-   *
-   * @param destination
-   * @returns
+   * @param destination - The last segment of the desired route (e.g., "tags", "people")
+   * @returns The full route path if found (e.g., "/console/tags"); otherwise, undefined
    */
-  public getRoute(destination: string) {
-    const target = this.items.find((item) => item.route?.endsWith(destination));
+  public getRoute(destination: string): string | undefined {
+    const allItems = this.flattenItems(this.items);
+    const target = allItems.find((item) => item.route?.split('/').pop()?.toLowerCase() === destination.toLowerCase());
     return target?.route;
   }
 
@@ -80,6 +80,18 @@ export class SidebarService {
    */
   public toggleMobile() {
     this._isMobileOpen = !this._isMobileOpen;
+  }
+
+  /**
+   * Recursively flattens a nested array of sidebar items into a single-level array.
+   *
+   * This includes all top-level items and their children.
+   *
+   * @param items - The array of sidebar items to flatten
+   * @returns A flat array of sidebar items with no nested children
+   */
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
   }
 
   /**

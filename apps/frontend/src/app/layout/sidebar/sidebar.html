@@ -23,7 +23,7 @@
 
   <!-- Sidebar Items -->
   @for (item of items; track item.name) {
-  <div class="flex-none px-2">
+  <div class="flex-none px-2" [class.hidden]="!!item.hidden">
     @if (item['type'] === 'subheading') {
     <!-- Subheading with collapsible children -->
     <div

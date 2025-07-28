@@ -60,6 +60,11 @@ export interface ISidebarItem {
 
 export const SidebarItems: ISidebarItem[] = [
   {
+    name: 'Console',
+    route: '/console',
+    hidden: true,
+  },
+  {
     name: `Summary`,
     route: '/console/summary',
     icon: 'presentation-chart-line',
