@@ -1,8 +1,8 @@
-import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from "@angular-magic/ngx-gp-autocomplete";
-import { Component, EventEmitter, Output, ViewChild, WritableSignal, input, signal } from "@angular/core";
-import { FormControl, NgModel, ReactiveFormsModule } from "@angular/forms";
-import { Icon } from "@uxcommon/icon";
-import { IconName } from "@uxcommon/svg-icons-list";
+import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
+import { Component, EventEmitter, Output, ViewChild, WritableSignal, input, signal } from '@angular/core';
+import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@uxcommon/icon';
+import { IconName } from '@uxcommon/svg-icons-list';
 
 @Component({
   selector: 'pc-input',
@@ -45,7 +45,11 @@ export class PPlCrmInput {
     return this.inputControl.value?.length ?? 0;
   }
 
-  public autocomplete(event: Event): void {
+  public clearText() {
+    this.inputControl.setValue('');
+  }
+
+  public debounceValueChange(event: Event): void {
     const target = event.target as HTMLInputElement;
     this.inputValue.set(target.value);
 
