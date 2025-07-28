@@ -3,10 +3,12 @@ import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/for
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { IconName } from '@uxcommon/svg-icons-list';
 
+import { Icon } from './icon';
+
 @Component({
   selector: 'pc-form-input',
-  imports: [ReactiveFormsModule],
-  template: './formInput.html',
+  imports: [ReactiveFormsModule, Icon],
+  templateUrl: './formInput.html',
 })
 export class FormInput implements OnInit {
   private readonly _alertSvc = inject(AlertService);

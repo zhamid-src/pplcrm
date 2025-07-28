@@ -39,10 +39,12 @@ export class AutoComplete {
    * @param key - The string to filter matches by
    */
   protected async autoComplete(key: string) {
+    console.log('autocomplete: ', key);
     const filterSvc = this.filterSvc();
     if (!filterSvc || !key?.length) return;
 
     const matches = await filterSvc.filter(key);
+    console.log(matches);
     this.matches.set(matches);
   }
 
@@ -76,6 +78,7 @@ export class AutoComplete {
    */
   protected onKey(event: KeyboardEvent) {
     const target = event.target as HTMLInputElement;
+    console.log(event);
     if (event.key === 'Enter' || event.key === ',') {
       this.valueChange.emit(target.value);
       target.value = '';

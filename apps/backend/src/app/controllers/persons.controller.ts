@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from '@common';
+import { IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../repositories/base.repo';
@@ -6,6 +6,7 @@ import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
 import { PersonsRepo } from '../repositories/persons.repo';
 import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
+import { SettingsController } from './settings.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
@@ -13,6 +14,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
  */
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private _mapPersonsTagRepo = new MapPersonsTagRepo();
+  private _settingsController = new SettingsController();
   private _tagsRepo = new TagsRepo();
 
   constructor() {
@@ -26,12 +28,16 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @param auth - Authenticated user's context
    * @returns The newly created person
    */
-  public addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    const campaign_id = (await this._settingsController.getCurrentCampaignId(auth)) as SettingsType;
+
     const row = {
       ...payload,
+      campaign_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
     };
+
     return this.add(row as OperationDataType<'persons', 'insert'>);
   }
 
@@ -48,7 +54,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       name,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
+
+    console.log(row);
 
     const tag = await this._tagsRepo.addOrGet({
       row: row as OperationDataType<'tags', 'insert'>,
@@ -60,6 +69,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       person_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     });
   }
 
@@ -70,6 +80,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    */
   public async detachTag(input: { tenant_id: string; person_id: string; name: string }) {
     const tag = await this._tagsRepo.getIdByName(input);
+
     if (tag?.id) {
       const id = await this._mapPersonsTagRepo.getId({
         ...input,
@@ -146,6 +157,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     person_id: string;
     tenant_id: string;
     createdby_id: string;
+    updatedby_id: string;
   }) {
     if (!row.tag_id) {
       throw new TRPCError({

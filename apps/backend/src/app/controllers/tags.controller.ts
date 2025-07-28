@@ -36,7 +36,7 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * @param auth - Authenticated user's context
    * @returns Array of matching tags (up to 3)
    */
-  public findByName(name: string, auth: IAuthKeyPayload) {
+  public async findByName(name: string, auth: IAuthKeyPayload) {
     return this.find({
       tenant_id: auth.tenant_id,
       key: name,

@@ -6,11 +6,9 @@
   (lostFocus)="hideAutoCompleteList()"
 />
 @if (matches().length && !hideAutoComplete) {
-  <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-    @for (match of matches(); track match) {
-      <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="handleClick(match)">
-        {{ match }}
-      </li>
-    }
-  </ul>
+<ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
+  @for (match of matches(); track match) {
+  <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="handleClick(match)">{{ match }}</li>
+  }
+</ul>
 }

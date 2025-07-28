@@ -83,7 +83,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    */
   public async filter(key: string) {
     const names = (await this.findByName(key)) as AddTagType[];
-    return names.map((m) => m.name);
+    return (names && names.map((m) => m.name)) || [];
   }
 
   /**

@@ -1,9 +1,8 @@
-import { Component, EventEmitter, Input, OnInit, Output, inject, input } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
 import { AutoComplete } from '@uxcommon/autocomplete';
-
 import { TagsService } from '@uxcommon/tags/tags-service';
+
 import { TagItem } from './tagitem';
-import { TagModel } from './tag-model';
 
 @Component({
   selector: 'pc-tags',
@@ -11,18 +10,21 @@ import { TagModel } from './tag-model';
   templateUrl: './tags.html',
 })
 export class Tags implements OnInit {
+  protected displayedTags: string[] = [];
+
+  public animateRemoval = input<boolean>(true);
+
   /**
    * If the list of tags can be deleted. It adds or remove the x button.
    * The default is true.
    */
   public canDelete = input<boolean>(true);
-  public animateRemoval = input<boolean>(true);
 
   /**
    * If this is set then an autocomplete list based on available tags will be shown.
    * The default is false.
    */
-  public enableAutoComplete = input<boolean>(false);
+  public enableAutoComplete = input<boolean>(true);
 
   /**
    * The placeholder text for the input field.
@@ -52,13 +54,7 @@ export class Tags implements OnInit {
    */
   @Output() public tagRemoved = new EventEmitter<string>();
   public tagSvc = inject(TagsService);
-
-  /**
-   * In case the parent wants to give a list of tags to start with.
-   * This can also be used as a two-way binding
-   */
-  public tags = input<TagModel[]>([]);
-  @Input() public tagNames: string[] = [];
+  public tags = input<string[]>([]);
 
   /**
    * If the list of tags changes then this event is emitted with the new list of tags.
@@ -67,10 +63,20 @@ export class Tags implements OnInit {
    */
   @Output() public tagsChange = new EventEmitter<string[]>();
 
-  ngOnInit() {
-    for (const name of this.tagNames) {
-      this.add(name);
-    }
+  constructor() {
+    /*
+    effect(() => {
+      console.log('effect: ', this.tagNames);
+      const tags = this.tagNames();
+      const added = tags.filter((tag) => !this.displayedTags.includes(tag));
+      const removed = this.displayedTags.filter((tag) => !tags.includes(tag));
+
+      added.forEach((tag) => this.add(tag));
+      removed.forEach((tag) => this.remove(tag));
+
+      this.displayedTags = tags;
+    });
+    */
   }
 
   /**
@@ -87,6 +93,12 @@ export class Tags implements OnInit {
     return names.map((m) => m.name);
   }
 
+  public ngOnInit() {
+    for (const name of this.tags()) {
+      this.add(name);
+    }
+  }
+
   /**
    * Add a new tag to the list after cleaning input. If tag already exists, it is ignored.
    * Triggers `tagsChange` and `tagAdded` if a tag is added.
@@ -100,24 +112,16 @@ export class Tags implements OnInit {
 
     if (tagName.length === 0) return;
 
-    const index = this.getTagIndexByName(tagName);
+    const index = this.tags().findIndex((tag) => tag === tagName);
     if (index === -1) {
-      const tag = new TagModel(tagName);
-      this.tags().unshift(tag);
+      this.tags().unshift(tagName);
       this.tagAdded.emit(tagName);
     } else {
       // Bring tag that maches to the front.
       const [tag] = this.tags().splice(index, 1); // remove it
       this.tags().unshift(tag); // move to front
     }
-    this.tagsChange.emit(this.getTagNamesArray());
-  }
-
-  private getTagNamesArray() {
-    return this.tags().map((tag) => tag.name);
-  }
-  private getTagIndexByName(name: string): number {
-    return this.tags().findIndex((tag) => tag.name === name);
+    this.tagsChange.emit(this.tags());
   }
 
   /**
@@ -147,10 +151,10 @@ export class Tags implements OnInit {
    * @param tag - The tag to be removed.
    */
   protected remove(tagName: string) {
-    const index = this.getTagIndexByName(tagName);
+    const index = this.tags().findIndex((tag) => tag === tagName);
     if (index > -1) {
       this.tags().splice(index, 1);
-      this.tagsChange.emit(this.getTagNamesArray());
+      this.tagsChange.emit(this.tags());
       this.tagRemoved.emit(tagName);
     }
   }

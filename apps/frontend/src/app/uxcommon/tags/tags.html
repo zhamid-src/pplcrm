@@ -11,10 +11,10 @@
   } @for (tag of tags(); track tag) {
   <pc-tagitem
     class="mr-1"
-    [name]="tag.name"
+    [name]="tag"
     [canDelete]="canDelete()"
-    (clickEvent)="clicked(tag.name)"
-    (closeEvent)="closed(tag.name)"
+    (clickEvent)="clicked(tag)"
+    (closeEvent)="closed(tag)"
   ></pc-tagitem>
   }
 </div>

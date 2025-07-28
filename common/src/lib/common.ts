@@ -1,21 +1,5 @@
 import { z } from 'zod';
 
-export type AddTagType = z.infer<typeof AddTagObj>;
-export type PERSONINHOUSEHOLDTYPE = {
-  id: string;
-  first_name: string;
-  middle_names: string;
-  last_name: string;
-  full_name: string;
-};
-export type PersonsType = z.infer<typeof PersonsObj>;
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-export type signInInputType = z.infer<typeof signInInputObj>;
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
 /**
  * The interface for the data that builds the authkey JWT token.
  * All fields are required
@@ -25,14 +9,17 @@ export interface IAuthKeyPayload {
    * The name of the user that is logged in.
    */
   name: string;
+
   /**
    * The session ID of the current session
    */
   session_id: string;
+
   /**
    * The tenant ID of the current user's tenant
    */
   tenant_id: string;
+
   /**
    * The user ID of the current user
    */
@@ -47,10 +34,12 @@ export interface IAuthUser {
    * The email address of the user that the user registered with
    */
   email: string;
+
   /**
    * The first name of the user
    */
   first_name: string;
+
   /**
    * The unique ID that is also used as the primary key in the database.
    */
@@ -74,9 +63,123 @@ export interface IToken {
   refresh_token: string | null;
 }
 
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type signInInputType = z.infer<typeof signInInputObj>;
+
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
 export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * The list of objects that are required to create a new
+ * tag.
+ */
+export const AddTagObj = z.object({
+  /**
+   * The tag to add.
+   *
+   * Example: Supporter, Donor, Volunteer, etc.
+   */
+  name: z.string(),
+  /**
+   * The optional field that describes the tag.
+   */
+  description: z.string().nullable().optional(),
+});
+
+/**
+ * The parameter for updating a person.
+ * It's used with an ID in the API call that
+ * indicates which Person to update.
+ */
+export const PersonsObj = z.object({
+  id: z.string(),
+  household_id: z.string(),
+  email: z.string(),
+  email2: z.string(),
+  first_name: z.string(),
+  middle_names: z.string(),
+  last_name: z.string(),
+  home_phone: z.string(),
+  mobile: z.string(),
+  notes: z.string(),
+  json: z.string(),
+});
+export const SettingsObj = z.object({
+  id: z.string().optional(),
+  tenant_id: z.string().optional(),
+  campaign_id: z.string().optional(),
+  createdby_id: z.string().optional(),
+  updatedby_id: z.string().optional(),
+  key: z.string().optional(),
+  value: z.object().optional(),
+});
+export const UpdateHouseholdsObj = z.object({
+  home_phone: z.string().optional(),
+  street_num: z.string().optional(),
+  street1: z.string().optional(),
+  street2: z.string().optional(),
+  apt: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zip: z.string().optional(),
+  notes: z.string().optional(),
+  json: z.string().optional(),
+});
+export const UpdatePersonsObj = z.object({
+  campaign_id: z.string().optional(),
+  household_id: z.string().optional(),
+  email: z.string().optional(),
+  email2: z.string().optional(),
+  first_name: z.string().optional(),
+  middle_names: z.string().optional(),
+  last_name: z.string().optional(),
+  home_phone: z.string().optional(),
+  mobile: z.string().optional(),
+  notes: z.string().optional(),
+  json: z.string().optional(),
+});
+
+/**
+ * The parameter for updating a tag.
+ * It's used with an ID in the API call that
+ * indicates which Tag to update.
+ */
+export const UpdateTagObj = z.object({
+  /**
+   * The tag to add.
+   *
+   * Example: Supporter, Donor, Volunteer, etc.
+   */
+  name: z.string().optional(),
+  /**
+   * The optional field that describes the tag.
+   */
+  description: z.string().nullable().optional(),
+});
 
 /**
  * The list of options that are used to filter the list of rows
@@ -107,6 +210,15 @@ export const getAllOptions = z
     tags: z.array(z.string()).optional(),
   })
   .optional();
+
+/**
+ * The list of objects that are required to login a user.
+ */
+export const signInInputObj = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
 /**
  * The list of objects that are required to create a new
  * user. All fields are required.
@@ -133,86 +245,4 @@ export const signUpInputObj = z.object({
    * The first name of the user that the user will register with.
    */
   first_name: z.string().max(100),
-});
-/**
- * The list of objects that are required to login a user.
- */
-export const signInInputObj = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-/**
- * The list of objects that are required to create a new
- * tag.
- */
-export const AddTagObj = z.object({
-  /**
-   * The tag to add.
-   *
-   * Example: Supporter, Donor, Volunteer, etc.
-   */
-  name: z.string(),
-  /**
-   * The optional field that describes the tag.
-   */
-  description: z.string().nullable().optional(),
-});
-/**
- * The parameter for updating a tag.
- * It's used with an ID in the API call that
- * indicates which Tag to update.
- */
-export const UpdateTagObj = z.object({
-  /**
-   * The tag to add.
-   *
-   * Example: Supporter, Donor, Volunteer, etc.
-   */
-  name: z.string().optional(),
-  /**
-   * The optional field that describes the tag.
-   */
-  description: z.string().nullable().optional(),
-});
-/**
- * The parameter for updating a person.
- * It's used with an ID in the API call that
- * indicates which Person to update.
- */
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  json: z.string(),
-});
-export const UpdatePersonsObj = z.object({
-  household_id: z.string().optional(),
-  email: z.string().optional(),
-  email2: z.string().optional(),
-  first_name: z.string().optional(),
-  middle_names: z.string().optional(),
-  last_name: z.string().optional(),
-  home_phone: z.string().optional(),
-  mobile: z.string().optional(),
-  notes: z.string().optional(),
-  json: z.string().optional(),
-});
-export const UpdateHouseholdsObj = z.object({
-  home_phone: z.string().optional(),
-  street_num: z.string().optional(),
-  street1: z.string().optional(),
-  street2: z.string().optional(),
-  apt: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zip: z.string().optional(),
-  notes: z.string().optional(),
-  json: z.string().optional(),
 });

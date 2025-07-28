@@ -15,7 +15,7 @@ interface MyCellRendererParams<T extends keyof Models, U> extends ICellRendererP
   imports: [Tags],
   template: `<pc-tags
     [animateRemoval]="false"
-    [tagNames]="this.tags"
+    [tags]="tags"
     [readonly]="true"
     (tagRemoved)="removeTag($event)"
   ></pc-tags>`,
@@ -40,7 +40,6 @@ export class TagsCellRenderer<T extends keyof Models, U> implements ICellRendere
 
   // gets called whenever the user gets the cell to refresh
   public refresh(params: ICellRendererParams) {
-    console.log(params);
     this.tags = !params.value || !params.value[0] ? [] : params.value;
     return true;
   }
