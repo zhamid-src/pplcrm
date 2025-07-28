@@ -40,12 +40,10 @@ export class AutoComplete {
    * @param key - The string to filter matches by
    */
   protected async autoComplete(key: string) {
-    console.log('autocomplete: ', key);
     const filterSvc = this.filterSvc();
     if (!filterSvc || !key?.length) return;
 
     const matches = await filterSvc.filter(key);
-    console.log(matches);
     this.matches.set(matches);
   }
 
