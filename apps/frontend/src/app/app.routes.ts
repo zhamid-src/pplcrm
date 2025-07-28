@@ -45,6 +45,11 @@ export const appRoutes: Route[] = [
     component: Dashboard,
     canActivate: [authGuard],
     children: [
+      {
+        path: '',
+        redirectTo: 'summary',
+        pathMatch: 'full',
+      },
       /**
        * Dashboard summary page.
        */
