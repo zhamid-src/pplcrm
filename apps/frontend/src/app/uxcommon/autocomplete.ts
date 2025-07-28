@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, input, signal } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, input, signal } from '@angular/core';
 import { PPlCrmInput } from '@uxcommon/input';
 
 @Component({
@@ -22,6 +22,7 @@ export class AutoComplete {
    * Must implement a `filter()` method that returns a list of matches.
    */
   public filterSvc = input<TFILTER | null>(null);
+  @ViewChild(PPlCrmInput) public pcInput!: PPlCrmInput;
 
   /**
    * The placeholder text for the input element.
@@ -49,17 +50,6 @@ export class AutoComplete {
   }
 
   /**
-   * Handles user click on a suggestion in the autocomplete list.
-   * Emits the selected value and resets the list.
-   *
-   * @param key - The selected suggestion
-   */
-  protected handleClick(key: string) {
-    this.valueChange.emit(key);
-    this.reset();
-  }
-
-  /**
    * Hides the autocomplete list after a short delay.
    *
    * This delay is important to allow click events on the suggestions
@@ -78,21 +68,18 @@ export class AutoComplete {
    */
   protected onKey(event: KeyboardEvent) {
     const target = event.target as HTMLInputElement;
-    console.log(event);
     if (event.key === 'Enter' || event.key === ',') {
-      this.valueChange.emit(target.value);
-      target.value = '';
-    }
-    if (target.value?.length === 0) {
-      this.reset();
+      this.reset(target.value);
     }
   }
 
   /**
    * Clears the list of autocomplete matches.
    */
-  protected reset() {
+  protected reset(key: string) {
+    this.valueChange.emit(key);
     this.matches.set([]);
+    this.pcInput.clearText();
   }
 
   /**

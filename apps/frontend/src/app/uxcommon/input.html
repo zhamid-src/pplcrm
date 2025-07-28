@@ -34,7 +34,7 @@
         placeholder=" "
         [formControl]="inputControl"
         (focus)="handleFocus()"
-        (keyup)="autocomplete($event)"
+        (keyup)="debounceValueChange($event)"
         (blur)="handleBlur()"
         [type]="type()"
         [attr.aria-placeholder]="placeholder()"
