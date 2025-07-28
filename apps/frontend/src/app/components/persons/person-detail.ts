@@ -236,6 +236,5 @@ export class PersonDetail implements OnInit {
 
     const tags = this.id ? await this._personsSvc.getTags(this.id) : [];
     this.tags.set(tags);
-    console.log(tags);
   }
 }
