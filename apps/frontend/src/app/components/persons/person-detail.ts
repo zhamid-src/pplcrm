@@ -55,7 +55,7 @@ export class PersonDetail implements OnInit {
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
-  protected tags: string[] = [];
+  protected tags = signal<string[]>([]);
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
@@ -109,7 +109,7 @@ export class PersonDetail implements OnInit {
   protected async getAddressString() {
     if (this.person?.household_id) {
       const address = (await this._householdsSvc.getById(this.person.household_id)) as AddressType;
-      this.addressString.set(address.formatted_address || null);
+      this.addressString.set(this.getFormattedAddress(address));
     }
   }
 
@@ -153,6 +153,7 @@ export class PersonDetail implements OnInit {
    */
   private add(data: UpdatePersonsType) {
     this.loading.set(true);
+
     this._personsSvc
       .add(data)
       .then(() => this._alertSvc.showSuccess('Person added'))
@@ -160,14 +161,22 @@ export class PersonDetail implements OnInit {
       .finally(() => this.loading.set(false));
   }
 
-  /**
-   * Fetches tags associated with this person
-   */
-  private async getTags() {
-    if (!this.person) {
-      return;
-    }
-    this.tags = this.id ? await this._personsSvc.getTags(this.id) : [];
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ');
   }
 
   /**
@@ -179,8 +188,9 @@ export class PersonDetail implements OnInit {
     this.loading.set(true);
     try {
       this.person = (await this._personsSvc.getById(this.id)) as Persons;
+
       await this.getAddressString();
-      await this.getTags();
+      await this.updateTags();
 
       this.refreshForm();
     } finally {
@@ -216,5 +226,16 @@ export class PersonDetail implements OnInit {
       })
       .catch((err) => this._alertSvc.showError(err))
       .finally(() => this.loading.set(false));
+  }
+
+  /**
+   * Fetches tags associated with this person
+   */
+  private async updateTags() {
+    if (!this.person) return;
+
+    const tags = this.id ? await this._personsSvc.getTags(this.id) : [];
+    this.tags.set(tags);
+    console.log(tags);
   }
 }

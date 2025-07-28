@@ -1,10 +1,11 @@
-import { IAuthKeyPayload, UpdateHouseholdsType } from '@common';
+import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { HouseholdRepo } from '../repositories/households.repo';
 import { MapHouseholdsTagsRepo } from '../repositories/map-households-tags.repo';
 import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
+import { SettingsController } from './settings.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
@@ -12,6 +13,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
  */
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
   private _mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private _settingsController = new SettingsController();
   private _tagsRepo = new TagsRepo();
 
   constructor() {
@@ -25,9 +27,12 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param auth - Auth context with tenant and user ID
    * @returns The created household
    */
-  public addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const campaign_id = (await this._settingsController.getCurrentCampaignId(auth)) as SettingsType;
+
     const row = {
       ...payload,
+      campaign_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
     };
@@ -47,6 +52,7 @@ export class HouseholdsController extends BaseController<'households', Household
       name,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
 
     const tag = await this._tagsRepo.addOrGet({
@@ -59,6 +65,7 @@ export class HouseholdsController extends BaseController<'households', Household
       household_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     });
   }
 
@@ -122,6 +129,7 @@ export class HouseholdsController extends BaseController<'households', Household
     household_id: string;
     tenant_id: string;
     createdby_id: string;
+    updatedby_id: string;
   }) {
     if (!row.tag_id) {
       throw new TRPCError({

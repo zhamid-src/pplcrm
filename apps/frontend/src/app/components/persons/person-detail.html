@@ -3,7 +3,7 @@
   <form [formGroup]="form" class="mx-5 mt-10 sm:mx-10">
     <fieldset [disabled]="loading()">
       <div class="flex flex-col gap-4">
-        @if (!person || !person.id) {
+        @if (!person?.id) {
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
         } @else {
         <div>
@@ -67,12 +67,18 @@
           <pc-form-input class="basis-1/2" type="tel" control="mobile" placeholder="Mobile Phone" />
           <pc-form-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
         </div>
+
+        @if (person?.id) {
         <div class="text-sm pl-1">
           Address: <span class="font-light">{{ addressString() }}</span>
           <span (click)="navigateToHousehold()" class="link text-primary font-light hover:no-underline pl-2">Edit</span>
         </div>
+        } @else {
+        <!-- TODO: select address with autocomplete (or add a link to a new address )-->
+
+        }
         <pc-tags
-          [tagNames]="this.tags"
+          [tags]="tags()"
           [enableAutoComplete]="true"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"

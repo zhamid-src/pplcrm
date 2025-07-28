@@ -40,6 +40,7 @@ export interface Models {
   sessions: Sessions;
   tags: Tags;
   tenants: Tenants;
+  settings: Settings;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -210,6 +211,11 @@ interface Profiles extends RecordType, AddressType {
   mobile: string | null;
   home_phone: string | null;
   json: Json | null;
+}
+
+interface Settings extends RecordType {
+  key: string;
+  value: JsonValue;
 }
 
 interface Roles extends RecordType {

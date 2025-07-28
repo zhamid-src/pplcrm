@@ -80,7 +80,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    */
   public deleteMany(tenant_id: TypeColumn<T, 'tenant_id'>, idsToDelete: string[]) {
     return this.repo.deleteMany({
-      ids: idsToDelete as TypeId<T>,
+      ids: idsToDelete as TypeId<T>[],
       tenant_id,
     });
   }
@@ -94,9 +94,9 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param input.column - Column to match against (e.g. 'name')
    * @returns A Promise resolving to up to 3 best-matching rows
    */
-  public async find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
+  public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
     const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-    return await this.repo.find({
+    return this.repo.find({
       tenant_id,
       key: input.key,
       column: input.column,

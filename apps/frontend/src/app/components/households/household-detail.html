@@ -46,7 +46,7 @@
         <div class="flex flex-col md:flex-row gap-2">
           <pc-form-input control="street_num" placeholder="Street Number" />
           <pc-form-input control="apt" placeholder="Unit" />
-          <pc-form-input class="basis-1/2" control="street" placeholder="Street" />
+          <pc-form-input class="basis-1/2" control="street1" placeholder="Street" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
           <pc-form-input class="basis-1/2" control="city" placeholder="City" />
@@ -61,7 +61,7 @@
         </div>
         <div class="divider mb-1">ADDITIONAL</div>
         <pc-tags
-          [tagNames]="this.tags"
+          [tags]="tags"
           [enableAutoComplete]="true"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"

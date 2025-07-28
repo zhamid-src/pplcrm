@@ -16,6 +16,7 @@ export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable('tags').cascade().execute();
   await db.schema.dropTable('map_peoples_tags').cascade().execute();
   await db.schema.dropTable('map_households_tags').cascade().execute();
+  await db.schema.dropTable('settings').cascade().execute();
 }
 
 export async function up(db: Kysely<any>): Promise<void> {
@@ -281,11 +282,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('createdby_id', 'bigint', (col) => col.notNull())
     .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
     .addColumn('name', 'text', (col) => col.notNull())
-    .addColumn('description', 'text', (col) => col.notNull())
+    .addColumn('description', 'text')
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addForeignKeyConstraint('fk_tags_tenant_id', ['tenant_id'], 'tenants', ['id'])
     .addPrimaryKeyConstraint('tags_id_tenantid', ['id', 'tenant_id'])
+    .addUniqueConstraint('tags_tenant_name_unique', ['tenant_id', 'name'])
     .execute();
 
   await db.schema
@@ -294,12 +296,15 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('tenant_id', 'bigint', (col) => col.notNull())
     .addColumn('person_id', 'bigint', (col) => col.notNull())
     .addColumn('tag_id', 'bigint', (col) => col.notNull())
+    .addColumn('createdby_id', 'bigint', (col) => col.notNull())
+    .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addForeignKeyConstraint('fk_map_peoples_tenant_id', ['tenant_id'], 'tenants', ['id'])
     .addForeignKeyConstraint('fk_person_id', ['person_id'], 'persons', ['id'])
     .addForeignKeyConstraint('fk_tag_id', ['tag_id'], 'tags', ['id'])
     .addPrimaryKeyConstraint('map_peoples_id_tenantid', ['id', 'tenant_id'])
+    .addUniqueConstraint('unique_person_tag_per_tenant', ['tenant_id', 'person_id', 'tag_id'])
     .execute();
 
   await db.schema
@@ -314,6 +319,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('tenant_id', 'bigint', (col) => col.notNull())
     .addColumn('household_id', 'bigint', (col) => col.notNull())
     .addColumn('tag_id', 'bigint', (col) => col.notNull())
+    .addColumn('createdby_id', 'bigint', (col) => col.notNull())
+    .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .addForeignKeyConstraint('fk_map_household_tags_tenant_id', ['tenant_id'], 'tenants', ['id'])
@@ -385,6 +392,36 @@ export async function up(db: Kysely<any>): Promise<void> {
       createdby_id: 1,
       name: 'Zeeshan Campaign',
     })
+    .execute();
+
+  await db.schema
+    .createTable('settings')
+    .addColumn('id', 'bigserial', (col) => col.primaryKey())
+    .addColumn('tenant_id', 'bigint', (col) => col.notNull())
+    .addColumn('key', 'text', (col) => col.notNull())
+    .addColumn('value', 'jsonb', (col) => col.notNull())
+    .addColumn('createdby_id', 'bigint')
+    .addColumn('updatedby_id', 'bigint')
+    .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addUniqueConstraint('uq_settings_tenant_key', ['tenant_id', 'key'])
+    .addForeignKeyConstraint('fk_settings_tenant_id', ['tenant_id'], 'tenants', ['id'])
+    .execute();
+
+  await db
+    .insertInto('settings')
+    .values([
+      {
+        tenant_id: 1,
+        key: 'current_campaign',
+        value: { id: 1 },
+      },
+      {
+        tenant_id: 1,
+        key: 'notifications',
+        value: false,
+      },
+    ])
     .execute();
 
   await db

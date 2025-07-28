@@ -1,4 +1,4 @@
-import { Transaction } from 'kysely';
+import { OperandValueExpressionOrList, Transaction } from 'kysely';
 
 import { BaseRepository } from './base.repo';
 import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
@@ -19,9 +19,9 @@ export class TagsRepo extends BaseRepository<'tags'> {
    * @param input.ids - Tag IDs to delete
    * @returns `true` if deletion query ran successfully
    */
-  public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'> }) {
+  public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'>[] }) {
     return await this.transaction().execute(async (trx) => {
-      const tag_ids = input.ids;
+      const tag_ids = input.ids as OperandValueExpressionOrList<Models, 'tags', 'id'>;
 
       await trx
         .deleteFrom('map_households_tags')

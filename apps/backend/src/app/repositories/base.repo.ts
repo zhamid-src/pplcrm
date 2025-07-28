@@ -103,7 +103,8 @@ export class BaseRepository<T extends keyof Models> {
   ): Promise<Models[T] | undefined> {
     const insertResult = await this.getInsert(trx)
       .values(input.row)
-      .onConflict((oc) => oc.column(input.onConflictColumn).doNothing())
+      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
+
       .returningAll()
       .executeTakeFirst();
 
@@ -138,15 +139,19 @@ export class BaseRepository<T extends keyof Models> {
    * Delete a single row by ID.
    */
   public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
-    return this.deleteMany({ tenant_id: input.tenant_id, ids: input.id }, trx);
+    return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
   }
 
   /**
    * Delete multiple rows by ID(s).
    */
-  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T> }, trx?: Transaction<Models>) {
-    const deleteQuery = this.getDelete(trx) as unknown as ReturnType<typeof BaseRepository.prototype.getDelete>;
-    const result = await deleteQuery.where('id', 'in', input.ids).where('tenant_id', '=', input.tenant_id).execute();
+  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
+    // Convert to numbers if needed
+    const numericIds = input.ids;
+
+    const deleteQuery = this.getDelete(trx) as ReturnType<typeof BaseRepository.prototype.getDelete>;
+    const result = await deleteQuery.where('id', 'in', numericIds).where('tenant_id', '=', input.tenant_id).execute();
+
     return result !== null;
   }
 
@@ -164,7 +169,7 @@ export class BaseRepository<T extends keyof Models> {
   /**
    * Return top 3 rows matching key for autocomplete.
    */
-  public async find(
+  public find(
     input: {
       tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
       key: string;
