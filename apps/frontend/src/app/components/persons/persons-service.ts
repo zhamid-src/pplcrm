@@ -133,7 +133,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return peopleInHousehold.map((person) => {
       return {
         ...person,
-        full_name: `${person.first_name} ${person.middle_names} ${person.last_name}`,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`,
       };
     });
   }

@@ -1,4 +1,4 @@
-import { Component, effect, inject, input } from '@angular/core';
+import { Component, OnInit, inject, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
 
@@ -19,7 +19,7 @@ import { PersonsService } from './persons-service';
     }
   </ul>`,
 })
-export class PeopleInHousehold {
+export class PeopleInHousehold implements OnInit {
   private _personsSvc = inject(PersonsService);
 
   /** List of people retrieved for the specified household. */
@@ -28,10 +28,7 @@ export class PeopleInHousehold {
   /** The ID of the household whose members should be listed. */
   public householdId = input.required<string | null>();
 
-  constructor() {
-    // TODO:Zee Effect isn't ideal here.  We gotta fix it.
-    effect(async () => {
-      this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.householdId());
-    });
+  public async ngOnInit() {
+    this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.householdId());
   }
 }
