@@ -45,6 +45,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.attachTag.mutate({ id: id, tag_name });
   }
 
+  public count(): Promise<number> {
+    return this.api.persons.count.query();
+  }
+
   /**
    * Delete a person by ID.
    *

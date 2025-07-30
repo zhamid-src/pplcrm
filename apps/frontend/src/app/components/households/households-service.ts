@@ -41,6 +41,10 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.attachTag.mutate({ id: id, tag_name });
   }
 
+  public count(): Promise<number> {
+    return this.api.households.count.query();
+  }
+
   /**
    * Delete a household by ID.
    * @param id Household ID.

@@ -25,6 +25,10 @@ function attachTag() {
     .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
+function count() {
+  return authProcedure.query(({ ctx }) => households.getCount(ctx.auth.tenant_id));
+}
+
 /**
  * Delete multiple households by ID.
  */
@@ -107,6 +111,7 @@ const households = new HouseholdsController();
  */
 export const HouseholdsRouter = router({
   add: add(),
+  count: count(),
   getAll: getAll(),
   update: update(),
   getTags: getTags(),

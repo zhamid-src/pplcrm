@@ -45,6 +45,10 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     await this.add({ name: tag_name });
   }
 
+  public count(): Promise<number> {
+    return this.api.tags.count.query();
+  }
+
   /**
    * Deletes a tag by ID.
    *

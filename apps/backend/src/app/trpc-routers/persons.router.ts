@@ -22,6 +22,10 @@ function attachTag() {
     .mutation(({ input, ctx }) => persons.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
 /**
  * Delete multiple persons by their IDs.
  */
@@ -117,6 +121,7 @@ const persons = new PersonsController();
  */
 export const PersonsRouter = router({
   add: add(),
+  count: count(),
   getAll: getAll(),
   update: update(),
   getTags: getTags(),
