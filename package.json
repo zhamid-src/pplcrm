@@ -8,18 +8,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@ag-grid-community/angular": "32.3.5",
-    "@ag-grid-community/client-side-row-model": "32.3.5",
-    "@ag-grid-community/core": "32.3.5",
-    "@ag-grid-community/csv-export": "32.3.5",
-    "@ag-grid-community/styles": "32.3.5",
-    "@ag-grid-enterprise/clipboard": "32.3.5",
-    "@ag-grid-enterprise/column-tool-panel": "32.3.5",
-    "@ag-grid-enterprise/filter-tool-panel": "32.3.5",
-    "@ag-grid-enterprise/menu": "32.3.5",
-    "@ag-grid-enterprise/multi-filter": "32.3.5",
-    "@ag-grid-enterprise/range-selection": "32.3.5",
-    "@ag-grid-enterprise/set-filter": "32.3.5",
+    "ag-grid-angular": "33.0.4",
+    "ag-grid-community": "33.0.4",
+    "ag-grid-enterprise": "33.0.4",
     "@angular/common": "20.1.3",
     "@angular/forms": "20.1.3",
     "@angular/platform-browser": "20.1.3",
@@ -100,7 +91,7 @@
     "npm-force-resolutions": "^0.0.10"
   },
   "resolutions": {
-    "@ag-grid-community/core": "32.3.5"
+    "@ag-grid-community": "33.0.4"
   },
   "overrides": {
     "stylus": "github:stylus/stylus#0.54.4"

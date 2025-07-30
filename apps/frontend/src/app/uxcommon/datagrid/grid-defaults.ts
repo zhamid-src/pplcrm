@@ -1,4 +1,4 @@
-import { ColDef, GridOptions, GridState, SideBarDef } from '@ag-grid-community/core';
+import { ColDef, GridOptions, GridState, SideBarDef } from 'ag-grid-community';
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
 
 import { LoadingOverlayComponent } from './loading-overlay';

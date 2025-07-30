@@ -1,4 +1,4 @@
-import { CellDoubleClickedEvent, ColDef } from '@ag-grid-community/core';
+import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';

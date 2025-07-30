@@ -1,5 +1,5 @@
-import { ICellRendererAngularComp } from '@ag-grid-community/angular';
-import { GridApi, ICellRendererParams } from '@ag-grid-community/core';
+import { ICellRendererAngularComp } from 'ag-grid-angular';
+import { GridApi, ICellRendererParams } from 'ag-grid-community';
 import { Component } from '@angular/core';
 import { Tags } from '@uxcommon/tags/tags';
 
