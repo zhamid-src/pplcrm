@@ -1,3 +1,9 @@
+import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@uxcommon/alerts/alert-service';
+import { Icon } from '@uxcommon/icon';
+import { IconName } from '@uxcommon/svg-icons-list';
+
 import { AgGridModule } from 'ag-grid-angular';
 import {
   CellDoubleClickedEvent,
@@ -9,11 +15,6 @@ import {
   GridOptions,
   GridReadyEvent,
 } from 'ag-grid-community';
-import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Icon } from '@uxcommon/icon';
-import { IconName } from '@uxcommon/svg-icons-list';
 
 import { AbstractAPIService } from '../../abstract-api.service';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
@@ -61,7 +62,6 @@ export class DataGrid<T extends keyof Models, U> {
   public disableImport = input<boolean>(true);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
-  @Output() public filter = new EventEmitter();
   public gridOptions = input<GridOptions<Partial<T>>>({});
   @Output() public importCSV = new EventEmitter<string>();
   public limitToTags = input<string[]>([]);
@@ -117,6 +117,7 @@ export class DataGrid<T extends keyof Models, U> {
     this.undoMgr.initialize(this.api);
     this.api.updateGridOptions(this.getMergedGridOptions());
     this.refresh();
+    this.initializeSidebar();
   }
 
   /** Called when selection changes. Updates selected state. */
@@ -185,6 +186,15 @@ export class DataGrid<T extends keyof Models, U> {
   /** Actually performs export via AG Grid. */
   protected exportToCSV() {
     this.api?.exportDataAsCsv();
+  }
+
+  protected filter() {
+    if (this.api?.isSideBarVisible()) {
+      this.api?.setSideBarVisible(false);
+    } else {
+      this.api?.setSideBarVisible(true);
+      this.api?.openToolPanel('filters-new');
+    }
   }
 
   /** Utility: sets ID for each row */
@@ -284,6 +294,15 @@ export class DataGrid<T extends keyof Models, U> {
       this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
     }
     return deletableRows.length === 0;
+  }
+
+  private initializeSidebar() {
+    this.api?.setSideBarVisible(false);
+    // const filterToolpanel = this.api?.getToolPanelInstance('filters');
+
+    // if (!filterToolpanel) return;
+
+    // filterToolpanel.expandFilters(['tags']);
   }
 
   /** Navigates to route if valid */

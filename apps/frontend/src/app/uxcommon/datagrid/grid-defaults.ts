@@ -1,6 +1,6 @@
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
 
-import { ColDef, GridOptions, GridState } from 'ag-grid-community';
+import { ColDef, GridOptions, GridState, SideBarDef } from 'ag-grid-community';
 
 import { LoadingOverlayComponent } from './loading-overlay';
 
@@ -29,9 +29,38 @@ const BASE_GRID_CONFIG = {
       openToolPanel: null,
       position: 'right',
       visible: true,
-      toolPanels: {},
+      toolPanels: {
+        'filters-new': {
+          filters: [
+            {
+              colId: 'tags',
+              expanded: true,
+            },
+          ],
+        },
+      },
     },
   } as GridState,
+
+  /**
+   * AG Grid sidebar definition including Filters and Columns panels.
+   */
+  sideBar: {
+    toolPanels: [
+      {
+        id: 'filters-new',
+        labelDefault: 'Filters',
+        labelKey: 'filters',
+        iconKey: 'filter',
+        toolPanel: 'agNewFiltersToolPanel',
+        toolPanelParams: {
+          suppressExpandAll: true,
+        },
+      },
+    ],
+    defaultToolPanel: 'filters-new',
+    hiddenByDefault: true,
+  } as SideBarDef,
 };
 
 /**
@@ -62,7 +91,7 @@ export const defaultGridOptions: GridOptions = {
   autoSizeStrategy: { type: 'fitCellContents' },
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
   initialState: BASE_GRID_CONFIG.initialState,
-
+  sideBar: BASE_GRID_CONFIG.sideBar,
   cellSelection: true,
   copyHeadersToClipboard: true,
   enableCellEditingOnBackspace: true,

@@ -22,6 +22,7 @@
       icon="trash"
       (action)="confirmDelete()"
     />
+    <pc-grid-action icon="filter" tip="Filter the grid" (action)="filter()" />
     <li class="grow">
       <a class="hover:text-primary ml-auto">
         <pc-icon name="information-circle"></pc-icon>
@@ -35,7 +36,6 @@
     [columnDefs]="colDefsWithEdit"
     (gridReady)="onGridReady($event)"
     [gridOptions]="defaultGridOptions()"
-    sideBar="filters-new"
     [getRowId]="getRowId"
     [cellSelection]="true"
     [enableCellTextSelection]="true"
