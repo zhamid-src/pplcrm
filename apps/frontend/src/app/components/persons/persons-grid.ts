@@ -1,8 +1,9 @@
-import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 import { Component } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@uxcommon/icon';
+
+import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../abstract-api.service';
 import { TagsCellRenderer } from '../tags/tags-cell-renderer';
@@ -37,14 +38,15 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * Includes editable fields, tag rendering, and double-click address confirmation.
    */
   protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'first_name', headerName: 'First Name', editable: true, colId: 'first_name' },
     { field: 'last_name', headerName: 'Last Name', editable: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
     { field: 'home_phone', headerName: 'Home phone', editable: false },
     {
       field: 'tags',
-      filter: true,
+      colId: 'tags',
+      filter: 'agSetColumnFilter',
       headerName: 'Tags',
       cellDataType: 'object',
       cellRendererParams: {

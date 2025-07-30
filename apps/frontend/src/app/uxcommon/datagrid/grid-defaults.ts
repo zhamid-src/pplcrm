@@ -1,6 +1,6 @@
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
 
-import { ColDef, GridOptions, GridState, SideBarDef } from 'ag-grid-community';
+import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 
 import { LoadingOverlayComponent } from './loading-overlay';
 
@@ -28,7 +28,7 @@ const BASE_GRID_CONFIG = {
       enableFilterHandlers: true,
       openToolPanel: null,
       position: 'right',
-      visible: true,
+      visible: false,
       toolPanels: {
         'filters-new': {
           filters: [
@@ -36,8 +36,11 @@ const BASE_GRID_CONFIG = {
               colId: 'tags',
               expanded: true,
             },
+            {
+              colId: 'first_name',
+            },
           ],
-        },
+        } as NewFiltersToolPanelState,
       },
     },
   } as GridState,
@@ -53,9 +56,6 @@ const BASE_GRID_CONFIG = {
         labelKey: 'filters',
         iconKey: 'filter',
         toolPanel: 'agNewFiltersToolPanel',
-        toolPanelParams: {
-          suppressExpandAll: true,
-        },
       },
     ],
     defaultToolPanel: 'filters-new',

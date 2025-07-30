@@ -117,7 +117,6 @@ export class DataGrid<T extends keyof Models, U> {
     this.undoMgr.initialize(this.api);
     this.api.updateGridOptions(this.getMergedGridOptions());
     this.refresh();
-    this.initializeSidebar();
   }
 
   /** Called when selection changes. Updates selected state. */
@@ -295,16 +294,6 @@ export class DataGrid<T extends keyof Models, U> {
     }
     return deletableRows.length === 0;
   }
-
-  private initializeSidebar() {
-    this.api?.setSideBarVisible(false);
-    // const filterToolpanel = this.api?.getToolPanelInstance('filters');
-
-    // if (!filterToolpanel) return;
-
-    // filterToolpanel.expandFilters(['tags']);
-  }
-
   /** Navigates to route if valid */
   private navigateIfValid(path: string | null | undefined): void {
     if (path) this.router.navigate([path], { relativeTo: this._route });
