@@ -1,4 +1,4 @@
-import { AgGridModule } from '@ag-grid-community/angular';
+import { AgGridModule } from 'ag-grid-angular';
 import {
   CellDoubleClickedEvent,
   CellMouseOverEvent,
@@ -8,7 +8,7 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-} from '@ag-grid-community/core';
+} from 'ag-grid-community';
 import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/alerts/alert-service';

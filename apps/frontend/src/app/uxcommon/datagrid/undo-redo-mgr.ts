@@ -1,4 +1,4 @@
-import { GridApi } from '@ag-grid-community/core';
+import { GridApi } from 'ag-grid-community';
 import { computed, signal } from '@angular/core';
 
 /**

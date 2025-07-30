@@ -1,14 +1,21 @@
-import { ClientSideRowModelModule } from '@ag-grid-community/client-side-row-model';
-import { ModuleRegistry } from '@ag-grid-community/core';
-import { CsvExportModule } from '@ag-grid-community/csv-export';
-import { ClipboardModule } from '@ag-grid-enterprise/clipboard';
-import { ColumnsToolPanelModule } from '@ag-grid-enterprise/column-tool-panel';
-import { FiltersToolPanelModule } from '@ag-grid-enterprise/filter-tool-panel';
-import { MenuModule } from '@ag-grid-enterprise/menu';
-import { MultiFilterModule } from '@ag-grid-enterprise/multi-filter';
-import { RangeSelectionModule } from '@ag-grid-enterprise/range-selection';
-import { SetFilterModule } from '@ag-grid-enterprise/set-filter';
 import { bootstrapApplication } from '@angular/platform-browser';
+
+import { AllCommunityModule, ClientSideRowModelModule, CsvExportModule, ModuleRegistry } from 'ag-grid-community';
+import {
+  CellSelectionModule,
+  ClipboardModule,
+  ColumnMenuModule,
+  ColumnsToolPanelModule,
+  ContextMenuModule,
+  FiltersToolPanelModule,
+  GroupFilterModule,
+  MultiFilterModule,
+  PivotModule,
+  RowGroupingModule,
+  RowGroupingPanelModule,
+  SetFilterModule,
+  TreeDataModule,
+} from 'ag-grid-enterprise';
 
 import { AppComponent } from './app/app';
 import { appConfig } from './app/app.config';
@@ -18,12 +25,19 @@ bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err))
 // Register ag-grid modules globally
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
+  AllCommunityModule,
   CsvExportModule,
-  RangeSelectionModule,
+  CellSelectionModule,
   ClipboardModule,
   SetFilterModule,
-  MenuModule,
+  ColumnMenuModule,
+  ContextMenuModule,
   FiltersToolPanelModule,
   ColumnsToolPanelModule,
+  RowGroupingPanelModule,
+  RowGroupingModule,
+  GroupFilterModule,
+  TreeDataModule,
+  PivotModule,
   MultiFilterModule,
 ]);

@@ -1,5 +1,5 @@
-import { ICellRendererAngularComp } from '@ag-grid-community/angular';
-import { ICellRendererParams } from '@ag-grid-community/core';
+import { ICellRendererAngularComp } from 'ag-grid-angular';
+import { ICellRendererParams } from 'ag-grid-community';
 import { Component, ViewEncapsulation } from '@angular/core';
 import { Icon } from '@uxcommon/icon';
 
