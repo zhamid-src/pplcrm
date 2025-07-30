@@ -12,6 +12,10 @@ function add() {
   return authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth));
 }
 
+function count() {
+  return authProcedure.query(({ ctx }) => tags.getCount(ctx.auth.tenant_id));
+}
+
 /**
  * Delete a single tag by its ID.
  */
@@ -74,6 +78,7 @@ const tags = new TagsController();
  */
 export const TagsRouter = router({
   add: add(),
+  count: count(),
   getAll: getAll(),
   update: update(),
   getById: getById(),

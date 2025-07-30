@@ -34,6 +34,8 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
 
   public abstract attachTag(id: string, tag_name: string): Promise<unknown>;
 
+  public abstract count(): Promise<number>;
+
   /**
    * Delete the row with the given id from the database.
    *
