@@ -1,5 +1,6 @@
-import { ColDef, GridOptions, GridState, SideBarDef } from 'ag-grid-community';
 import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
+
+import { ColDef, GridOptions, GridState } from 'ag-grid-community';
 
 import { LoadingOverlayComponent } from './loading-overlay';
 
@@ -15,7 +16,6 @@ const BASE_GRID_CONFIG = {
   defaultColDef: {
     enableCellChangeFlash: true,
     filter: 'agMultiColumnFilter',
-    flex: 1,
     enableValue: true,
     enablePivot: true,
   } as ColDef,
@@ -25,46 +25,13 @@ const BASE_GRID_CONFIG = {
    */
   initialState: {
     sideBar: {
+      enableFilterHandlers: true,
       openToolPanel: null,
       position: 'right',
       visible: true,
       toolPanels: {},
     },
   } as GridState,
-
-  /**
-   * AG Grid sidebar definition including Filters and Columns panels.
-   */
-  sideBar: {
-    toolPanels: [
-      {
-        id: 'filters',
-        labelDefault: 'Filters',
-        labelKey: 'filters',
-        iconKey: 'filter',
-        toolPanel: 'agFiltersToolPanel',
-        toolPanelParams: {
-          suppressExpandAll: true,
-          suppressFilterSearch: true,
-        },
-      },
-      {
-        id: 'columns',
-        labelDefault: 'Columns',
-        labelKey: 'columns',
-        iconKey: 'columns',
-        toolPanel: 'agColumnsToolPanel',
-        toolPanelParams: {
-          suppressRowGroups: true,
-          suppressValues: true,
-          suppressPivots: true,
-          suppressPivotMode: true,
-          suppressColumnSelectAll: true,
-        },
-      },
-    ],
-    defaultToolPanel: 'filters',
-  } as SideBarDef,
 };
 
 /**
@@ -95,10 +62,11 @@ export const defaultGridOptions: GridOptions = {
   autoSizeStrategy: { type: 'fitCellContents' },
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
   initialState: BASE_GRID_CONFIG.initialState,
-  sideBar: BASE_GRID_CONFIG.sideBar,
+
   cellSelection: true,
   copyHeadersToClipboard: true,
   enableCellEditingOnBackspace: true,
+  enableFilterHandlers: true,
   pagination: true,
   paginationAutoPageSize: true,
   rowSelection: {
