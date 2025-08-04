@@ -1,5 +1,6 @@
-import { Component, EventEmitter, Output, effect, inject, input, signal } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { debounce, getAllOptionsType } from '@common';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
@@ -14,6 +15,8 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
+  IServerSideDatasource,
+  IServerSideGetRowsParams,
 } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../abstract-api.service';
@@ -29,13 +32,16 @@ import { Models } from 'common/src/lib/kysely.models';
   imports: [AgGridModule, Icon, GridActionComponent],
   templateUrl: './datagrid.html',
 })
-export class DataGrid<T extends keyof Models, U> {
+export class DataGrid<T extends keyof Models, U> implements OnInit {
   private readonly _route = inject(ActivatedRoute);
   private readonly _searchSvc = inject(SearchService);
   private readonly _themeSvc = inject(ThemeService);
 
+  private _debouncedFilter = debounce(() => this.api?.onFilterChanged());
+
   // Other State
   private _lastRowHovered: string | undefined;
+  private _rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
 
   protected readonly undoMgr = new UndoManager();
   protected readonly _updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
@@ -47,12 +53,16 @@ export class DataGrid<T extends keyof Models, U> {
 
   // State & UI Signals
   protected readonly isRowSelected = signal(false);
-  protected readonly loading = signal(false);
+  protected readonly loading = signal(true);
   protected readonly router = inject(Router);
 
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
+  protected gridVisible = signal(false);
+  protected mergedGridOptions: Partial<GridOptions> = {};
+
+  public readonly CLIENT_SERVER_THRESHOLD = 15;
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
@@ -70,17 +80,80 @@ export class DataGrid<T extends keyof Models, U> {
   constructor() {
     effect(() => {
       const quickFilterText = this._searchSvc.search;
-      this.api?.updateGridOptions({ quickFilterText });
+      if (this.rowModelType === 'clientSide') {
+        this.api?.updateGridOptions({ quickFilterText });
+      } else {
+        this._debouncedFilter();
+      }
     });
+  }
+
+  private get rowModelType() {
+    return this._rowModelType();
+  }
+
+  private set rowModelType(value: 'clientSide' | 'serverSide') {
+    this._rowModelType.set(value);
   }
 
   /** Confirms deletion with modal. */
   public confirmDelete(): void {
-    if (this.disableDelete()) {
+    if (this.disableDelete())
       return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
-    }
 
     this.showDialogById('confirmDelete');
+  }
+
+  public createServerSideDatasource(): IServerSideDatasource {
+    return {
+      getRows: async (params: IServerSideGetRowsParams) => {
+        try {
+          this.api?.setGridOption('loading', true);
+
+          const searchStr = this._searchSvc.search;
+          const { startRow, sortModel, filterModel } = params.request;
+          const options = {
+            searchStr,
+            startRow,
+            endRow: (startRow || 0) + 10, // TODO: page size
+            sortModel,
+            filterModel,
+          } as getAllOptionsType;
+
+          const data = await this.gridSvc.getAll(options);
+          params.success({ rowData: data.rows, rowCount: data.count });
+
+          // If it just returns rows:
+          // params.success({ rowData: rows, rowCount: undefined });
+        } catch (err) {
+          console.log('error', err);
+          params.fail();
+        } finally {
+          this.api?.setGridOption('loading', false);
+        }
+      },
+    };
+  }
+
+  public async ngOnInit() {
+    const rowCount = await this.gridSvc.count();
+    this.rowModelType = rowCount < this.CLIENT_SERVER_THRESHOLD ? 'clientSide' : 'serverSide';
+
+    // Use our default grid options first, override the defaults with
+    // provided grid options, and then add callbacks
+    this.mergedGridOptions = {
+      rowModelType: this.rowModelType,
+      ...defaultGridOptions,
+      defaultColDef: {
+        ...defaultGridOptions.defaultColDef,
+        filter: this.rowModelType === 'clientSide' ? 'agMultiColumnFilter' : null,
+      },
+      ...this.gridOptions(),
+      ...this.getCallbacksGridOptions(),
+    };
+
+    // This has to be set *after* the rowModelType is set (which we do in the previous call)
+    this.gridVisible.set(true);
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -114,8 +187,11 @@ export class DataGrid<T extends keyof Models, U> {
   public onGridReady(params: GridReadyEvent) {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
     this.api = params.api;
+
+    if (this.rowModelType === 'serverSide')
+      this.api?.setGridOption('serverSideDatasource', this.createServerSideDatasource());
+
     this.undoMgr.initialize(this.api);
-    this.api.updateGridOptions(this.getMergedGridOptions());
     this.refresh();
   }
 
@@ -151,17 +227,13 @@ export class DataGrid<T extends keyof Models, U> {
     this.showDialogById('confirmExport');
   }
 
-  protected defaultGridOptions() {
-    return defaultGridOptions as GridOptions<Partial<T>>;
-  }
-
   /** Deletes selected rows and optionally shows undo snackbar. */
   protected async deleteSelectedRows() {
     const rows = this.getSelectedRows();
     const deletableRows = this.getDeletableRows(rows);
     if (this.handleDeleteErrors(rows, deletableRows)) return;
 
-    this.loading.set(true);
+    this.api?.setGridOption('loading', true);
     try {
       const ids = deletableRows.map((row) => row.id);
       const deleted = await this.gridSvc.deleteMany(ids);
@@ -173,7 +245,7 @@ export class DataGrid<T extends keyof Models, U> {
         this.showUndoSuccess();
       }
     } finally {
-      this.loading.set(false);
+      this.api?.setGridOption('loading', false);
     }
   }
 
@@ -220,8 +292,11 @@ export class DataGrid<T extends keyof Models, U> {
   protected async refresh(): Promise<void> {
     try {
       this.api?.setGridOption('loading', true);
-      const rows = (await this.gridSvc.getAll({ tags: this.limitToTags() })) as Partial<T>[];
-      this.api?.setGridOption('rowData', rows);
+
+      if (this.rowModelType === 'clientSide') {
+        const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() });
+        this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
+      }
     } catch (error) {
       this.alertSvc.showError('Could not load the data. Please try again later.');
     } finally {
@@ -263,16 +338,10 @@ export class DataGrid<T extends keyof Models, U> {
     return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
   }
 
-  /** Helper: filters rows eligible for deletion */
-  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
-    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
-  }
-
   /** Internal helper: merges base and input grid options */
-  private getMergedGridOptions(): GridOptions<Partial<T>> {
+  private getCallbacksGridOptions(): GridOptions<Partial<T>> {
     return {
       context: this,
-      ...this.gridOptions(),
       onCellValueChanged: this.onCellValueChanged.bind(this),
       onCellMouseOver: this.onCellMouseOver.bind(this),
       onSelectionChanged: this.onSelectionChanged.bind(this),
@@ -281,6 +350,11 @@ export class DataGrid<T extends keyof Models, U> {
       onRowDataUpdated: this._updateUndoSizes,
       onRowValueChanged: this._updateUndoSizes,
     } as GridOptions<Partial<T>>;
+  }
+
+  /** Helper: filters rows eligible for deletion */
+  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
+    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
   }
 
   /** Helper: checks deletion rules and shows errors */
@@ -294,6 +368,7 @@ export class DataGrid<T extends keyof Models, U> {
     }
     return deletableRows.length === 0;
   }
+
   /** Navigates to route if valid */
   private navigateIfValid(path: string | null | undefined): void {
     if (path) this.router.navigate([path], { relativeTo: this._route });

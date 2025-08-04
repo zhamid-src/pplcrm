@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { AddTagType, UpdateTagType } from '@common';
+import { AddTagType, UpdateTagType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../abstract-api.service';
 import { Tags } from 'common/src/lib/kysely.models';
@@ -105,8 +105,8 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    *
    * @returns A Promise resolving to the list of tags with usage counts.
    */
-  public getAll() {
-    return this.getAllWithCounts();
+  public getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    return this.getAllWithCounts(options);
   }
 
   /**
@@ -114,8 +114,10 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    *
    * @returns A Promise resolving with enriched tag data.
    */
-  public getAllWithCounts() {
-    return this.api.tags.getAllWithCounts.query();
+  public getAllWithCounts(options?: getAllOptionsType) {
+    return this.api.tags.getAllWithCounts.query(options, {
+      signal: this.ac.signal,
+    });
   }
 
   /**

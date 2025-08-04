@@ -1,6 +1,7 @@
-import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType } from '@common';
+import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
+import { QueryParams } from '../repositories/base.repo';
 import { HouseholdRepo } from '../repositories/households.repo';
 import { MapHouseholdsTagsRepo } from '../repositories/map-households-tags.repo';
 import { TagsRepo } from '../repositories/tags.repo';
@@ -92,8 +93,13 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param auth - Auth context
    * @returns Array of households with people counts
    */
-  public getAllWithPeopleCount(auth: IAuthKeyPayload) {
-    return this.getRepo().getAllWithPeopleCount(auth.tenant_id);
+  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithPeopleCount({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
+      tags,
+    });
   }
 
   /**

@@ -1,6 +1,6 @@
-import { OperandValueExpressionOrList, Transaction } from 'kysely';
+import { OperandValueExpressionOrList, SelectQueryBuilder, Transaction, sql } from 'kysely';
 
-import { BaseRepository } from './base.repo';
+import { BaseRepository, JoinedQueryParams, QueryParams } from './base.repo';
 import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
 
 /**
@@ -44,15 +44,46 @@ export class TagsRepo extends BaseRepository<'tags'> {
    * @param trx - Optional Kysely transaction
    * @returns A list of tags with usage statistics
    */
-  public getAllWithCounts(
+  public async getAllWithCounts(
     input: {
       tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'>;
     },
     trx?: Transaction<Models>,
-  ) {
-    return this.getSelect(trx)
-      .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
-      .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = options.searchStr?.toLowerCase();
+
+    // Pagination defaults
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
+
+    // Shared filter/search logic for both queries
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
+        .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
+        .where('tags.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = `%${searchStr}%`;
+          return qb.where(
+            sql`(
+            LOWER(tags.name) LIKE ${text} OR
+            LOWER(tags.description) LIKE ${text}
+          )` as any,
+          );
+        });
+
+    // Count query (with filters/search)
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT tags.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query (with filters/search, sorting, pagination)
+    const rows = await applyFilters(this.getSelect(trx))
       .select(({ fn }) => [
         'tags.id',
         'tags.name',
@@ -62,8 +93,17 @@ export class TagsRepo extends BaseRepository<'tags'> {
         fn.count('map_households_tags.household_id').as('use_count_households'),
       ])
       .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.deletable'])
-      .where('tags.tenant_id', '=', input.tenant_id)
+      .$if(!!options.sortModel?.length, (qb) =>
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
       .execute();
+
+    return {
+      rows,
+      count,
+    };
   }
 
   /**

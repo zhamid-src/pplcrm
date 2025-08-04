@@ -1,4 +1,4 @@
-import { AddTagObj, UpdateTagObj } from '@common';
+import { AddTagObj, UpdateTagObj, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -50,7 +50,7 @@ function getAll() {
  * Get all tags along with counts of their usage in people and households.
  */
 function getAllWithCounts() {
-  return authProcedure.query(({ ctx }) => tags.getAllWithCounts(ctx.auth.tenant_id));
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => tags.getAllWithCounts(ctx.auth, input));
 }
 
 /**

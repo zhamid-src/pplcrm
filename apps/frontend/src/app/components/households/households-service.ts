@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { UpdateHouseholdsType } from '@common';
+import { UpdateHouseholdsType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../abstract-api.service';
 
@@ -77,8 +77,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * Retrieve all households with their people count.
    * @returns A promise resolving to the list of households.
    */
-  public getAll() {
-    return this.getAllWithPeopleCount();
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithPeopleCount(options);
   }
 
   /**
@@ -115,8 +115,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * Uses AbortController signal to allow cancellation.
    * @returns A promise resolving to the household data.
    */
-  private getAllWithPeopleCount() {
-    return this.api.households.getAllWithPeopleCount.query(undefined, {
+  private getAllWithPeopleCount(options?: getAllOptionsType) {
+    return this.api.households.getAllWithPeopleCount.query(options, {
       signal: this.ac.signal,
     });
   }

@@ -306,8 +306,17 @@ export class BaseRepository<T extends keyof Models> {
 
 /**
  * Extended version of QueryParams for joined tables with looser typing.
+ * TODO: fix it
  */
 export type JoinedQueryParams = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
   columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
   groupBy?: (string | SelectExpression<Models, keyof Models>)[];
   limit?: number;
@@ -320,6 +329,14 @@ export type JoinedQueryParams = {
  * allowing you to select columns, limit, offset, order, and group the results.
  */
 export type QueryParams<T extends keyof Models> = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
   columns?: ReferenceExpression<Models, T>[];
   groupBy?: (keyof Models[T])[];
   limit?: number;

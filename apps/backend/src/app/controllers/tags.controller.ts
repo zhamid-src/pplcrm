@@ -1,5 +1,6 @@
-import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
+import { AddTagType, IAuthKeyPayload, UpdateTagType, getAllOptionsType } from '@common';
 
+import { QueryParams } from '../repositories/base.repo';
 import { TagsRepo } from '../repositories/tags.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -50,8 +51,11 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * @param tenant_id - Tenant ID
    * @returns Tags with usage counts
    */
-  public getAllWithCounts(tenant_id: string) {
-    return this.getRepo().getAllWithCounts({ tenant_id });
+  public getAllWithCounts(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
+    });
   }
 
   /**

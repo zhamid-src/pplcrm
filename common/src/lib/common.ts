@@ -77,6 +77,8 @@ export type PersonsType = z.infer<typeof PersonsObj>;
 
 export type SettingsType = z.infer<typeof SettingsObj>;
 
+export type SortModelType = z.infer<typeof sortModelItem>;
+
 export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
 
 export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
@@ -180,6 +182,12 @@ export const UpdateTagObj = z.object({
    */
   description: z.string().nullable().optional(),
 });
+export const sortModelItem = z
+  .object({
+    colId: z.string(),
+    sort: z.enum(['asc', 'desc']),
+  })
+  .optional();
 
 /**
  * The list of options that are used to filter the list of rows
@@ -187,6 +195,14 @@ export const UpdateTagObj = z.object({
  */
 export const getAllOptions = z
   .object({
+    /**
+     *
+     */
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.any()).optional(),
     /**
      * The list of columns to return. If not given then return all columns.
      */

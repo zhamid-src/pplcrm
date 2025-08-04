@@ -1,7 +1,7 @@
-import { Transaction, sql } from 'kysely';
+import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from './base.repo';
-import { Models, TypeTableColumns } from 'common/src/lib/kysely.models';
+import { Models } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `persons` table.
@@ -29,28 +29,44 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       tags?: string[];
     },
     trx?: Transaction<Models>,
-  ) {
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = options.searchStr?.toLowerCase();
+    const tags = input.tags;
 
-    options.columns =
-      options?.columns ||
-      ([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'name as tags',
-        sql<string>`concat(households.apt, '-', households.street_num, ' ', households.street1, ',', households.street2, ','households.city')`.as(
-          'address',
-        ),
-      ] as TypeTableColumns<'persons' | 'households' | 'tags' | 'map_peoples_tags'>[]);
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!))
+        .$if(!!searchStr, (qb) => {
+          const text = `%${searchStr}%`;
+          return qb.where(
+            sql`(
+            LOWER(persons.first_name) LIKE ${text} OR
+            LOWER(persons.last_name) LIKE ${text} OR
+            LOWER(persons.email) LIKE ${text} OR
+            LOWER(persons.mobile) LIKE ${text} OR
+            LOWER(households.city) LIKE ${text} OR
+            LOWER(households.street1) LIKE ${text} OR
+            LOWER(tags.name) LIKE ${text}
+          )` as any,
+          );
+        });
 
-    return this.getSelect(trx)
-      .leftJoin('households', 'persons.household_id', 'households.id')
-      .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
       .select(({ fn }) => [
         'persons.id',
         'persons.first_name',
@@ -69,8 +85,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.apt',
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
       ])
-      .where('households.tenant_id', '=', input.tenant_id)
-      .$if(!!input.tags && input.tags.length > 0, (q) => q.where('tags.name', 'in', input.tags!))
       .groupBy([
         'persons.id',
         'persons.first_name',
@@ -88,7 +102,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.street_num',
         'households.apt',
       ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+      )
       .execute();
+
+    return { count, rows };
   }
 
   /**

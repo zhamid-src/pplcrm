@@ -57,8 +57,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       updatedby_id: auth.user_id,
     };
 
-    console.log(row);
-
     const tag = await this._tagsRepo.addOrGet({
       row: row as OperationDataType<'tags', 'insert'>,
       onConflictColumn: 'name',
@@ -99,7 +97,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @param options - Query filters (pagination, sorting, tag filters)
    * @returns A list of persons with address and tags
    */
-  public getAllWithAddress(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+  public getAllWithAddress(
+    auth: IAuthKeyPayload,
+    options?: getAllOptionsType,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const { tags, ...queryParams } = options || {};
     return this.getRepo().getAllWithAddress({
       tenant_id: auth.tenant_id,
