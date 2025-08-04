@@ -1,6 +1,6 @@
-import { Transaction } from 'kysely';
+import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
-import { BaseRepository } from './base.repo';
+import { BaseRepository, JoinedQueryParams, QueryParams } from './base.repo';
 import { Models } from 'common/src/lib/kysely.models';
 
 /**
@@ -22,8 +22,57 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    * @param trx - Optional Kysely transaction
    * @returns List of households with person count and tags
    */
-  public async getAllWithPeopleCount(_tenant_id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
+  /**
+   * Get all households with person count and associated tags, supporting filter/search/pagination.
+   *
+   * @param input.tenant_id - The tenant ID to scope the query
+   * @param input.options - Optional select/filter/pagination options
+   * @param input.tags - If provided, filters households by tag name(s)
+   * @param trx - Optional Kysely transaction
+   * @returns Paginated list of households with person count and tags, and the total count
+   */
+  public async getAllWithPeopleCount(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>;
+      tags?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = options.searchStr?.toLowerCase();
+    const tags = input.tags;
+
+    // Shared where clause builder (for both queries)
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!))
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = `%${searchStr}%`;
+          return qb.where(
+            sql`(
+              LOWER(households.city) LIKE ${text} OR
+              LOWER(households.street1) LIKE ${text} OR
+              LOWER(households.street2) LIKE ${text} OR
+              LOWER(households.notes) LIKE ${text} OR
+              LOWER(tags.name) LIKE ${text}
+            )` as any,
+          );
+        });
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
       .select([
         'households.id',
         'households.country',
@@ -35,7 +84,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.street1',
         'households.street2',
         'households.street_num',
-        'households.apt',
         'households.notes',
       ])
       .select((eb) => [
@@ -45,11 +93,32 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
           .as('persons_count'),
       ])
-      .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
       .select(({ fn }) => [fn.agg<string[]>('array_agg', ['tags.name']).as('tags')])
-      .groupBy(['households.tenant_id', 'households.id', 'households.country', 'households.city', 'households.street1'])
+      .groupBy([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+      )
       .execute();
+
+    return {
+      rows,
+      count,
+    };
   }
 
   /**

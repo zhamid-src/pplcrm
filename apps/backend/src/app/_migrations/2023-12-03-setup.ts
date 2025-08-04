@@ -296,6 +296,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('tenant_id', 'bigint', (col) => col.notNull())
     .addColumn('person_id', 'bigint', (col) => col.notNull())
     .addColumn('tag_id', 'bigint', (col) => col.notNull())
+    .addColumn('deletable', 'boolean', (col) => col.defaultTo('true'))
     .addColumn('createdby_id', 'bigint', (col) => col.notNull())
     .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())

@@ -61,7 +61,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    *
    * @param options
    */
-  public abstract getAll(options?: getAllOptionsType): Promise<T[] | unknown>;
+  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
 
   /**
    * Return the first row that matches the given ID. Typically the ID is the primary key,

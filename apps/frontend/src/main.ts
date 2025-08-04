@@ -12,6 +12,7 @@ import {
   PivotModule,
   RowGroupingModule,
   RowGroupingPanelModule,
+  ServerSideRowModelModule,
   SetFilterModule,
   TreeDataModule,
 } from 'ag-grid-enterprise';
@@ -24,6 +25,7 @@ bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err))
 // Register ag-grid modules globally
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
+  ServerSideRowModelModule,
   AllCommunityModule,
   CsvExportModule,
   CellSelectionModule,

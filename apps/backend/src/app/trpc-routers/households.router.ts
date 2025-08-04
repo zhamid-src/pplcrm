@@ -1,4 +1,4 @@
-import { UpdateHouseholdsObj } from '@common';
+import { UpdateHouseholdsObj, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -65,7 +65,9 @@ function getAll() {
  * Get all households along with the count of people in each.
  */
 function getAllWithPeopleCount() {
-  return authProcedure.query(({ ctx }) => households.getAllWithPeopleCount(ctx.auth));
+  return authProcedure
+    .input(getAllOptions)
+    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input));
 }
 
 /**

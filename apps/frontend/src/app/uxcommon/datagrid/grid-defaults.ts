@@ -2,8 +2,6 @@ import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
 
 import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 
-import { LoadingOverlayComponent } from './loading-overlay';
-
 /**
  * Base grid configuration including default column definition,
  * initial grid state, and sidebar tool panel configuration.
@@ -15,7 +13,6 @@ const BASE_GRID_CONFIG = {
    */
   defaultColDef: {
     enableCellChangeFlash: true,
-    filter: 'agMultiColumnFilter',
     enableValue: true,
     enablePivot: true,
   } as ColDef,
@@ -97,7 +94,9 @@ export const defaultGridOptions: GridOptions = {
   enableCellEditingOnBackspace: true,
   enableFilterHandlers: true,
   pagination: true,
-  paginationAutoPageSize: true,
+  //paginationAutoPageSize: true,
+  paginationPageSize: 10,
+  cacheBlockSize: 10,
   rowSelection: {
     mode: 'multiRow',
     checkboxes: true,
@@ -105,5 +104,5 @@ export const defaultGridOptions: GridOptions = {
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
   undoRedoCellEditing: true,
-  loadingOverlayComponent: LoadingOverlayComponent,
+  overlayLoadingTemplate: '<div class="loading loading-ring loading-xl" />',
 };
