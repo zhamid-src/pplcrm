@@ -25,14 +25,14 @@ import { Households } from 'common/src/lib/kysely.models';
   templateUrl: './Household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _fb = inject(FormBuilder);
-  private readonly _householdsSvc = inject(HouseholdsService);
-  private readonly _personsSvc = inject(PersonsService);
-  private readonly _route = inject(ActivatedRoute);
+  private readonly alertSvc = inject(AlertService);
+  private readonly fb = inject(FormBuilder);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
 
   /** Reactive signal for storing the loaded household */
-  protected readonly _household = signal<Households | null>(null);
+  protected readonly household = signal<Households | null>(null);
 
   /** Whether the address has been verified via Places API */
   protected addressVerified = false;
@@ -41,7 +41,7 @@ export class HouseholdDetail implements OnInit {
   protected tags: string[] = [];
 
   /** Reactive form group to handle household data */
-  protected form = this._fb.group({
+  protected form = this.fb.group({
     formatted_address: [''],
     type: [''],
     lat: [0],
@@ -57,7 +57,7 @@ export class HouseholdDetail implements OnInit {
     home_phone: [''],
     notes: [''],
     tags: [],
-    metadata: this._fb.group({
+    metadata: this.fb.group({
       tenant_id: [''],
       createdby_id: [''],
       updatedby_id: [''],
@@ -80,18 +80,8 @@ export class HouseholdDetail implements OnInit {
 
   constructor() {
     if (this.mode() === 'edit') {
-      this.id = this._route.snapshot.paramMap.get('id');
+      this.id = this.route.snapshot.paramMap.get('id');
     }
-  }
-
-  /** Getter for current household */
-  protected get household() {
-    return this._household();
-  }
-
-  /** Setter for current household */
-  protected set household(household: Households | null) {
-    this._household.set(household);
   }
 
   /**
@@ -103,7 +93,7 @@ export class HouseholdDetail implements OnInit {
 
     try {
       if (!place?.address_components?.length) {
-        this._alertSvc.showError('Please select the correct address from the list or leave it blank');
+        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
         return;
       }
       // Save the address by creating the household or updating
@@ -136,12 +126,12 @@ export class HouseholdDetail implements OnInit {
 
   /** Returns the creation date of the household */
   protected getCreatedAt() {
-    return this.household?.created_at;
+    return this.household()?.created_at;
   }
 
   /** Returns the last updated date of the household */
   protected getUpdatedAt() {
-    return this.household?.updated_at;
+    return this.household()?.updated_at;
   }
 
   /**
@@ -157,7 +147,7 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to attach to the household
    */
   protected tagAdded(tag: string) {
-    this.id && this._householdsSvc.attachTag(this.id, tag);
+    this.id && this.householdsSvc.attachTag(this.id, tag);
   }
 
   /**
@@ -165,7 +155,7 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to detach from the household
    */
   protected tagRemoved(tag: string) {
-    this.id && this._householdsSvc.detachTag(this.id, tag);
+    this.id && this.householdsSvc.detachTag(this.id, tag);
   }
 
   /**
@@ -174,10 +164,10 @@ export class HouseholdDetail implements OnInit {
    */
   private add(data: UpdateHouseholdsType) {
     this.loading.set(true);
-    this._householdsSvc
+    this.householdsSvc
       .add(data)
-      .then(() => this._alertSvc.showSuccess('Household added'))
-      .catch((err) => this._alertSvc.showError(err))
+      .then(() => this.alertSvc.showSuccess('Household added'))
+      .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.loading.set(false));
   }
 
@@ -188,7 +178,7 @@ export class HouseholdDetail implements OnInit {
     if (!this.household || !this.id) {
       return;
     }
-    this.tags = await this._householdsSvc.getTags(this.id);
+    this.tags = await this.householdsSvc.getTags(this.id);
   }
 
   /**
@@ -200,9 +190,9 @@ export class HouseholdDetail implements OnInit {
     this.loading.set(true);
 
     try {
-      this.household = (await this._householdsSvc.getById(this.id)) as Households;
+      this.household.set((await this.householdsSvc.getById(this.id)) as Households);
       await this.getTags();
-      this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.id);
+      this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
       this.refreshForm();
     } finally {
       this.loading.set(false);
@@ -213,10 +203,10 @@ export class HouseholdDetail implements OnInit {
    * Populates the form with household data
    */
   private refreshForm() {
-    if (!this.household) {
-      return;
-    }
-    this.form.patchValue(this.household);
+    const household = this.household();
+    if (!household) return;
+
+    this.form.patchValue(household);
   }
 
   /**
@@ -229,13 +219,13 @@ export class HouseholdDetail implements OnInit {
     }
 
     this.loading.set(true);
-    this._householdsSvc
+    this.householdsSvc
       .update(this.id, data)
       .then(() => {
-        this._alertSvc.showSuccess('Household updated successfully.');
+        this.alertSvc.showSuccess('Household updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this._alertSvc.showError(err))
+      .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.loading.set(false));
   }
 }

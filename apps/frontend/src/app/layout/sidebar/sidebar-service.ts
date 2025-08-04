@@ -1,28 +1,20 @@
-import { Injectable } from "@angular/core";
+import { Injectable } from '@angular/core';
 
-import { ISidebarItem, SidebarItems } from "./sidebar-items";
+import { ISidebarItem, SidebarItems } from './sidebar-items';
 
 @Injectable({
   providedIn: 'root',
 })
 export class SidebarService {
-  private _drawerState: DrawerStates = this.getState();
   private _isMobileOpen = false;
-  private _items = SidebarItems;
+  private drawerState: DrawerStates = this.getState();
+  private items = SidebarItems;
 
   /**
-   * Get all the sidebar items.
+   * Is the drawer open on mobile
    */
-  public get items() {
-    return this._items;
-  }
-
-  /**
-   * Set all the sidebar items. Typically it'll be used to update the sidebar,
-   * for instance by adding badges to the sidebar items.
-   */
-  public set items(items: ISidebarItem[]) {
-    this._items = items;
+  public get isMobileOpen() {
+    return this._isMobileOpen;
   }
 
   /**
@@ -30,6 +22,13 @@ export class SidebarService {
    */
   public closeMobile() {
     this._isMobileOpen = false;
+  }
+
+  /**
+   * Get all the sidebar items.
+   */
+  public getItems() {
+    return this.items;
   }
 
   /**
@@ -51,28 +50,29 @@ export class SidebarService {
    * Is the drawer fully open
    */
   public isFull() {
-    return this._drawerState === 'full';
+    return this.drawerState === 'full';
   }
 
   /**
    * is the drawer half open, showing only the icons
    */
   public isHalf() {
-    return this._drawerState === 'half';
+    return this.drawerState === 'half';
   }
 
   /**
-   * Is the drawer open on mobile
+   * Set all the sidebar items. Typically it'll be used to update the sidebar,
+   * for instance by adding badges to the sidebar items.
    */
-  public isMobileOpen() {
-    return this._isMobileOpen;
+  public setItems(items: ISidebarItem[]) {
+    this.items = items;
   }
 
   /**
    * Togger the drawer state between full and half
    */
   public toggleDrawer() {
-    return this.setState(this._drawerState === 'full' ? 'half' : 'full');
+    return this.setState(this.drawerState === 'full' ? 'half' : 'full');
   }
 
   /**
@@ -107,9 +107,9 @@ export class SidebarService {
    *
    */
   private setState(state: DrawerStates) {
-    this._drawerState = state;
-    localStorage.setItem('pc-drawerState', this._drawerState);
-    return this._drawerState;
+    this.drawerState = state;
+    localStorage.setItem('pc-drawerState', this.drawerState);
+    return this.drawerState;
   }
 }
 

@@ -31,7 +31,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * Stores the household ID when a user tries to change an address,
    * so it can be used in the confirmation dialog logic.
    */
-  private _addressChangeModalId: string | null = null;
+  private addressChangeModalId: string | null = null;
 
   /**
    * Column definitions for the grid.
@@ -122,7 +122,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * @param event - The ag-Grid cell event
    */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this._addressChangeModalId = event.data.household_id;
+    this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
@@ -134,8 +134,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
 
-    if (this._addressChangeModalId !== null) {
-      this.router.navigate(['console', 'households', this._addressChangeModalId]);
+    if (this.addressChangeModalId !== null) {
+      this.router.navigate(['console', 'households', this.addressChangeModalId]);
     }
   }
 

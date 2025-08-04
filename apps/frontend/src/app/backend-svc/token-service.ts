@@ -9,35 +9,10 @@ import { IToken } from '@common';
   providedIn: 'root',
 })
 export class TokenService {
-  private _persistence = false;
+  private persistence = false;
 
   constructor() {
     this.persistence = !!localStorage.getItem('pc-persistence');
-  }
-
-  /**
-   * Gets whether token persistence is enabled.
-   * If `true`, tokens are stored in localStorage (persist across tabs and reloads).
-   * If `false`, tokens are stored in sessionStorage (cleared when tab closes).
-   */
-  public get persistence(): boolean {
-    return this._persistence;
-  }
-
-  /**
-   * Sets the persistence mode for token storage.
-   * If persistence changes, it clears tokens from the old storage type.
-   *
-   * @param persistence - `true` to use localStorage, `false` to use sessionStorage
-   */
-  public set persistence(persistence: boolean) {
-    if (this.persistence && !persistence) {
-      this.clearPersistentStorage();
-    } else if (!this.persistence && persistence) {
-      this.clearSessionStorage();
-    }
-    this._persistence = persistence;
-    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
   }
 
   /**
@@ -65,6 +40,15 @@ export class TokenService {
    */
   public getAuthToken(): string | null {
     return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
+  }
+
+  /**
+   * Gets whether token persistence is enabled.
+   * If `true`, tokens are stored in localStorage (persist across tabs and reloads).
+   * If `false`, tokens are stored in sessionStorage (cleared when tab closes).
+   */
+  public getPersistence(): boolean {
+    return this.persistence;
   }
 
   /**
@@ -107,6 +91,22 @@ export class TokenService {
    */
   public setAuthToken(token: string): void {
     this.setToken(AUTHTOKEN, token);
+  }
+
+  /**
+   * Sets the persistence mode for token storage.
+   * If persistence changes, it clears tokens from the old storage type.
+   *
+   * @param persistence - `true` to use localStorage, `false` to use sessionStorage
+   */
+  public setPersistence(persistence: boolean) {
+    if (this.getPersistence() && !persistence) {
+      this.clearPersistentStorage();
+    } else if (!this.getPersistence() && persistence) {
+      this.clearSessionStorage();
+    }
+    this.persistence = persistence;
+    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
   }
 
   /**

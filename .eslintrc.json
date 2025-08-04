@@ -7,17 +7,7 @@
       "files": ["*.ts", "*.tsx"],
       "parser": "@typescript-eslint/parser",
       "extends": ["plugin:@nx/typescript", "prettier"],
-      "rules": {
-        "@typescript-eslint/naming-convention": [
-          "error",
-          {
-            "selector": "classProperty",
-            "modifiers": ["private"],
-            "format": ["camelCase"],
-            "leadingUnderscore": "require"
-          }
-        ]
-      }
+      "rules": {}
     },
     {
       "files": ["*.js", "*.jsx"],

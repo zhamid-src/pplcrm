@@ -20,7 +20,7 @@ import { PersonsService } from './persons-service';
   </ul>`,
 })
 export class PeopleInHousehold implements OnInit {
-  private _personsSvc = inject(PersonsService);
+  private personsSvc = inject(PersonsService);
 
   /** List of people retrieved for the specified household. */
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
@@ -29,6 +29,6 @@ export class PeopleInHousehold implements OnInit {
   public householdId = input.required<string | null>();
 
   public async ngOnInit() {
-    this.peopleInHousehold = await this._personsSvc.getPeopleInHousehold(this.householdId());
+    this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.householdId());
   }
 }

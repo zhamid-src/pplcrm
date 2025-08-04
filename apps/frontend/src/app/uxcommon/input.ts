@@ -10,8 +10,8 @@ import { IconName } from '@uxcommon/svg-icons-list';
   templateUrl: './input.html',
 })
 export class PPlCrmInput {
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _lastEmittedValue = '';
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastEmittedValue = '';
 
   protected debouncedValue: WritableSignal<string> = signal('');
   protected inputClass = `
@@ -53,11 +53,11 @@ export class PPlCrmInput {
     const target = event.target as HTMLInputElement;
     this.inputValue.set(target.value);
 
-    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
 
-    this._debounceTimer = setTimeout(() => {
-      if (target.value !== this._lastEmittedValue) {
-        this._lastEmittedValue = target.value;
+    this.debounceTimer = setTimeout(() => {
+      if (target.value !== this.lastEmittedValue) {
+        this.lastEmittedValue = target.value;
         this.valueChange?.emit(target.value);
       }
     }, this.debounceTime());

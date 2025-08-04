@@ -15,7 +15,7 @@ export class ThemeService {
    * Reactive signal representing the current theme ('light' or 'dark').
    * Initialized based on stored preference or system setting.
    */
-  private readonly _theme = signal<'light' | 'dark'>(this.getStoredTheme());
+  private readonly theme = signal<'light' | 'dark'>(this.getStoredTheme());
 
   /**
    * Sets up a listener for system theme changes (e.g., OS-level light/dark mode toggle).
@@ -31,8 +31,8 @@ export class ThemeService {
    *
    * @returns The current theme: `'light'` or `'dark'`.
    */
-  public get theme() {
-    return this._theme();
+  public getTheme() {
+    return this.theme();
   }
 
   /**
@@ -40,7 +40,7 @@ export class ThemeService {
    * Updates the signal and persists the change in localStorage.
    */
   public toggleTheme() {
-    this.setTheme(this._theme() === 'light' ? 'dark' : 'light');
+    this.setTheme(this.theme() === 'light' ? 'dark' : 'light');
   }
 
   /**
@@ -61,7 +61,7 @@ export class ThemeService {
    * @param value - The new theme value: `'light'` or `'dark'`.
    */
   private setTheme(value: 'light' | 'dark') {
-    this._theme.set(value);
-    localStorage.setItem('pc-theme', this._theme());
+    this.theme.set(value);
+    localStorage.setItem('pc-theme', this.theme());
   }
 }

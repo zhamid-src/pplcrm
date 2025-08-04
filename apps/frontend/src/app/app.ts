@@ -13,7 +13,7 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
   selector: 'pc-root',
   imports: [RouterModule],
   template: `
-    <div class="min-h-full" [attr.data-theme]="themeSvc.theme">
+    <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
       <router-outlet></router-outlet>
     </div>
   `,

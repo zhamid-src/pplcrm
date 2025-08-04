@@ -12,7 +12,16 @@ import { TRPCService } from '../backend-svc/trpc-service';
   providedIn: 'root',
 })
 export class AuthService extends TRPCService<'authusers'> {
-  private _user = signal<IAuthUser | null>(null);
+  private user = signal<IAuthUser | null>(null);
+
+  /**
+   * Returns the currently authenticated user (from local state).
+   *
+   * @returns The authenticated user or `null` if not signed in.
+   */
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
 
   /**
    * Initializes the auth service by fetching the current user from the backend.
@@ -65,7 +74,7 @@ export class AuthService extends TRPCService<'authusers'> {
       console.error('Error during sign out:', error);
     }
 
-    this._user.set(null);
+    this.user.set(null);
     this.tokenService.clearAll();
     this.router.navigate(['/signin']);
 
@@ -85,22 +94,13 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   /**
-   * Returns the currently authenticated user (from local state).
-   *
-   * @returns The authenticated user or `null` if not signed in.
-   */
-  public user(): IAuthUser | null {
-    return this._user();
-  }
-
-  /**
    * Fetches the current authenticated user from the backend and updates local state.
    *
    * @returns The user object if authenticated, otherwise `null`.
    */
   private async getCurrentUser() {
     const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this._user.set(user);
+    if (user) this.user.set(user);
     return user;
   }
 

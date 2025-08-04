@@ -11,7 +11,7 @@ import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/for
   templateUrl: './textarea.html',
 })
 export class TextArea implements OnInit {
-  private readonly _rootFormGroup = inject(FormGroupDirective);
+  private readonly rootFormGroup = inject(FormGroupDirective);
 
   /**
    * The form group retrieved from the parent using `FormGroupDirective`.
@@ -43,7 +43,7 @@ export class TextArea implements OnInit {
    * Initializes the form group from the parent context.
    */
   public ngOnInit() {
-    this.form = this._rootFormGroup.control;
+    this.form = this.rootFormGroup.control;
   }
 
   /**

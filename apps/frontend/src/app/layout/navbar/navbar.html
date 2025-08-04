@@ -35,7 +35,7 @@
     <pc-swap
       swapOnIcon="sun"
       swapOffIcon="moon"
-      [checked]="themeSvc.theme === 'light'"
+      [checked]="themeSvc.getTheme() === 'light'"
       (clickEvent)="toggleTheme()"
     ></pc-swap>
 

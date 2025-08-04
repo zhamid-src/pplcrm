@@ -11,4 +11,4 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  *          otherwise a navigation redirect to `/console/summary`.
  */
 export const loginGuard: CanActivateFn = () =>
-  inject(AuthService).user() ? inject(Router).navigateByUrl('/console/summary') : true;
+  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/console/summary') : true;

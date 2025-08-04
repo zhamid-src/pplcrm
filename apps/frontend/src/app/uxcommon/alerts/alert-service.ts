@@ -50,14 +50,7 @@ export class AlertMessage {
   providedIn: 'root',
 })
 export class AlertService {
-  private readonly _alerts = signal<AlertMessage[]>([]);
-
-  /**
-   * Returns a list of all currently active alerts.
-   */
-  public get alerts(): AlertMessage[] {
-    return this._alerts();
-  }
+  private readonly alerts = signal<AlertMessage[]>([]);
 
   /**
    * Invokes the OK button callback for the alert with the specified ID.
@@ -93,7 +86,14 @@ export class AlertService {
     alert.visible.set(false);
 
     // Have to let the animation do its thing first
-    setTimeout(() => this._alerts.update((alerts) => alerts.filter((alert) => alert.id !== id)), 300);
+    setTimeout(() => this.alerts.update((alerts) => alerts.filter((alert) => alert.id !== id)), 300);
+  }
+
+  /**
+   * Returns a list of all currently active alerts.
+   */
+  public getAlerts(): AlertMessage[] {
+    return this.alerts();
   }
 
   /**
@@ -102,7 +102,7 @@ export class AlertService {
    */
   public show(alert: Partial<AlertMessage>): void {
     // If the same text is shown then ignore it. // TODO: right behaviour?
-    const existing = this.alerts.find((m) => m.text === alert.text);
+    const existing = this.alerts().find((m) => m.text === alert.text);
 
     if (existing) {
       // Retrigger the pulse animation
@@ -116,7 +116,7 @@ export class AlertService {
       existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration + 1000);
     } else {
       const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-      this._alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
+      this.alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
       messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
     }
   }
@@ -154,7 +154,7 @@ export class AlertService {
   }
 
   private findById(id: string) {
-    return this.alerts.find((m) => m.id === id);
+    return this.alerts().find((m) => m.id === id);
   }
 }
 

@@ -14,7 +14,7 @@ import { createContext } from './context';
  * Registers core plugins, routes, and tRPC integration.
  */
 export class FastifyServer {
-  private readonly _server;
+  private readonly server;
 
   /**
    * Initializes the Fastify server with sensible defaults, logging,
@@ -24,7 +24,7 @@ export class FastifyServer {
    */
   constructor(opts: object = {}) {
     // Create Fastify instance with logging and common config
-    this._server = fastify({
+    this.server = fastify({
       logger: {
         level: 'info',
         transport: {
@@ -36,14 +36,14 @@ export class FastifyServer {
     });
 
     // Register REST routes
-    this._server.register(routes);
+    this.server.register(routes);
 
     // Register core Fastify plugins
-    this._server.register(cors, { ...opts });
-    this._server.register(sensible);
+    this.server.register(cors, { ...opts });
+    this.server.register(sensible);
 
     // Register tRPC plugin for RPC-based APIs
-    this._server.register(fastifyTRPCPlugin, {
+    this.server.register(fastifyTRPCPlugin, {
       prefix: '/',
       trpcOptions: {
         router: trpcRouters,
@@ -58,7 +58,7 @@ export class FastifyServer {
    * @returns {Promise<void>} Resolves when shutdown completes.
    */
   public async close(): Promise<void> {
-    return await this._server.close();
+    return await this.server.close();
   }
 
   /**
@@ -69,12 +69,12 @@ export class FastifyServer {
    * @returns {Promise<void>}
    */
   public async serve(): Promise<void> {
-    await this._server.listen({ port, host }, (err) => {
+    await this.server.listen({ port, host }, (err) => {
       if (err) {
-        this._server.log.error(err);
+        this.server.log.error(err);
         process.exit(1);
       } else {
-        this._server.log.info(`[ ready ] http://${host}:${port}`);
+        this.server.log.info(`[ ready ] http://${host}:${port}`);
       }
     });
   }

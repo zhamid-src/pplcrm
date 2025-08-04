@@ -12,4 +12,4 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * @returns `true` if authenticated, or a `UrlTree` redirecting to `/signin` if not.
  */
 export const authGuard: CanActivateFn = () =>
-  inject(AuthService).user() ? true : inject(Router).navigateByUrl('/signin');
+  inject(AuthService).getUser() ? true : inject(Router).navigateByUrl('/signin');
