@@ -18,47 +18,43 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
   ],
 })
 export class Sidebar {
-  private readonly _sidebarSvc = inject(SidebarService);
+  private readonly sidebarSvc = inject(SidebarService);
 
   protected readonly collapsedItems = new Set<string>();
   protected readonly router = inject(Router);
 
   public hoveringSidebar = false;
 
-  public get items() {
-    return this._sidebarSvc.items;
+  protected get items() {
+    return this.sidebarSvc.getItems();
   }
 
-  public closeMobile() {
-    this._sidebarSvc.closeMobile();
-  }
-
-  public isDrawerFull() {
-    return this._sidebarSvc.isFull();
-  }
-
-  public isDrawerHalf() {
-    return this._sidebarSvc.isHalf();
-  }
-
-  public isMobileOpen() {
-    return this._sidebarSvc.isMobileOpen();
-  }
-
-  public onSidebarHover(state: boolean) {
-    this.hoveringSidebar = state;
-  }
-
-  public toggleDrawer() {
-    return this._sidebarSvc.toggleDrawer();
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
   }
 
   protected isCollapsed(name: string): boolean {
     return this.collapsedItems.has(name);
   }
 
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
   protected isHoveringSidebar() {
     return this.hoveringSidebar;
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen;
+  }
+
+  protected onSidebarHover(state: boolean) {
+    this.hoveringSidebar = state;
   }
 
   protected toggleCollapse(name: string) {
@@ -67,5 +63,9 @@ export class Sidebar {
     } else {
       this.collapsedItems.add(name);
     }
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
   }
 }

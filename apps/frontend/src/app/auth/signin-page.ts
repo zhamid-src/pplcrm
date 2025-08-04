@@ -18,11 +18,11 @@ import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _authService = inject(AuthService);
-  private readonly _fb = inject(FormBuilder);
-  private readonly _router = inject(Router);
-  private readonly _tokenService = inject(TokenService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly fb = inject(FormBuilder);
+  private readonly router = inject(Router);
+  private readonly tokenService = inject(TokenService);
 
   /** Signal indicating whether login loading is in progress */
   protected readonly loading = signal(false);
@@ -31,10 +31,10 @@ export class SignInPage {
   protected hidePassword = true;
 
   /** Reference to token persistence setting (localStorage vs session) */
-  protected persistence = this._tokenService.persistence;
+  protected persistence = this.tokenService.getPersistence();
 
   /** Login form group with email and password fields */
-  public form = this._fb.group({
+  public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
@@ -42,7 +42,7 @@ export class SignInPage {
   constructor() {
     // Redirects to dashboard if user is already logged in
     effect(() => {
-      if (this._authService.user()) this._router.navigate(['console', 'summary']);
+      if (this.authService.getUser()) this.router.navigate(['console', 'summary']);
     });
   }
 
@@ -84,15 +84,15 @@ export class SignInPage {
    */
   public async signIn() {
     // if we're here then we should clear the auth token
-    this._tokenService.clearAll();
+    this.tokenService.clearAll();
 
-    if (this.form.invalid) return this._alertSvc.showError('Please enter a valid email and password.');
+    if (this.form.invalid) return this.alertSvc.showError('Please enter a valid email and password.');
 
     this.loading.set(true);
 
-    return this._authService
+    return this.authService
       .signIn({ email: this.email?.value || '', password: this.password?.value || '' })
-      .catch((err) => this._alertSvc.showError(err.message))
+      .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }
 
@@ -102,7 +102,7 @@ export class SignInPage {
    */
   public togglePersistence(target: EventTarget | null) {
     if (!target) return;
-    this._tokenService.persistence = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence((target as HTMLInputElement).checked);
   }
 
   /**

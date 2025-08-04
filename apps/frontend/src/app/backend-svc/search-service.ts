@@ -13,7 +13,7 @@ export class SearchService {
   /**
    * Internal signal that holds the current search term.
    */
-  private readonly _search = signal<string>('');
+  private readonly search = signal<string>('');
 
   /**
    * Public readonly signal for reactive subscriptions.
@@ -26,22 +26,13 @@ export class SearchService {
    * });
    * ```
    */
-  public readonly searchSignal: Signal<string> = this._search;
-
-  /**
-   * Gets the current search value.
-   *
-   * @returns The current search string.
-   */
-  public get search(): string {
-    return this._search();
-  }
+  public readonly searchSignal: Signal<string> = this.search;
 
   /**
    * Clears the current search term by setting it to an empty string.
    */
   public clearSearch(): void {
-    this._search.set('');
+    this.search.set('');
   }
 
   /**
@@ -50,6 +41,15 @@ export class SearchService {
    * @param value - The new search term to set.
    */
   public doSearch(value: string): void {
-    this._search.set(value);
+    this.search.set(value);
+  }
+
+  /**
+   * Gets the current search value.
+   *
+   * @returns The current search string.
+   */
+  public getFilterText(): string {
+    return this.search();
   }
 }

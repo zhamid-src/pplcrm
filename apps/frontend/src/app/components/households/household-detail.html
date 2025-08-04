@@ -3,7 +3,7 @@
   <form [formGroup]="form" class="mx-5 mt-10 sm:mx-10">
     <fieldset [disabled]="loading()">
       <div class="flex flex-col gap-4">
-        @if (!household || !household.id) {
+        @if (!household()?.id) {
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
         } @else {
         <div class="text-center">
@@ -69,7 +69,7 @@
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
 
-        @if (household && household.id) {
+        @if (household()?.id) {
         <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
         <pc-people-in-household [householdId]="id"></pc-people-in-household>
         }
@@ -77,7 +77,7 @@
         <pc-add-btn-row
           [loading]="loading()"
           (btn1Clicked)="save()"
-          [buttonsToShow]="household?.id ? 'two' : 'three'"
+          [buttonsToShow]="household()?.id ? 'two' : 'three'"
         ></pc-add-btn-row>
       </div>
     </fieldset>

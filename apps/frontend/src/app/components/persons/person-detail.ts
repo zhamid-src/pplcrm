@@ -23,19 +23,19 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _fb = inject(FormBuilder);
-  private readonly _householdsSvc = inject(HouseholdsService);
-  private readonly _personsSvc = inject(PersonsService);
-  private readonly _route = inject(ActivatedRoute);
-  private readonly _router = inject(Router);
+  private readonly alertSvc = inject(AlertService);
+  private readonly fb = inject(FormBuilder);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  protected readonly _person = signal<Persons | null>(null);
   protected readonly addressString = signal<string | null>(null);
   protected readonly loading = signal(false);
+  protected readonly person = signal<Persons | null>(null);
 
   /** Reactive form group for person data */
-  protected form = this._fb.group({
+  protected form = this.fb.group({
     first_name: [''],
     middle_names: [''],
     last_name: [''],
@@ -44,7 +44,7 @@ export class PersonDetail implements OnInit {
     home_phone: [''],
     mobile: [''],
     notes: [''],
-    metadata: this._fb.group({
+    metadata: this.fb.group({
       tenant_id: [''],
       createdby_id: [''],
       updatedby_id: [''],
@@ -62,18 +62,8 @@ export class PersonDetail implements OnInit {
 
   constructor() {
     if (this.mode() === 'edit') {
-      this.id = this._route.snapshot.paramMap.get('id');
+      this.id = this.route.snapshot.paramMap.get('id');
     }
-  }
-
-  /** Getter for the current person */
-  protected get person() {
-    return this._person();
-  }
-
-  /** Setter for the current person */
-  protected set person(person: Persons | null) {
-    this._person.set(person);
   }
 
   /** Lifecycle hook to initialize the component and load person data */
@@ -107,15 +97,16 @@ export class PersonDetail implements OnInit {
    * Fetch and set a formatted address string for the person if they belong to a household.
    */
   protected async getAddressString() {
-    if (this.person?.household_id) {
-      const address = (await this._householdsSvc.getById(this.person.household_id)) as AddressType;
+    const household_id = this.person()?.household_id;
+    if (household_id) {
+      const address = (await this.householdsSvc.getById(household_id)) as AddressType;
       this.addressString.set(this.getFormattedAddress(address));
     }
   }
 
   /** Returns the creation date of the person */
   protected getCreatedAt() {
-    return this.person?.created_at;
+    return this.person()?.created_at;
   }
 
   /** Returns the full name of the person constructed from form inputs */
@@ -127,24 +118,25 @@ export class PersonDetail implements OnInit {
 
   /** Returns the last updated date of the person */
   protected getUpdatedAt() {
-    return this.person?.updated_at;
+    return this.person()?.updated_at;
   }
 
   /** Navigates to the household detail page if the person belongs to a household */
   protected navigateToHousehold() {
-    if (this.person?.household_id) {
-      this._router.navigate(['console', 'households', this.person.household_id]);
+    const household_id = this.person()?.household_id;
+    if (household_id) {
+      this.router.navigate(['console', 'households', household_id]);
     }
   }
 
   /** Attaches a tag to the person */
   protected tagAdded(tag: string) {
-    this.id && this._personsSvc.attachTag(this.id, tag);
+    this.id && this.personsSvc.attachTag(this.id, tag);
   }
 
   /** Detaches a tag from the person */
   protected tagRemoved(tag: string) {
-    this.id && this._personsSvc.detachTag(this.id, tag);
+    this.id && this.personsSvc.detachTag(this.id, tag);
   }
 
   /**
@@ -154,10 +146,10 @@ export class PersonDetail implements OnInit {
   private add(data: UpdatePersonsType) {
     this.loading.set(true);
 
-    this._personsSvc
+    this.personsSvc
       .add(data)
-      .then(() => this._alertSvc.showSuccess('Person added'))
-      .catch((err) => this._alertSvc.showError(err))
+      .then(() => this.alertSvc.showSuccess('Person added'))
+      .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.loading.set(false));
   }
 
@@ -187,7 +179,7 @@ export class PersonDetail implements OnInit {
 
     this.loading.set(true);
     try {
-      this.person = (await this._personsSvc.getById(this.id)) as Persons;
+      this.person.set((await this.personsSvc.getById(this.id)) as Persons);
 
       await this.getAddressString();
       await this.updateTags();
@@ -202,10 +194,10 @@ export class PersonDetail implements OnInit {
    * Refreshes the reactive form with the loaded person's data
    */
   private refreshForm() {
-    if (!this.person) {
-      return;
-    }
-    this.form.patchValue(this.person);
+    const person = this.person();
+    if (!person) return;
+
+    this.form.patchValue(person);
   }
 
   /**
@@ -213,18 +205,16 @@ export class PersonDetail implements OnInit {
    * @param data - Partial person data to update
    */
   private update(data: Partial<UpdatePersonsType>) {
-    if (!this.id) {
-      return;
-    }
+    if (!this.id) return;
 
     this.loading.set(true);
-    this._personsSvc
+    this.personsSvc
       .update(this.id, data)
       .then(() => {
-        this._alertSvc.showSuccess('Person updated successfully.');
+        this.alertSvc.showSuccess('Person updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this._alertSvc.showError(err))
+      .catch((err) => this.alertSvc.showError(err))
       .finally(() => this.loading.set(false));
   }
 
@@ -232,9 +222,9 @@ export class PersonDetail implements OnInit {
    * Fetches tags associated with this person
    */
   private async updateTags() {
-    if (!this.person) return;
+    if (!this.person()) return;
 
-    const tags = this.id ? await this._personsSvc.getTags(this.id) : [];
+    const tags = this.id ? await this.personsSvc.getTags(this.id) : [];
     this.tags.set(tags);
   }
 }

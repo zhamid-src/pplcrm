@@ -15,9 +15,9 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
   templateUrl: './navbar.html',
 })
 export class Navbar {
-  private readonly _auth = inject(AuthService);
-  private readonly _searchSvc = inject(SearchService);
-  private readonly _sideBarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
 
   /** Indicates whether the search input is visible or not */
   protected readonly searchBarVisible = signal(false);
@@ -47,7 +47,7 @@ export class Navbar {
   public clearSearch(): void {
     this.searchOnMobile = false;
     this.searchStr = '';
-    this._searchSvc.clearSearch();
+    this.searchSvc.clearSearch();
   }
 
   /**
@@ -80,7 +80,7 @@ export class Navbar {
    * Returns whether the mobile sidebar is currently open.
    */
   protected isMobileOpen(): boolean {
-    return this._sideBarSvc.isMobileOpen();
+    return this.sideBarSvc.isMobileOpen;
   }
 
   /**
@@ -109,7 +109,7 @@ export class Navbar {
    * Triggers the search using the current value in the search bar.
    */
   protected search(): void {
-    this._searchSvc.doSearch(this.searchStr);
+    this.searchSvc.doSearch(this.searchStr);
   }
 
   /**
@@ -123,14 +123,14 @@ export class Navbar {
    * Signs the current user out and clears auth tokens.
    */
   protected signOut(): void {
-    this._auth.signOut();
+    this.auth.signOut();
   }
 
   /**
    * Toggles the sidebar open/closed in mobile view.
    */
   protected toggleMobile(): void {
-    this._sideBarSvc.toggleMobile();
+    this.sideBarSvc.toggleMobile();
   }
 
   /**

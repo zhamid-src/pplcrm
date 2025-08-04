@@ -18,16 +18,16 @@ import { TagsService } from '@uxcommon/tags/tags-service';
   templateUrl: './add-tag.html',
 })
 export class AddTag {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _fb = inject(FormBuilder);
-  private readonly _tagSvc = inject(TagsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly fb = inject(FormBuilder);
+  private readonly tagSvc = inject(TagsService);
 
   /**
    * Reactive form for tag creation.
    * - `name`: required tag name.
    * - `description`: optional description for the tag.
    */
-  protected form = this._fb.group({
+  protected form = this.fb.group({
     name: ['', [Validators.required]],
     description: [''],
   });
@@ -54,14 +54,14 @@ export class AddTag {
     const formObj = this.form.getRawValue() as AddTagType;
 
     try {
-      await this._tagSvc.add(formObj);
-      this._alertSvc.showSuccess('Tag added successfully.');
+      await this.tagSvc.add(formObj);
+      this.alertSvc.showSuccess('Tag added successfully.');
       this.addBtnRow.stayOrCancel();
     } catch (err: unknown) {
       if (err instanceof TRPCError) {
-        this._alertSvc.showError(err.message);
+        this.alertSvc.showError(err.message);
       } else {
-        this._alertSvc.showError("We've hit an unknown error. Please try again.");
+        this.alertSvc.showError("We've hit an unknown error. Please try again.");
       }
     } finally {
       this.loading.set(false);

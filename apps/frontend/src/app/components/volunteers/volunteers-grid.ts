@@ -31,7 +31,7 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * Stores the `household_id` of the selected row when address edit is triggered.
    * Used to route the user after confirmation.
    */
-  private _addressChangeModalId: string | null = null;
+  private addressChangeModalId: string | null = null;
 
   /**
    * Column definitions for the ag-grid table.
@@ -121,7 +121,7 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * @param event - The cell double-click event containing row data.
    */
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this._addressChangeModalId = event.data.household_id;
+    this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
   }
 
@@ -133,8 +133,8 @@ export class VolunteersGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
 
-    if (this._addressChangeModalId !== null) {
-      this.router.navigate(['console', 'households', this._addressChangeModalId]);
+    if (this.addressChangeModalId !== null) {
+      this.router.navigate(['console', 'households', this.addressChangeModalId]);
     }
   }
 

@@ -11,15 +11,15 @@ import { Icon } from './icon';
   templateUrl: './formInput.html',
 })
 export class FormInput implements OnInit {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _rootFormGroup = inject(FormGroupDirective);
+  private readonly alertSvc = inject(AlertService);
+  private readonly rootFormGroup = inject(FormGroupDirective);
 
   /**
    * Initialize the component by connecting it to the parent form group
    * and subscribing to value changes.
    */
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _lastValue = '';
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastValue = '';
 
   /**
    * The parent form group this input belongs to.
@@ -82,13 +82,13 @@ export class FormInput implements OnInit {
   public valueChange = new EventEmitter<string>();
 
   public ngOnInit() {
-    this.form = this._rootFormGroup.control;
+    this.form = this.rootFormGroup.control;
     this.form.get(this.control())?.valueChanges.subscribe((value: string) => {
-      if (this._debounceTimer) clearTimeout(this._debounceTimer);
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
 
-      this._debounceTimer = setTimeout(() => {
-        if (value !== this._lastValue) {
-          this._lastValue = value;
+      this.debounceTimer = setTimeout(() => {
+        if (value !== this.lastValue) {
+          this.lastValue = value;
           this.handleInputChange(value);
         }
       }, this.debounceTime());
@@ -122,7 +122,7 @@ export class FormInput implements OnInit {
   private checkLastAddedChar(value: string): string {
     const newValue = value && this.removeDisallowedChars(value);
     if (newValue !== value) {
-      this._alertSvc.showError(`Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`);
+      this.alertSvc.showError(`Sorry, you cannot use these character(s): ${this.disallowedChars().join(', ')}`);
       this.form.get(this.control())?.setValue(newValue);
     }
     return newValue;

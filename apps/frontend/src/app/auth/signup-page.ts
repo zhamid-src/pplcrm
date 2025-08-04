@@ -21,12 +21,12 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
-  private readonly _alertSvc = inject(AlertService);
-  private readonly _authService = inject(AuthService);
-  private readonly _fb = inject(FormBuilder);
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly fb = inject(FormBuilder);
 
   /** Reactive form with user registration fields */
-  protected form = this._fb.group({
+  protected form = this.fb.group({
     organization: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
@@ -95,15 +95,15 @@ export class SignUpPage {
    * Displays alerts for error or success states.
    */
   public async join() {
-    if (this.form.invalid) return this._alertSvc.showError('Please enter all information before continuing.');
+    if (this.form.invalid) return this.alertSvc.showError('Please enter all information before continuing.');
 
     this.loading.set(true);
 
     // TODO: better error message
-    return this._authService
+    return this.authService
       .signUp(this.form.getRawValue() as signUpInputType)
-      .then((user) => user && this._alertSvc.showError('Unknown error'))
-      .catch((err) => this._alertSvc.showError(err.message))
+      .then((user) => user && this.alertSvc.showError('Unknown error'))
+      .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }
 

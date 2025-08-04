@@ -38,7 +38,7 @@ export class Alerts {
    * @returns Array of active alerts
    */
   protected alerts() {
-    return this.position() === 'top' ? this.alertSvc.alerts.slice().reverse() : this.alertSvc.alerts;
+    return this.position() === 'top' ? this.alertSvc.getAlerts().slice().reverse() : this.alertSvc.getAlerts();
   }
 
   /**

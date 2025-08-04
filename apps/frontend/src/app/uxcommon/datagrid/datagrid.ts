@@ -33,18 +33,15 @@ import { Models } from 'common/src/lib/kysely.models';
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit {
-  private readonly _route = inject(ActivatedRoute);
-  private readonly _searchSvc = inject(SearchService);
-  private readonly _themeSvc = inject(ThemeService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly searchSvc = inject(SearchService);
+  private readonly themeSvc = inject(ThemeService);
 
-  private _debouncedFilter = debounce(() => this.api?.onFilterChanged());
+  private debouncedFilter = debounce(() => this.api?.onFilterChanged());
 
   // Other State
-  private _lastRowHovered: string | undefined;
-  private _rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
-
-  protected readonly undoMgr = new UndoManager();
-  protected readonly _updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
+  private lastRowHovered: string | undefined;
+  private rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
@@ -55,6 +52,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected readonly isRowSelected = signal(false);
   protected readonly loading = signal(true);
   protected readonly router = inject(Router);
+  protected readonly undoMgr = new UndoManager();
+  protected readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
@@ -79,21 +78,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   constructor() {
     effect(() => {
-      const quickFilterText = this._searchSvc.search;
-      if (this.rowModelType === 'clientSide') {
+      const quickFilterText = this.searchSvc.getFilterText();
+      if (this.rowModelType() === 'clientSide') {
         this.api?.updateGridOptions({ quickFilterText });
       } else {
-        this._debouncedFilter();
+        this.debouncedFilter();
       }
     });
-  }
-
-  private get rowModelType() {
-    return this._rowModelType();
-  }
-
-  private set rowModelType(value: 'clientSide' | 'serverSide') {
-    this._rowModelType.set(value);
   }
 
   /** Confirms deletion with modal. */
@@ -110,7 +101,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         try {
           this.api?.setGridOption('loading', true);
 
-          const searchStr = this._searchSvc.search;
+          const searchStr = this.searchSvc.getFilterText();
           const { startRow, sortModel, filterModel } = params.request;
           const options = {
             searchStr,
@@ -137,16 +128,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   public async ngOnInit() {
     const rowCount = await this.gridSvc.count();
-    this.rowModelType = rowCount < this.CLIENT_SERVER_THRESHOLD ? 'clientSide' : 'serverSide';
+    this.rowModelType.set(rowCount < this.CLIENT_SERVER_THRESHOLD ? 'clientSide' : 'serverSide');
 
     // Use our default grid options first, override the defaults with
     // provided grid options, and then add callbacks
     this.mergedGridOptions = {
-      rowModelType: this.rowModelType,
+      rowModelType: this.rowModelType(),
       ...defaultGridOptions,
       defaultColDef: {
         ...defaultGridOptions.defaultColDef,
-        filter: this.rowModelType === 'clientSide' ? 'agMultiColumnFilter' : null,
+        filter: this.rowModelType() === 'clientSide' ? 'agMultiColumnFilter' : null,
       },
       ...this.gridOptions(),
       ...this.getCallbacksGridOptions(),
@@ -158,7 +149,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Called when a row is hovered. Used to track row ID. */
   public onCellMouseOver(event: CellMouseOverEvent) {
-    this._lastRowHovered = event?.data?.id;
+    this.lastRowHovered = event?.data?.id;
   }
 
   /** Called when a cell changes. Persists changes via backend and manages undo. */
@@ -188,7 +179,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
     this.api = params.api;
 
-    if (this.rowModelType === 'serverSide')
+    if (this.rowModelType() === 'serverSide')
       this.api?.setGridOption('serverSideDatasource', this.createServerSideDatasource());
 
     this.undoMgr.initialize(this.api);
@@ -214,7 +205,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Navigates to view route for given ID or last hovered ID. */
   public view(id?: string) {
     if (id) return this.navigateIfValid(id);
-    if (!this.disableView()) this.navigateIfValid(this._lastRowHovered);
+    if (!this.disableView()) this.navigateIfValid(this.lastRowHovered);
   }
 
   /** Navigates to add route. */
@@ -280,7 +271,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
-    return this._themeSvc.theme === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
+    return this.themeSvc.getTheme() === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
   }
 
   /** Called when row is double-clicked. */
@@ -293,7 +284,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     try {
       this.api?.setGridOption('loading', true);
 
-      if (this.rowModelType === 'clientSide') {
+      if (this.rowModelType() === 'clientSide') {
         const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() });
         this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
       }
@@ -345,10 +336,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       onCellValueChanged: this.onCellValueChanged.bind(this),
       onCellMouseOver: this.onCellMouseOver.bind(this),
       onSelectionChanged: this.onSelectionChanged.bind(this),
-      onUndoEnded: this._updateUndoSizes,
-      onRedoEnded: this._updateUndoSizes,
-      onRowDataUpdated: this._updateUndoSizes,
-      onRowValueChanged: this._updateUndoSizes,
+      onUndoEnded: this.updateUndoSizes,
+      onRedoEnded: this.updateUndoSizes,
+      onRowDataUpdated: this.updateUndoSizes,
+      onRowValueChanged: this.updateUndoSizes,
     } as GridOptions<Partial<T>>;
   }
 
@@ -371,7 +362,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Navigates to route if valid */
   private navigateIfValid(path: string | null | undefined): void {
-    if (path) this.router.navigate([path], { relativeTo: this._route });
+    if (path) this.router.navigate([path], { relativeTo: this.route });
   }
 
   /** Helper: prevents editing specific fields */

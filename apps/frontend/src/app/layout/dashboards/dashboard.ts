@@ -16,14 +16,9 @@ export class Dashboard {
   /**
    * Service that manages the sidebar visibility and toggling logic.
    */
-  private readonly _sidebarSvc = inject(SidebarService);
+  private readonly sidebarSvc = inject(SidebarService);
 
-  /**
-   * Returns whether the mobile sidebar is currently open.
-   *
-   * @returns `true` if the sidebar is open on mobile, otherwise `false`.
-   */
-  public isMobileOpen(): boolean {
-    return this._sidebarSvc.isMobileOpen();
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen;
   }
 }

@@ -27,12 +27,12 @@ export class Breadcrumb {
   /**
    * Injected Angular Router instance for listening to route changes and navigation.
    */
-  private readonly _router = inject(Router);
+  private readonly router = inject(Router);
 
   /**
    * SidebarService is used to resolve internal routes for breadcrumb navigation.
    */
-  private readonly _sidebarSvc = inject(SidebarService);
+  private readonly sidebarSvc = inject(SidebarService);
 
   /**
    * Array of current breadcrumb segments based on URL.
@@ -41,8 +41,8 @@ export class Breadcrumb {
 
   constructor() {
     // Subscribe to route changes and update breadcrumb segments accordingly.
-    this._router.events.subscribe(() => {
-      this.crumbs = this._router.url.split('/').slice(1);
+    this.router.events.subscribe(() => {
+      this.crumbs = this.router.url.split('/').slice(1);
     });
   }
 
@@ -54,9 +54,9 @@ export class Breadcrumb {
    * @param destination - The breadcrumb label (e.g., "dashboard", "tags")
    */
   public navigate(destination: string) {
-    const route = this._sidebarSvc.getRoute(destination);
+    const route = this.sidebarSvc.getRoute(destination);
     if (route) {
-      this._router.navigateByUrl(route);
+      this.router.navigateByUrl(route);
     }
   }
 }
