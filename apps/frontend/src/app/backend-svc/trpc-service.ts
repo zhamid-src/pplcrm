@@ -1,14 +1,14 @@
 import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
-import { refreshTokenLink } from '@pyncz/trpc-refresh-token-link';
-import { TRPCClientError, TRPCLink, createTRPCProxyClient, httpBatchLink, loggerLink } from '@trpc/client';
+import { TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import { TRPC_ERROR_CODES_BY_KEY } from '@trpc/server/rpc';
 
 import { get, set } from 'idb-keyval';
 
 import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
 import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
 
 /**
@@ -33,7 +33,7 @@ export class TRPCService<T> {
   protected api;
 
   constructor() {
-    this.api = createTRPCProxyClient<TRPCRouters>({
+    this.api = createTRPCClient<TRPCRouters>({
       links: [loggerLink(), refreshLink(this.tokenService, this.router), errorLink, httpLink(this.tokenService)],
     });
   }
@@ -118,33 +118,6 @@ function httpLink(tokenSvc: TokenService) {
 }
 
 /**
- * Handles automatic refresh of access tokens using a refresh token.
- *
- * @param tokenSvc - The TokenService for managing token storage
- * @param router - Angular router to redirect on unauthorized
- */
-function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouters> {
-  return refreshTokenLink({
-    getRefreshToken: () => tokenSvc.getRefreshToken() as string | undefined,
-    fetchJwtPairByRefreshToken: async (refreshToken) => {
-      const auth_token = tokenSvc.getAuthToken() || '';
-      const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
-        auth_token,
-        refresh_token: refreshToken,
-      });
-
-      return {
-        access: payload.auth_token,
-        refresh: payload.refresh_token,
-      };
-    },
-    onJwtPairFetched: (payload) => tokenSvc.set({ auth_token: payload.access, refresh_token: payload.refresh }),
-    onRefreshFailed: () => tokenSvc.clearAll(),
-    onUnauthorized: () => router.navigate([router.url]),
-  });
-}
-
-/**
  * A TRPC link that intercepts errors and replaces BAD_REQUEST messages with friendlier ones.
  */
 const errorLink: TRPCLink<TRPCRouters> = () => {
@@ -170,12 +143,3 @@ const errorLink: TRPCLink<TRPCRouters> = () => {
     });
   };
 };
-
-/**
- * A standalone TRPC client used exclusively for refreshing auth tokens.
- * It uses no auth or refresh links to avoid recursion.
- */
-const trpcRetryClient = createTRPCProxyClient<TRPCRouters>({
-  // TODO: Add environment.devURL instead of hardcoding
-  links: [httpBatchLink({ url: `http://localhost:3000` })],
-});
