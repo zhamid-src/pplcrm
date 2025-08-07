@@ -9,7 +9,7 @@ import { get, set } from 'idb-keyval';
 
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
-import { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
+import { TRPCRouter } from 'APPS/backend/src/app/trpc-routers';
 
 /**
  * A base service that wraps a TRPC proxy client with support for:
@@ -33,7 +33,7 @@ export class TRPCService<T> {
   protected api;
 
   constructor() {
-    this.api = createTRPCClient<TRPCRouters>({
+    this.api = createTRPCClient<TRPCRouter>({
       links: [loggerLink(), refreshLink(this.tokenService, this.router), errorLink, httpLink(this.tokenService)],
     });
   }
@@ -120,7 +120,7 @@ function httpLink(tokenSvc: TokenService) {
 /**
  * A TRPC link that intercepts errors and replaces BAD_REQUEST messages with friendlier ones.
  */
-const errorLink: TRPCLink<TRPCRouters> = () => {
+const errorLink: TRPCLink<TRPCRouter> = () => {
   return ({ next, op }) => {
     return observable((observer) => {
       const unsubscribe = next(op).subscribe({
