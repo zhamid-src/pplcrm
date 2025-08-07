@@ -1,6 +1,7 @@
 import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 import { Component, EventEmitter, Output, ViewChild, WritableSignal, input, signal } from '@angular/core';
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
+import { debounce } from '@common';
 import { Icon } from '@uxcommon/icon';
 import { IconName } from '@uxcommon/svg-icons-list';
 
@@ -10,10 +11,8 @@ import { IconName } from '@uxcommon/svg-icons-list';
   templateUrl: './input.html',
 })
 export class PPlCrmInput {
-  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastEmittedValue = '';
 
-  protected debouncedValue: WritableSignal<string> = signal('');
   protected inputClass = `
   peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px]
   border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2
@@ -41,6 +40,13 @@ export class PPlCrmInput {
   public type = input<string>('text');
   @Output() public valueChange = new EventEmitter<string>();
 
+  private emitValueChange = debounce((value: string) => {
+    if (value !== this.lastEmittedValue) {
+      this.lastEmittedValue = value;
+      this.valueChange?.emit(value);
+    }
+  }, this.debounceTime());
+
   protected get inputLength(): number {
     return this.inputControl.value?.length ?? 0;
   }
@@ -53,14 +59,7 @@ export class PPlCrmInput {
     const target = event.target as HTMLInputElement;
     this.inputValue.set(target.value);
 
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-
-    this.debounceTimer = setTimeout(() => {
-      if (target.value !== this.lastEmittedValue) {
-        this.lastEmittedValue = target.value;
-        this.valueChange?.emit(target.value);
-      }
-    }, this.debounceTime());
+    this.emitValueChange(target.value);
   }
 
   public handleAddressChange(place: google.maps.places.PlaceResult) {
