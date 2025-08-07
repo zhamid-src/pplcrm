@@ -8,9 +8,9 @@ import { FormInput } from '@uxcommon/formInput';
 import { Tags } from '@uxcommon/tags/tags';
 import { TextArea } from '@uxcommon/textarea';
 
-import { HouseholdsService } from '../households/households-service';
-import { PersonsService } from './persons-service';
-import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
 /**

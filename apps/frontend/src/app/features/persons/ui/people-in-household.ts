@@ -2,7 +2,7 @@ import { Component, OnInit, inject, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
 
-import { PersonsService } from './persons-service';
+import { PersonsService } from '../services/persons-service';
 
 /**
  * Component used to render a list of people belonging to a given household.

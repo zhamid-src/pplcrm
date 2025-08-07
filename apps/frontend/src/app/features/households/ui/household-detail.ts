@@ -9,9 +9,9 @@ import { PPlCrmInput } from '@uxcommon/input';
 import { Tags } from '@uxcommon/tags/tags';
 import { TextArea } from '@uxcommon/textarea';
 
-import { PersonsService } from '../persons/persons-service';
-import { HouseholdsService } from './households-service';
-import { PeopleInHousehold } from 'apps/frontend/src/app/components/persons/people-in-household';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 import { Households } from 'common/src/lib/kysely.models';
 
