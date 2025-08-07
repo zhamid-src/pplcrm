@@ -5,3 +5,7 @@ export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300)
     timeout = setTimeout(() => fn(...args), delay);
   };
 }
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
