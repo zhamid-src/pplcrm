@@ -117,7 +117,10 @@ export class BaseRepository<T extends keyof Models> {
     }
 
     const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
-    return this.getSelect(trx).selectAll().where(lhs, '=', input.row['name']).executeTakeFirst() as unknown as
+    return this.getSelect(trx)
+      .selectAll()
+      .where(lhs, '=', matchValue)
+      .executeTakeFirst() as unknown as
       | Models[T]
       | undefined;
   }
