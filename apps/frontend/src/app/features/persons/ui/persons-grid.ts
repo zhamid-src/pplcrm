@@ -5,9 +5,9 @@ import { Icon } from '@uxcommon/icon';
 
 import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 
-import { AbstractAPIService } from '../../abstract-api.service';
-import { TagsCellRenderer } from '../tags/tags-cell-renderer';
-import { DATA_TYPE, PersonsService } from './persons-service';
+import { AbstractAPIService } from '../../../abstract-api.service';
+import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 interface ParamsType {
   value: string[];

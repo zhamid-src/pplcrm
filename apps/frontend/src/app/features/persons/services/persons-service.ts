@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
 
-import { AbstractAPIService } from '../../abstract-api.service';
+import { AbstractAPIService } from '../../../abstract-api.service';
 
 /**
  * Service for interacting with the `persons` data source.
