@@ -3,7 +3,7 @@ import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchL
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 
 import type { TokenService } from './token-service';
-import type { TRPCRouters } from 'APPS/backend/src/app/trpc.routers';
+import type { TRPCRouter } from 'APPS/backend/src/app/trpc-routers';
 
 interface JwtPayload {
   exp?: number;
@@ -100,7 +100,7 @@ function parseJwt(token: string): JwtPayload | null {
  * createTRPCClient({ links: [refreshLink(tokenSvc, router), …] })
  * ```
  */
-export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouters> {
+export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
   return () => {
     return ({ op, next }: { op: Operation; next: NextLink }) =>
       observable<unknown, unknown>((observer) => {
@@ -130,7 +130,7 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
 /* ------------------------------------------------------------------ */
 /* Dedicated client for token refreshes only                          */
 /* ------------------------------------------------------------------ */
-const trpcRetryClient = createTRPCClient<TRPCRouters>({
+const trpcRetryClient = createTRPCClient<TRPCRouter>({
   // TODO: replace with environment-specific URL
   links: [httpBatchLink({ url: 'http://localhost:3000' })],
 });
