@@ -4,9 +4,9 @@ import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@uxcommon/icon';
 
-import { AbstractAPIService } from '../../abstract-api.service';
-import { DATA_TYPE, PersonsService } from '../persons/persons-service';
-import { TagsCellRenderer } from '../tags/tags-cell-renderer';
+import { AbstractAPIService } from '../../../abstract-api.service';
+import { DATA_TYPE, PersonsService } from '../../persons/services/persons-service';
+import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
 
 interface ParamsType {
   value: string[];
