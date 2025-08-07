@@ -251,3 +251,18 @@ interface Tenants extends RecordType, AddressType {
   json: Json | null;
   notes: string | null;
 }
+
+/** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
+type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
+
+/** Recursively apply UnwrapSelect to every property */
+type SelectShape<T> = { [K in keyof T]: UnwrapSelect<T[K]> };
+
+export type HouseholdCol = keyof Models['households'];
+export type PersonsdCol = keyof Models['persons'];
+
+/** The row you actually return to the grid */
+export type HouseholdWithExtras = SelectShape<Models['households']> & {
+  persons_count: number;
+  tags: string[] | null;
+};
