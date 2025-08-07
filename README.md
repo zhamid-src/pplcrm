@@ -18,22 +18,53 @@
 
 ---
 
-## 📁 Project Structure
+## General Structure
 
-<pre>
+**Monorepo layout**  
+The project uses an Nx workspace to host multiple applications and shared libraries:
 
-pplcrm/
-├── apps/
-│   ├── frontend/          # Angular app (uses Tailwind + DaisyUI)
-│   ├── backend/           # Fastify + tRPC server (ESM)
-│   ├── frontend-e2e/      # Playwright-based E2E tests
-│   └── backend-e2e/       # Placeholder for backend tests
-├── common/                # Shared types/models/interfaces
-├── .nx/                   # Nx cache
-├── .github/               # GitHub Actions (optional)
-├── .vscode/               # Editor config
+- `apps/backend/` – Fastify-based API server using tRPC, with a modular architecture of controllers, repositories, migrations, and routers.
+- `apps/frontend/` – Angular 20 SPA (standalone components & signals) styled with Tailwind CSS and DaisyUI.
+- `common/` – Shared TypeScript/Zod definitions and Kysely database models used by both front‑ and back‑end.
+- Root configs (`package.json`, `nx.json`, `tsconfig.base.json`) define dependencies, build targets, and TypeScript settings.
 
-</pre>
+## Backend Highlights
+
+- **Entry/Bootstrap**: `main.ts` boots a `FastifyServer` instance (`fastify.server.ts`) which registers REST routes and mounts the tRPC plugin.
+- **Controllers & Repositories**:
+  - `controllers/` (e.g. `auth.controller.ts`, `persons.controller.ts`) provide business logic.
+  - `repositories/` (e.g. `base.repo.ts`) encapsulate CRUD operations with Kysely and implement a repository pattern.
+- **Authentication**: JWT handling (access + refresh tokens) via `fast-jwt`, session tracking, and password hashing with `bcrypt`.
+- **tRPC & REST**: API routes are exposed both as tRPC routers (`trpc-routers/`) and traditional REST routes (`rest-routes/`, `rest-schema/`).
+
+## Frontend Highlights
+
+- **Angular 20 Standalone**: Components defined without NgModules (`app.ts`, `app.routes.ts`), using signals and reactive forms (see `auth/signin-page.ts`).
+- **Services**: `backend-svc/` hosts tRPC client setup, token storage, and search utilities.
+- **Feature Components**: `components/` contains modules such as persons, households, tags, each with grids, detail pages, and services.
+- **Layout & UX**: `layout/` (navbar, sidebar, theme service) and `uxcommon/` (alerts, icons) provide reusable UI pieces.
+
+## Shared Library (`common/`)
+
+- **Zod Schemas & Types**: `common.ts` defines validation schemas and utility types shared across the stack.
+- **Database Models**: `kysely.models.ts` describes every table, enabling strong typing in repositories and controllers.
+
+## Key Concepts & Orientation Tips
+
+1. **Nx Workflows**: Use Nx commands (`nx serve backend`, `nx serve frontend`) to run or build specific apps. Examine `project.json` files within each app for target definitions.
+2. **Repository Pattern**: To add a new table/feature, define a Kysely model, create a repository (`repositories/`), a controller, and expose it via tRPC/REST.
+3. **Auth Flow**: Frontend `AuthService` & `TokenService` coordinate login, token storage, and session persistence; backend `AuthController` issues tokens and handles reset flows.
+4. **tRPC Integration**: Client & server share types through the `common` library, enabling end‑to‑end type safety. Study `trpc-service.ts` (frontend) and `trpc.ts` (backend) for the handshake.
+
+## Next Steps for Learning
+
+- **Nx & Monorepos** – Read Nx docs to understand generators, caching, and workspace management.
+- **tRPC & Kysely** – Dive into tRPC for type-safe RPC APIs and Kysely for expressive SQL in TypeScript.
+- **Angular 20 & Signals** – Review Angular’s new standalone API and signal-based reactivity.
+- **Authentication & Security** – Explore JWT best practices (`fast-jwt`), session handling, and password hashing with `bcrypt`.
+- **Database Migrations** – Review `_migrations/` and `migrations.json`; learn how to generate and run migrations with Kysely.
+
+With this structure in mind, newcomers can navigate the repository, understand how front‑ and back‑end pieces interact, and identify the next areas to explore for deeper proficiency.
 
 ---
 
