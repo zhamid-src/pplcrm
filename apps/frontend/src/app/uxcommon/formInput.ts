@@ -1,5 +1,6 @@
 import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
+import { debounce } from '@common';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { IconName } from '@uxcommon/svg-icons-list';
 
@@ -18,8 +19,8 @@ export class FormInput implements OnInit {
    * Initialize the component by connecting it to the parent form group
    * and subscribing to value changes.
    */
-  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastValue = '';
+  private emitChange!: (value: string) => void;
 
   /**
    * The parent form group this input belongs to.
@@ -83,15 +84,15 @@ export class FormInput implements OnInit {
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;
-    this.form.get(this.control())?.valueChanges.subscribe((value: string) => {
-      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.emitChange = debounce((value: string) => {
+      if (value !== this.lastValue) {
+        this.lastValue = value;
+        this.handleInputChange(value);
+      }
+    }, this.debounceTime());
 
-      this.debounceTimer = setTimeout(() => {
-        if (value !== this.lastValue) {
-          this.lastValue = value;
-          this.handleInputChange(value);
-        }
-      }, this.debounceTime());
+    this.form.get(this.control())?.valueChanges.subscribe((value: string) => {
+      this.emitChange(value);
     });
   }
 
