@@ -5,11 +5,21 @@
   "files.associations": {
     "*.css": "postcss"
   },
-  "eslint.workingDirectories": ["."],
+  "eslint.format.enable": false,
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [{ "mode": "auto" }], // Nx mono-repo friendly
+  "eslint.validate": ["javascript", "typescript", "typescriptreact", "html"],
+
+  /* --- show ALL problems, not just the open file --------------- */
+  "eslint.lintTask.enable": true, // contributes the “eslint: lint whole folder” task
+  "eslint.quiet": false, // include warnings as well as errors
+
   "prettier.singleQuote": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "eslint.format.enable": false,
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
   }
 }

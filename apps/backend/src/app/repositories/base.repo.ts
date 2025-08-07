@@ -31,6 +31,7 @@ import {
   TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
 import { Pool } from 'pg';
+import { GroupByArg } from 'node_modules/kysely/dist/esm/parser/group-by-parser';
 
 const dialect = new PostgresDialect({
   pool: new Pool({
@@ -260,7 +261,7 @@ export class BaseRepository<T extends keyof Models> {
     query = options?.limit ? query.limit(options.limit) : query;
     query = options?.offset ? query.offset(options.offset) : query;
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
+    query = options?.groupBy ? query.groupBy(options.groupBy as GroupByArg<Models, T, unknown>) : query;
     return query;
   }
 

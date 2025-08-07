@@ -243,7 +243,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   private async createTokens(input: { user_id: string; tenant_id: string; name: string; oldSession?: string }) {
     // Delete the old session
-    input.oldSession && (await this.sessions.deleteBySessionId(input.oldSession));
+    if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession);
 
     const row = {
       user_id: input.user_id,

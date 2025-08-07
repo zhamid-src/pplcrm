@@ -100,7 +100,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   public getAllWithAddress(
     auth: IAuthKeyPayload,
     options?: getAllOptionsType,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: { [x: string]: unknown }[]; count: number }> {
     const { tags, ...queryParams } = options || {};
     return this.getRepo().getAllWithAddress({
       tenant_id: auth.tenant_id,

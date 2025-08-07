@@ -120,7 +120,6 @@ export class SignUpPage {
    * @returns Number of pwned password occurrences
    */
   protected passwordBreachNumber() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this.password?.errors as any)?.pwnedPasswordOccurrence;
   }
 
@@ -130,7 +129,6 @@ export class SignUpPage {
    * @returns Truthy if password was breached, falsy otherwise
    */
   protected passwordInBreach() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
   }
 }
