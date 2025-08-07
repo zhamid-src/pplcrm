@@ -1,6 +1,5 @@
 /* -----------------  apps/frontend/eslint.config.cjs  -------------- */
-/* Angular-specific rules + selector prefixes for the front-end app.  */
-/* PASTE THE WHOLE FILE – it replaces the previous version.           */
+/* Angular-specific rules + selector prefixes for the front-end app. */
 
 const { FlatCompat } = require('@eslint/eslintrc');
 
@@ -22,5 +21,23 @@ module.exports = [
     })),
 
   /* Stand-alone HTML templates */
-  ...compat.config({ extends: ['plugin:@nx/angular-template'] }).map((cfg) => ({ ...cfg, files: ['**/*.html'] })),
+  ...compat
+    .config({
+      extends: ['plugin:@nx/angular-template', 'plugin:@angular-eslint/template/recommended'],
+    })
+    .map((cfg) => ({
+      ...cfg,
+      files: ['**/*.html'],
+      rules: {
+        '@angular-eslint/template/no-negated-async': 'error',
+        '@angular-eslint/template/i18n': [
+          'warn',
+          {
+            checkId: true,
+            checkText: true,
+            ignoreAttributes: ['routerLink', 'formControlName', 'ngModel'],
+          },
+        ],
+      },
+    })),
 ];
