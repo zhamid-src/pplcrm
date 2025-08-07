@@ -5,7 +5,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { default as fastify } from 'fastify';
 
 import { routes } from './app/routes';
-import { trpcRouters } from './app/trpc.routers';
+import { trpcRouter } from './app/trpc-routers';
 import { createContext } from './context';
 
 /**
@@ -46,7 +46,7 @@ export class FastifyServer {
     this.server.register(fastifyTRPCPlugin, {
       prefix: '/',
       trpcOptions: {
-        router: trpcRouters,
+        router: trpcRouter,
         createContext,
       },
     });
