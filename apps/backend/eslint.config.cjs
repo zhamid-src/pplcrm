@@ -1,22 +1,24 @@
-/* ---------------------------------------------------------------
- *  apps/backend/eslint.config.cjs
- *  Node-focused rules for the backend application
- * -------------------------------------------------------------- */
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
 
 const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js'); // gives us a ready-made recommended config
+const js = require('@eslint/js');
 
-/* FlatCompat now needs the recommendedConfig param */
 const compat = new FlatCompat({
   baseDirectory: __dirname,
   recommendedConfig: js.configs.recommended,
 });
 
-/** @type {import('eslint').Linter.FlatConfig[]} */
 module.exports = [
-  /* Apply Nx’s JavaScript/TypeScript rules to every source file here */
+  /* Extend the base config */
   ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
     ...cfg,
     files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
+      // Optional: Add backend-only rules here
+    },
   })),
 ];

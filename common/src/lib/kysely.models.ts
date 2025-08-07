@@ -14,7 +14,7 @@ import type {
   Selectable,
   Updateable,
 } from 'kysely';
-import { ExtractColumnType } from 'node_modules/kysely/dist/esm/util/type-utils';
+import type { ExtractColumnType } from 'node_modules/kysely/dist/esm/util/type-utils';
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
