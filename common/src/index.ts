@@ -1,14 +1,8 @@
-export {
-  IAuthKeyPayload,
-  IAuthUser,
-  IToken,
-  signInInputObj,
-  signInInputType,
-  signUpInputObj,
-  signUpInputType,
-} from './lib/auth';
+export type { IAuthKeyPayload, IAuthUser, IToken, signInInputType, signUpInputType } from './lib/auth';
 
-export {
+export { signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
   INow,
   AddTagType,
   PERSONINHOUSEHOLDTYPE,
