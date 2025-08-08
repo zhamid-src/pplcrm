@@ -150,7 +150,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    */
   public async getTags(id: string) {
     const tags = await this.api.persons.getTags.query(id);
-    return tags.map((tag) => tag.name);
+    return tags.map((tag: { name: string }) => tag.name);
   }
 
   /**
