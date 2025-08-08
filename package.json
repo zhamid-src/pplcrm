@@ -84,6 +84,7 @@
     "postcss": "^8.5.6",
     "prettier": "^3.1.0",
     "prettier-plugin-tailwindcss": "^0.6.14",
+    "source-map-explorer": "^2.5.3",
     "tailwindcss": "^4.1.11",
     "ts-jest": "^29.1.2",
     "ts-node": "10.9.1",
