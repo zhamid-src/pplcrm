@@ -22,7 +22,7 @@ import { Households } from 'common/src/lib/kysely.models';
 @Component({
   selector: 'pc-household-detail',
   imports: [FormInput, ReactiveFormsModule, PPlCrmInput, Tags, AddBtnRow, TextArea, PeopleInHousehold],
-  templateUrl: './Household-detail.html',
+  templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
@@ -167,7 +167,7 @@ export class HouseholdDetail implements OnInit {
     this.householdsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Household added'))
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => this.loading.set(false));
   }
 
@@ -225,7 +225,7 @@ export class HouseholdDetail implements OnInit {
         this.alertSvc.showSuccess('Household updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => this.loading.set(false));
   }
 }
