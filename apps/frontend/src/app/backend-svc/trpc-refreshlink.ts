@@ -3,7 +3,7 @@ import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchL
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 
 import type { TokenService } from './token-service';
-import type { TRPCRouter } from 'APPS/backend/src/app/trpc-routers';
+import type { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 
 interface JwtPayload {
   exp?: number;

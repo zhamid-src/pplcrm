@@ -97,7 +97,7 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    */
   public async getTags(id: string) {
     const tags = await this.api.households.getTags.query(id);
-    return tags.map((tag) => tag.name);
+    return tags.map((tag: { name: string }) => tag.name);
   }
 
   /**

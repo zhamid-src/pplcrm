@@ -149,7 +149,7 @@ export class PersonDetail implements OnInit {
     this.personsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Person added'))
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => this.loading.set(false));
   }
 

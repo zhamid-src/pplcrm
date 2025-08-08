@@ -9,7 +9,7 @@ import { get, set } from 'idb-keyval';
 
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
-import { TRPCRouter } from 'APPS/backend/src/app/trpc-routers';
+import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 
 /**
  * A base service that wraps a TRPC proxy client with support for:
