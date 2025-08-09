@@ -1,3 +1,6 @@
+/**
+ * tRPC router exposing endpoints for managing user profile data.
+ */
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../trpc';

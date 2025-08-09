@@ -1,10 +1,14 @@
+/**
+ * tRPC router for application settings such as retrieving active campaigns.
+ */
 import { TRPCError } from '@trpc/server';
 
 import { authProcedure, router } from '../../trpc';
 import { SettingsController } from '../controllers/settings.controller';
 
 /**
- * Get a current campaign for the current tenant.
+ * Retrieve the current campaign identifier for the tenant.
+ * @throws TRPCError if the value is not found or invalid.
  */
 function getCurrentCampaignId() {
   return authProcedure.query(async ({ ctx }) => {
@@ -23,9 +27,7 @@ function getCurrentCampaignId() {
 
 const settings = new SettingsController();
 
-/**
- * Settings endpoints
- */
+/** Router exposing settings-related procedures. */
 export const SettingsRouter = router({
   getCurrentCampaignId: getCurrentCampaignId(),
 });

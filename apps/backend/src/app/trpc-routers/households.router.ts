@@ -1,3 +1,7 @@
+/**
+ * tRPC router providing CRUD operations and tag management for
+ * household records within a tenant.
+ */
 import { UpdateHouseholdsObj, getAllOptions } from '@common';
 
 import { z } from 'zod';
@@ -25,6 +29,10 @@ function attachTag() {
     .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
+/**
+ * Get the total number of households for the current tenant.
+ * @returns Count of household records.
+ */
 function count() {
   return authProcedure.query(({ ctx }) => households.getCount(ctx.auth.tenant_id));
 }
