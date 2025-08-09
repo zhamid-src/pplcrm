@@ -1,3 +1,6 @@
+/**
+ * Defines the structure and default list of items displayed in the sidebar navigation.
+ */
 import { IconName } from '@uxcommon/svg-icons-list';
 
 /**
@@ -58,6 +61,9 @@ export interface ISidebarItem {
   type?: 'item' | 'subheading';
 }
 
+/**
+ * Default list of sidebar items used throughout the application.
+ */
 export const SidebarItems: ISidebarItem[] = [
   {
     name: 'Console',

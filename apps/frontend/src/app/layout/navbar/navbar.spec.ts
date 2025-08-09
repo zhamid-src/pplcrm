@@ -1,3 +1,6 @@
+/**
+ * Basic unit tests ensuring the Navbar component exports correctly.
+ */
 import * as exported from './navbar';
 
 describe('navbar', () => {
