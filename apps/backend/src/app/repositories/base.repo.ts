@@ -31,17 +31,11 @@ import {
   TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
 import { Pool } from 'pg';
+import { env } from '../../env';
 import { GroupByArg } from 'node_modules/kysely/dist/esm/parser/group-by-parser';
 
 const dialect = new PostgresDialect({
-  pool: new Pool({
-    user: 'zeehamid',
-    database: 'pplcrm',
-    password: 'Eternity#1',
-    port: 5432,
-    host: 'localhost',
-    ssl: false,
-  }),
+  pool: new Pool(env.db),
 });
 
 /**

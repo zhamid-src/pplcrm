@@ -3,6 +3,7 @@ import { inferAsyncReturnType } from '@trpc/server';
 import { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
 
 import { createVerifier } from 'fast-jwt';
+import { env } from './env';
 
 /**
  * The type of the context object passed to tRPC procedures.
@@ -32,7 +33,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
   }
 
   let payload: IAuthKeyPayload | null = null;
-  const key = process.env['SHARED_SECRET'];
+  const key = env.sharedSecret;
 
   try {
     // Create the verifier with the shared secret and expected algorithm
