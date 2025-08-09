@@ -1,3 +1,7 @@
+/**
+ * tRPC router offering CRUD operations, tag management, and queries
+ * for person records associated with a tenant.
+ */
 import { UpdatePersonsObj, getAllOptions } from '@common';
 
 import { z } from 'zod';
@@ -22,6 +26,10 @@ function attachTag() {
     .mutation(({ input, ctx }) => persons.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
+/**
+ * Get the total number of people for the current tenant.
+ * @returns Count of person records.
+ */
 function count() {
   return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
 }

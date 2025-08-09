@@ -1,3 +1,7 @@
+/**
+ * tRPC router handling tag creation, modification, deletion, and search
+ * operations for tenant-specific tags.
+ */
 import { AddTagObj, UpdateTagObj, getAllOptions } from '@common';
 
 import { z } from 'zod';
@@ -12,6 +16,10 @@ function add() {
   return authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth));
 }
 
+/**
+ * Get the total number of tags for the current tenant.
+ * @returns Count of tag records.
+ */
 function count() {
   return authProcedure.query(({ ctx }) => tags.getCount(ctx.auth.tenant_id));
 }
@@ -73,9 +81,7 @@ function update() {
 
 const tags = new TagsController();
 
-/**
- * Tags endpoints
- */
+/** Router exposing tag-related procedures. */
 export const TagsRouter = router({
   add: add(),
   count: count(),

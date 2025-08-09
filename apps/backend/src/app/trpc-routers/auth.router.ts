@@ -1,3 +1,7 @@
+/**
+ * tRPC router defining authentication-related procedures such as
+ * sign-up, sign-in, token renewal, and password reset flows.
+ */
 import { signInInputObj, signUpInputObj } from '@common';
 
 import z from 'zod';
