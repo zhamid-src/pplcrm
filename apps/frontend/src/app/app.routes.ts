@@ -127,7 +127,7 @@ export const appRoutes: Route[] = [
           {
             path: '',
             component: PersonsGrid,
-            data: { shouldReuse: true, key: 'volunteersgridroot', tags: ['Volunteer'] },
+            data: { shouldReuse: true, key: 'volunteersgridroot', tags: ['volunteer'] },
           },
         ],
       },
