@@ -1,5 +1,3 @@
-import { config } from 'dotenv';
-
 import { BaseRepository } from './repositories/base.repo';
 
 /**
@@ -55,8 +53,8 @@ export async function migrateToLatest(): Promise<void> {
   }
 }
 
-// Load environment variables from a .env file into process.env
-config();
+// TODO: Load environment variables from a .env file into process.env
+// config();
 
 // Automatically run migration when script is executed directly
 migrateToLatest();

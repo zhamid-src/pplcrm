@@ -1,7 +1,7 @@
 import { AddTagType, IAuthKeyPayload, UpdateTagType, getAllOptionsType } from '@common';
 
 import { QueryParams } from '../repositories/base.repo';
-import { TagsRepo } from '../repositories/tags.repo';
+import { TagsRepo } from '../repositories/tags/tags.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 

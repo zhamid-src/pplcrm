@@ -1,4 +1,4 @@
-import { TagsRepo } from './tags.repo';
+import { TagsRepo } from "./tags.repo";
 
 describe('TagsRepo', () => {
   afterEach(() => {
