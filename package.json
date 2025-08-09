@@ -26,6 +26,7 @@
     "ag-grid-community": "^34.1.0",
     "ag-grid-enterprise": "^34.1.0",
     "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
     "fast-jwt": "^6.0.2",
     "fastify": "^5.4.0",
     "idb-keyval": "^6.2.1",
