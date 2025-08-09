@@ -1,105 +1,36 @@
 /**
- * @file Simple email client demonstrating folder and message retrieval.
+ * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-
-import { Swap } from '../../../uxcommon/swap';
-import { EmailsService } from '../services/emails-service';
+import { Component, signal } from '@angular/core';
+import { EmailFolderList } from './email-folder-list';
+import { EmailList } from './email-list';
+import { EmailDetails } from './email-details';
 
 @Component({
   selector: 'pc-email-client',
   standalone: true,
-  imports: [CommonModule, FormsModule, Swap],
+  imports: [EmailFolderList, EmailList, EmailDetails],
   templateUrl: 'email-client.html',
 })
-export class EmailClient implements OnInit {
-  private readonly svc = inject(EmailsService);
-
-  /** User ID to assign selected email to */
-  public assignTo = '';
-
-  /** Comments for the selected email */
-  public comments = signal<any[]>([]);
-
-  /** Emails in the selected folder */
-  public emails = signal<any[]>([]);
-
-  /** List of folders retrieved from the backend */
-  public folders = signal<any[]>([]);
-
-  /** Indicates whether the folder sidebar is collapsed */
-  public foldersCollapsed = signal(false);
-
-  /** New comment text */
-  public newComment = '';
-
-  /** Currently selected email */
-  public selectedEmail = signal<any | null>(null);
-
+export class EmailClient {
   /** Selected folder */
   public selectedFolder = signal<any | null>(null);
 
-  /**
-   * Add a comment to the selected email.
-   */
-  public async addComment() {
-    if (!this.selectedEmail() || !this.newComment) return;
-
-    await this.svc.addComment(this.selectedEmail().id, '1', this.newComment);
-
-    this.comments.update((current) => [...current, { comment: this.newComment }]);
-    this.newComment = '';
-  }
+  /** Selected email */
+  public selectedEmail = signal<any | null>(null);
 
   /**
-   * Assign the selected email to a user.
+   * Handle folder selection from child component.
    */
-  public async assign() {
-    if (!this.selectedEmail() || !this.assignTo) return;
-
-    await this.svc.assign(this.selectedEmail().id, this.assignTo);
-    this.selectedEmail().assigned_to = this.assignTo;
-    this.assignTo = '';
-  }
-
-  /**
-   * Lifecycle hook to load folders on initialization.
-   */
-  public async ngOnInit() {
-    const folders = await this.svc.getFolders();
-    this.folders.set(folders);
-  }
-
-  /**
-   * Select an email and retrieve its details and comments.
-   * @param email Email object to load
-   */
-  public async selectEmail(email: any) {
-    const res = await this.svc.getEmail(email.id);
-
-    this.selectedEmail.set(res.email);
-    this.comments.set(res.comments);
-  }
-
-  /**
-   * Select a folder and load its emails.
-   * @param folder Folder object from the list
-   */
-  public async selectFolder(folder: any) {
+  public onFolder(folder: any) {
     this.selectedFolder.set(folder);
-
-    const emails = await this.svc.getEmails(folder.id);
-    this.emails.set(emails);
     this.selectedEmail.set(null);
-    this.comments.set([]);
   }
 
   /**
-   * Toggle the collapse state of the folder sidebar.
+   * Handle email selection from child component.
    */
-  public toggleFolders() {
-    this.foldersCollapsed.set(!this.foldersCollapsed());
+  public onEmail(email: any) {
+    this.selectedEmail.set(email);
   }
 }
