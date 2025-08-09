@@ -1,3 +1,6 @@
+/**
+ * Component and form logic for user registration.
+ */
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
