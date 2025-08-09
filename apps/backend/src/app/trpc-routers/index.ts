@@ -1,3 +1,7 @@
+/**
+ * Entry point that aggregates all application tRPC routers and
+ * re-exports individual routers for convenience.
+ */
 import { router } from '../../trpc';
 import { AuthRouter } from './auth.router';
 import { HouseholdsRouter } from './households.router';
