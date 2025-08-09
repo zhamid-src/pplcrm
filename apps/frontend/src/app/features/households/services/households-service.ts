@@ -1,3 +1,6 @@
+/**
+ * @file Service responsible for managing household data via tRPC.
+ */
 import { Injectable } from '@angular/core';
 import { UpdateHouseholdsType, getAllOptionsType } from '@common';
 
@@ -41,6 +44,10 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.attachTag.mutate({ id: id, tag_name });
   }
 
+  /**
+   * Retrieve the total number of households.
+   * @returns Promise resolving to household count
+   */
   public count(): Promise<number> {
     return this.api.households.count.query();
   }

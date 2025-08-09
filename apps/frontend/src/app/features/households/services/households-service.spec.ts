@@ -1,3 +1,6 @@
+/**
+ * @file Unit tests for {@link HouseholdsService} verifying interaction with the API layer.
+ */
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { HouseholdsService } from './households-service';

@@ -1,3 +1,6 @@
+/**
+ * @file Service for managing person records through the tRPC API.
+ */
 import { Injectable } from '@angular/core';
 import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
 
@@ -45,6 +48,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.attachTag.mutate({ id: id, tag_name });
   }
 
+  /**
+   * Retrieve the total number of people.
+   * @returns Promise resolving to count of persons
+   */
   public count(): Promise<number> {
     return this.api.persons.count.query();
   }
