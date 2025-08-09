@@ -1,3 +1,6 @@
+/**
+ * Service responsible for managing sidebar items and drawer open state.
+ */
 import { Injectable } from '@angular/core';
 
 import { ISidebarItem, SidebarItems } from './sidebar-items';
@@ -5,27 +8,32 @@ import { ISidebarItem, SidebarItems } from './sidebar-items';
 @Injectable({
   providedIn: 'root',
 })
+/**
+ * Provides utility methods for controlling the sidebar and retrieving its items.
+ */
 export class SidebarService {
   private _isMobileOpen = false;
   private drawerState: DrawerStates = this.getState();
   private items = SidebarItems;
 
   /**
-   * Is the drawer open on mobile
+   * Indicates whether the drawer is open on mobile devices.
    */
   public get isMobileOpen() {
     return this._isMobileOpen;
   }
 
   /**
-   * Close the sidebar on mobile
+   * Closes the sidebar when viewed on mobile.
    */
   public closeMobile() {
     this._isMobileOpen = false;
   }
 
   /**
-   * Get all the sidebar items.
+   * Retrieves the current set of sidebar items.
+   *
+   * @returns Array of sidebar items.
    */
   public getItems() {
     return this.items;
@@ -47,36 +55,43 @@ export class SidebarService {
   }
 
   /**
-   * Is the drawer fully open
+   * Checks if the drawer is fully expanded.
+   *
+   * @returns `true` when the drawer is open.
    */
   public isFull() {
     return this.drawerState === 'full';
   }
 
   /**
-   * is the drawer half open, showing only the icons
+   * Determines if the drawer is half open, showing only icons.
+   *
+   * @returns `true` when the drawer is half expanded.
    */
   public isHalf() {
     return this.drawerState === 'half';
   }
 
   /**
-   * Set all the sidebar items. Typically it'll be used to update the sidebar,
-   * for instance by adding badges to the sidebar items.
+   * Replaces the sidebar items. Useful for updating badges or visibility.
+   *
+   * @param items - New array of sidebar items to use.
    */
   public setItems(items: ISidebarItem[]) {
     this.items = items;
   }
 
   /**
-   * Togger the drawer state between full and half
+   * Toggles the drawer state between full and half.
+   *
+   * @returns The updated drawer state.
    */
   public toggleDrawer() {
     return this.setState(this.drawerState === 'full' ? 'half' : 'full');
   }
 
   /**
-   * Toggle the drawer on mobile
+   * Toggles the mobile drawer open or closed.
    */
   public toggleMobile() {
     this._isMobileOpen = !this._isMobileOpen;
@@ -95,7 +110,9 @@ export class SidebarService {
   }
 
   /**
-   * Get the currrent drawer state (full or half)
+   * Retrieves the current drawer state from local storage.
+   *
+   * @returns The persisted drawer state.
    */
   private getState(): DrawerStates {
     const state = localStorage.getItem('pc-drawerState');
@@ -103,8 +120,10 @@ export class SidebarService {
   }
 
   /**
-   * Save the drawer state so that it can be restored on page reload
+   * Saves the drawer state to local storage so it can be restored on reload.
    *
+   * @param state - Drawer state to persist.
+   * @returns The stored drawer state.
    */
   private setState(state: DrawerStates) {
     this.drawerState = state;

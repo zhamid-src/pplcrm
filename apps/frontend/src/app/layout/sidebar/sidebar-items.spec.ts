@@ -1,3 +1,6 @@
+/**
+ * Basic unit tests ensuring the sidebar items configuration exports correctly.
+ */
 import * as exported from './sidebar-items';
 
 describe('sidebar-items', () => {

@@ -1,3 +1,6 @@
+/**
+ * Navigation bar component providing search, theme switching, and user actions.
+ */
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
@@ -14,6 +17,9 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
   imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective],
   templateUrl: './navbar.html',
 })
+/**
+ * Top-level navigation bar displayed across the application.
+ */
 export class Navbar {
   private readonly auth = inject(AuthService);
   private readonly searchSvc = inject(SearchService);
@@ -53,6 +59,8 @@ export class Navbar {
   /**
    * Listen for Ctrl + K or Cmd + K to open search.
    * Prevents default browser behavior.
+   *
+   * @param event - Keyboard event triggered from the window.
    */
   @HostListener('window:keydown', ['$event'])
   public handleKeyDown(event: KeyboardEvent): void {
@@ -78,14 +86,15 @@ export class Navbar {
 
   /**
    * Returns whether the mobile sidebar is currently open.
+   *
+   * @returns `true` if the mobile sidebar is visible, otherwise `false`.
    */
   protected isMobileOpen(): boolean {
     return this.sideBarSvc.isMobileOpen;
   }
 
   /**
-   * Hide the search bar on losing focus if the
-   * input text bar is empty
+   * Hides the search bar when it loses focus and the input is empty.
    */
   protected onBlurSearchBar() {
     if (!this.searchStr.length) {
