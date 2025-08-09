@@ -1,3 +1,6 @@
+/**
+ * Component handling user sign-in with form validation and persistence options.
+ */
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -33,14 +36,16 @@ export class SignInPage {
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
 
-  /** Login form group with email and password fields */
+  /** Form group capturing the user's email and password */
   public form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
 
+  /**
+   * Redirects to the dashboard if an authenticated user revisits the sign-in page.
+   */
   constructor() {
-    // Redirects to dashboard if user is already logged in
     effect(() => {
       if (this.authService.getUser()) this.router.navigate(['console', 'summary']);
     });

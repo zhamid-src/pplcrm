@@ -1,3 +1,6 @@
+/**
+ * Service managing authentication state and interactions with backend APIs.
+ */
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
