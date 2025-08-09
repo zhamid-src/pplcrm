@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@uxcommon/icon';
@@ -8,6 +8,7 @@ import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 import { AbstractAPIService } from '../../../abstract-api.service';
 import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
+import { ActivatedRoute } from '@angular/router';
 
 interface ParamsType {
   value: string[];
@@ -32,6 +33,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * so it can be used in the confirmation dialog logic.
    */
   private addressChangeModalId: string | null = null;
+
+  /** Tags used to limit grid results via DataGrid input. */
+  protected limitTags: string[] = [];
 
   /**
    * Column definitions for the grid.
@@ -113,6 +117,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
 
   constructor() {
     super();
+    const route = inject(ActivatedRoute);
+    this.limitTags = route.snapshot.data['tags'] ?? [];
   }
 
   /**
