@@ -1,6 +1,7 @@
 import type { Router } from '@angular/router';
 import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import { environment } from '../../environments/environment';
 
 import type { TokenService } from './token-service';
 import type { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
@@ -131,6 +132,5 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
 /* Dedicated client for token refreshes only                          */
 /* ------------------------------------------------------------------ */
 const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  // TODO: replace with environment-specific URL
-  links: [httpBatchLink({ url: 'http://localhost:3000' })],
+  links: [httpBatchLink({ url: environment.apiUrl })],
 });

@@ -1,4 +1,5 @@
 import { BaseRepository } from './repositories/base.repo';
+import '../env';
 
 /**
  * Rolls back the most recent database migration.
@@ -52,9 +53,6 @@ export async function migrateToLatest(): Promise<void> {
     process.exit(1);
   }
 }
-
-// TODO: Load environment variables from a .env file into process.env
-// config();
 
 // Automatically run migration when script is executed directly
 migrateToLatest();

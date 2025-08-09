@@ -1,4 +1,5 @@
 import * as pino from 'pino';
+import './env';
 
 import { migrateToLatest } from './app/kyselyinit';
 import { FastifyServer } from './fastify.server';
