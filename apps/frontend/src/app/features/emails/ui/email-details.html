@@ -1,19 +1,23 @@
 <section class="flex-1 flex flex-col">
-    <ng-container *ngIf="selectedEmail(); else empty">
+    @if (selectedEmail()) {
         <header class="border-b border-gray-200 p-4">
             <h3 class="text-lg font-semibold">{{ selectedEmail().subject }}</h3>
-            <p class="text-xs text-gray-500" *ngIf="selectedEmail().assigned_to">
-                Assigned to {{ selectedEmail().assigned_to }}
-            </p>
+            @if (selectedEmail().assigned_to) {
+                <p class="text-xs text-gray-500">
+                    Assigned to {{ selectedEmail().assigned_to }}
+                </p>
+            }
         </header>
         <main class="flex-1 overflow-auto p-4 space-y-4">
             <p>{{ selectedEmail().body }}</p>
 
             <div>
                 <h4 class="mb-2 font-semibold">Comments</h4>
-                <div *ngFor="let comment of comments()" class="mb-2 rounded bg-gray-100 p-2">
-                    {{ comment.comment }}
-                </div>
+                @for (comment of comments(); track comment.id) {
+                    <div class="mb-2 rounded bg-gray-100 p-2">
+                        {{ comment.comment }}
+                    </div>
+                }
                 <textarea [(ngModel)]="newComment" placeholder="Add a comment"
                     class="w-full rounded border p-2"></textarea>
                 <button (click)="addComment()" class="mt-2 rounded bg-blue-600 px-3 py-1 text-white">Add
@@ -29,8 +33,8 @@
                 </div>
             </div>
         </main>
-    </ng-container>
-    <ng-template #empty>
+    } @else {
         <div class="flex flex-1 items-center justify-center text-gray-400">Select an email to view its content</div>
-    </ng-template>
+    }
 </section>
+
