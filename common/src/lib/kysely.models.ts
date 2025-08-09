@@ -41,6 +41,9 @@ export interface Models {
   tags: Tags;
   tenants: Tenants;
   settings: Settings;
+  email_folders: EmailFolders;
+  emails: Emails;
+  email_comments: EmailComments;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -250,6 +253,25 @@ interface Tenants extends RecordType, AddressType {
   phone: string | null;
   json: Json | null;
   notes: string | null;
+}
+
+interface EmailFolders extends RecordType {
+  name: string;
+}
+
+interface Emails extends RecordType {
+  folder_id: string;
+  from_email: string | null;
+  to_email: string | null;
+  subject: string | null;
+  body: string | null;
+  assigned_to: string | null;
+}
+
+interface EmailComments extends RecordType {
+  email_id: string;
+  author_id: string;
+  comment: string;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
