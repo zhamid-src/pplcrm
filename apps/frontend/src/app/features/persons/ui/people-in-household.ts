@@ -1,3 +1,6 @@
+/**
+ * @file Component for displaying people associated with a household.
+ */
 import { Component, OnInit, inject, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
@@ -28,6 +31,9 @@ export class PeopleInHousehold implements OnInit {
   /** The ID of the household whose members should be listed. */
   public householdId = input.required<string | null>();
 
+  /**
+   * Load the list of people for the provided household ID on init.
+   */
   public async ngOnInit() {
     this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.householdId());
   }

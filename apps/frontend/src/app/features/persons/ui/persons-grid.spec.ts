@@ -1,3 +1,6 @@
+/**
+ * @file Unit tests for {@link PersonsGrid} component.
+ */
 jest.mock('@angular/core', () => {
   const actual = jest.requireActual('@angular/core');
   return {

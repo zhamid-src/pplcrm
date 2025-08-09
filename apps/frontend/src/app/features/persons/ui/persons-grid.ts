@@ -1,3 +1,6 @@
+/**
+ * @file Grid component for displaying people with tagging and address features.
+ */
 import { Component, inject } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
@@ -115,6 +118,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  /**
+   * Initializes the grid and retrieves tag filter data from the route.
+   */
   constructor() {
     super();
     const route = inject(ActivatedRoute);
