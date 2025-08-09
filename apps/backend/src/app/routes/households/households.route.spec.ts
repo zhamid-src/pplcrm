@@ -1,3 +1,6 @@
+/**
+ * Integration tests for household REST routes.
+ */
 import Fastify from 'fastify';
 import { HouseholdsController } from '../../controllers/households.controller';
 
