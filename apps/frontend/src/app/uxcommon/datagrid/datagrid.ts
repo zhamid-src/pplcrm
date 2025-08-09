@@ -283,15 +283,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
     try {
-      this.api?.setGridOption('loading', true);
-
       if (this.rowModelType() === 'clientSide') {
+        this.api?.setGridOption('loading', true);
         const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() });
         this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
+        this.api?.setGridOption('loading', false);
+      } else {
+        this.api?.setGridOption('loading', true);
+        this.api?.refreshServerSide({ purge: true });
       }
     } catch (error) {
       this.alertSvc.showError('Could not load the data. Please try again later.');
-    } finally {
       this.api?.setGridOption('loading', false);
     }
   }
