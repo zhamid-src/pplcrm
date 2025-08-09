@@ -4,7 +4,7 @@ const config: Config = {
   preset: 'jest-preset-angular',
   setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
   transform: {
-    '^.+\\.(ts|mjs|js|html)$': [
+    '^.+\\.(ts|mjs|js)$': [
       'jest-preset-angular',
       { tsconfig: '<rootDir>/tsconfig.spec.json' }
     ],
@@ -15,7 +15,8 @@ const config: Config = {
     '^@services/(.*)$': '<rootDir>/src/app/services/$1',
     '^@pipes/(.*)$': '<rootDir>/src/app/pipes/$1',
     '^@common$': '<rootDir>/../../common/src/index.ts',
-    '^apps/frontend/(.*)$': '<rootDir>/$1'
+    '^apps/frontend/(.*)$': '<rootDir>/$1',
+    '\\.(html)$': '<rootDir>/src/__mocks__/html.mock.ts'
   },
   moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
