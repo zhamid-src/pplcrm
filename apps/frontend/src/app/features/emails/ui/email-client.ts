@@ -11,30 +11,76 @@ import { EmailsService } from '../services/emails-service';
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="flex gap-4">
-      <div class="w-1/5">
+    <div class="flex h-[80vh] text-sm bg-white">
+      <!-- Folder list -->
+      <aside class="w-64 bg-gray-50 border-r border-gray-200">
+        <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">Folders</h2>
         <ul>
-          <li *ngFor="let f of folders" (click)="selectFolder(f)">{{ f.name }}</li>
+          <li
+            *ngFor="let f of folders"
+            (click)="selectFolder(f)"
+            [ngClass]="{ 'bg-blue-100 text-blue-600': selectedFolder?.id === f.id }"
+            class="cursor-pointer px-4 py-2 hover:bg-blue-50"
+          >
+            {{ f.name }}
+          </li>
         </ul>
-      </div>
-      <div class="w-1/5">
+      </aside>
+
+      <!-- Email list -->
+      <section class="w-80 border-r border-gray-200">
+        <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">Emails</h2>
         <ul>
-          <li *ngFor="let e of emails" (click)="selectEmail(e)">{{ e.subject }}</li>
+          <li
+            *ngFor="let e of emails"
+            (click)="selectEmail(e)"
+            [ngClass]="{ 'bg-blue-50': selectedEmail?.id === e.id }"
+            class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
+          >
+            <div class="truncate font-medium">{{ e.subject }}</div>
+            <div class="truncate text-xs text-gray-500">{{ e.body }}</div>
+          </li>
         </ul>
-      </div>
-      <div class="flex-1" *ngIf="selectedEmail">
-        <h3>{{ selectedEmail.subject }}</h3>
-        <p>{{ selectedEmail.body }}</p>
-        <div>
-          <div *ngFor="let c of comments">{{ c.comment }}</div>
-          <textarea [(ngModel)]="newComment"></textarea>
-          <button (click)="addComment()">Add Comment</button>
-        </div>
-        <div class="mt-2">
-          <input [(ngModel)]="assignTo" placeholder="Assign to user id" />
-          <button (click)="assign()">Assign</button>
-        </div>
-      </div>
+      </section>
+
+      <!-- Email details -->
+      <section class="flex-1 flex flex-col">
+        <ng-container *ngIf="selectedEmail; else empty">
+          <header class="border-b border-gray-200 p-4">
+            <h3 class="text-lg font-semibold">{{ selectedEmail.subject }}</h3>
+            <p class="text-xs text-gray-500" *ngIf="selectedEmail.assigned_to">
+              Assigned to {{ selectedEmail.assigned_to }}
+            </p>
+          </header>
+          <main class="flex-1 overflow-auto p-4 space-y-4">
+            <p>{{ selectedEmail.body }}</p>
+
+            <div>
+              <h4 class="mb-2 font-semibold">Comments</h4>
+              <div *ngFor="let c of comments" class="mb-2 rounded bg-gray-100 p-2">
+                {{ c.comment }}
+              </div>
+              <textarea
+                [(ngModel)]="newComment"
+                placeholder="Add a comment"
+                class="w-full rounded border p-2"
+              ></textarea>
+              <button (click)="addComment()" class="mt-2 rounded bg-blue-600 px-3 py-1 text-white">Add Comment</button>
+            </div>
+
+            <div class="mt-4">
+              <h4 class="mb-2 font-semibold">Assign</h4>
+              <div class="flex items-center gap-2">
+                <input [(ngModel)]="assignTo" placeholder="Assign to user id" class="flex-1 rounded border p-2" />
+                <button (click)="assign()" class="rounded bg-green-600 px-3 py-1 text-white">Assign</button>
+              </div>
+            </div>
+          </main>
+        </ng-container>
+        <ng-template #empty>
+          <div class="flex flex-1 items-center justify-center text-gray-400">Select an email to view its content</div>
+        </ng-template>
+      </section>
     </div>
   `,
 })
@@ -45,6 +91,8 @@ export class EmailClient implements OnInit {
   emails: any[] = [];
   /** Comments for the selected email */
   comments: any[] = [];
+  /** Selected folder */
+  selectedFolder: any | null = null;
   /** Currently selected email */
   selectedEmail: any | null = null;
   /** New comment text */
@@ -67,6 +115,7 @@ export class EmailClient implements OnInit {
    * @param folder Folder object from the list
    */
   async selectFolder(folder: any) {
+    this.selectedFolder = folder;
     const e = await this.svc.getEmails(folder.id);
     this.emails = e;
     this.selectedEmail = null;
