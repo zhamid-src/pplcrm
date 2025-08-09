@@ -1,4 +1,4 @@
-import { UserProfiles } from '../repositories/userprofiles.repo';
+import { UserProfiles } from '../repositories/user/userprofiles.repo';
 import { BaseController } from './base.controller';
 
 /**

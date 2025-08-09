@@ -1,7 +1,7 @@
 import { Transaction, UpdateResult, sql } from 'kysely';
 
-import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from './base.repo';
+import { GetOperandType, Models } from '../../../../../../common/src/lib/kysely.models';
+import { BaseRepository, QueryParams } from '../base.repo';
 
 /**
  * Repository for managing operations on the `authusers` table.

@@ -2,9 +2,9 @@ import { IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } f
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../repositories/base.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { TagsRepo } from '../repositories/tags.repo';
+import { MapPersonsTagRepo } from '../repositories/persons/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons/persons.repo';
+import { TagsRepo } from '../repositories/tags/tags.repo';
 import { BaseController } from './base.controller';
 import { SettingsController } from './settings.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';

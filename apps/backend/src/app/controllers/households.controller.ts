@@ -2,9 +2,9 @@ import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType 
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../repositories/base.repo';
-import { HouseholdRepo } from '../repositories/households.repo';
-import { MapHouseholdsTagsRepo } from '../repositories/map-households-tags.repo';
-import { TagsRepo } from '../repositories/tags.repo';
+import { HouseholdRepo } from '../repositories/households/households.repo';
+import { MapHouseholdsTagsRepo } from '../repositories/households/map-households-tags.repo';
+import { TagsRepo } from '../repositories/tags/tags.repo';
 import { BaseController } from './base.controller';
 import { SettingsController } from './settings.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';

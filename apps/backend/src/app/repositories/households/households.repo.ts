@@ -1,6 +1,6 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from './base.repo';
+import { BaseRepository, JoinedQueryParams, QueryParams } from '../base.repo';
 import { Models } from 'common/src/lib/kysely.models';
 
 /**

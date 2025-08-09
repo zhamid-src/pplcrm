@@ -1,7 +1,7 @@
 import { Transaction } from 'kysely';
 
-import { GetOperandType, Models } from '../../../../../common/src/lib/kysely.models';
-import { BaseRepository } from './base.repo';
+import { GetOperandType, Models } from '../../../../../../common/src/lib/kysely.models';
+import { BaseRepository } from '../base.repo';
 
 /**
  * Repository for managing user sessions in the `sessions` table.

@@ -1,13 +1,8 @@
 import * as pino from 'pino';
 
-import closeWithGrace from 'close-with-grace';
-
 import { migrateToLatest } from './app/kyselyinit';
 import { FastifyServer } from './fastify.server';
-
-process.on('SIGTERM', closeWithGrace);
-
-process.on('SIGINT', closeWithGrace);
+import { onShutdown } from './shutdown';
 
 /**
  * Create the logger with pino-pretty
@@ -33,7 +28,7 @@ const server = new FastifyServer(logger);
 /**
  * Close the server gracefully
  */
-closeWithGrace({ delay: 2500 }, async function ({ err }) {
-  if (err) logger.error(err);
+onShutdown(async () => {
+  console.log('Closing DB…');
   await server.close();
 });

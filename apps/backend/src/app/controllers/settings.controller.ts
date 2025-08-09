@@ -1,6 +1,6 @@
 import { IAuthKeyPayload } from '@common';
 
-import { SettingsRepo } from '../repositories/settings.repo';
+import { SettingsRepo } from '../repositories/settings/settings.repo';
 import { BaseController } from './base.controller';
 
 /**

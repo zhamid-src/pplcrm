@@ -1,6 +1,6 @@
 import { OperandValueExpressionOrList } from 'kysely';
 
-import { BaseRepository } from './base.repo';
+import { BaseRepository } from '../base.repo';
 import { Models } from 'common/src/lib/kysely.models';
 
 /**

@@ -7,11 +7,11 @@ import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
 
-import { AuthUsersRepo } from '../repositories/authusers.repo';
+import { AuthUsersRepo } from '../repositories/auth/authusers.repo';
 import { QueryParams } from '../repositories/base.repo';
-import { SessionsRepo } from '../repositories/sessions.repo';
-import { TenantsRepo } from '../repositories/tenants.repo';
-import { UserProfiles } from '../repositories/userprofiles.repo';
+import { SessionsRepo } from '../repositories/sessions/sessions.repo';
+import { TenantsRepo } from '../repositories/tenants/tenants.repo';
+import { UserProfiles } from '../repositories/user/userprofiles.repo';
 import { BaseController } from './base.controller';
 import {
   AuthUsersType,
