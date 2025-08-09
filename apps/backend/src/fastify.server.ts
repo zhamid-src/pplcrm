@@ -7,6 +7,7 @@ import { default as fastify } from 'fastify';
 import { routes } from './app/routes';
 import { trpcRouter } from './app/trpc-routers';
 import { createContext } from './context';
+import { env } from './env';
 
 /**
  * Wrapper class for a Fastify server instance.
@@ -69,17 +70,13 @@ export class FastifyServer {
    * @returns {Promise<void>}
    */
   public async serve(): Promise<void> {
-    await this.server.listen({ port, host }, (err) => {
+    await this.server.listen({ port: env.port, host: env.host }, (err) => {
       if (err) {
         this.server.log.error(err);
         process.exit(1);
       } else {
-        this.server.log.info(`[ ready ] http://${host}:${port}`);
+        this.server.log.info(`[ ready ] http://${env.host}:${env.port}`);
       }
     });
   }
 }
-
-// Set default host and port if not defined in environment
-const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;

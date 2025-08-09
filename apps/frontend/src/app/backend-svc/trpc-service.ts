@@ -10,6 +10,7 @@ import { get, set } from 'idb-keyval';
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
 import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
+import { environment } from '../../environments/environment';
 
 /**
  * A base service that wraps a TRPC proxy client with support for:
@@ -109,7 +110,7 @@ export class TRPCService<T> {
  */
 function httpLink(tokenSvc: TokenService) {
   return httpBatchLink({
-    url: 'http://localhost:3000',
+    url: environment.apiUrl,
     headers() {
       const authToken = tokenSvc.getAuthToken();
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};
