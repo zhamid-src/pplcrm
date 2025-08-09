@@ -1,4 +1,7 @@
-// This generally matches the dB schema found in kysely.models, but it doesn't have to
+/**
+ * JSON schema definitions for person-related routes.
+ * This generally matches the database schema found in `kysely.models`, but it can differ.
+ */
 const PersonType = {
   id: { type: 'string' },
   tenant_id: { type: 'string' },
@@ -24,30 +27,36 @@ const PersonType = {
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };
+/** Schema for a single person object. */
 const person = {
   type: 'object',
   properties: PersonType,
 };
+/** Schema for an array of person objects. */
 const persons = {
   type: 'array',
   items: PersonType,
 };
 
+/** Schema for route parameters containing a person ID. */
 export const IdParam = {
   type: 'object',
   properties: { id: { type: 'string' } },
 };
+/** Schema for the response when counting persons. */
 export const count = {
   schema: {
     response: { 200: { type: 'number' } },
   },
 };
+/** Schema for retrieving a person by ID. */
 export const findFromId = {
   schema: {
     params: IdParam,
     response: { 200: person },
   },
 };
+/** Schema for retrieving all persons. */
 export const getAll = {
   schema: {
     response: {
@@ -55,6 +64,7 @@ export const getAll = {
     },
   },
 };
+/** Schema for updating a person. */
 export const update = {
   schema: {
     body: {
