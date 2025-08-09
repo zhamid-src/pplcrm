@@ -16,7 +16,20 @@
         "tsConfig": "apps/backend/tsconfig.app.json",
         "assets": ["apps/backend/src/assets"],
         "generatePackageJson": false,
-        "external": ["pino", "@mapbox/node-pre-gyp", "aws-sdk", "mock-aws-s3", "nock"],
+        "external": [
+          "pg",
+          "pg-native",
+          "pg-pool",
+          "pg-types",
+          "pg-protocol",
+          "packet-reader",
+          "buffer-writer",
+          "pino",
+          "@mapbox/node-pre-gyp",
+          "aws-sdk",
+          "mock-aws-s3",
+          "nock"
+        ],
         "esbuildOptions": {
           "sourcemap": true,
           "loader": { ".html": "text" },
