@@ -1,3 +1,6 @@
+/**
+ * @file Data grid component for viewing and editing tags.
+ */
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';

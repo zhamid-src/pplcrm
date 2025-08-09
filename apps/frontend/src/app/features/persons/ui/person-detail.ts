@@ -1,3 +1,6 @@
+/**
+ * @file Component for creating or updating individual person records.
+ */
 import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -60,6 +63,9 @@ export class PersonDetail implements OnInit {
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
 
+  /**
+   * Initializes the component and determines edit mode via route params.
+   */
   constructor() {
     if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
@@ -153,6 +159,11 @@ export class PersonDetail implements OnInit {
       .finally(() => this.loading.set(false));
   }
 
+  /**
+   * Format an address object into a single readable string.
+   * @param address Address components to format
+   * @returns Human-readable address string
+   */
   private getFormattedAddress(address: AddressType): string {
     const parts: string[] = [];
 

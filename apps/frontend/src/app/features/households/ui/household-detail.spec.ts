@@ -1,3 +1,6 @@
+/**
+ * @file Unit tests for the {@link HouseholdDetail} component.
+ */
 jest.mock('@uxcommon/formInput', () => ({ FormInput: class {} }), { virtual: true });
 jest.mock('@uxcommon/input', () => ({ PPlCrmInput: class {} }), { virtual: true });
 jest.mock('@uxcommon/tags/tags', () => ({ Tags: class {} }), { virtual: true });

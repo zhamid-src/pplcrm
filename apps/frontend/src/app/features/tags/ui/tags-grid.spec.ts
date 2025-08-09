@@ -1,3 +1,6 @@
+/**
+ * @file Basic existence test for {@link TagsGridComponent} exports.
+ */
 import * as exported from './tags-grid';
 
 describe('tags-grid', () => {
