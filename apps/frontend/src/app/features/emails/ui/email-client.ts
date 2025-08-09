@@ -45,38 +45,34 @@ export class EmailClient implements OnInit {
 
   constructor(private svc: EmailsService) {}
 
-  ngOnInit() {
-    this.svc.getFolders().subscribe((f) => (this.folders = f));
+  async ngOnInit() {
+    this.folders = await this.svc.getFolders();
   }
 
-  selectFolder(folder: any) {
-    this.svc.getEmails(folder.id).subscribe((e) => {
-      this.emails = e;
-      this.selectedEmail = null;
-      this.comments = [];
-    });
+  async selectFolder(folder: any) {
+    const e = await this.svc.getEmails(folder.id);
+    this.emails = e;
+    this.selectedEmail = null;
+    this.comments = [];
   }
 
-  selectEmail(email: any) {
-    this.svc.getEmail(email.id).subscribe((res) => {
-      this.selectedEmail = res.email;
-      this.comments = res.comments;
-    });
+  async selectEmail(email: any) {
+    const res = await this.svc.getEmail(email.id);
+    this.selectedEmail = res.email;
+    this.comments = res.comments;
   }
 
-  addComment() {
+  async addComment() {
     if (!this.selectedEmail || !this.newComment) return;
-    this.svc.addComment(this.selectedEmail.id, '1', this.newComment).subscribe(() => {
-      this.comments.push({ comment: this.newComment });
-      this.newComment = '';
-    });
+    await this.svc.addComment(this.selectedEmail.id, '1', this.newComment);
+    this.comments.push({ comment: this.newComment });
+    this.newComment = '';
   }
 
-  assign() {
+  async assign() {
     if (!this.selectedEmail || !this.assignTo) return;
-    this.svc.assign(this.selectedEmail.id, this.assignTo).subscribe(() => {
-      this.selectedEmail.assigned_to = this.assignTo;
-      this.assignTo = '';
-    });
+    await this.svc.assign(this.selectedEmail.id, this.assignTo);
+    this.selectedEmail.assigned_to = this.assignTo;
+    this.assignTo = '';
   }
 }

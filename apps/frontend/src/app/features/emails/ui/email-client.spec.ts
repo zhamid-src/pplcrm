@@ -1,32 +1,31 @@
-import { of } from 'rxjs';
 import { EmailClient } from './email-client';
 import { EmailsService } from '../services/emails-service';
 
 jest.mock('../services/emails-service', () => ({
   EmailsService: class {
     getFolders() {
-      return of([{ id: '1', name: 'Inbox' }]);
+      return Promise.resolve([{ id: '1', name: 'Inbox' }]);
     }
     getEmails() {
-      return of([]);
+      return Promise.resolve([]);
     }
     getEmail() {
-      return of({ email: { id: '1', subject: 'a', body: 'b' }, comments: [] });
+      return Promise.resolve({ email: { id: '1', subject: 'a', body: 'b' }, comments: [] });
     }
     addComment() {
-      return of(null);
+      return Promise.resolve(null);
     }
     assign() {
-      return of(null);
+      return Promise.resolve(null);
     }
   },
 }));
 
 describe('EmailClient', () => {
-  it('loads folders on init', () => {
+  it('loads folders on init', async () => {
     const svc = new EmailsService();
     const comp = new EmailClient(svc as any);
-    comp.ngOnInit();
+    await comp.ngOnInit();
     expect(comp.folders.length).toBe(1);
   });
 });

@@ -1,33 +1,27 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { environment } from '../../../../environments/environment';
+import { Injectable } from '@angular/core';
 
-interface Folder { id: string; name: string }
-interface Email { id: string; subject: string; body: string }
+import { TRPCService } from '../../../backend-svc/trpc-service';
 
-/** Service for interacting with email backend */
+/** Service for interacting with email backend via tRPC */
 @Injectable({ providedIn: 'root' })
-export class EmailsService {
-  private http = inject(HttpClient);
-  private base = `${environment.apiUrl}/v1/emails`;
-
+export class EmailsService extends TRPCService<'emails'> {
   getFolders() {
-    return this.http.get<Folder[]>(`${this.base}/folders`);
+    return this.api.emails.getFolders.query();
   }
 
   getEmails(folderId: string) {
-    return this.http.get<Email[]>(`${this.base}/folder/${folderId}`);
+    return this.api.emails.getEmails.query({ folderId });
   }
 
   getEmail(id: string) {
-    return this.http.get<{ email: Email; comments: any[] }>(`${this.base}/message/${id}`);
+    return this.api.emails.getEmail.query(id);
   }
 
   addComment(id: string, author_id: string, comment: string) {
-    return this.http.post(`${this.base}/message/${id}/comment`, { author_id, comment });
+    return this.api.emails.addComment.mutate({ id, author_id, comment });
   }
 
   assign(id: string, user_id: string) {
-    return this.http.post(`${this.base}/message/${id}/assign`, { user_id });
+    return this.api.emails.assign.mutate({ id, user_id });
   }
 }
