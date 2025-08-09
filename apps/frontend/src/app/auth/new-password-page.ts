@@ -1,3 +1,6 @@
+/**
+ * Component allowing a user to set a new password using a reset code.
+ */
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -14,6 +17,9 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordCheckerModule, Icon, Alerts],
   templateUrl: './new-password-page.html',
 })
+/**
+ * Page component presenting a form to choose a new password.
+ */
 export class NewPasswordPage implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
@@ -36,6 +42,7 @@ export class NewPasswordPage implements OnInit {
   /** Success message to show after successful password reset */
   protected success: string | undefined;
 
+  /** Reactive form with the new password control */
   public form = this.fb.group({
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
@@ -63,6 +70,9 @@ export class NewPasswordPage implements OnInit {
     return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
+  /**
+   * Initializes component state by reading the reset code from the URL.
+   */
   public async ngOnInit() {
     const code = this.route.snapshot.queryParamMap.get('code');
 

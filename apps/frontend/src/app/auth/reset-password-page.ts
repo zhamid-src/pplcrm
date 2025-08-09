@@ -1,3 +1,6 @@
+/**
+ * Component for initiating the password reset email flow.
+ */
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';

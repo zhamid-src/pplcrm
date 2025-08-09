@@ -1,3 +1,6 @@
+/**
+ * Guard that redirects already-authenticated users away from login-related routes.
+ */
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 
