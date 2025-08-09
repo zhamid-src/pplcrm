@@ -8,13 +8,11 @@ import { NewPasswordPage } from './auth/new-password-page';
 import { ResetPasswordPage } from './auth/reset-password-page';
 import { SignInPage } from './auth/signin-page';
 import { SignUpPage } from './auth/signup-page';
-import { DonorsGrid } from './features/donors/ui/donors-grid';
 import { HouseholdDetail } from './features/households/ui/household-detail';
 import { HouseholdsGrid } from './features/households/ui/households-grid';
 import { PersonDetail } from './features/persons/ui/person-detail';
 import { PersonsGrid } from './features/persons/ui/persons-grid';
 import { TagsGridComponent } from './features/tags/ui/tags-grid';
-import { VolunteersGrid } from './features/volunteers/ui/volunteers-grid';
 import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './temp/summary';
 
@@ -128,8 +126,8 @@ export const appRoutes: Route[] = [
         children: [
           {
             path: '',
-            component: VolunteersGrid,
-            data: { shouldReuse: true, key: 'volunteersgridroot' },
+            component: PersonsGrid,
+            data: { shouldReuse: true, key: 'volunteersgridroot', tags: ['Volunteer'] },
           },
         ],
       },
@@ -142,8 +140,8 @@ export const appRoutes: Route[] = [
         children: [
           {
             path: '',
-            component: DonorsGrid,
-            data: { shouldReuse: true, key: 'donorsgridroot' },
+            component: PersonsGrid,
+            data: { shouldReuse: true, key: 'donorsgridroot', tags: ['donor'] },
           },
         ],
       },
