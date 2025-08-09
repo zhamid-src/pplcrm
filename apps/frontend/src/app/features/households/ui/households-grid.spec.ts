@@ -1,3 +1,6 @@
+/**
+ * @file Unit tests for {@link HouseholdsGrid} component.
+ */
 jest.mock('@uxcommon/datagrid/datagrid', () => {
   return {
     DataGrid: class {

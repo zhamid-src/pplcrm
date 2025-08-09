@@ -1,3 +1,6 @@
+/**
+ * @file Tests for {@link TagsCellRenderer} functionality.
+ */
 import { TagsCellRenderer } from './tags-cell-renderer';
 
 jest.mock('@uxcommon/tags/tags', () => ({ Tags: class {} }), { virtual: true });

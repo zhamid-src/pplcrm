@@ -1,3 +1,6 @@
+/**
+ * @file Grid component for listing households with counts and tags.
+ */
 import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';

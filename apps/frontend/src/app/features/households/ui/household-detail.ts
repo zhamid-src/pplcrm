@@ -1,3 +1,6 @@
+/**
+ * @file Component for creating or editing households and managing their tags and members.
+ */
 import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -78,6 +81,9 @@ export class HouseholdDetail implements OnInit {
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
 
+  /**
+   * Initializes the component and captures the household ID in edit mode.
+   */
   constructor() {
     if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
