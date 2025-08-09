@@ -1,10 +1,15 @@
+/**
+ * Repository handling the mapping between households and tags.
+ */
 import { BaseRepository } from '../base.repo';
 
 /**
- * Repository for interacting with the `map_households_tags` table.
- * Handles mappings between households and tags.
+ * Data access for the `map_households_tags` table.
  */
 export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'> {
+  /**
+   * Creates a repository instance for the `map_households_tags` table.
+   */
   constructor() {
     super('map_households_tags');
   }
