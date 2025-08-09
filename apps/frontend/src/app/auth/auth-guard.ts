@@ -1,3 +1,6 @@
+/**
+ * Angular route guard that ensures only authenticated users can access certain routes.
+ */
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 
