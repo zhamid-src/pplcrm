@@ -5,26 +5,49 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { EmailsService } from '../services/emails-service';
+import { Swap } from '../../../uxcommon/swap';
 
 @Component({
   selector: 'pc-email-client',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, Swap],
   template: `
     <div class="flex h-[80vh] text-sm bg-white">
       <!-- Folder list -->
-      <aside class="w-64 bg-gray-50 border-r border-gray-200">
-        <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">Folders</h2>
-        <ul>
+      <aside
+        class="bg-gray-50 border-r border-gray-200 group flex flex-col transition-all duration-50 hover:w-64"
+        [class.w-64]="!foldersCollapsed"
+        [class.w-16]="foldersCollapsed"
+      >
+        <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">
+          <span class="group-hover:md:block" [class.hidden]="foldersCollapsed">Folders</span>
+          <span class="block text-center group-hover:md:hidden" [class.hidden]="!foldersCollapsed">F</span>
+        </h2>
+        <ul class="flex-1">
           <li
             *ngFor="let f of folders"
             (click)="selectFolder(f)"
             [ngClass]="{ 'bg-blue-100 text-blue-600': selectedFolder?.id === f.id }"
-            class="cursor-pointer px-4 py-2 hover:bg-blue-50"
+            class="cursor-pointer flex items-center px-4 py-2 hover:bg-blue-50"
           >
-            {{ f.name }}
+            <span class="group-hover:md:block" [class.hidden]="foldersCollapsed">{{ f.name }}</span>
+            <span
+              class="group-hover:md:hidden w-full text-center"
+              [class.hidden]="!foldersCollapsed"
+            >
+              {{ f.name[0] }}
+            </span>
           </li>
         </ul>
+        <div class="border-t border-gray-200 p-2 flex justify-center">
+          <pc-swap
+            swapOffIcon="bars-3"
+            swapOnIcon="x-mark"
+            animation="rotate"
+            [checked]="!foldersCollapsed"
+            (clickEvent)="toggleFolders()"
+          ></pc-swap>
+        </div>
       </aside>
 
       <!-- Email list -->
@@ -99,6 +122,8 @@ export class EmailClient implements OnInit {
   newComment = '';
   /** User ID to assign selected email to */
   assignTo = '';
+  /** Indicates whether the folder sidebar is collapsed */
+  foldersCollapsed = false;
 
   /** Injects the EmailsService */
   constructor(private svc: EmailsService) {}
@@ -150,5 +175,12 @@ export class EmailClient implements OnInit {
     await this.svc.assign(this.selectedEmail.id, this.assignTo);
     this.selectedEmail.assigned_to = this.assignTo;
     this.assignTo = '';
+  }
+
+  /**
+   * Toggle the collapse state of the folder sidebar.
+   */
+  toggleFolders() {
+    this.foldersCollapsed = !this.foldersCollapsed;
   }
 }
