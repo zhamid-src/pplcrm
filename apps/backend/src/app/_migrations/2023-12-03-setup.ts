@@ -16,6 +16,9 @@ export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable('tags').cascade().execute();
   await db.schema.dropTable('map_peoples_tags').cascade().execute();
   await db.schema.dropTable('map_households_tags').cascade().execute();
+  await db.schema.dropTable('email_comments').cascade().execute();
+  await db.schema.dropTable('emails').cascade().execute();
+  await db.schema.dropTable('email_folders').cascade().execute();
   await db.schema.dropTable('settings').cascade().execute();
 }
 
@@ -524,6 +527,177 @@ export async function up(db: Kysely<any>): Promise<void> {
         email: 'sara.jones@email.com',
       },
     ])
+    .execute();
+
+  await db.schema
+    .createTable('email_folders')
+    .addColumn('id', 'bigserial', (col) => col.primaryKey().unique())
+    .addColumn('tenant_id', 'bigint', (col) => col.notNull())
+    .addColumn('name', 'text', (col) => col.notNull())
+    .addColumn('createdby_id', 'bigint', (col) => col.notNull())
+    .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
+    .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .execute();
+
+  await db.schema
+    .createTable('emails')
+    .addColumn('id', 'bigserial', (col) => col.primaryKey().unique())
+    .addColumn('tenant_id', 'bigint', (col) => col.notNull())
+    .addColumn('folder_id', 'bigint', (col) => col.notNull())
+    .addColumn('from_email', 'text')
+    .addColumn('to_email', 'text')
+    .addColumn('subject', 'text')
+    .addColumn('body', 'text')
+    .addColumn('assigned_to', 'bigint')
+    .addColumn('createdby_id', 'bigint', (col) => col.notNull())
+    .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
+    .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addForeignKeyConstraint('fk_emails_folder', ['folder_id'], 'email_folders', ['id'])
+    .addForeignKeyConstraint('fk_emails_assigned', ['assigned_to'], 'authusers', ['id'])
+    .execute();
+
+  await db.schema
+    .createTable('email_comments')
+    .addColumn('id', 'bigserial', (col) => col.primaryKey().unique())
+    .addColumn('tenant_id', 'bigint', (col) => col.notNull())
+    .addColumn('email_id', 'bigint', (col) => col.notNull())
+    .addColumn('author_id', 'bigint', (col) => col.notNull())
+    .addColumn('comment', 'text', (col) => col.notNull())
+    .addColumn('createdby_id', 'bigint', (col) => col.notNull())
+    .addColumn('updatedby_id', 'bigint', (col) => col.notNull())
+    .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addForeignKeyConstraint('fk_email_comments_email', ['email_id'], 'emails', ['id'])
+    .addForeignKeyConstraint('fk_email_comments_author', ['author_id'], 'authusers', ['id'])
+    .execute();
+
+  await db
+    .insertInto('email_folders')
+    .values([
+      { id: 1, tenant_id: 1, name: 'Inbox', createdby_id: 1, updatedby_id: 1 },
+      { id: 2, tenant_id: 1, name: 'Sent', createdby_id: 1, updatedby_id: 1 },
+    ])
+    .execute();
+
+  await db
+    .insertInto('emails')
+    .values([
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'alice@example.com',
+        to_email: 'user@example.com',
+        subject: 'Welcome',
+        body: 'Welcome to the system!',
+        assigned_to: 1,
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'bob@example.com',
+        to_email: 'user@example.com',
+        subject: 'Meeting',
+        body: 'Can we meet tomorrow?',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'carol@example.com',
+        to_email: 'user@example.com',
+        subject: 'Invoice',
+        body: 'Please find attached invoice.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'dave@example.com',
+        to_email: 'user@example.com',
+        subject: 'Question',
+        body: 'I have a question.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'erin@example.com',
+        to_email: 'user@example.com',
+        subject: 'Feedback',
+        body: 'Here is some feedback.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'frank@example.com',
+        to_email: 'user@example.com',
+        subject: 'Greetings',
+        body: 'Greetings and best wishes.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'gina@example.com',
+        to_email: 'user@example.com',
+        subject: 'Update',
+        body: 'Here is an update.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'harry@example.com',
+        to_email: 'user@example.com',
+        subject: 'Reminder',
+        body: 'This is a reminder.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'ivy@example.com',
+        to_email: 'user@example.com',
+        subject: 'Invitation',
+        body: 'You are invited.',
+      },
+      {
+        tenant_id: 1,
+        folder_id: 1,
+        createdby_id: 1,
+        updatedby_id: 1,
+        from_email: 'jack@example.com',
+        to_email: 'user@example.com',
+        subject: 'Thanks',
+        body: 'Thank you!',
+      },
+    ])
+    .execute();
+
+  await db
+    .insertInto('email_comments')
+    .values({
+      tenant_id: 1,
+      email_id: 1,
+      author_id: 1,
+      comment: 'First comment',
+      createdby_id: 1,
+      updatedby_id: 1,
+    })
     .execute();
 
   await db.schema
