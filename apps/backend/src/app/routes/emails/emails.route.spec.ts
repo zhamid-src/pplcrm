@@ -1,3 +1,6 @@
+/**
+ * Integration tests for email REST routes.
+ */
 import Fastify from 'fastify';
 import { EmailsController } from '../../controllers/emails.controller';
 
