@@ -1,3 +1,6 @@
+/**
+ * Integration tests for authentication REST routes.
+ */
 import Fastify from 'fastify';
 import { AuthController } from '../../controllers/auth.controller';
 

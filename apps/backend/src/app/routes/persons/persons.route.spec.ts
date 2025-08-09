@@ -1,3 +1,6 @@
+/**
+ * Integration tests for person REST routes.
+ */
 import Fastify from 'fastify';
 import { PersonsController } from '../../controllers/persons.controller';
 
@@ -8,9 +11,9 @@ describe('persons REST routes', () => {
 
   beforeAll(async () => {
     jest.spyOn(PersonsController.prototype, 'getAll').mockResolvedValue(rows as any);
-    jest.spyOn(PersonsController.prototype, 'getById').mockImplementation(async ({ id }) =>
-      rows.find((r) => r.id === id) as any,
-    );
+    jest
+      .spyOn(PersonsController.prototype, 'getById')
+      .mockImplementation(async ({ id }) => rows.find((r) => r.id === id) as any);
     jest.spyOn(PersonsController.prototype, 'getCount').mockResolvedValue(rows.length);
 
     const routes = (await import('./persons.route')).default;
