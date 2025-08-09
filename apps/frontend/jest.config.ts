@@ -15,7 +15,8 @@ const config: Config = {
     '^@uxcommon/(.*)$': '<rootDir>/src/app/uxcommon/$1',
     '^@services/(.*)$': '<rootDir>/src/app/services/$1',
     '^@pipes/(.*)$': '<rootDir>/src/app/pipes/$1',
-    '^@common$': '<rootDir>/../../common/src/index.ts'
+    '^@common$': '<rootDir>/../../common/src/index.ts',
+    '^apps/frontend/(.*)$': '<rootDir>/$1'
   },
   moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
