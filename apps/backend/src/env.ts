@@ -1,10 +1,3 @@
-import { config as load } from 'dotenv';
-import { join } from 'path';
-
-const nodeEnv = process.env.NODE_ENV ?? 'development';
-const envFile = `.env.${nodeEnv}`;
-load({ path: join(process.cwd(), envFile) });
-
 export const env = {
   host: process.env.HOST ?? 'localhost',
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
