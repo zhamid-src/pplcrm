@@ -1,3 +1,6 @@
+/**
+ * Data access layer for user session records.
+ */
 import { Transaction } from 'kysely';
 
 import { GetOperandType, Models } from '../../../../../../common/src/lib/kysely.models';
@@ -7,6 +10,9 @@ import { BaseRepository } from '../base.repo';
  * Repository for managing user sessions in the `sessions` table.
  */
 export class SessionsRepo extends BaseRepository<'sessions'> {
+  /**
+   * Creates a repository instance for the `sessions` table.
+   */
   constructor() {
     super('sessions');
   }

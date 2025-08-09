@@ -1,3 +1,6 @@
+/**
+ * Repository for tag records and their associations.
+ */
 import { OperandValueExpressionOrList, SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../base.repo';
@@ -7,6 +10,9 @@ import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
  * Repository for interacting with the `tags` table and related mapping tables.
  */
 export class TagsRepo extends BaseRepository<'tags'> {
+  /**
+   * Creates a repository instance for the `tags` table.
+   */
   constructor() {
     super('tags');
   }

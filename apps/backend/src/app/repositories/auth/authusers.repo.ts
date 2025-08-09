@@ -1,3 +1,6 @@
+/**
+ * Data access layer for authentication user records.
+ */
 import { Transaction, UpdateResult, sql } from 'kysely';
 
 import { GetOperandType, Models } from '../../../../../../common/src/lib/kysely.models';
@@ -8,6 +11,9 @@ import { BaseRepository, QueryParams } from '../base.repo';
  * Handles authentication user logic like email lookup, password reset, etc.
  */
 export class AuthUsersRepo extends BaseRepository<'authusers'> {
+  /**
+   * Creates a repository instance for the `authusers` table.
+   */
   constructor() {
     super('authusers');
   }
