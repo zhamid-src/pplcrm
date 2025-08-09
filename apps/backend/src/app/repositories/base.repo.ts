@@ -1,5 +1,9 @@
 // tsco:ignore
 
+/**
+ * Shared base repository that wraps Kysely and provides common CRUD helpers.
+ * Specific repositories for individual tables extend this class.
+ */
 import { INow } from '@common';
 
 import { promises as fs } from 'fs';
@@ -68,6 +72,11 @@ export class BaseRepository<T extends keyof Models> {
     }),
   });
 
+  /**
+   * Creates a repository instance scoped to a specific table.
+   *
+   * @param tableIn - The table this repository should operate on.
+   */
   constructor(tableIn: T) {
     this.table = tableIn;
   }

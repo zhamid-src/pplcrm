@@ -1,3 +1,6 @@
+/**
+ * Repository utilities for household records and related queries.
+ */
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../base.repo';
@@ -6,22 +9,16 @@ import { Models } from 'common/src/lib/kysely.models';
 /**
  * Repository for the `households` table.
  *
- * Extends `BaseRepository` to provide table-specific queries such as
- * joining households with people and tags.
+ * Provides table-specific queries such as joining households with people and tags.
  */
 export class HouseholdRepo extends BaseRepository<'households'> {
+  /**
+   * Creates a repository instance for the `households` table.
+   */
   constructor() {
     super('households');
   }
 
-  /**
-   * Get all households for a tenant with the count of people in each household
-   * and the tags associated with them.
-   *
-   * @param _tenant_id - The tenant ID
-   * @param trx - Optional Kysely transaction
-   * @returns List of households with person count and tags
-   */
   /**
    * Get all households with person count and associated tags, supporting filter/search/pagination.
    *

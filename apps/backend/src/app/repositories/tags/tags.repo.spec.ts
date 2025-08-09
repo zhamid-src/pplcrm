@@ -1,3 +1,6 @@
+/**
+ * Unit tests for the tags repository.
+ */
 import { TagsRepo } from "./tags.repo";
 
 describe('TagsRepo', () => {
@@ -5,6 +8,9 @@ describe('TagsRepo', () => {
     jest.restoreAllMocks();
   });
 
+  /**
+   * Ensures that `getIdByName` creates the correct select and where clauses.
+   */
   it('getIdByName builds proper query', async () => {
     const repo = new TagsRepo();
     const executeTakeFirst = jest.fn().mockResolvedValue({ id: '1' });

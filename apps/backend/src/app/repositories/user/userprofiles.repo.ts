@@ -1,3 +1,6 @@
+/**
+ * Repository for user profile records.
+ */
 import { Transaction } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../base.repo';
@@ -7,6 +10,9 @@ import { Models } from 'common/src/lib/kysely.models';
  * Repository for interacting with the `profiles` table.
  */
 export class UserProfiles extends BaseRepository<'profiles'> {
+  /**
+   * Creates a repository instance for the `profiles` table.
+   */
   constructor() {
     super('profiles');
   }
