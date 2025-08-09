@@ -73,7 +73,8 @@ npm install
 
 ### Environment Variables
 
-Create a `.env` file in the project root or inside `apps/backend/`:
+Create environment files like `.env.development` or `.env.production` in the project root or inside `apps/backend/`.
+The backend loads these using Node's built-in `--env-file` option:
 
 ```env
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/pplcrm
@@ -114,8 +115,9 @@ npm run db:migrate
 ## 🏃 Running the Apps
 
 ```bash
-nx serve backend   # Fastify API
-nx serve frontend  # Angular SPA
+nx serve backend                    # Fastify API (.env.development)
+nx serve backend --configuration=production  # Fastify API (.env.production)
+nx serve frontend                   # Angular SPA
 ```
 
 ---

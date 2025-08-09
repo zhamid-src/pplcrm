@@ -45,10 +45,12 @@
       },
       "configurations": {
         "development": {
-          "buildTarget": "backend:build:development"
+          "buildTarget": "backend:build:development",
+          "runtimeArgs": ["--env-file=.env.development"]
         },
         "production": {
-          "buildTarget": "backend:build:production"
+          "buildTarget": "backend:build:production",
+          "runtimeArgs": ["--env-file=.env.production"]
         }
       }
     },
