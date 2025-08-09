@@ -1,3 +1,7 @@
+/**
+ * Manages the application's light and dark theme preference using Angular signals
+ * and persists the selection in local storage.
+ */
 import { Injectable, signal } from '@angular/core';
 
 /**

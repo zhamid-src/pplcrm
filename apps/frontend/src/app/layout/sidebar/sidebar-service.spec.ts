@@ -1,3 +1,6 @@
+/**
+ * Unit tests covering SidebarService behavior for drawer state and route lookup.
+ */
 import { SidebarService } from './sidebar-service';
 
 describe('SidebarService', () => {

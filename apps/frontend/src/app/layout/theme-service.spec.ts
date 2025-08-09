@@ -1,3 +1,7 @@
+/**
+ * Unit tests verifying ThemeService behavior for detecting system preferences and
+ * toggling between light and dark modes.
+ */
 import { ThemeService } from './theme-service';
 
 describe('ThemeService', () => {
