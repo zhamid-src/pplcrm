@@ -109,6 +109,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
             endRow: (startRow || 0) + 10, // TODO: page size
             sortModel,
             filterModel,
+            tags: this.limitToTags(),
           } as getAllOptionsType;
 
           const data = await this.gridSvc.getAll(options);
