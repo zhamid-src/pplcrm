@@ -1,17 +1,33 @@
 <section class="flex-1 flex flex-col bg-white">
     @if (selectedEmail()) {
-    <header class="border-b border-gray-200 p-4">
-        <h3 class="text-lg font-semibold">{{ selectedEmail().subject }}</h3>
-        @if (selectedEmail().assigned_to) {
+    <header class="border-b border-gray-200 p-4 space-y-1">
+        <h3 class="text-lg font-semibold">
+            {{ selectedEmail().subject }}
+        </h3>
+
+        <!-- Owner -->
         <p class="text-xs text-gray-500">
-            Owner: {{ selectedEmail().assigned_to }}
+            Owner:
+            {{ selectedEmail().assigned_to || 'No Owner' }}
         </p>
-        } @else {
-        <p class="text-xs text-gray-500">
-            No Owner.
-        </p>
-        }
+
+        <!-- Date / From / To -->
+        <div class="flex flex-col gap-1 text-xs text-gray-500">
+            <div>
+                <strong>From:</strong>
+                {{ selectedEmail().from_email }}
+            </div>
+            <div>
+                <strong>Date:</strong>
+                {{ selectedEmail().updated_at | date:'medium' }}
+            </div>
+            <div>
+                <strong>To:</strong>
+                {{ selectedEmail().to_email }}
+            </div>
+        </div>
     </header>
+
     <main class="flex-1 overflow-auto p-4 space-y-4">
         <p>{{ selectedEmail().body }}</p>
 
