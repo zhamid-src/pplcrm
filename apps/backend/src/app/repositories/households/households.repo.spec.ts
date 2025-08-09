@@ -1,8 +1,14 @@
+/**
+ * Unit tests for the household repository.
+ */
 import { HouseholdRepo } from './households.repo';
 
 describe('HouseholdRepo', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  /**
+   * Verifies that `getTags` constructs the expected join and filter clauses.
+   */
   it('getTags builds proper query', async () => {
     const repo = new HouseholdRepo();
     const execute = jest.fn().mockResolvedValue([]);

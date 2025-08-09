@@ -1,3 +1,6 @@
+/**
+ * Repository logic for person entities.
+ */
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../base.repo';
@@ -9,6 +12,9 @@ import { Models } from 'common/src/lib/kysely.models';
  * Provides additional functionality for joining with `households`, `tags`, and `map_peoples_tags`.
  */
 export class PersonsRepo extends BaseRepository<'persons'> {
+  /**
+   * Creates a repository instance for the `persons` table.
+   */
   constructor() {
     super('persons');
   }

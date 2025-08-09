@@ -1,10 +1,15 @@
+/**
+ * Repository managing the relationship between people and tags.
+ */
 import { BaseRepository } from '../base.repo';
 
 /**
- * Repository for interacting with the `map_peoples_tags` table.
- * Handles mappings between people and tags.
+ * Data access for the `map_peoples_tags` table.
  */
 export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
+  /**
+   * Creates a repository instance for the `map_peoples_tags` table.
+   */
   constructor() {
     super('map_peoples_tags');
   }
