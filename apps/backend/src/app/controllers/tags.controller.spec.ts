@@ -1,5 +1,5 @@
+import { TagsRepo } from '../repositories/tags/tags.repo';
 import { TagsController } from './tags.controller';
-import { TagsRepo } from '../repositories/tags.repo';
 
 describe('TagsController', () => {
   const auth = { user_id: 'u1', tenant_id: 't1' } as any;
