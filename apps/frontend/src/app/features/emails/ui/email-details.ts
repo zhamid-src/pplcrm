@@ -1,14 +1,14 @@
 /**
  * @file Component displaying details for a selected email, including comments and assignment.
  */
-import { CommonModule } from '@angular/common';
-import { Component, Input, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { CommonModule } from "@angular/common";
+import { Component, Input, inject, signal } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import { IAuthUser } from "@common";
 
-import { EmailsService } from '../services/emails-service';
-import { EmailCommentType, EmailType } from 'common/src/lib/models';
-import { IAuthUser } from '@common';
-import { AuthService } from '../../../auth/auth-service';
+import { AuthService } from "../../../auth/auth-service";
+import { EmailsService } from "../services/emails-service";
+import { EmailCommentType, EmailType } from "common/src/lib/models";
 
 @Component({
   selector: 'pc-email-details',
@@ -17,8 +17,8 @@ import { AuthService } from '../../../auth/auth-service';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  /** Available users for assignment */
-  public users = signal<IAuthUser[]>([]);
+    private auth = inject(AuthService)
+  private svc: EmailsService = inject(EmailsService)
 
   /** Comments for the selected email */
   public comments = signal<Partial<EmailCommentType>[]>([]);
@@ -29,9 +29,11 @@ export class EmailDetails {
   /** New comment text */
   public newComment = '';
 
+  /** Available users for assignment */
+  public users = signal<IAuthUser[]>([]);
+
   constructor(
-    private svc: EmailsService = inject(EmailsService),
-    private auth = inject(AuthService),
+    
   ) {
     this.auth.getUsers().then((u) => this.users.set(u));
   }
@@ -47,19 +49,19 @@ export class EmailDetails {
   }
 
   /**
-   * Get the display name for an assigned user.
-   */
-  public getUserName(id?: string) {
-    if (!id) return 'No Owner';
-    return this.users().find((u) => u.id === id)?.first_name || 'No Owner';
-  }
-
-  /**
    * Assign the selected email to a user or unassign if `null`.
    */
   public async assign(userId: string | null) {
     if (!this.email) return;
     await this.svc.assign(this.email.id, userId);
     this.email.assigned_to = userId || undefined;
+  }
+
+  /**
+   * Get the display name for an assigned user.
+   */
+  public getUserName(id?: string) {
+    if (!id) return 'No Owner';
+    return this.users().find((u) => u.id === id)?.first_name || 'No Owner';
   }
 }
