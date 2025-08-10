@@ -3,17 +3,23 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, OnInit, Output, inject, signal } from '@angular/core';
+import { Icon } from '@uxcommon/icons/icon';
+
 import { Swap } from '../../../uxcommon/swap';
 import { EmailsService } from '../services/emails-service';
 
 @Component({
   selector: 'pc-email-folder-list',
   standalone: true,
-  imports: [CommonModule, Swap],
+  imports: [CommonModule, Swap, Icon],
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
-  constructor(private svc: EmailsService = inject(EmailsService)) {}
+  /** Currently selected folder */
+  private selected = signal<any | null>(null);
+
+  /** Emits selected folder to parent component */
+  @Output() public folderSelected = new EventEmitter<any>();
 
   /** List of folders retrieved from the backend */
   public folders = signal<any[]>([]);
@@ -21,17 +27,21 @@ export class EmailFolderList implements OnInit {
   /** Indicates whether the folder sidebar is collapsed */
   public foldersCollapsed = signal(false);
 
-  /** Currently selected folder */
-  private selected = signal<any | null>(null);
+  constructor(private svc: EmailsService = inject(EmailsService)) {}
 
-  /** Emits selected folder to parent component */
-  @Output() folderSelected = new EventEmitter<any>();
+  /**
+   * Determine if the folder is currently selected.
+   */
+  public isSelected(folder: any) {
+    return this.selected()?.id === folder.id;
+  }
 
   /**
    * Load folders on initialization.
    */
   public async ngOnInit() {
     const folders = await this.svc.getFolders();
+    console.log(folders);
     this.folders.set(folders);
   }
 
@@ -49,12 +59,5 @@ export class EmailFolderList implements OnInit {
    */
   public toggleFolders() {
     this.foldersCollapsed.set(!this.foldersCollapsed());
-  }
-
-  /**
-   * Determine if the folder is currently selected.
-   */
-  public isSelected(folder: any) {
-    return this.selected()?.id === folder.id;
   }
 }

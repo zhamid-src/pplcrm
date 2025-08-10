@@ -1,33 +1,58 @@
-import { Component, input } from '@angular/core';
+import { Component, effect, input, signal } from "@angular/core";
 
-import { IconName, icons } from './icons.index';
-import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
+import { IconName, loadIconSvg } from "./icons.index";
+import { BypassHtmlSanitizerPipe } from "apps/frontend/src/app/svg-html-pipe";
 
 @Component({
   selector: 'pc-icon',
+  standalone: true,
   imports: [BypassHtmlSanitizerPipe],
-  template: ` <div [innerHTML]="getSvg() | bypassHtmlSanitizer" class="h-{{ size() }} w-{{ size() }}"></div> `,
+  template: `
+    <!-- Inline SVG once loaded -->
+    <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
+  `,
 })
 export class Icon {
-  /**
-   * The name of the icon to render.
-   * Must be one of the keys defined in the `icons` map.
-   */
+  /** Holds the final SVG markup (with class injected). */
+  private _svgHtml = signal<string>('');
+
+  /** The name of the icon to render (must exist in icons map). */
   public name = input.required<IconName>();
 
-  /**
-   * The Tailwind size for the icon, used for both height and width.
-   * Default is 6 (i.e., `h-6 w-6`).
-   */
+  /** Tailwind size (used for both height and width), default 6 -> w-6 h-6 */
   public size = input<number>(6);
+  public svgHtml = this._svgHtml.asReadonly();
 
-  /**
-   * Retrieves the SVG string for the given icon name.
-   * The SVG will be rendered as raw HTML using the bypassHtmlSanitizer pipe.
-   *
-   * @returns The raw SVG string for the icon.
-   */
-  public getSvg() {
-    return icons[this.name()];
+  constructor() {
+    // Re-load whenever name or size changes
+    effect(() => {
+      void this.loadSvg(this.name(), this.size());
+    });
+  }
+
+  /** Add/merge a class on the <svg ...> of the provided SVG string. */
+  private injectClassOnSvg(svg: string, cls: string): string {
+    // Normalize whitespace on the opening tag
+    const openTagMatch = svg.match(/<svg\b[^>]*>/i);
+    if (!openTagMatch) return svg; // not an SVG? bail
+
+    const openTag = openTagMatch[0];
+
+    // If class already exists, merge; otherwise add new class attribute
+    if (/\bclass=/.test(openTag)) {
+      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => `class=${q}${existing} ${cls}${q}`);
+      return svg.replace(openTag, merged);
+    } else {
+      const augmented = openTag.replace(/^<svg\b/i, `<svg class="${cls}"`);
+      return svg.replace(openTag, augmented);
+    }
+  }
+
+  private async loadSvg(name: IconName, size: number) {
+    // Fetch raw SVG text from /assets
+    const raw = await loadIconSvg(name);
+    // Inject Tailwind classes into the <svg> element
+    const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
+    this._svgHtml.set(withClass);
   }
 }
