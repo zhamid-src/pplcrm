@@ -27,6 +27,13 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   /**
+   * Retrieve all users for the current tenant.
+   */
+  public getUsers() {
+    return this.api.auth.getUsers.query() as Promise<IAuthUser[]>;
+  }
+
+  /**
    * Initializes the auth service by fetching the current user from the backend.
    * Useful to restore session on page reload.
    */
