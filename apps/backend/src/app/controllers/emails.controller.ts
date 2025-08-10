@@ -28,7 +28,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Assign an email to a user */
-  public assignEmail(tenant_id: string, id: string, user_id: string) {
+  public assignEmail(tenant_id: string, id: string, user_id: string | null) {
     return this.update({ tenant_id, id, row: { assigned_to: user_id } as OperationDataType<'emails', 'insert'> });
   }
 

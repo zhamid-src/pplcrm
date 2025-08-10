@@ -8,9 +8,19 @@
           <h1 class="text-2xl font-semibold truncate">{{ email.subject }}</h1>
 
           <!-- Assigned to -->
-          <span class="badge badge-info badge-outline cursor-pointer"> {{ email.assigned_to || 'No Owner' }} </span>
-
-          <!-- TODO: Make it a dropdown and show all users that can be selected. We want the names of all the users for the tenant_id-->
+          <div class="dropdown">
+            <div tabindex="0" class="badge badge-info badge-outline cursor-pointer">
+              {{ getUserName(email.assigned_to) }}
+            </div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+              @for (user of users(); track user.id) {
+              <li><a (click)="assign(user.id)">{{ user.first_name }}</a></li>
+              }
+              @if (email.assigned_to) {
+              <li><a (click)="assign(null)">Unassign</a></li>
+              }
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -112,13 +122,6 @@
       <button (click)="addComment()" class="mt-2 rounded bg-blue-600 px-3 py-1 text-white">Add Comment</button>
     </div>
 
-    <div class="mt-4">
-      <h4 class="mb-2 font-semibold">Assign</h4>
-      <div class="flex items-center gap-2">
-        <input [(ngModel)]="assignTo" placeholder="Assign to user id" class="flex-1 rounded border p-2" />
-        <button (click)="assign()" class="rounded bg-green-600 px-3 py-1 text-white">Assign</button>
-      </div>
-    </div>
   </main>
   } @else {
   <div class="flex flex-1 flex-col items-center justify-center gap-3 text-gray-400 uppercase tracking-widest">

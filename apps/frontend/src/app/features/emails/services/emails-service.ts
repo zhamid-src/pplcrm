@@ -25,7 +25,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    * @param user_id User ID to assign to
    * @returns Promise for the mutation
    */
-  public assign(id: string, user_id: string) {
+  public assign(id: string, user_id: string | null) {
     return this.api.emails.assign.mutate({ id, user_id });
   }
 
