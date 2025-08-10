@@ -67,6 +67,7 @@ export const icons = {
   /* -------------------- Communication -------------------- */
   'at-symbol': 'assets/icons/at-symbol.svg',
   envelope: 'assets/icons/envelope.svg',
+  emails: 'assets/icons/emails.svg',
   megaphone: 'assets/icons/megaphone.svg',
   'paper-airplane': 'assets/icons/paper-airplane.svg',
 
