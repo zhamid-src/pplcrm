@@ -7,8 +7,10 @@
         <div class="flex items-center gap-2 min-w-0">
           <h1 class="text-2xl font-semibold truncate">{{ email.subject }}</h1>
 
-          <!-- Label chip(s) -->
-          <span class="badge badge-info badge-outline"> {{ email.assigned_to || 'No Owner' }} </span>
+          <!-- Assigned to -->
+          <span class="badge badge-info badge-outline cursor-pointer"> {{ email.assigned_to || 'No Owner' }} </span>
+
+          <!-- TODO: Make it a dropdown and show all users that can be selected. We want the names of all the users for the tenant_id-->
         </div>
       </div>
 
