@@ -33,6 +33,7 @@ export const icons = {
   'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
   'chevron-double-left': 'assets/icons/chevron-double-left.svg',
   'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
 
   /* -------------------- Status & Alerts -------------------- */
   'check-circle': 'assets/icons/check-circle.svg',
@@ -49,7 +50,6 @@ export const icons = {
   'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
   'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
   'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  filter: 'assets/icons/filter.svg',
   funnel: 'assets/icons/funnel.svg',
   'magnifying-glass': 'assets/icons/magnifying-glass.svg',
   'pencil-square': 'assets/icons/pencil-square.svg',
@@ -67,7 +67,7 @@ export const icons = {
   /* -------------------- Communication -------------------- */
   'at-symbol': 'assets/icons/at-symbol.svg',
   envelope: 'assets/icons/envelope.svg',
-  emails: 'assets/icons/emails.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
   megaphone: 'assets/icons/megaphone.svg',
   'paper-airplane': 'assets/icons/paper-airplane.svg',
 

@@ -1,10 +1,9 @@
 import { Component, EventEmitter, OnInit, Output, effect, inject, input, signal } from '@angular/core';
-import { NgClass } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
-import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { IconName } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {
@@ -18,6 +17,8 @@ import {
   GridReadyEvent,
   IServerSideDatasource,
   IServerSideGetRowsParams,
+  colorSchemeDarkBlue,
+  themeQuartz,
 } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../abstract-api.service';
@@ -30,7 +31,7 @@ import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [AgGridModule, Icon, GridActionComponent, NgClass],
+  imports: [AgGridModule, Icon, GridActionComponent],
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit {
@@ -272,7 +273,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
-    return this.themeSvc.getTheme() === 'light' ? 'ag-theme-quartz' : 'ag-theme-quartz-dark';
+    return this.themeSvc.getTheme() === 'light' ? themeQuartz : themeQuartz.withPart(colorSchemeDarkBlue);
   }
 
   /** Called when row is double-clicked. */
