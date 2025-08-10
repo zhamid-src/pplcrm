@@ -1,4 +1,5 @@
 import { Component, EventEmitter, OnInit, Output, effect, inject, input, signal } from '@angular/core';
+import { NgClass } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { AlertService } from '@uxcommon/alerts/alert-service';
@@ -29,7 +30,7 @@ import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [AgGridModule, Icon, GridActionComponent],
+  imports: [AgGridModule, Icon, GridActionComponent, NgClass],
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit {

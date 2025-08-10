@@ -33,7 +33,7 @@
   @if (gridVisible()) {
   <ag-grid-angular
     class="flex-1 font-light"
-    [class]="getTheme()"
+    [ngClass]="getTheme()"
     [columnDefs]="colDefsWithEdit"
     (gridReady)="onGridReady($event)"
     [gridOptions]="mergedGridOptions"
