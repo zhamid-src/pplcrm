@@ -48,7 +48,7 @@ function addComment() {
  */
 function assign() {
   return authProcedure
-    .input(z.object({ id: z.string(), user_id: z.string() }))
+    .input(z.object({ id: z.string(), user_id: z.string().nullable() }))
     .mutation(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id));
 }
 
