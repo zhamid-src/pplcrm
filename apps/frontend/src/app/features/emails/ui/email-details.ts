@@ -7,6 +7,8 @@ import { FormsModule } from '@angular/forms';
 
 import { EmailsService } from '../services/emails-service';
 import { EmailCommentType, EmailType } from 'common/src/lib/models';
+import { IAuthUser } from '@common';
+import { AuthService } from '../../../auth/auth-service';
 
 @Component({
   selector: 'pc-email-details',
@@ -15,8 +17,8 @@ import { EmailCommentType, EmailType } from 'common/src/lib/models';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  /** User ID to assign selected email to */
-  public assignTo = '';
+  /** Available users for assignment */
+  public users = signal<IAuthUser[]>([]);
 
   /** Comments for the selected email */
   public comments = signal<Partial<EmailCommentType>[]>([]);
@@ -27,7 +29,12 @@ export class EmailDetails {
   /** New comment text */
   public newComment = '';
 
-  constructor(private svc: EmailsService = inject(EmailsService)) {}
+  constructor(
+    private svc: EmailsService = inject(EmailsService),
+    private auth = inject(AuthService),
+  ) {
+    this.auth.getUsers().then((u) => this.users.set(u));
+  }
 
   /**
    * Add a comment to the selected email.
@@ -40,12 +47,19 @@ export class EmailDetails {
   }
 
   /**
-   * Assign the selected email to a user.
+   * Get the display name for an assigned user.
    */
-  public async assign() {
-    if (!this.email || !this.assignTo) return;
-    await this.svc.assign(this.email.id, this.assignTo);
-    this.email.assigned_to = this.assignTo;
-    this.assignTo = '';
+  public getUserName(id?: string) {
+    if (!id) return 'No Owner';
+    return this.users().find((u) => u.id === id)?.first_name || 'No Owner';
+  }
+
+  /**
+   * Assign the selected email to a user or unassign if `null`.
+   */
+  public async assign(userId: string | null) {
+    if (!this.email) return;
+    await this.svc.assign(this.email.id, userId);
+    this.email.assigned_to = userId || undefined;
   }
 }
