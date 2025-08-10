@@ -3,17 +3,19 @@
  */
 import { CommonModule } from "@angular/common";
 import { Component, Input, inject, signal } from "@angular/core";
-import { FormsModule } from "@angular/forms";
 import { IAuthUser } from "@common";
 
 import { AuthService } from "../../../auth/auth-service";
 import { EmailsService } from "../services/emails-service";
 import { EmailCommentType, EmailType } from "common/src/lib/models";
+import { EmailBody } from "./email-body";
+import { EmailComments } from "./email-comments";
+import { EmailHeader } from "./email-header";
 
 @Component({
   selector: 'pc-email-details',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, EmailHeader, EmailBody, EmailComments],
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
@@ -33,7 +35,7 @@ export class EmailDetails {
   public users = signal<IAuthUser[]>([]);
 
   constructor(
-    
+
   ) {
     this.auth.getUsers().then((u) => this.users.set(u));
   }
@@ -55,13 +57,5 @@ export class EmailDetails {
     if (!this.email) return;
     await this.svc.assign(this.email.id, userId);
     this.email.assigned_to = userId || undefined;
-  }
-
-  /**
-   * Get the display name for an assigned user.
-   */
-  public getUserName(id?: string) {
-    if (!id) return 'No Owner';
-    return this.users().find((u) => u.id === id)?.first_name || 'No Owner';
   }
 }

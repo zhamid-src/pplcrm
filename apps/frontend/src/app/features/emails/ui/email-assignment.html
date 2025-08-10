@@ -1,0 +1,13 @@
+<div class="dropdown">
+  <div tabindex="0" class="badge badge-info badge-outline cursor-pointer">
+    {{ getUserName(assignedTo) }}
+  </div>
+  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+    @for (user of users; track user.id) {
+      <li><a (click)="assign.emit(user.id)">{{ user.first_name }}</a></li>
+    }
+    @if (assignedTo) {
+      <li><a (click)="assign.emit(null)">Unassign</a></li>
+    }
+  </ul>
+</div>
