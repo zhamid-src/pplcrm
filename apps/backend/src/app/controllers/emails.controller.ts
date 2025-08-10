@@ -44,8 +44,13 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.getRepo().getByFolder(tenant_id, folder_id);
   }
 
-  /** Return all folders for a tenant */
+  /** Return all folders for a tenant, sorted by the ID */
   public getFolders(tenant_id: string) {
-    return this.foldersRepo.getAll({ tenant_id: tenant_id as any });
+    return this.foldersRepo.getAll({
+      tenant_id: tenant_id as any,
+      options: {
+        orderBy: ['sort_order'] as any,
+      },
+    });
   }
 }

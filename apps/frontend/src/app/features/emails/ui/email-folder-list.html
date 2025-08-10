@@ -1,22 +1,29 @@
-<aside class="bg-gray-50 border-r border-gray-200 group flex flex-col transition-all duration-50 hover:w-36 h-full"
-    [class.w-36]="!foldersCollapsed()" [class.w-16]="foldersCollapsed()">
-    <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">
-        <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">Folders</span>
-        <span class="block text-center group-hover:md:hidden" [class.hidden]="!foldersCollapsed()">F</span>
-    </h2>
+<aside class="bg-gray-50 border-r border-gray-200 group flex flex-col transition-all duration-50 hover:w-42 h-full"
+    [class.w-42]="!foldersCollapsed()" [class.w-12]="foldersCollapsed()">
+
+    <!-- Header and expand / collapse icon -->
+    <div class="flex items-center justify-between border-t border-gray-200 pl-4 py-2">
+        <h2 class="text-xs font-semibold text-gray-600">
+            <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">Folders</span>
+        </h2>
+
+        <pc-swap swapOffIcon="chevron-double-right" swapOnIcon="chevron-double-left" animation="rotate"
+            [checked]="!foldersCollapsed()" (clickEvent)="toggleFolders()" [size]="4"
+            class="hover:text-primary"></pc-swap>
+    </div>
+
+
+
     <ul class="flex-1">
         @for (folder of folders(); track folder.id) {
-        <li (click)="selectFolder(folder)" [ngClass]="{ 'bg-blue-100 text-blue-600': isSelected(folder) }"
+        <li (click)="selectFolder(folder)" [ngClass]="{ 'bg-blue-100 text-primary': isSelected(folder) }"
             class="cursor-pointer flex items-center px-4 py-2 hover:bg-blue-50">
+
+            <pc-icon class="mr-4" [size]="4" [name]="folder.icon" />
+
             <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
-            <span class="group-hover:md:hidden w-full text-center" [class.hidden]="!foldersCollapsed()">
-                {{ folder.name[0] }}
-            </span>
         </li>
         }
     </ul>
-    <div class="border-t border-gray-200 p-2 flex justify-center">
-        <pc-swap swapOffIcon="bars-3" swapOnIcon="x-mark" animation="rotate" [checked]="!foldersCollapsed()"
-            (clickEvent)="toggleFolders()"></pc-swap>
-    </div>
+
 </aside>

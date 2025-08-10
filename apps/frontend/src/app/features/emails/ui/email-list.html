@@ -1,8 +1,11 @@
-<section class="border-r border-gray-200 flex flex-col">
-    <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">Emails</h2>
-    <ul class="flex-1 overflow-y-auto">
+<section class="border-r border-gray-200 flex flex-col h-full">
+    <!-- <h2 class="px-4 py-2 text-xs font-semibold text-gray-600">Emails</h2> -->
+    @if (!emails().length) {
+    <h2 class="align-middle text-xs font-semibold text-gray-600">No emails</h2>
+    } @else {
+    <ul class="flex-1">
         @for (email of emails(); track email.id) {
-        <li (click)="selectEmail(email)" [ngClass]="{ 'bg-blue-50': isSelected(email) }"
+        <li (click)="selectEmail(email)" [class.bg-blue-50]="isSelected(email)"
             class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50">
             <div class="truncate text-xs text-gray-500">{{ email.from_email }}</div>
             <div class="truncate font-medium">{{ email.subject }}</div>
@@ -10,4 +13,5 @@
         </li>
         }
     </ul>
+    }
 </section>
