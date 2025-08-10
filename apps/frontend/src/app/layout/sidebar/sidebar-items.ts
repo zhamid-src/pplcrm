@@ -22,6 +22,7 @@ export interface ISidebarItem {
    */
   badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
   children?: ISidebarItem[];
+  collapsed?: boolean;
 
   /**
    * Whether the component should be hidden or not
@@ -116,6 +117,7 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `OUTREACH`,
     type: 'subheading',
+    collapsed: true,
     children: [
       {
         name: 'Campaigns',
@@ -137,6 +139,7 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `TEAMS`,
     type: 'subheading',
+    collapsed: true,
     children: [
       {
         name: 'Volunteers',
@@ -168,6 +171,7 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `ADMIN`,
     type: 'subheading',
+    collapsed: true,
     children: [
       {
         name: 'Export',

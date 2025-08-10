@@ -22,7 +22,8 @@
       "@common": ["common/src/index.ts"],
       "@pipes/*": ["apps/frontend/src/app/pipes/*"],
       "@services/*": ["apps/frontend/src/app/services/*"],
-      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"]
+      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"],
+      "@icons/*": ["apps/frontend/src/app/uxcommon/icons/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]
