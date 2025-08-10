@@ -19,6 +19,16 @@ function currentUser() {
 }
 
 /**
+ * Retrieve all auth users for the current tenant.
+ * Only minimal fields are returned.
+ */
+function getUsers() {
+  return authProcedure.query(({ ctx }) =>
+    controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name'] }),
+  );
+}
+
+/**
  * Renew access and refresh tokens.
  *
  * @input An object containing `auth_token` and `refresh_token`.
@@ -102,6 +112,7 @@ export const AuthRouter = router({
   signIn: signIn(),
   signOut: signOut(),
   currentUser: currentUser(),
+  getUsers: getUsers(),
   resetPassword: resetPassword(),
   renewAuthToken: renewAuthToken(),
   sendPasswordResetEmail: sendPasswordResetEmail(),
