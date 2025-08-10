@@ -1,13 +1,17 @@
-import { z } from 'zod';
-import {
+import type { z } from 'zod';
+
+import type {
   AddTagObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
   PersonsObj,
   SettingsObj,
-  sortModelItem,
   UpdateHouseholdsObj,
   UpdatePersonsObj,
   UpdateTagObj,
   getAllOptions,
+  sortModelItem,
 } from '../schemas';
 
 /**
@@ -18,6 +22,12 @@ export interface INow {
 }
 
 export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
 
 export type PERSONINHOUSEHOLDTYPE = {
   first_name: string;
