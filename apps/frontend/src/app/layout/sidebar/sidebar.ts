@@ -1,7 +1,7 @@
 /**
  * Sidebar component rendering navigation links and managing drawer state.
  */
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@uxcommon/icon';
 import { Swap } from '@uxcommon/swap';
@@ -23,7 +23,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 /**
  * Displays the navigation sidebar and delegates state management to SidebarService.
  */
-export class Sidebar {
+export class Sidebar implements OnInit {
   private readonly sidebarSvc = inject(SidebarService);
 
   protected readonly collapsedItems = new Set<string>();
@@ -38,6 +38,16 @@ export class Sidebar {
    */
   protected get items() {
     return this.sidebarSvc.getItems();
+  }
+
+  public ngOnInit() {
+    const items = this.items;
+
+    items.forEach((item) => {
+      if (item.collapsed) {
+        this.collapsedItems.add(item.name);
+      }
+    });
   }
 
   /**

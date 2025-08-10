@@ -1,24 +1,16 @@
 <!-- Sidebar template containing navigation items and drawer controls -->
-<div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
+<div (mouseenter)="onSidebarHover(true)" (mouseleave)="onSidebarHover(false)"
   class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
-  [class.w-18]="this.isDrawerHalf() && !this.isMobileOpen()"
->
+  [class.hidden]="!this.isMobileOpen()" [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
+  [class.w-18]="this.isDrawerHalf() && !this.isMobileOpen()">
   <!-- Logo: Full or Compact -->
-  <div
-    [class.hidden]="!this.isDrawerFull()"
-    class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
-  >
+  <div [class.hidden]="!this.isDrawerFull()"
+    class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block">
     <img src="../../assets/logo.svg" />
   </div>
 
-  <div
-    [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
-    class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
-  >
+  <div [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
+    class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden">
     <img src="../../assets/sq.svg" class="w-24 h-auto p-2" />
   </div>
 
@@ -29,33 +21,23 @@
     <!-- Subheading with collapsible children -->
     <div
       class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
+      (click)="toggleCollapse(item.name)">
       <span [class.text-[10px]]="isDrawerHalf() && !isHoveringSidebar()"> {{ item.name }} </span>
       @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="isDrawerFull() || isMobileOpen() || isHoveringSidebar()"
-        swapOnIcon="chevron-double-right"
-        swapOffIcon="chevron-double-left"
-        animation="flip"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (clickEvent)="toggleCollapse(item.name)"
-      ></pc-swap>
+      <pc-swap class="rotate-90 invisible mr-2"
+        [class.visible]="isDrawerFull() || isMobileOpen() || isHoveringSidebar()" swapOnIcon="chevron-double-right"
+        swapOffIcon="chevron-double-left" animation="flip" [size]="4" [checked]="isCollapsed(item.name)"
+        (clickEvent)="toggleCollapse(item.name)"></pc-swap>
 
       }
     </div>
 
-    @if (item.children && isCollapsed(item.name)) {
+    @if (item.children && !isCollapsed(item.name)) {
     <div class="flex flex-col space-y-1">
       @for (child of item.children; track child.name) {
-      <a
-        class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
-        (click)="this.closeMobile()"
-        routerLink="{{ child.route }}"
-        [class.bg-base-200]="this.router.url === child.route"
-      >
+      <a class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+        (click)="this.closeMobile()" routerLink="{{ child.route }}"
+        [class.bg-base-200]="this.router.url === child.route">
         <pc-icon class="hover:text-primary text-xs" [name]="child.icon!"></pc-icon>
         <span class="pl-3 pt-1 group-hover:md:visible" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
           {{ child.name }}
@@ -65,12 +47,8 @@
     </div>
     } } @else {
     <!-- Regular item without subheading -->
-    <a
-      class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
-      (click)="this.closeMobile()"
-      routerLink="{{ item.route }}"
-      [class.bg-base-200]="this.router.url === item.route"
-    >
+    <a class="hover:bg-base-200 flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+      (click)="this.closeMobile()" routerLink="{{ item.route }}" [class.bg-base-200]="this.router.url === item.route">
       <pc-icon class="hover:text-primary text-xs" [name]="item.icon!"></pc-icon>
       <span class="pl-3 pt-1 group-hover:md:visible" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
         {{ item.name }}
@@ -83,14 +61,7 @@
   <!-- Toggle Drawer Button -->
   <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary group-hover:visible"
-      [class.invisible]="this.isDrawerHalf()"
-      swapOffIcon="bars-3"
-      swapOnIcon="x-mark"
-      [checked]="isDrawerFull()"
-      animation="rotate"
-      (clickEvent)="toggleDrawer()"
-    ></pc-swap>
+    <pc-swap class="hover:text-primary group-hover:visible" [class.invisible]="this.isDrawerHalf()" swapOffIcon="bars-3"
+      swapOnIcon="x-mark" [checked]="isDrawerFull()" animation="rotate" (clickEvent)="toggleDrawer()"></pc-swap>
   </div>
 </div>
