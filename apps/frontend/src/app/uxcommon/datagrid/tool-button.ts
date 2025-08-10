@@ -1,6 +1,6 @@
 import { Component, EventEmitter, Output, input } from '@angular/core';
-import { Icon } from '@uxcommon/icon';
-import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@icons/icon';
+import { IconName } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-grid-action',

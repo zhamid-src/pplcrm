@@ -1,7 +1,7 @@
 /**
  * Defines the structure and default list of items displayed in the sidebar navigation.
  */
-import { IconName } from '@uxcommon/svg-icons-list';
+import { IconName } from '@icons/icons.index';
 
 /**
  * The sidebar items are defined here. They go in the order they're added

@@ -9,7 +9,7 @@ import { signUpInputType } from '@common';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 

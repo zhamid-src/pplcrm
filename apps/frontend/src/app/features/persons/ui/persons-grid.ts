@@ -4,7 +4,7 @@
 import { Component, inject } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 
 import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 

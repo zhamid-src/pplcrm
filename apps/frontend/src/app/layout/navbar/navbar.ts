@@ -4,7 +4,7 @@
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';

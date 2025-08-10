@@ -3,7 +3,7 @@
  */
 import { Component, OnInit, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/swap';
 
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';

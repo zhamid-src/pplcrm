@@ -25,7 +25,7 @@ jest.mock('@uxcommon/datagrid/datagrid', () => {
 });
 
 jest.mock('../../tags/ui/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
-jest.mock('@uxcommon/icon', () => ({ Icon: class {} }), { virtual: true });
+jest.mock('@icons/icon', () => ({ Icon: class {} }), { virtual: true });
 jest.mock('./persons-grid.html', () => '', { virtual: true });
 
 import { PersonsGrid } from './persons-grid';
@@ -55,4 +55,3 @@ describe('PersonsGrid', () => {
     expect(router.navigate).toHaveBeenCalledWith(['console', 'households', 'h2']);
   });
 });
-
