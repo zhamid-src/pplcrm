@@ -2,8 +2,8 @@ import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magi
 import { Component, EventEmitter, Output, ViewChild, WritableSignal, input, signal } from '@angular/core';
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
-import { Icon } from '@uxcommon/icon';
-import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@icons/icon';
+import { IconName } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-input',

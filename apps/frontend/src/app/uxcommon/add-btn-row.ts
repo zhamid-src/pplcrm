@@ -1,8 +1,8 @@
 import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@uxcommon/icon';
-import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@icons/icon';
+import { IconName } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-add-btn-row',

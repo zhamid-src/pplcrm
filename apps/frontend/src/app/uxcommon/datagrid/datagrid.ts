@@ -2,8 +2,8 @@ import { Component, EventEmitter, OnInit, Output, effect, inject, input, signal 
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Icon } from '@uxcommon/icon';
-import { IconName } from '@uxcommon/svg-icons-list';
+import { Icon } from '@icons/icon';
+import { IconName } from '@icons/icons.index';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {

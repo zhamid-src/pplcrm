@@ -1,5 +1,5 @@
 import { Component, inject, input } from '@angular/core';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 
 import { AnimateIfDirective } from '../animate-if.directive';
 import { ALERTTYPE, AlertService } from './alert-service';

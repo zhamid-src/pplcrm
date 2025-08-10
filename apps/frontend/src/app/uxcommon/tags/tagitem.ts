@@ -1,5 +1,5 @@
 import { Component, EventEmitter, Output, Signal, input, signal } from '@angular/core';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 
 /**
  * The `tagitem` component displays a single tag UI element with optional delete functionality and animation.

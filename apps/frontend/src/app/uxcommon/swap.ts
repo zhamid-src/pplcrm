@@ -1,8 +1,7 @@
 import { Component, EventEmitter, Output, input } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
-
-import { Icon } from './icon';
-import { IconName } from './svg-icons-list';
+import { Icon } from '@icons/icon';
+import { IconName } from '@icons/icons.index';
 
 /**
  * A reusable toggle/swap component that switches between two icons.

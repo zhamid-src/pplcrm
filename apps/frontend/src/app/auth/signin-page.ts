@@ -4,9 +4,9 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
-import { Icon } from '@uxcommon/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';

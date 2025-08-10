@@ -1,7 +1,7 @@
 import { ICellRendererAngularComp } from 'ag-grid-angular';
 import { ICellRendererParams } from 'ag-grid-community';
 import { Component, ViewEncapsulation } from '@angular/core';
-import { Icon } from '@uxcommon/icon';
+import { Icon } from '@icons/icon';
 
 import { DataGrid } from './datagrid/datagrid';
 import { Models } from 'common/src/lib/kysely.models';
