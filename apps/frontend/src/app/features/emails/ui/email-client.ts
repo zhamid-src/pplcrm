@@ -2,9 +2,11 @@
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
 import { Component, signal } from '@angular/core';
+
+import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';
-import { EmailDetails } from './email-details';
+import { EmailFolderType, EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-client',
@@ -13,24 +15,24 @@ import { EmailDetails } from './email-details';
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
-  /** Selected folder */
-  public selectedFolder = signal<any | null>(null);
-
   /** Selected email */
-  public selectedEmail = signal<any | null>(null);
+  public selectedEmail = signal<EmailType | null>(null);
 
-  /**
-   * Handle folder selection from child component.
-   */
-  public onFolder(folder: any) {
-    this.selectedFolder.set(folder);
-    this.selectedEmail.set(null);
-  }
+  /** Selected folder */
+  public selectedFolder = signal<EmailFolderType | null>(null);
 
   /**
    * Handle email selection from child component.
    */
-  public onEmail(email: any) {
+  public onEmail(email: EmailType) {
     this.selectedEmail.set(email);
+  }
+
+  /**
+   * Handle folder selection from child component.
+   */
+  public onFolder(folder: EmailFolderType) {
+    this.selectedFolder.set(folder);
+    this.selectedEmail.set(null);
   }
 }

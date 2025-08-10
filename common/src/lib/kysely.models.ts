@@ -257,6 +257,9 @@ interface Tenants extends RecordType, AddressType {
 
 interface EmailFolders extends RecordType {
   name: string;
+  icon: string;
+  sort_order: number;
+  is_default: boolean;
 }
 
 interface Emails extends RecordType {
@@ -264,7 +267,7 @@ interface Emails extends RecordType {
   from_email: string | null;
   to_email: string | null;
   subject: string | null;
-  body: string | null;
+  preview: string | null;
   assigned_to: string | null;
 }
 

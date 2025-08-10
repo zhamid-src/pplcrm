@@ -16,6 +16,30 @@ export const AddTagObj = z.object({
    */
   description: z.string().nullable().optional(),
 });
+export const EmailCommentObj = z.object({
+  id: z.string(),
+  email_id: z.string(),
+  author_id: z.string(),
+  comment: z.string(),
+});
+export const EmailFolderObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  icon: z.string(),
+  sort_order: z.number(),
+  is_default: z.boolean(),
+});
+export const EmailObj = z.object({
+  id: z.string(),
+  folder_id: z.string(),
+  from_email: z.string().optional(),
+  from_name: z.string().optional(),
+  to_email: z.string().optional(),
+  subject: z.string().optional(),
+  preview: z.string().optional(),
+  assigned_to: z.string().optional(),
+  updated_at: z.date(),
+});
 
 /**
  * The parameter for updating a person.
@@ -35,7 +59,6 @@ export const PersonsObj = z.object({
   notes: z.string(),
   json: z.string(),
 });
-
 export const SettingsObj = z.object({
   id: z.string().optional(),
   tenant_id: z.string().optional(),
@@ -45,7 +68,6 @@ export const SettingsObj = z.object({
   key: z.string().optional(),
   value: z.object().optional(),
 });
-
 export const UpdateHouseholdsObj = z.object({
   home_phone: z.string().optional(),
   street_num: z.string().optional(),
@@ -58,7 +80,6 @@ export const UpdateHouseholdsObj = z.object({
   notes: z.string().optional(),
   json: z.string().optional(),
 });
-
 export const UpdatePersonsObj = z.object({
   campaign_id: z.string().optional(),
   household_id: z.string().optional(),
@@ -90,7 +111,6 @@ export const UpdateTagObj = z.object({
    */
   description: z.string().nullable().optional(),
 });
-
 export const sortModelItem = z
   .object({
     colId: z.string(),

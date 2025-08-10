@@ -22,10 +22,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * @returns List of email rows in the folder.
    */
   public getByFolder(tenant_id: string, folder_id: string) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', folder_id)
-      .execute();
+    return this.getSelect().selectAll().where('tenant_id', '=', tenant_id).where('folder_id', '=', folder_id).execute();
   }
 }
