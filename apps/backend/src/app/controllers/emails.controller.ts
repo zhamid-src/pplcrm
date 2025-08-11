@@ -62,6 +62,20 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     });
   }
 
+  /** Return all folders for a tenant with email counts */
+  public async getFoldersWithCounts(tenant_id: string) {
+    const [folders, emailCounts] = await Promise.all([
+      this.getFolders(tenant_id),
+      this.getRepo().getEmailCountsByFolder(tenant_id),
+    ]);
+
+    // Add email count to each folder
+    return folders.map((folder: any) => ({
+      ...folder,
+      email_count: emailCounts[folder.id] || 0,
+    }));
+  }
+
   public setFavourite(tenant_id: string, id: string, favourite: boolean) {
     return this.getRepo().setFavourite(tenant_id, id, favourite);
   }
