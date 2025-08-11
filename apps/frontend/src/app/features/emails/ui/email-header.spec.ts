@@ -12,7 +12,7 @@ import { EmailType } from 'common/src/lib/models';
 // Mock child components
 @Component({
   selector: 'pc-icon',
-  template: '<span>{{name}}</span>'
+  template: '<span>{{name}}</span>',
 })
 class MockIcon {
   @Input() name: string = '';
@@ -20,7 +20,7 @@ class MockIcon {
 
 @Component({
   selector: 'pc-email-assign',
-  template: '<div>Mock Email Assign</div>'
+  template: '<div>Mock Email Assign</div>',
 })
 class MockEmailAssign {
   @Input() email: EmailType | null = null;
@@ -40,29 +40,23 @@ describe('EmailHeader', () => {
     to_email: 'recipient@example.com',
     subject: 'Test Email Subject',
     preview: 'Test preview',
-    assigned_to: undefined
+    assigned_to: undefined,
   };
 
   const mockFavoriteEmail: EmailType = {
     ...mockEmail,
     id: '2',
-    is_favourite: true
+    is_favourite: true,
   };
 
   beforeEach(async () => {
     const mockStore = {
-      toggleEmailFavoriteStatus: jest.fn().mockResolvedValue(undefined)
+      toggleEmailFavoriteStatus: jest.fn().mockResolvedValue(undefined),
     };
 
     await TestBed.configureTestingModule({
-      declarations: [
-        EmailHeader,
-        MockIcon,
-        MockEmailAssign
-      ],
-      providers: [
-        { provide: EmailsStore, useValue: mockStore }
-      ]
+      declarations: [EmailHeader, MockIcon, MockEmailAssign],
+      providers: [{ provide: EmailsStore, useValue: mockStore }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EmailHeader);
@@ -77,6 +71,10 @@ describe('EmailHeader', () => {
 
     it('should initialize with default favorite state', () => {
       expect(component['isFavourite']()).toBe(false);
+    });
+
+    it('should initialize with default closed state', () => {
+      expect(component['isClosed']()).toBe(false);
     });
   });
 
@@ -211,6 +209,20 @@ describe('EmailHeader', () => {
       const icon = component.getFavouriteIcon();
       expect(icon).toBe('star-filled');
     });
+
+    it('should show correct close icon for open email', () => {
+      component['isClosed'].set(false);
+
+      const icon = component['getCloseIcon']();
+      expect(icon).toBe('x-circle');
+    });
+
+    it('should show correct close icon for closed email', () => {
+      component['isClosed'].set(true);
+
+      const icon = component['getCloseIcon']();
+      expect(icon).toBe('check-circle');
+    });
   });
 
   describe('User Interactions', () => {
@@ -236,32 +248,106 @@ describe('EmailHeader', () => {
       fixture.detectChanges();
 
       const emailAssignComponent = fixture.debugElement.query(
-        sel => sel.componentInstance instanceof MockEmailAssign
+        (sel) => sel.componentInstance instanceof MockEmailAssign,
       );
-      
+
       expect(emailAssignComponent.componentInstance.email).toBe(mockEmail);
+    });
+  });
+
+  describe('New Action Methods', () => {
+    beforeEach(() => {
+      component.email = signal(mockEmail);
+      fixture.detectChanges();
+    });
+
+    it('should toggle closed status', async () => {
+      const initialState = component['isClosed']();
+
+      await component['toggleClosed']();
+
+      expect(component['isClosed']()).toBe(!initialState);
+    });
+
+    it('should handle reply action', () => {
+      spyOn(console, 'log');
+
+      component['handleReply']();
+
+      expect(console.log).toHaveBeenCalledWith('Reply to email:', '1');
+    });
+
+    it('should handle reply all action', () => {
+      spyOn(console, 'log');
+
+      component['handleReplyAll']();
+
+      expect(console.log).toHaveBeenCalledWith('Reply all to email:', '1');
+    });
+
+    it('should handle forward action', () => {
+      spyOn(console, 'log');
+
+      component['handleForward']();
+
+      expect(console.log).toHaveBeenCalledWith('Forward email:', '1');
+    });
+
+    it('should handle mark as unread action', () => {
+      spyOn(console, 'log');
+
+      component['handleMarkAsUnread']();
+
+      expect(console.log).toHaveBeenCalledWith('Mark as unread:', '1');
+    });
+
+    it('should handle delete action', () => {
+      spyOn(console, 'log');
+
+      component['handleDelete']();
+
+      expect(console.log).toHaveBeenCalledWith('Delete email:', '1');
+    });
+  });
+
+  describe('Header Information', () => {
+    beforeEach(() => {
+      component.email = signal(mockEmail);
+      fixture.detectChanges();
+    });
+
+    it('should get header information', () => {
+      const headerInfo = component['getHeaderInfo']();
+
+      expect(headerInfo.subject).toBe('Test Email Subject');
+      expect(headerInfo.from).toBe('test@example.com');
+      expect(headerInfo.to).toBe('recipient@example.com');
+      expect(headerInfo.messageId).toBe('N/A');
+      expect(headerInfo.mailedBy).toBe('N/A');
+      expect(headerInfo.signedBy).toBe('Not signed');
+      expect(headerInfo.security).toBe('N/A');
     });
   });
 
   describe('Edge Cases', () => {
     it('should handle email with missing subject', () => {
       const emailWithoutSubject = { ...mockEmail, subject: undefined };
-      component.email = signal(emailWithoutSubject);
-      
+      component.email = signal(emailWithoutSubject as any);
+
       expect(() => fixture.detectChanges()).not.toThrow();
     });
 
     it('should handle email with missing from_email', () => {
       const emailWithoutFrom = { ...mockEmail, from_email: undefined };
-      component.email = signal(emailWithoutFrom);
-      
+      component.email = signal(emailWithoutFrom as any);
+
       expect(() => fixture.detectChanges()).not.toThrow();
     });
 
     it('should handle email with missing to_email', () => {
       const emailWithoutTo = { ...mockEmail, to_email: undefined };
-      component.email = signal(emailWithoutTo);
-      
+      component.email = signal(emailWithoutTo as any);
+
       expect(() => fixture.detectChanges()).not.toThrow();
     });
   });
