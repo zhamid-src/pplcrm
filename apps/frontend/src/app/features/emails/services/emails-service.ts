@@ -80,4 +80,8 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   public setFavourite(id: string, favourite: boolean) {
     return this.api.emails.setFavourite.mutate({ id, favourite });
   }
+
+  public setStatus(id: string, status: 'open' | 'closed' | 'resolved') {
+    return this.api.emails.setStatus.mutate({ id, status });
+  }
 }

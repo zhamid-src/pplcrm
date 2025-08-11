@@ -373,6 +373,52 @@ export class EmailsStore {
     await this.loadAllFoldersWithCounts();
   }
 
+  /**
+   * Update email status and refresh folder counts.
+   * @param emailId - The ID of the email to update
+   * @param status - The new status ('open', 'closed', 'resolved')
+   */
+  public async updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved'): Promise<void> {
+    const emailKey = String(emailId);
+
+    // Get current state for potential rollback
+    const currentEmail = this.emailsById()[emailKey];
+    if (!currentEmail) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+
+    const previousStatus = currentEmail.status;
+
+    // Optimistically update the local state
+    this.emailsById.update((emails) => {
+      const updatedEmails = { ...emails };
+      if (updatedEmails[emailKey]) {
+        updatedEmails[emailKey] = { ...updatedEmails[emailKey], status };
+      }
+      return updatedEmails;
+    });
+
+    try {
+      // Update on server
+      await this.emailsService.setStatus(emailKey, status);
+
+      // Refresh folder counts since status change affects virtual folders
+      await this.refreshFolderCounts();
+    } catch (error) {
+      console.error('Failed to update email status:', error);
+      // Revert optimistic update on error
+      this.emailsById.update((emails) => {
+        const revertedEmails = { ...emails };
+        if (revertedEmails[emailKey]) {
+          revertedEmails[emailKey] = { ...revertedEmails[emailKey], status: previousStatus };
+        }
+        return revertedEmails;
+      });
+      throw error;
+    }
+  }
+
   // =============================================================================
   // PUBLIC METHODS - EMAIL ACTIONS
   // =============================================================================

@@ -107,6 +107,20 @@ export class EmailRepo extends BaseRepository<'emails'> {
   }
 
   /**
+   * Update the status of an email.
+   *
+   * @param tenant_id - Tenant that owns the email.
+   * @param id - Email ID to update.
+   * @param status - New status ('open', 'closed', 'resolved').
+   * @returns The updated status.
+   */
+  public async setStatus(tenant_id: string, id: string, status: 'open' | 'closed' | 'resolved') {
+    await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
+
+    return status;
+  }
+
+  /**
    * Get email counts for all folders for a given tenant.
    * Includes special handling for virtual folders.
    *
