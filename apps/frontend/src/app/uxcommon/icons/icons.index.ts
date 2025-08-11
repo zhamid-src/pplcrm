@@ -25,6 +25,8 @@ export const icons = {
   'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
   'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
   'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-out.svg',
   'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
   'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
   'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
@@ -40,6 +42,8 @@ export const icons = {
   'exclamation-circle': 'assets/icons/exclamation-circle.svg',
   'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
   'information-circle': 'assets/icons/information-circle.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
   'x-circle': 'assets/icons/x-circle.svg',
   'x-mark': 'assets/icons/x-mark.svg',
 

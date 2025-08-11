@@ -29,13 +29,17 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.assign.mutate({ id, user_id });
   }
 
+  public getEmailBody(id: string) {
+    return this.api.emails.getEmailBody.query(id);
+  }
+
   /**
    * Get a single email by its ID.
    * @param id Email identifier
    * @returns Promise resolving to the email details
    */
-  public getEmail(id: string) {
-    return this.api.emails.getEmail.query(id);
+  public getEmailHeader(id: string) {
+    return this.api.emails.getEmailHeader.query(id);
   }
 
   /**
@@ -54,5 +58,9 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    */
   public getFolders() {
     return this.api.emails.getFolders.query();
+  }
+
+  public setFavourite(id: string, favourite: boolean) {
+    return this.api.emails.setFavourite.mutate({ id, favourite });
   }
 }

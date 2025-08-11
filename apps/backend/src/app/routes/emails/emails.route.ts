@@ -2,6 +2,7 @@
  * Registers REST routes for email operations such as retrieving folders and messages.
  */
 import { FastifyPluginCallback, FastifyRequest } from 'fastify';
+
 import { EmailsController } from '../../controllers/emails.controller';
 import { IdParam } from '../fastify.types';
 
@@ -19,7 +20,9 @@ const routes: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/folder/:folderId', (req: FastifyRequest) =>
     emails.getEmails(req.headers['tenant-id'] as string, (req.params as any).folderId),
   );
-  fastify.get('/message/:id', (req: IdParam) => emails.getEmail(req.headers['tenant-id'] as string, req.params.id));
+  fastify.get('/message/:id', (req: IdParam) =>
+    emails.getEmailHeader(req.headers['tenant-id'] as string, req.params.id),
+  );
   fastify.post('/message/:id/comment', (req: FastifyRequest<{ Body: { author_id: string; comment: string } }>) =>
     emails.addComment(req.headers['tenant-id'] as string, (req.params as any).id, req.body.author_id, req.body.comment),
   );
