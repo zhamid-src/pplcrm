@@ -1,15 +1,14 @@
 import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
-import { EmailFoldersRepo } from '../repositories/emails/email-folders.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
+import { getAllEmailFolders } from '../config/email-folders.config';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
-  private foldersRepo = new EmailFoldersRepo();
 
   constructor() {
     super(new EmailRepo());
@@ -52,14 +51,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.getRepo().getByFolder(tenant_id, folder_id);
   }
 
-  /** Return all folders for a tenant, sorted by the ID */
-  public getFolders(tenant_id: string) {
-    return this.foldersRepo.getAll({
-      tenant_id: tenant_id as any,
-      options: {
-        orderBy: ['sort_order'] as any,
-      },
-    });
+  /** Return all folders, sorted by sort_order */
+  public getFolders(_tenant_id: string) {
+    // Return hardcoded folders configuration (same for all tenants)
+    return Promise.resolve(getAllEmailFolders());
   }
 
   /** Return all folders for a tenant with email counts */

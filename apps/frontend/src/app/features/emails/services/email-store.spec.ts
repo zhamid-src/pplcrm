@@ -17,6 +17,7 @@ describe('EmailsStore', () => {
     folder_id: 'folder1',
     updated_at: new Date('2023-01-01'),
     is_favourite: false,
+    status: 'open',
     from_email: 'test@example.com',
     to_email: 'recipient@example.com',
     subject: 'Test Email',
@@ -28,7 +29,9 @@ describe('EmailsStore', () => {
     id: 'folder1',
     name: 'Inbox',
     icon: 'inbox',
-    color: '#000000',
+    sort_order: 1,
+    is_default: true,
+    is_virtual: false,
   };
 
   const mockServerEmail = {

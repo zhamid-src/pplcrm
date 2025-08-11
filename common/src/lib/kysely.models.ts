@@ -41,7 +41,6 @@ export interface Models {
   tags: Tags;
   tenants: Tenants;
   settings: Settings;
-  email_folders: EmailFolders;
   emails: Emails;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
@@ -258,13 +257,6 @@ interface Tenants extends RecordType, AddressType {
   notes: string | null;
 }
 
-interface EmailFolders extends RecordType {
-  name: string;
-  icon: string;
-  sort_order: number;
-  is_default: boolean;
-}
-
 interface Emails extends RecordType {
   folder_id: string;
   from_email: string | null;
@@ -273,6 +265,7 @@ interface Emails extends RecordType {
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
+  status: 'open' | 'closed' | 'resolved' | null;
 }
 
 interface EmailComments extends RecordType {

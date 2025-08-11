@@ -28,6 +28,7 @@ export const EmailFolderObj = z.object({
   icon: z.string(),
   sort_order: z.number(),
   is_default: z.boolean(),
+  is_virtual: z.boolean(),
 });
 export const EmailObj = z.object({
   id: z.string(),
@@ -40,6 +41,7 @@ export const EmailObj = z.object({
   assigned_to: z.string().optional(),
   updated_at: z.date(),
   is_favourite: z.boolean(),
+  status: z.enum(['open', 'closed', 'resolved']).nullable().default('open'),
 });
 
 /**
