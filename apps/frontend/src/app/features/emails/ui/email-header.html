@@ -11,15 +11,39 @@
         {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
       </span>
 
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Star" (click)="toggleFavourite()">
-        <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-      </button>
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Reply">
+      <!-- Reply -->
+      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Reply" (click)="handleReply()">
         <pc-icon [size]="4" name="arrow-uturn-left"></pc-icon>
       </button>
 
+      <!-- Reply All -->
+      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Reply All" (click)="handleReplyAll()">
+        <pc-icon [size]="4" name="arrow-uturn-right"></pc-icon>
+      </button>
+
+      <!-- Star/Favorite -->
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        aria-label="Star"
+        data-testid="favorite-button"
+        (click)="toggleFavourite()"
+      >
+        <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
+      </button>
+
+      <!-- Close/Mark as Done -->
+      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Mark as Done" (click)="toggleClosed()">
+        <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+      </button>
+
+      <!-- Delete -->
+      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Delete" (click)="handleDelete()">
+        <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+      </button>
+
+      <!-- More Actions Dropdown -->
       <div class="dropdown dropdown-end">
-        <button class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
           <svg viewBox="0 0 24 24" class="h-5 w-5">
             <path
               fill="currentColor"
@@ -27,10 +51,37 @@
             />
           </svg>
         </button>
-        <ul class="menu dropdown-content bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+        <ul class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
+          <li>
+            <a (click)="handleForward()"><pc-icon name="arrow-uturn-right" [size]="4"></pc-icon> Forward</a>
+          </li>
+          <li>
+            <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
+          </li>
+          <li class="divider"></li>
+          <li>
+            <a (click)="handleReply()"><pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Reply</a>
+          </li>
+          <li>
+            <a (click)="handleReplyAll()"><pc-icon name="paper-airplane" [size]="4"></pc-icon> Reply All</a>
+          </li>
+          <li>
+            <a (click)="toggleFavourite()"
+              ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
+            >
+          </li>
+          <li>
+            <a (click)="toggleClosed()"
+              ><pc-icon [class.text-primary]="isClosed()" name="check-circle" [size]="4"></pc-icon> {{ isClosed() ?
+              'Mark as Open' : 'Mark as Done' }}</a
+            >
+          </li>
+          <li>
+            <a (click)="handleDelete()"><pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete</a>
+          </li>
+          <li class="divider"></li>
           <li><a>Print</a></li>
           <li><a>Open in new</a></li>
-          <li><a>Mark as unread</a></li>
         </ul>
       </div>
     </div>
@@ -54,7 +105,7 @@
       <div class="text-xs text-base-content/60">
         to
         <div class="dropdown inline-block">
-          <label tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
             @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
             (getToRecipients().length > 1) {
             <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
@@ -64,26 +115,125 @@
                 d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
               />
             </svg>
-          </label>
-          <ul tabindex="0" class="menu menu-sm dropdown-content z-[1] mt-1 w-72 rounded-box bg-base-100 p-2 shadow">
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
             <li class="menu-title text-xs">Recipients</li>
 
             @if (getToRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">To:</li>
             @for (recipient of getToRecipients(); track recipient.email) {
-            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
             } } @if (getCcRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">CC:</li>
             @for (recipient of getCcRecipients(); track recipient.email) {
-            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
             } } @if (getBccRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">BCC:</li>
             @for (recipient of getBccRecipients(); track recipient.email) {
-            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
             } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
             0) {
-            <li><a class="truncate">{{ email()!.to_email }}</a></li>
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
             }
+
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
           </ul>
         </div>
       </div>

@@ -18,16 +18,16 @@ import { EmailType } from 'common/src/lib/models';
 export class EmailHeader {
   private store = inject(EmailsStore);
 
-  protected isFavourite = signal(false);
-
-  /** Email to display */
-  public email = input.required<EmailType>();
-
   /** Get header data from store */
   protected headerData = computed(() => {
     const email = this.email();
     return this.store.getEmailHeaderById(email?.id)();
   });
+  protected isClosed = signal(false);
+  protected isFavourite = signal(false);
+
+  /** Email to display */
+  public email = input.required<EmailType>();
 
   constructor() {
     effect(() => {
@@ -40,22 +40,9 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
-  protected async toggleFavourite() {
-    const e = this.email();
-    this.isFavourite.set(!this.isFavourite());
-    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
-  }
-
-  /** Get TO recipients from header data */
-  protected getToRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.to_list || [];
-  }
-
-  /** Get CC recipients from header data */
-  protected getCcRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.cc_list || [];
+  /** Get all recipients combined */
+  protected getAllRecipients(): any[] {
+    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
   }
 
   /** Get BCC recipients from header data */
@@ -64,14 +51,83 @@ export class EmailHeader {
     return header?.email?.bcc_list || [];
   }
 
-  /** Get all recipients combined */
-  protected getAllRecipients(): any[] {
-    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
+  /** Get CC recipients from header data */
+  protected getCcRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.cc_list || [];
   }
 
   /** Get formatted date from header data */
   protected getDateSent(): Date | null {
     const header = this.headerData();
     return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
+  }
+
+  /** Get additional header information */
+  protected getHeaderInfo() {
+    const header = this.headerData();
+    const email = this.email();
+
+    return {
+      subject: email.subject,
+      date: this.getDateSent() || email.updated_at,
+      from: email.from_email,
+      to: email.to_email,
+      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
+      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
+      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
+      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
+      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
+      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
+    };
+  }
+
+  /** Get TO recipients from header data */
+  protected getToRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.to_list || [];
+  }
+
+  /** Handle delete action */
+  protected handleDelete() {
+    console.log('Delete email:', this.email().id);
+    // TODO: Implement delete functionality
+  }
+
+  /** Handle forward action */
+  protected handleForward() {
+    console.log('Forward email:', this.email().id);
+    // TODO: Implement forward functionality
+  }
+
+  /** Handle mark as unread action */
+  protected handleMarkAsUnread() {
+    console.log('Mark as unread:', this.email().id);
+    // TODO: Implement mark as unread functionality
+  }
+
+  /** Handle reply action */
+  protected handleReply() {
+    console.log('Reply to email:', this.email().id);
+    // TODO: Implement reply functionality
+  }
+
+  /** Handle reply all action */
+  protected handleReplyAll() {
+    console.log('Reply all to email:', this.email().id);
+    // TODO: Implement reply all functionality
+  }
+
+  /** Toggle email closed status */
+  protected async toggleClosed() {
+    this.isClosed.set(!this.isClosed());
+    // TODO: Implement API call to update closed status
+    console.log('Toggle closed status:', this.isClosed());
+  }
+
+  protected async toggleFavourite() {
+    const e = this.email();
+    this.isFavourite.set(!this.isFavourite());
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }
