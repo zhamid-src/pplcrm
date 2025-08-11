@@ -76,4 +76,27 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
     return is_favourite;
   }
+
+  /**
+   * Get email counts for all folders for a given tenant.
+   *
+   * @param tenant_id - Tenant that owns the emails.
+   * @returns Object mapping folder_id to email count.
+   */
+  public async getEmailCountsByFolder(tenant_id: string): Promise<Record<string, number>> {
+    const results = await this.getSelect()
+      .select(['folder_id'])
+      .select((eb) => eb.fn.count('id').as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('folder_id')
+      .execute();
+
+    // Convert array of results to object mapping folder_id -> count
+    const counts: Record<string, number> = {};
+    for (const result of results) {
+      counts[result.folder_id] = Number(result.count);
+    }
+
+    return counts;
+  }
 }

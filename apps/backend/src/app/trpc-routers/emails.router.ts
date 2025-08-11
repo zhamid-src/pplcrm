@@ -72,6 +72,11 @@ function getFolders() {
   return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
 }
 
+/** Retrieve all email folders with email counts for the current tenant. */
+function getFoldersWithCounts() {
+  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.tenant_id));
+}
+
 function setFavourite() {
   return authProcedure
     .input(z.object({ id: z.string(), favourite: z.boolean() }))
@@ -83,6 +88,7 @@ const emails = new EmailsController();
 /** Router exposing email-related procedures. */
 export const EmailsRouter = router({
   getFolders: getFolders(),
+  getFoldersWithCounts: getFoldersWithCounts(),
   getEmails: getEmails(),
   getEmailBody: getEmailBody(),
   getEmailHeader: getEmailHeader(),

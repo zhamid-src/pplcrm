@@ -176,6 +176,16 @@ export class EmailsStore {
     return folders;
   }
 
+  /**
+   * Loads all email folders with email counts from the server.
+   * @returns Promise that resolves to the array of folders with counts
+   */
+  public async loadAllFoldersWithCounts(): Promise<(EmailFolderType & { email_count: number })[]> {
+    const folders = (await this.emailsService.getFoldersWithCounts()) as (EmailFolderType & { email_count: number })[];
+    this.emailFolders.set(folders);
+    return folders;
+  }
+
   // =============================================================================
   // PUBLIC METHODS - EMAIL BODY LOADING
   // =============================================================================
@@ -343,6 +353,14 @@ export class EmailsStore {
       void this.loadEmailsForFolder(folder.id);
     }
     this.currentSelectedEmailId.set(null);
+  }
+
+  /**
+   * Refresh folder counts after email operations.
+   * This should be called after actions that might change email counts.
+   */
+  public async refreshFolderCounts(): Promise<void> {
+    await this.loadAllFoldersWithCounts();
   }
 
   // =============================================================================

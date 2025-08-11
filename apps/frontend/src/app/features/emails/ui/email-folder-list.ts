@@ -29,10 +29,10 @@ export class EmailFolderList implements OnInit {
   public foldersCollapsed = signal(false);
 
   /**
-   * Load folders on initialization.
+   * Load folders with counts on initialization.
    */
   public async ngOnInit() {
-    await this.store.loadAllFolders();
+    await this.store.loadAllFoldersWithCounts();
   }
 
   /**
@@ -52,6 +52,15 @@ export class EmailFolderList implements OnInit {
 
   protected getIcon(folder: EmailFolderType) {
     return folder.icon as IconName;
+  }
+
+  /**
+   * Get the email count for a folder.
+   * @param folder Folder object that may have email_count property
+   * @returns The email count or 0 if not available
+   */
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count || 0;
   }
 
   /**

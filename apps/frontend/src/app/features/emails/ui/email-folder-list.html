@@ -33,9 +33,9 @@
         <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
       </div>
 
-      <span class="text-xs tabular-nums group-hover:md:block font-normal" [class.hidden]="foldersCollapsed()"
-        >{{ 99 }}</span
-      >
+      <span class="text-xs tabular-nums group-hover:md:block font-normal" [class.hidden]="foldersCollapsed()">
+        {{ getEmailCount(folder) }}
+      </span>
     </li>
 
     }

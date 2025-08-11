@@ -69,6 +69,14 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.getFolders.query();
   }
 
+  /**
+   * Retrieve the list of available email folders with email counts.
+   * @returns Promise resolving to an array of folders with email_count property
+   */
+  public getFoldersWithCounts() {
+    return this.api.emails.getFoldersWithCounts.query();
+  }
+
   public setFavourite(id: string, favourite: boolean) {
     return this.api.emails.setFavourite.mutate({ id, favourite });
   }
