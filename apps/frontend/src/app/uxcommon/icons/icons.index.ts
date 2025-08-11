@@ -55,6 +55,7 @@ export const icons = {
   'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
   'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
   funnel: 'assets/icons/funnel.svg',
+  filter: 'assets/icons/funnel.svg',
   'magnifying-glass': 'assets/icons/magnifying-glass.svg',
   'pencil-square': 'assets/icons/pencil-square.svg',
   plus: 'assets/icons/plus.svg',

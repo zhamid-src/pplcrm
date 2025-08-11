@@ -29,7 +29,7 @@
       [class.text-primary]="isSelected(folder)"
     >
       <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="folder.icon" />
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
         <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
       </div>
 

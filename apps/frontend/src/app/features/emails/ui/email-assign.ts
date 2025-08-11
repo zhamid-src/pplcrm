@@ -8,7 +8,7 @@ import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 
 import { AuthService } from '../../../auth/auth-service';
-import { EmailsService } from '../services/emails-service';
+import { EmailsStore } from '../services/email-store';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
@@ -20,7 +20,7 @@ import { EmailType } from 'common/src/lib/models';
 export class EmailAssign {
   private alertSvc = inject(AlertService);
   private auth = inject(AuthService);
-  private svc: EmailsService = inject(EmailsService);
+  private store = inject(EmailsStore);
 
   protected assignedTo = signal<string | null>(null);
 
@@ -46,7 +46,7 @@ export class EmailAssign {
     if (!email) return;
 
     try {
-      await this.svc.assign(email.id, userId);
+      await this.store.assignEmailToUser(email.id, userId);
       this.assignedTo.set(userId);
     } catch {
       this.alertSvc.showError('Something went wrong, please try again');

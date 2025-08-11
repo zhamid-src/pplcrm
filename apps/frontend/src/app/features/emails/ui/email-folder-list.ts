@@ -4,9 +4,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, OnInit, Output, inject, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
+import { IconName } from '@uxcommon/icons/icons.index.new';
 
 import { Swap } from '../../../uxcommon/swap';
-import { EmailsService } from '../services/emails-service';
+import { EmailsStore } from '../services/email-store';
+import { EmailFolderType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-folder-list',
@@ -15,42 +17,29 @@ import { EmailsService } from '../services/emails-service';
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
-  /** Currently selected folder */
-  private selected = signal<any | null>(null);
+  private store = inject(EmailsStore);
 
   /** Emits selected folder to parent component */
-  @Output() public folderSelected = new EventEmitter<any>();
+  @Output() public folderSelected = new EventEmitter<EmailFolderType>();
 
-  /** List of folders retrieved from the backend */
-  public folders = signal<any[]>([]);
+  /** List of folders from the store */
+  public folders = this.store.allFolders;
 
   /** Indicates whether the folder sidebar is collapsed */
   public foldersCollapsed = signal(false);
-
-  constructor(private svc: EmailsService = inject(EmailsService)) {}
-
-  /**
-   * Determine if the folder is currently selected.
-   */
-  public isSelected(folder: any) {
-    return this.selected()?.id === folder.id;
-  }
 
   /**
    * Load folders on initialization.
    */
   public async ngOnInit() {
-    const folders = await this.svc.getFolders();
-    console.log(folders);
-    this.folders.set(folders);
+    await this.store.loadAllFolders();
   }
 
   /**
    * Select a folder and emit the selection.
    * @param folder Folder object to select
    */
-  public selectFolder(folder: any) {
-    this.selected.set(folder);
+  public selectFolder(folder: EmailFolderType) {
     this.folderSelected.emit(folder);
   }
 
@@ -59,5 +48,16 @@ export class EmailFolderList implements OnInit {
    */
   public toggleFolders() {
     this.foldersCollapsed.set(!this.foldersCollapsed());
+  }
+
+  protected getIcon(folder: EmailFolderType) {
+    return folder.icon as IconName;
+  }
+
+  /**
+   * Determine if the folder is currently selected.
+   */
+  protected isSelected(folder: EmailFolderType) {
+    return this.store.currentSelectedFolderId() === folder.id;
   }
 }

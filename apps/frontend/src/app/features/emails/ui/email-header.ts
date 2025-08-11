@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
 
-import { EmailsService } from '../services/emails-service';
+import { EmailsStore } from '../services/email-store';
 import { EmailAssign } from './email-assign';
 import { EmailType } from 'common/src/lib/models';
 
@@ -16,7 +16,7 @@ import { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
-  private svc = inject(EmailsService);
+  private store = inject(EmailsStore);
 
   protected isFavourite = signal(false);
 
@@ -37,6 +37,6 @@ export class EmailHeader {
   protected async toggleFavourite() {
     const e = this.email();
     this.isFavourite.set(!this.isFavourite());
-    return this.svc.setFavourite(e.id, this.isFavourite());
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }

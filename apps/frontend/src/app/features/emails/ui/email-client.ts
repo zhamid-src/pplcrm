@@ -1,8 +1,9 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { Component, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
 
+import { EmailsStore } from '../services/email-store';
 import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';
@@ -15,21 +16,23 @@ import { EmailFolderType, EmailType } from 'common/src/lib/models';
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
-  public selectedEmail = signal<EmailType | null>(null);
-  public selectedFolder = signal<EmailFolderType | null>(null);
+  private store = inject(EmailsStore);
+
+  // Use store's computed properties
+  public selectedEmail = this.store.currentSelectedEmail;
+  public selectedFolder = this.store.currentSelectedFolderId;
 
   /**
    * Handle email selection from child component.
    */
   public onEmail(email: EmailType) {
-    this.selectedEmail.set(email);
+    this.store.selectEmail(email);
   }
 
   /**
    * Handle folder selection from child component.
    */
   public onFolder(folder: EmailFolderType) {
-    this.selectedFolder.set(folder);
-    this.selectedEmail.set(null);
+    this.store.selectFolder(folder);
   }
 }
