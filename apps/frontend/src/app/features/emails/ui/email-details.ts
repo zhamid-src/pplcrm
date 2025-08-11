@@ -2,12 +2,12 @@
  * @file Container component for email details view.
  */
 import { CommonModule } from '@angular/common';
-import { Component, Input, signal } from '@angular/core';
-import { EmailType } from 'common/src/lib/models';
+import { Component, input } from '@angular/core';
 
 import { EmailBody } from './email-body';
 import { EmailComments } from './email-comments';
 import { EmailHeader } from './email-header';
+import { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-details',
@@ -16,6 +16,5 @@ import { EmailHeader } from './email-header';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  /** Email to display details for */
-  @Input() public email = signal<EmailType | null>(null);
+  public email = input<EmailType | null>(null);
 }

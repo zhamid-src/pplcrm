@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @plugin "daisyui";
+@plugin "@tailwindcss/typography";
 
 @plugin "daisyui/theme" {
   name: 'light';
@@ -24,24 +25,30 @@
 @plugin "daisyui/theme" {
   name: 'dark';
 
-  --color-primary: #38bdf8; /* Brighter cyan */
-  --color-secondary: #22c55e; /* Vibrant green */
-  --color-accent: #0ea5e9; /* Accent blue reused as accent */
-  --color-accent-content: #ffffff; /* Light text on accent bg */
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #f0f6ff; /* light text on blue */
 
-  --color-neutral: #1f2937; /* Dark neutral background */
-  --color-neutral-content: #cbd5e1; /* Light content on dark bg */
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
 
-  --color-base-100: #0f172a; /* Very dark base */
-  --color-base-300: #1e293b; /* Slightly lighter for surfaces */
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
 
-  --color-info: #0ea5e9; /* Crisp info blue */
-  --color-success: #14e8a6; /* Reuse your original for brightness */
-  --color-warning: #facc15; /* Golden yellow */
-  --color-error: #f87171; /* Bright error red */
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
 
-  --tooltip-bg: #111827; /* Dark tooltip background */
-  --tooltip-color: #f3f4f6; /* Light tooltip text */
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
 }
 
 html,
@@ -51,6 +58,7 @@ body {
 
 body {
   font-family: 'Roboto', sans-serif;
+  font-weight: 300;
 }
 
 .bg-image {

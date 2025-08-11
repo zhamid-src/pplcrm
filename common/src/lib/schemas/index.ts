@@ -39,6 +39,7 @@ export const EmailObj = z.object({
   preview: z.string().optional(),
   assigned_to: z.string().optional(),
   updated_at: z.date(),
+  is_favourite: z.boolean(),
 });
 
 /**

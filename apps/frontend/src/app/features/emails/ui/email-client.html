@@ -1,5 +1,5 @@
-<div class="flex text-sm bg-white h-full">
+<div class="flex text-sm bg-base-100 h-full">
   <pc-email-folder-list (folderSelected)="onFolder($event)"></pc-email-folder-list>
   <pc-email-list [folder]="selectedFolder()" (emailSelected)="onEmail($event!)"></pc-email-list>
-  <pc-email-details class="flex-1 h-full" [email]="selectedEmail"></pc-email-details>
+  <pc-email-details class="flex-1 h-full" [email]="selectedEmail()"></pc-email-details>
 </div>

@@ -24,4 +24,14 @@ export class EmailRepo extends BaseRepository<'emails'> {
   public getByFolder(tenant_id: string, folder_id: string) {
     return this.getSelect().selectAll().where('tenant_id', '=', tenant_id).where('folder_id', '=', folder_id).execute();
   }
+
+  public async setFavourite(tenant_id: string, id: string, is_favourite: boolean) {
+    await this.getUpdate()
+      .set({ is_favourite })
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    return is_favourite;
+  }
 }

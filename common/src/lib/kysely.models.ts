@@ -44,6 +44,7 @@ export interface Models {
   email_folders: EmailFolders;
   emails: Emails;
   email_comments: EmailComments;
+  email_bodies: EmailBodies;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -269,12 +270,18 @@ interface Emails extends RecordType {
   subject: string | null;
   preview: string | null;
   assigned_to: string | null;
+  is_favourite: boolean;
 }
 
 interface EmailComments extends RecordType {
   email_id: string;
   author_id: string;
   comment: string;
+}
+
+interface EmailBodies extends RecordType {
+  email_id: string;
+  body_html: string;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */

@@ -2,35 +2,10 @@
  * tRPC router for email management including folders, individual emails,
  * comments, and assignment of emails to users.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
-import { authProcedure, router } from '../../trpc';
-import { EmailsController } from '../controllers/emails.controller';
-
-const emails = new EmailsController();
-
-/** Retrieve all email folders for the current tenant. */
-function getFolders() {
-  return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
-}
-
-/**
- * Retrieve emails within a specified folder for the tenant.
- * @returns A list of email summaries.
- */
-function getEmails() {
-  return authProcedure
-    .input(z.object({ folderId: z.string() }))
-    .query(({ input, ctx }) => emails.getEmails(ctx.auth.tenant_id, input.folderId));
-}
-
-/**
- * Retrieve a single email by its ID.
- * @returns The requested email record.
- */
-function getEmail() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmail(ctx.auth.tenant_id, input));
-}
+import { authProcedure, router } from "../../trpc";
+import { EmailsController } from "../controllers/emails.controller";
 
 /**
  * Add a comment to an existing email.
@@ -52,11 +27,48 @@ function assign() {
     .mutation(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id));
 }
 
+function getEmailBody() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
+}
+
+/**
+ * Retrieve a single email by its ID.
+ * @returns The requested email record.
+ */
+function getEmailHeader() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input));
+}
+
+/**
+ * Retrieve emails within a specified folder for the tenant.
+ * @returns A list of email summaries.
+ */
+function getEmails() {
+  return authProcedure
+    .input(z.object({ folderId: z.string() }))
+    .query(({ input, ctx }) => emails.getEmails(ctx.auth.tenant_id, input.folderId));
+}
+
+/** Retrieve all email folders for the current tenant. */
+function getFolders() {
+  return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
+}
+
+function setFavourite() {
+  return authProcedure
+    .input(z.object({ id: z.string(), favourite: z.boolean() }))
+    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
+}
+
+const emails = new EmailsController();
+
 /** Router exposing email-related procedures. */
 export const EmailsRouter = router({
   getFolders: getFolders(),
   getEmails: getEmails(),
-  getEmail: getEmail(),
+  getEmailBody: getEmailBody(),
+  getEmailHeader: getEmailHeader(),
   addComment: addComment(),
   assign: assign(),
+  setFavourite: setFavourite(),
 });

@@ -1,3 +1,4 @@
+import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
 import { EmailFoldersRepo } from '../repositories/emails/email-folders.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
@@ -6,6 +7,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
+  private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
   private foldersRepo = new EmailFoldersRepo();
 
@@ -33,7 +35,13 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return a single email and its comments */
-  public async getEmail(tenant_id: string, id: string) {
+  public async getEmailBody(tenant_id: string, id: string) {
+    const email = await this.bodiesRepo.getById({ tenant_id, id });
+    return email;
+  }
+
+  /** Return a single email and its comments */
+  public async getEmailHeader(tenant_id: string, id: string) {
     const email = await this.getById({ tenant_id, id });
     const comments = await this.commentsRepo.getForEmail(tenant_id, id);
     return { email, comments };
@@ -52,5 +60,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         orderBy: ['sort_order'] as any,
       },
     });
+  }
+
+  public setFavourite(tenant_id: string, id: string, favourite: boolean) {
+    return this.getRepo().setFavourite(tenant_id, id, favourite);
   }
 }

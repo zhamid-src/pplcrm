@@ -15,10 +15,7 @@ import { EmailFolderType, EmailType } from 'common/src/lib/models';
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
-  /** Selected email */
   public selectedEmail = signal<EmailType | null>(null);
-
-  /** Selected folder */
   public selectedFolder = signal<EmailFolderType | null>(null);
 
   /**
