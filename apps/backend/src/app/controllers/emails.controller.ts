@@ -74,4 +74,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   public setFavourite(tenant_id: string, id: string, favourite: boolean) {
     return this.getRepo().setFavourite(tenant_id, id, favourite);
   }
+
+  /** Update email status (open/closed/resolved) */
+  public setStatus(tenant_id: string, id: string, status: 'open' | 'closed' | 'resolved') {
+    return this.getRepo().setStatus(tenant_id, id, status);
+  }
 }

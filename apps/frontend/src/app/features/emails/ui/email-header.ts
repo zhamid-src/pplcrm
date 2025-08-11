@@ -31,8 +31,10 @@ export class EmailHeader {
 
   constructor() {
     effect(() => {
-      console.log(this.email());
-      this.isFavourite.set(this.email().is_favourite);
+      const email = this.email();
+      console.log(email);
+      this.isFavourite.set(email.is_favourite);
+      this.isClosed.set(email.status === 'closed' || email.status === 'resolved');
     });
   }
 
@@ -120,9 +122,21 @@ export class EmailHeader {
 
   /** Toggle email closed status */
   protected async toggleClosed() {
-    this.isClosed.set(!this.isClosed());
-    // TODO: Implement API call to update closed status
-    console.log('Toggle closed status:', this.isClosed());
+    const email = this.email();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+
+    // Optimistically update UI
+    this.isClosed.set(newStatus === 'closed');
+
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+      console.log(`Email ${email.id} status updated to: ${newStatus}`);
+    } catch (error) {
+      // Revert UI state on error
+      this.isClosed.set(currentStatus === 'closed');
+      console.error('Failed to update email status:', error);
+    }
   }
 
   protected async toggleFavourite() {

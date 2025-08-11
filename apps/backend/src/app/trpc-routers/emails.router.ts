@@ -83,6 +83,12 @@ function setFavourite() {
     .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
 }
 
+function setStatus() {
+  return authProcedure
+    .input(z.object({ id: z.string(), status: z.enum(['open', 'closed', 'resolved']) }))
+    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status));
+}
+
 const emails = new EmailsController();
 
 /** Router exposing email-related procedures. */
@@ -96,4 +102,5 @@ export const EmailsRouter = router({
   addComment: addComment(),
   assign: assign(),
   setFavourite: setFavourite(),
+  setStatus: setStatus(),
 });
