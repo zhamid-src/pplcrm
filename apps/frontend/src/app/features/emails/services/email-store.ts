@@ -183,6 +183,15 @@ export class EmailsStore {
   public async loadAllFoldersWithCounts(): Promise<(EmailFolderType & { email_count: number })[]> {
     const folders = (await this.emailsService.getFoldersWithCounts()) as (EmailFolderType & { email_count: number })[];
     this.emailFolders.set(folders);
+
+    // Auto-select the default folder if no folder is currently selected
+    if (!this.currentSelectedFolderId() && folders.length > 0) {
+      const defaultFolder = folders.find((folder) => folder.is_default);
+      if (defaultFolder) {
+        this.selectFolder(defaultFolder);
+      }
+    }
+
     return folders;
   }
 
@@ -314,6 +323,7 @@ export class EmailsStore {
           folder_id: String(serverEmail.folder_id),
           updated_at: new Date(serverEmail.updated_at),
           is_favourite: serverEmail.is_favourite,
+          status: (serverEmail as any).status || 'open',
           from_email: serverEmail.from_email ?? undefined,
           to_email: serverEmail.to_email ?? undefined,
           subject: serverEmail.subject ?? undefined,
