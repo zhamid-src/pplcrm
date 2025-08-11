@@ -13,23 +13,74 @@ import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 import { environment } from '../../environments/environment';
 
 /**
- * A base service that wraps a TRPC proxy client with support for:
- * - Token-based authentication with automatic refresh
- * - Local caching of API responses using IndexedDB
- * - Error interception and messaging
+ * Base service providing type-safe tRPC client functionality with advanced features.
+ *
+ * This service serves as the foundation for all backend communication in the application.
+ * It provides a comprehensive tRPC client setup with multiple layers of functionality:
+ *
+ * **Core Features:**
+ * - **Authentication**: Automatic token injection and refresh handling
+ * - **Caching**: IndexedDB-based response caching with TTL support
+ * - **Request Management**: Abort controller for canceling ongoing requests
+ * - **Error Handling**: Centralized error interception and user-friendly messages
+ * - **Logging**: Development-time request/response logging
+ * - **Batching**: HTTP request batching for improved performance
+ *
+ * **Architecture:**
+ * The service uses tRPC's link system to create a processing pipeline:
+ * 1. Logger Link - Logs requests in development
+ * 2. Refresh Link - Handles token refresh automatically
+ * 3. Error Link - Transforms error messages for better UX
+ * 4. HTTP Link - Performs the actual HTTP requests with auth headers
+ *
+ * @template T - The database table type this service operates on
+ *
+ * @example
+ * ```typescript
+ * // Extending for a specific entity
+ * @Injectable()
+ * class PersonsService extends TRPCService<'persons'> {
+ *   async getPersons() {
+ *     return this.api.persons.getAll.query();
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Using caching
+ * const cachedData = await this.runCachedCall(
+ *   this.api.persons.getAll.query(options),
+ *   'getPersons',
+ *   options,
+ *   false // use cache if available
+ * );
+ * ```
  */
 @Injectable({
   providedIn: 'root',
 })
 export class TRPCService<T> {
+  /** Angular router for navigation during auth flows */
   protected readonly router = inject(Router);
+
+  /** Token service for authentication management */
   protected readonly tokenService = inject(TokenService);
 
+  /** Abort controller for canceling ongoing requests */
   protected ac = new AbortController();
 
   /**
-   * The proxy client created using TRPC.
-   * It is available to child services via `this.api`.
+   * The tRPC proxy client providing type-safe API access.
+   *
+   * This client is configured with a complete link chain including:
+   * - Authentication headers
+   * - Automatic token refresh
+   * - Error handling
+   * - Request logging (development)
+   * - HTTP batching
+   *
+   * Available to child services via `this.api` for making backend calls.
    */
   protected api;
 

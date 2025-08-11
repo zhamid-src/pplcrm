@@ -1,11 +1,55 @@
+/**
+ * @fileoverview Custom route reuse strategy for intelligent component caching.
+ * Provides selective route component caching based on route metadata configuration
+ * to improve performance and preserve user state across navigation.
+ */
 import { ActivatedRouteSnapshot, DetachedRouteHandle, RouteReuseStrategy } from '@angular/router';
 
 /**
- * A custom route reuse strategy to control caching and reusing of Angular routes
- * based on route-specific metadata (`shouldReuse` and `key` in `data`).
+ * Custom route reuse strategy for intelligent component caching and state preservation.
  *
- * This can be used to preserve component state, improve performance, or provide a smoother UX
- * when navigating back to previously visited routes.
+ * This strategy extends Angular's default routing behavior to selectively cache and reuse
+ * route components based on route configuration metadata. It provides fine-grained control
+ * over which routes should be cached, improving performance and user experience.
+ *
+ * **Key Benefits:**
+ * - **Performance**: Avoid re-creating expensive components
+ * - **State Preservation**: Maintain form data, scroll position, and component state
+ * - **Selective Caching**: Only cache routes that explicitly opt-in
+ * - **Memory Management**: Controlled caching with explicit route keys
+ *
+ * **Configuration:**
+ * Routes must include specific data properties to enable reuse:
+ * - `shouldReuse: true` - Enables caching for the route
+ * - `key: string` - Unique identifier for the cached route
+ *
+ * **Use Cases:**
+ * - Data grids with filters and pagination state
+ * - Complex forms with user input
+ * - Dashboard components with expensive calculations
+ * - Search results with applied filters
+ *
+ * @example
+ * ```typescript
+ * // In app.routes.ts
+ * {
+ *   path: 'persons',
+ *   component: PersonsGridComponent,
+ *   data: {
+ *     shouldReuse: true,
+ *     key: 'persons-grid'
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // In app.config.ts
+ * {
+ *   provide: RouteReuseStrategy,
+ *   useClass: CustomRouteReuseStrategy
+ * }
+ * ```
  */
 export class CustomRouteReuseStrategy implements RouteReuseStrategy {
   /**

@@ -31,7 +31,15 @@ export function tokenGetter() {
 
 /**
  * Application configuration for the Angular standalone app.
- * Sets up routing, HTTP interceptors, Google Maps, and app initialization.
+ *
+ * This configuration object sets up all the essential providers and services needed
+ * for the application to function properly. It includes:
+ * - Google Maps API integration with Places library
+ * - Application routing with custom route reuse strategy
+ * - Zoneless change detection for improved performance
+ * - Authentication service initialization during app startup
+ *
+ * @see {@link https://angular.dev/guide/standalone-components#configuring-dependency-injection}
  */
 export const appConfig: ApplicationConfig = {
   providers: [

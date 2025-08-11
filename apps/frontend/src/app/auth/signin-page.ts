@@ -1,5 +1,6 @@
 /**
- * Component handling user sign-in with form validation and persistence options.
+ * @fileoverview Sign-in page component providing user authentication interface.
+ * Features reactive forms, validation, password visibility toggle, and token persistence options.
  */
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -12,8 +13,27 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
 
 /**
- * Sign-in page component for user login.
- * Includes reactive form handling, basic validation, and token persistence control.
+ * Sign-in page component providing comprehensive user authentication interface.
+ *
+ * This component handles the complete sign-in flow including:
+ * - Reactive form validation for email and password
+ * - Password visibility toggle for better UX
+ * - Token persistence options (localStorage vs sessionStorage)
+ * - Loading states and error handling
+ * - Automatic redirection for already authenticated users
+ *
+ * **Features:**
+ * - Email format validation
+ * - Password minimum length validation (8 characters)
+ * - Real-time form validation feedback
+ * - Secure password input with show/hide toggle
+ * - Configurable token persistence for "Remember me" functionality
+ *
+ * @example
+ * ```html
+ * <!-- Used in routing -->
+ * <pc-login></pc-login>
+ * ```
  */
 @Component({
   selector: 'pc-login',

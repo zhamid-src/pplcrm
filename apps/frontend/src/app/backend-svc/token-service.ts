@@ -2,13 +2,53 @@ import { Injectable } from '@angular/core';
 import { IToken } from '@common';
 
 /**
- * A service that manages storing, retrieving, and clearing auth tokens
- * in either sessionStorage or localStorage, depending on user preference.
+ * Service for managing authentication and refresh tokens with configurable persistence.
+ *
+ * This service provides a unified interface for token storage that supports both
+ * session-based (temporary) and persistent (long-term) storage modes. It handles
+ * the complexity of managing tokens across different storage mechanisms while
+ * providing a consistent API.
+ *
+ * **Storage Modes:**
+ * - **Session Mode** (`persistence: false`): Tokens stored in sessionStorage
+ *   - Cleared when browser tab is closed
+ *   - More secure for shared computers
+ *   - Default behavior
+ *
+ * - **Persistent Mode** (`persistence: true`): Tokens stored in localStorage
+ *   - Persist across browser sessions and tabs
+ *   - "Remember me" functionality
+ *   - User must explicitly enable
+ *
+ * **Security Features:**
+ * - Automatic cleanup when switching storage modes
+ * - Separate handling of auth and refresh tokens
+ * - Consistent API regardless of storage backend
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * constructor(private tokenService: TokenService) {}
+ *
+ * // Store tokens after login
+ * this.tokenService.set({ auth_token: 'abc123', refresh_token: 'def456' });
+ *
+ * // Enable persistent storage ("Remember me")
+ * this.tokenService.setPersistence(true);
+ *
+ * // Get current auth token
+ * const token = this.tokenService.getAuthToken();
+ * ```
  */
 @Injectable({
   providedIn: 'root',
 })
 export class TokenService {
+  /**
+   * Controls token storage persistence mode.
+   * - `true`: Use localStorage (persistent across sessions)
+   * - `false`: Use sessionStorage (cleared when tab closes)
+   */
   private persistence = false;
 
   constructor() {

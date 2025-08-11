@@ -1,5 +1,7 @@
 /**
- * @file Service for managing person records through the tRPC API.
+ * @fileoverview Service for managing person records and related operations.
+ * Provides comprehensive CRUD operations, tag management, and household relationships
+ * through type-safe tRPC communication with the backend.
  */
 import { Injectable } from '@angular/core';
 import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
@@ -7,10 +9,47 @@ import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@co
 import { AbstractAPIService } from '../../../abstract-api.service';
 
 /**
- * Service for interacting with the `persons` data source.
- * Handles CRUD operations, tag management, and related utilities.
+ * Service for comprehensive person record management in the CRM system.
  *
- * @see {@link AbstractAPIService}
+ * This service extends AbstractAPIService to provide specialized functionality for
+ * managing person records, including their relationships with households, addresses,
+ * and tags. It offers both individual and batch operations with full type safety.
+ *
+ * **Key Features:**
+ * - **Person Management**: Full CRUD operations for person records
+ * - **Household Integration**: Retrieve people by household relationships
+ * - **Address Support**: Include address information in person queries
+ * - **Tag Management**: Attach/detach tags for categorization
+ * - **Batch Operations**: Support for multiple record operations
+ * - **Advanced Queries**: Flexible filtering and column selection
+ *
+ * **Data Relationships:**
+ * - Person ↔ Household (many-to-one)
+ * - Person ↔ Address (through household)
+ * - Person ↔ Tags (many-to-many)
+ *
+ * @example
+ * ```typescript
+ * constructor(private personsService: PersonsService) {}
+ *
+ * // Get all persons with addresses
+ * const persons = await this.personsService.getAllWithAddress({
+ *   limit: 10,
+ *   orderBy: 'last_name'
+ * });
+ *
+ * // Get people in a specific household
+ * const householdMembers = await this.personsService.getPeopleInHousehold('household-123');
+ *
+ * // Add a new person
+ * const newPerson = await this.personsService.add({
+ *   first_name: 'John',
+ *   last_name: 'Doe',
+ *   email: 'john@example.com'
+ * });
+ * ```
+ *
+ * @extends AbstractAPIService<DATA_TYPE, UpdatePersonsType>
  */
 @Injectable({
   providedIn: 'root',
@@ -126,11 +165,27 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
-   * Get people associated with a specific household and return them
-   * with their full name computed.
+   * Retrieves all people in a household with computed full names.
    *
-   * @param id - Household ID
-   * @returns Array of people with `full_name` field added
+   * This method fetches people associated with a specific household and enhances
+   * the data by computing a full name from the individual name components. It's
+   * optimized to only fetch the necessary columns for name computation.
+   *
+   * **Data Enhancement:**
+   * - Combines first_name, middle_names, and last_name into full_name
+   * - Handles null/undefined name components gracefully
+   * - Returns empty array for invalid household IDs
+   *
+   * @param id - The household ID to fetch people for (null/undefined returns empty array)
+   * @returns Promise resolving to array of people with computed full_name property
+   *
+   * @example
+   * ```typescript
+   * const householdMembers = await this.personsService.getPeopleInHousehold('household-123');
+   * householdMembers.forEach(person => {
+   *   console.log(`${person.full_name} (ID: ${person.id})`);
+   * });
+   * ```
    */
   public async getPeopleInHousehold(id: string | null | undefined) {
     if (!id) {
@@ -144,7 +199,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return peopleInHousehold.map((person) => {
       return {
         ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
       };
     });
   }
