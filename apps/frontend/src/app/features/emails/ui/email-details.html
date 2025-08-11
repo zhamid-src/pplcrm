@@ -1,16 +1,16 @@
-<section class="flex-1 flex flex-col bg-base-100 overflow-y-auto h-full">
+<section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
   @if (email()) {
   <pc-email-header [email]="email()!"></pc-email-header>
   <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-4">
     <!-- 3/4 height, scrolls -->
     <pc-email-body
-      class="flex-[3_3_0%] min-h-0 overflow-auto border-double border-b-2 border-gray-200"
+      class="flex-[3_3_0%] min-h-0 border-double border-b-2 border-gray-200 rounded-lg bg-white"
       [email]="email()!"
     >
     </pc-email-body>
 
     <!-- 1/4 height, can scroll if long -->
-    <pc-email-comments class="flex-[1_1_0%] min-h-0 overflow-auto" [email]="email"> </pc-email-comments>
+    <pc-email-comments class="flex-[1_1_0%] min-h-0 overflow-auto email-scrollbar" [email]="email"> </pc-email-comments>
   </main>
 
   } @else {

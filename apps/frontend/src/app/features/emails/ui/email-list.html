@@ -1,10 +1,10 @@
 <section
-  class="border-r border-gray-200 flex flex-col h-full"
+  class="border-r border-gray-200 flex flex-col h-full overflow-hidden"
   [class.w-48]="emails().length"
   [class.invisible]="!emails().length"
 >
   @if (emails().length) {
-  <ul class="flex-1 overflow-y-auto">
+  <ul class="flex-1 overflow-y-auto min-h-0 email-scrollbar">
     @for (email of emails(); track email.id) {
     <li
       (click)="selectEmail(email)"
