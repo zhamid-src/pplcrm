@@ -12,7 +12,10 @@ import { EmailType } from 'common/src/lib/models';
   selector: 'pc-email-body',
   standalone: true,
   imports: [CommonModule, SanitizeHtmlPipe],
-  template: `<div class="prose max-w-none break-words" [innerHTML]="getBody() | sanitizeHtml"></div>`,
+  template: `<div
+    class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar"
+    [innerHTML]="getBody() | sanitizeHtml"
+  ></div>`,
 })
 export class EmailBody {
   private store = inject(EmailsStore);

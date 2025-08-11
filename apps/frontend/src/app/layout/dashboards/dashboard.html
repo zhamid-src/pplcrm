@@ -1,6 +1,6 @@
 <!-- Dashboard layout template combining sidebar, navbar, and routed content -->
 <!-- Sidebar -->
-<div class="drawer drawer-open bg-base-200">
+<div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
   <input class="drawer-toggle" />
   <div class="drawer-side">
     <pc-sidebar></pc-sidebar>
@@ -8,11 +8,11 @@
 
   <!-- Add the Navbar and router-outlet for the body -->
 
-  <div class="drawer-content flex flex-col">
+  <div class="drawer-content flex flex-col h-screen overflow-hidden">
     <pc-navbar></pc-navbar>
     <pc-breadcrumb class="invisible sm:visible"></pc-breadcrumb>
     <pc-alerts></pc-alerts>
-    <div class="grow border-l-2 border-l-base-300" [class.hidden]="isMobileOpen()">
+    <div class="flex-1 border-l-2 border-l-base-300 overflow-hidden" [class.hidden]="isMobileOpen()">
       <router-outlet></router-outlet>
     </div>
   </div>

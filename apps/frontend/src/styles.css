@@ -61,6 +61,31 @@ body {
   font-weight: 300;
 }
 
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
 .bg-image {
   background-image: url('assets/bg.jpg');
 }
