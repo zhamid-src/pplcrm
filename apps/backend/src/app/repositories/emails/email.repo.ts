@@ -127,6 +127,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
     for (const result of results) {
       counts[result.folder_id] = Number(result.count);
     }
+    console.log('Regular folder counts:', counts);
 
     // Add counts for special folders
     try {
@@ -137,6 +138,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .where((eb) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]))
         .executeTakeFirst();
       counts['1'] = Number(openEmailsResult?.count || 0);
+      console.log(`All Open folder count: ${counts['1']}`);
 
       // Closed folder (id=2) - count closed/resolved emails
       const closedEmailsResult = await this.getSelect()
@@ -145,6 +147,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .where((eb) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')]))
         .executeTakeFirst();
       counts['2'] = Number(closedEmailsResult?.count || 0);
+      console.log(`Closed folder count: ${counts['2']}`);
 
       // Assigned to me folder (id=6) - count assigned emails
       const assignedEmailsResult = await this.getSelect()
@@ -153,6 +156,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .where('assigned_to', 'is not', null)
         .executeTakeFirst();
       counts['6'] = Number(assignedEmailsResult?.count || 0);
+      console.log(`Assigned to me folder count: ${counts['6']}`);
     } catch (error) {
       console.warn('Error counting special folders, status column may not exist:', error);
       // If status column doesn't exist, set special folder counts to 0 or total
@@ -164,9 +168,22 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
       counts['1'] = totalCount; // All Open gets all emails
       counts['2'] = 0; // Closed gets none
-      counts['6'] = 0; // Assigned gets none
+
+      // Try to count assigned emails separately (doesn't depend on status column)
+      try {
+        const assignedEmailsResult = await this.getSelect()
+          .select((eb) => eb.fn.count('id').as('count'))
+          .where('tenant_id', '=', tenant_id)
+          .where('assigned_to', 'is not', null)
+          .executeTakeFirst();
+        counts['6'] = Number(assignedEmailsResult?.count || 0);
+      } catch (assignedError) {
+        console.error('Error counting assigned emails:', assignedError);
+        counts['6'] = 0;
+      }
     }
 
+    console.log('Final folder counts:', counts);
     return counts;
   }
 }
