@@ -30,6 +30,12 @@ export class EmailsStore {
   /** Cache for email body HTML content, keyed by email ID */
   private readonly emailBodiesCache = signal<Record<string, string>>({});
 
+  /** Cache for email header data with recipients, keyed by email ID */
+  private readonly emailHeadersCache = signal<Record<string, any>>({});
+
+  /** Track emails currently being loaded to prevent duplicate requests */
+  private readonly loadingEmails = signal<Set<string>>(new Set());
+
   /** Available email folders */
   private readonly emailFolders = signal<EmailFolderType[]>([]);
 
@@ -148,6 +154,14 @@ export class EmailsStore {
   public readonly getEmailBodyById = (emailId: EmailId | null) =>
     computed(() => (emailId ? this.emailBodiesCache()[String(emailId)] : undefined));
 
+  /**
+   * Factory function to get email header data by ID.
+   * @param emailId - The email ID to get header data for
+   * @returns Computed signal containing the email header data or undefined
+   */
+  public readonly getEmailHeaderById = (emailId: EmailId | null) =>
+    computed(() => (emailId ? this.emailHeadersCache()[String(emailId)] : undefined));
+
   // =============================================================================
   // PUBLIC METHODS - FOLDER MANAGEMENT
   // =============================================================================
@@ -186,6 +200,85 @@ export class EmailsStore {
       return response.body_html as string;
     }
     return '';
+  }
+
+  /**
+   * Loads email with headers and body content with caching.
+   * This method fetches both body and header data in a single call.
+   * @param emailId - The ID of the email to load complete data for
+   * @returns Promise that resolves to object containing body and header data
+   */
+  public async loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
+    const emailKey = String(emailId);
+    const cachedBody = this.emailBodiesCache()[emailKey];
+    const cachedHeader = this.emailHeadersCache()[emailKey];
+
+    // If both are cached, return cached data immediately
+    if (cachedBody && cachedHeader) {
+      return { body: cachedBody, header: cachedHeader };
+    }
+
+    // Check if this email is already being loaded
+    const currentlyLoading = this.loadingEmails();
+    if (currentlyLoading.has(emailKey)) {
+      console.log(`Email ${emailKey} is already being loaded, skipping duplicate request`);
+      // Return cached data if available, or empty data
+      return {
+        body: cachedBody || '',
+        header: cachedHeader || null,
+      };
+    }
+
+    // Mark as loading
+    this.loadingEmails.update((loading) => {
+      const newSet = new Set(loading);
+      newSet.add(emailKey);
+      return newSet;
+    });
+
+    try {
+      console.log(`Loading email data for ${emailKey}`);
+
+      // Fetch combined data from API
+      const response = (await this.emailsService.getEmailWithHeaders(emailKey)) as any;
+
+      if (response) {
+        // Batch cache updates to minimize reactive updates
+        const bodyHtml = response.body?.body_html || '';
+        const headerData = response.header || null;
+
+        // Update caches only if we don't already have the data
+        if (bodyHtml && !cachedBody) {
+          this.emailBodiesCache.update((cache) => ({
+            ...cache,
+            [emailKey]: bodyHtml,
+          }));
+        }
+
+        if (headerData && !cachedHeader) {
+          this.emailHeadersCache.update((cache) => ({
+            ...cache,
+            [emailKey]: headerData,
+          }));
+        }
+
+        return {
+          body: bodyHtml,
+          header: headerData,
+        };
+      }
+    } catch (error) {
+      console.error(`Failed to load email data for ${emailKey}:`, error);
+    } finally {
+      // Remove from loading set
+      this.loadingEmails.update((loading) => {
+        const newSet = new Set(loading);
+        newSet.delete(emailKey);
+        return newSet;
+      });
+    }
+
+    return { body: '', header: null };
   }
 
   // =============================================================================

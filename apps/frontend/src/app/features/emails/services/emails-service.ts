@@ -34,6 +34,15 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   }
 
   /**
+   * Get email with headers and body combined for detailed view.
+   * @param id Email identifier
+   * @returns Promise resolving to email body and header data
+   */
+  public getEmailWithHeaders(id: string) {
+    return this.api.emails.getEmailWithHeaders.query(id);
+  }
+
+  /**
    * Get a single email by its ID.
    * @param id Email identifier
    * @returns Promise resolving to the email details

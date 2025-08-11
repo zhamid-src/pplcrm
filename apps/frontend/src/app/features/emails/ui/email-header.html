@@ -7,7 +7,9 @@
     <div class="min-w-0 flex-1"></div>
 
     <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2"> {{ email()!.updated_at | date:'EEE, MMM d, h:mm a' }} </span>
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
 
       <button class="btn btn-ghost btn-circle btn-sm" aria-label="Star" (click)="toggleFavourite()">
         <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
@@ -53,7 +55,10 @@
         to
         <div class="dropdown inline-block">
           <label tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline">
-            {{ email()!.to_email }}
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
             <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
               <path
                 d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
@@ -62,7 +67,23 @@
           </label>
           <ul tabindex="0" class="menu menu-sm dropdown-content z-[1] mt-1 w-72 rounded-box bg-base-100 p-2 shadow">
             <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li><a class="truncate">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a></li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
             <li><a class="truncate">{{ email()!.to_email }}</a></li>
+            }
           </ul>
         </div>
       </div>
