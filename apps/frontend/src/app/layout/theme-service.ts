@@ -1,15 +1,46 @@
 /**
- * Manages the application's light and dark theme preference using Angular signals
- * and persists the selection in local storage.
+ * @fileoverview Theme management service for application-wide light/dark mode support.
+ * Provides reactive theme switching with system preference detection and persistent storage.
  */
 import { Injectable, signal } from '@angular/core';
 
 /**
- * A service to manage application theme (light or dark) in a reactive and persistent way.
+ * Service for managing application theme with reactive state and persistent storage.
  *
- * - Detects system preference on first load.
- * - Persists user preference in localStorage.
- * - Reactively updates theme across the app using Angular signals.
+ * This service provides comprehensive theme management functionality that respects
+ * user preferences while maintaining consistency across the application. It integrates
+ * with the system's color scheme preferences and provides smooth theme transitions.
+ *
+ * **Key Features:**
+ * - **Reactive Theme State**: Uses Angular signals for efficient UI updates
+ * - **Persistent Storage**: Saves user preference in localStorage
+ * - **System Integration**: Detects and responds to OS theme changes
+ * - **Automatic Sync**: Listens for system theme changes in real-time
+ * - **Simple API**: Easy theme toggling and retrieval methods
+ *
+ * **Theme Resolution Priority:**
+ * 1. Stored user preference (localStorage)
+ * 2. System color scheme preference
+ * 3. Default to light theme
+ *
+ * @example
+ * ```typescript
+ * constructor(private themeService: ThemeService) {
+ *   // Get current theme
+ *   const currentTheme = this.themeService.getTheme();
+ *
+ *   // Toggle theme
+ *   this.themeService.toggleTheme();
+ * }
+ * ```
+ *
+ * @example
+ * ```html
+ * <!-- Apply theme in template -->
+ * <div [attr.data-theme]="themeService.getTheme()">
+ *   <!-- App content -->
+ * </div>
+ * ```
  */
 @Injectable({
   providedIn: 'root',

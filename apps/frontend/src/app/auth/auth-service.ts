@@ -1,5 +1,7 @@
 /**
- * Service managing authentication state and interactions with backend APIs.
+ * @fileoverview Authentication service for managing user authentication state and operations.
+ * Provides comprehensive authentication functionality including sign-in, sign-up, password reset,
+ * and session management through tRPC communication with the backend.
  */
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
@@ -8,13 +10,37 @@ import { TRPCError } from '@trpc/server';
 import { TRPCService } from '../backend-svc/trpc-service';
 
 /**
- * Authentication service responsible for managing the user's authentication state,
- * performing sign-in/sign-up/sign-out operations, and interacting with the backend via tRPC.
+ * Authentication service responsible for managing the user's authentication state.
+ *
+ * This service provides a comprehensive authentication system that handles:
+ * - User sign-in and sign-up operations
+ * - Password reset functionality
+ * - Session management and token handling
+ * - User state persistence across page reloads
+ * - Secure communication with backend via tRPC
+ *
+ * The service maintains reactive user state using Angular signals and automatically
+ * handles token storage and retrieval through the TokenService.
+ *
+ * @example
+ * ```typescript
+ * constructor(private authService: AuthService) {}
+ *
+ * async login() {
+ *   try {
+ *     const user = await this.authService.signIn({ email, password });
+ *     console.log('Logged in as:', user.email);
+ *   } catch (error) {
+ *     console.error('Login failed:', error);
+ *   }
+ * }
+ * ```
  */
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService extends TRPCService<'authusers'> {
+  /** Reactive signal holding the currently authenticated user state */
   private user = signal<IAuthUser | null>(null);
 
   /**

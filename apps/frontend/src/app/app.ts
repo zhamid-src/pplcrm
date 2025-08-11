@@ -6,8 +6,20 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
 /**
  * The root component of the application.
  *
- * This component serves as the application shell. It applies the current
- * theme using `data-theme` attribute and acts as the host for routed views.
+ * This component serves as the application shell and provides the foundation for the entire
+ * application. It handles theme management by applying the current theme via the `data-theme`
+ * attribute and acts as the host container for all routed views.
+ *
+ * Key responsibilities:
+ * - Theme application and management
+ * - Router outlet hosting for navigation
+ * - Application-wide styling context
+ *
+ * @example
+ * ```html
+ * <!-- Rendered in index.html -->
+ * <pc-root></pc-root>
+ * ```
  */
 @Component({
   selector: 'pc-root',

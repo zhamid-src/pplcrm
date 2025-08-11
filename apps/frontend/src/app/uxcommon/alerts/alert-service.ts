@@ -1,7 +1,33 @@
+/**
+ * @fileoverview Alert system for displaying user notifications and messages.
+ * Provides a comprehensive alert service with reactive state management, animations,
+ * and support for various alert types including success, error, warning, and info.
+ */
 import { Injectable, signal } from '@angular/core';
 
 /**
- * The options used to configure an alert message.
+ * Configuration class for alert messages with reactive properties and callbacks.
+ *
+ * This class encapsulates all the properties and behaviors of an individual alert,
+ * including visual states, button configurations, and automatic dismissal timing.
+ *
+ * **Features:**
+ * - Reactive visibility and pulse animations using Angular signals
+ * - Configurable buttons with custom labels and callbacks
+ * - Auto-dismissal with customizable duration
+ * - Unique ID generation for tracking
+ * - Type-based styling support
+ *
+ * @example
+ * ```typescript
+ * const alert = new AlertMessage({
+ *   text: 'Operation completed successfully',
+ *   type: 'success',
+ *   duration: 5000,
+ *   OKBtn: 'Got it',
+ *   OKBtnCallback: () => console.log('User acknowledged')
+ * });
+ * ```
  */
 export class AlertMessage {
   public readonly pulse = signal(false);
@@ -46,10 +72,51 @@ export class AlertMessage {
   }
 }
 
+/**
+ * Service for managing application-wide alert notifications.
+ *
+ * This service provides a centralized system for displaying various types of alerts
+ * throughout the application. It manages alert lifecycle, prevents duplicates,
+ * and provides convenient methods for common alert types.
+ *
+ * **Key Features:**
+ * - 🎯 **Duplicate Prevention**: Prevents showing identical alerts simultaneously
+ * - ⏱️ **Auto-Dismissal**: Configurable timeout for automatic alert removal
+ * - 🎨 **Animation Support**: Smooth show/hide animations with pulse effects
+ * - 🔄 **Reactive State**: Uses Angular signals for efficient UI updates
+ * - 🎛️ **Multiple Types**: Built-in support for success, error, warning, and info alerts
+ *
+ * **Alert Lifecycle:**
+ * 1. Alert is created and added to the queue
+ * 2. Alert appears with entrance animation
+ * 3. Auto-dismissal timer starts (if configured)
+ * 4. User can manually dismiss or wait for timeout
+ * 5. Exit animation plays before removal
+ *
+ * @example
+ * ```typescript
+ * constructor(private alertService: AlertService) {}
+ *
+ * // Simple success message
+ * this.alertService.showSuccess('Data saved successfully!');
+ *
+ * // Custom alert with callback
+ * this.alertService.show({
+ *   text: 'Are you sure you want to delete this item?',
+ *   type: 'warning',
+ *   OKBtn: 'Delete',
+ *   btn2: 'Cancel',
+ *   OKBtnCallback: () => this.deleteItem(),
+ *   btn2Callback: () => this.cancelDelete(),
+ *   duration: 0 // No auto-dismiss
+ * });
+ * ```
+ */
 @Injectable({
   providedIn: 'root',
 })
 export class AlertService {
+  /** Reactive signal containing all currently active alerts */
   private readonly alerts = signal<AlertMessage[]>([]);
 
   /**

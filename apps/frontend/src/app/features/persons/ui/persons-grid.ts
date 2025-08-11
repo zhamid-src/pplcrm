@@ -1,5 +1,7 @@
 /**
- * @file Grid component for displaying people with tagging and address features.
+ * @fileoverview Advanced data grid component for managing person records.
+ * Provides comprehensive person management with inline editing, tag management,
+ * and address confirmation workflows in a high-performance AG-Grid interface.
  */
 import { Component, inject } from '@angular/core';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
@@ -18,11 +20,44 @@ interface ParamsType {
 }
 
 /**
- * PersonsGrid component displays a grid of people with editable fields and tags.
- * It extends the common DataGrid and integrates address confirmation and tag functionality.
+ * Advanced data grid component for comprehensive person record management.
  *
- * @see {@link DataGrid}
- * @see {@link TagsCellRenderer}
+ * This component extends the base DataGrid to provide specialized functionality for
+ * managing person records within the CRM system. It offers a rich set of features
+ * including inline editing, tag management, and address handling with confirmation workflows.
+ *
+ * **Key Features:**
+ * - **High-Performance Grid**: Built on AG-Grid for handling large datasets
+ * - **Inline Editing**: Direct editing of person fields (name, email, mobile)
+ * - **Tag Management**: Visual tag display and management with custom renderer
+ * - **Address Integration**: Address fields with confirmation dialogs for changes
+ * - **Advanced Filtering**: Tag-based filtering and column-specific filters
+ * - **Responsive Design**: Optimized for various screen sizes
+ * - **Smart Interactions**: Double-click editing with context-aware confirmations
+ *
+ * **Column Types:**
+ * - **Editable Fields**: first_name, last_name, email, mobile (direct editing)
+ * - **Address Fields**: street_num, apt, street1, street2, city (confirmation required)
+ * - **Tags Column**: Custom renderer with filtering and management capabilities
+ * - **Read-only Fields**: home_phone and other computed/derived fields
+ *
+ * **Address Confirmation Workflow:**
+ * When users attempt to edit address fields, a confirmation dialog appears because
+ * address changes affect the entire household, not just the individual person.
+ *
+ * @example
+ * ```html
+ * <!-- Basic usage -->
+ * <pc-persons-grid></pc-persons-grid>
+ *
+ * <!-- With tag filtering -->
+ * <pc-persons-grid [limitTags]="['VIP', 'Active']"></pc-persons-grid>
+ * ```
+ *
+ * @extends DataGrid<DATA_TYPE, UpdatePersonsType>
+ * @see {@link DataGrid} for base grid functionality
+ * @see {@link TagsCellRenderer} for tag display and management
+ * @see {@link PersonsService} for data operations
  */
 @Component({
   selector: 'pc-persons-grid',
