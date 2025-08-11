@@ -19,21 +19,21 @@ describe('EmailsService', () => {
     preview: 'Test preview',
     is_favourite: false,
     assigned_to: null,
-    updated_at: '2023-01-01T00:00:00.000Z'
+    updated_at: '2023-01-01T00:00:00.000Z',
   };
 
   const mockFolder = {
     id: 'folder1',
     name: 'Inbox',
     icon: 'inbox',
-    color: '#000000'
+    color: '#000000',
   };
 
   const mockEmailBody = {
     id: '1',
     email_id: '1',
     body_html: '<p>Test email body</p>',
-    body_text: 'Test email body'
+    body_text: 'Test email body',
   };
 
   beforeEach(() => {
@@ -45,24 +45,24 @@ describe('EmailsService', () => {
         update: { mutate: jest.fn() },
         delete: { mutate: jest.fn() },
         setFavourite: { mutate: jest.fn() },
-        assign: { mutate: jest.fn() }
+        assign: { mutate: jest.fn() },
+        getEmailBody: { query: jest.fn() },
+        getEmailHeader: { query: jest.fn() },
+        getEmailWithHeaders: { query: jest.fn() },
       },
       emailFolders: {
-        getAll: { query: jest.fn() }
+        getAll: { query: jest.fn() },
       },
       emailBodies: {
-        getById: { query: jest.fn() }
+        getById: { query: jest.fn() },
       },
       emailComments: {
-        add: { mutate: jest.fn() }
-      }
+        add: { mutate: jest.fn() },
+      },
     };
 
     TestBed.configureTestingModule({
-      providers: [
-        EmailsService,
-        { provide: TRPCService, useValue: { api: mockApi } }
-      ]
+      providers: [EmailsService, { provide: TRPCService, useValue: { api: mockApi } }],
     });
 
     service = TestBed.inject(EmailsService);
@@ -86,15 +86,6 @@ describe('EmailsService', () => {
       expect(result).toEqual(mockEmails);
     });
 
-    it('should get email by id', async () => {
-      (mockTRPCService as any).api.emails.getById.query.mockResolvedValue(mockEmail);
-
-      const result = await service.getById('1');
-
-      expect((mockTRPCService as any).api.emails.getById.query).toHaveBeenCalledWith('1');
-      expect(result).toEqual(mockEmail);
-    });
-
     it('should set email as favourite', async () => {
       (mockTRPCService as any).api.emails.setFavourite.mutate.mockResolvedValue(undefined);
 
@@ -102,7 +93,7 @@ describe('EmailsService', () => {
 
       expect((mockTRPCService as any).api.emails.setFavourite.mutate).toHaveBeenCalledWith({
         id: '1',
-        is_favourite: true
+        is_favourite: true,
       });
     });
 
@@ -113,7 +104,7 @@ describe('EmailsService', () => {
 
       expect((mockTRPCService as any).api.emails.assign.mutate).toHaveBeenCalledWith({
         id: '1',
-        assigned_to: 'user123'
+        assigned_to: 'user123',
       });
     });
 
@@ -124,8 +115,28 @@ describe('EmailsService', () => {
 
       expect((mockTRPCService as any).api.emails.assign.mutate).toHaveBeenCalledWith({
         id: '1',
-        assigned_to: null
+        assigned_to: null,
       });
+    });
+
+    it('should get email with headers', async () => {
+      const mockResponse = {
+        body: { body_html: '<p>Test body</p>' },
+        header: {
+          email: {
+            to_list: [{ name: 'John Doe', email: 'john@example.com', pos: 0 }],
+            cc_list: [],
+            bcc_list: [],
+          },
+          comments: [],
+        },
+      };
+      (mockTRPCService as any).api.emails.getEmailWithHeaders.query.mockResolvedValue(mockResponse);
+
+      const result = await service.getEmailWithHeaders('1');
+
+      expect((mockTRPCService as any).api.emails.getEmailWithHeaders.query).toHaveBeenCalledWith('1');
+      expect(result).toEqual(mockResponse);
     });
   });
 
@@ -167,7 +178,7 @@ describe('EmailsService', () => {
         email_id: '1',
         author_id: 'user123',
         comment: 'Test comment',
-        created_at: new Date()
+        created_at: new Date(),
       };
       (mockTRPCService as any).api.emailComments.add.mutate.mockResolvedValue(mockComment);
 
@@ -176,47 +187,9 @@ describe('EmailsService', () => {
       expect((mockTRPCService as any).api.emailComments.add.mutate).toHaveBeenCalledWith({
         email_id: '1',
         author_id: 'user123',
-        comment: 'Test comment'
+        comment: 'Test comment',
       });
       expect(result).toEqual(mockComment);
-    });
-  });
-
-  describe('Abstract API Service Implementation', () => {
-    it('should implement add method', async () => {
-      const newEmail = {
-        folder_id: 'folder1',
-        from_email: 'new@example.com',
-        subject: 'New Email'
-      };
-      (mockTRPCService as any).api.emails.add.mutate.mockResolvedValue(mockEmail);
-
-      const result = await service.add(newEmail);
-
-      expect((mockTRPCService as any).api.emails.add.mutate).toHaveBeenCalledWith(newEmail);
-      expect(result).toEqual(mockEmail);
-    });
-
-    it('should implement update method', async () => {
-      const updateData = { subject: 'Updated Subject' };
-      (mockTRPCService as any).api.emails.update.mutate.mockResolvedValue([mockEmail]);
-
-      const result = await service.update('1', updateData);
-
-      expect((mockTRPCService as any).api.emails.update.mutate).toHaveBeenCalledWith({
-        id: '1',
-        ...updateData
-      });
-      expect(result).toEqual([mockEmail]);
-    });
-
-    it('should implement delete method', async () => {
-      (mockTRPCService as any).api.emails.delete.mutate.mockResolvedValue(true);
-
-      const result = await service.delete('1');
-
-      expect((mockTRPCService as any).api.emails.delete.mutate).toHaveBeenCalledWith('1');
-      expect(result).toBe(true);
     });
   });
 

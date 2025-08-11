@@ -45,6 +45,8 @@ export interface Models {
   emails: Emails;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
+  email_headers: EmailHeaders;
+  email_recipients: EmailRecipients;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -282,6 +284,21 @@ interface EmailComments extends RecordType {
 interface EmailBodies extends RecordType {
   email_id: string;
   body_html: string;
+}
+
+interface EmailHeaders extends RecordType {
+  email_id: string;
+  headers_json: Json | null;
+  raw_headers: string | null;
+  date_sent: Timestamp | null;
+}
+
+interface EmailRecipients extends RecordType {
+  email_id: string;
+  kind: 'to' | 'cc' | 'bcc';
+  name: string | null;
+  email: string;
+  pos: number;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */

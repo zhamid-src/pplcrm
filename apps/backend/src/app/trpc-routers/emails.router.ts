@@ -2,10 +2,10 @@
  * tRPC router for email management including folders, individual emails,
  * comments, and assignment of emails to users.
  */
-import { z } from "zod";
+import { z } from 'zod';
 
-import { authProcedure, router } from "../../trpc";
-import { EmailsController } from "../controllers/emails.controller";
+import { authProcedure, router } from '../../trpc';
+import { EmailsController } from '../controllers/emails.controller';
 
 /**
  * Add a comment to an existing email.
@@ -29,6 +29,24 @@ function assign() {
 
 function getEmailBody() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
+}
+
+/**
+ * Retrieve email body and headers combined for detailed view.
+ * @returns Email body with headers and recipient information.
+ */
+function getEmailWithHeaders() {
+  return authProcedure.input(z.string()).query(async ({ input, ctx }) => {
+    const [emailBody, emailHeader] = await Promise.all([
+      emails.getEmailBody(ctx.auth.tenant_id, input),
+      emails.getEmailHeader(ctx.auth.tenant_id, input),
+    ]);
+
+    return {
+      body: emailBody,
+      header: emailHeader,
+    };
+  });
 }
 
 /**
@@ -68,6 +86,7 @@ export const EmailsRouter = router({
   getEmails: getEmails(),
   getEmailBody: getEmailBody(),
   getEmailHeader: getEmailHeader(),
+  getEmailWithHeaders: getEmailWithHeaders(),
   addComment: addComment(),
   assign: assign(),
   setFavourite: setFavourite(),

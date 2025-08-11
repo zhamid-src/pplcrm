@@ -40,11 +40,11 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return email;
   }
 
-  /** Return a single email and its comments */
+  /** Return a single email with headers, recipients, and comments */
   public async getEmailHeader(tenant_id: string, id: string) {
-    const email = await this.getById({ tenant_id, id });
+    const emailWithHeaders = await this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id);
     const comments = await this.commentsRepo.getForEmail(tenant_id, id);
-    return { email, comments };
+    return { email: emailWithHeaders, comments };
   }
 
   /** Return all emails for the given folder */

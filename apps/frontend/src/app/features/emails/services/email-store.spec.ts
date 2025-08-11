@@ -33,6 +33,10 @@ describe('EmailsStore', () => {
 
   const mockServerEmail = {
     id: '1',
+    tenant_id: 'tenant1',
+    createdby_id: 'user1',
+    updatedby_id: 'user1',
+    created_at: '2023-01-01T00:00:00.000Z',
     folder_id: 'folder1',
     updated_at: '2023-01-01T00:00:00.000Z',
     is_favourite: false,
@@ -48,6 +52,7 @@ describe('EmailsStore', () => {
       getEmails: jest.fn(),
       getFolders: jest.fn(),
       getEmailBody: jest.fn(),
+      getEmailWithHeaders: jest.fn(),
       setFavourite: jest.fn(),
       assign: jest.fn(),
       addComment: jest.fn(),
@@ -87,7 +92,7 @@ describe('EmailsStore', () => {
     });
 
     it('should select folder and load emails', async () => {
-      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail]);
+      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail] as any);
 
       store.selectFolder(mockFolder);
 
@@ -106,7 +111,7 @@ describe('EmailsStore', () => {
 
   describe('Email Management', () => {
     beforeEach(async () => {
-      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail]);
+      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail] as any);
       await store.loadEmailsForFolder('folder1');
     });
 
@@ -153,7 +158,7 @@ describe('EmailsStore', () => {
     });
 
     it('should return empty string when body is not found', async () => {
-      mockEmailsService.getEmailBody.mockResolvedValue(null);
+      mockEmailsService.getEmailBody.mockResolvedValue(null as any);
 
       const result = await store.loadEmailBody('1');
 
@@ -169,12 +174,12 @@ describe('EmailsStore', () => {
 
   describe('Email Actions', () => {
     beforeEach(async () => {
-      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail]);
+      mockEmailsService.getEmails.mockResolvedValue([mockServerEmail] as any);
       await store.loadEmailsForFolder('folder1');
     });
 
     it('should toggle email favorite status with optimistic updates', async () => {
-      mockEmailsService.setFavourite.mockResolvedValue(undefined);
+      mockEmailsService.setFavourite.mockResolvedValue(true as any);
 
       await store.toggleEmailFavoriteStatus('1', true);
 
@@ -188,7 +193,7 @@ describe('EmailsStore', () => {
     });
 
     it('should assign email to user', async () => {
-      mockEmailsService.assign.mockResolvedValue(undefined);
+      mockEmailsService.assign.mockResolvedValue(undefined as any);
 
       await store.assignEmailToUser('1', 'user123');
 
@@ -197,12 +202,57 @@ describe('EmailsStore', () => {
 
     it('should add comment to email', async () => {
       const mockComment = { id: '1', comment: 'Test comment' };
-      mockEmailsService.addComment.mockResolvedValue(mockComment);
+      mockEmailsService.addComment.mockResolvedValue(mockComment as any);
 
       const result = await store.addComment('1', 'user123', 'Test comment');
 
       expect(mockEmailsService.addComment).toHaveBeenCalledWith('1', 'user123', 'Test comment');
       expect(result).toBe(mockComment);
+    });
+  });
+
+  describe('Email With Headers Loading', () => {
+    it('should load email with headers and cache both body and header', async () => {
+      const mockResponse = {
+        body: { body_html: '<p>Test body</p>' },
+        header: {
+          email: {
+            to_list: [{ name: 'John Doe', email: 'john@example.com', pos: 0 }],
+            cc_list: [],
+            bcc_list: [],
+            date_sent: '2023-01-01T10:00:00Z',
+          },
+          comments: [],
+        },
+      };
+      mockEmailsService.getEmailWithHeaders.mockResolvedValue(mockResponse as any);
+
+      const result = await store.loadEmailWithHeaders('1');
+
+      expect(mockEmailsService.getEmailWithHeaders).toHaveBeenCalledWith('1');
+      expect(result.body).toBe('<p>Test body</p>');
+      expect(result.header).toEqual(mockResponse.header);
+
+      // Test caching - second call should not hit the service
+      const cachedResult = await store.loadEmailWithHeaders('1');
+      expect(cachedResult.body).toBe('<p>Test body</p>');
+      expect(cachedResult.header).toEqual(mockResponse.header);
+      expect(mockEmailsService.getEmailWithHeaders).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return empty data when response is null', async () => {
+      mockEmailsService.getEmailWithHeaders.mockResolvedValue(null as any);
+
+      const result = await store.loadEmailWithHeaders('1');
+
+      expect(result.body).toBe('');
+      expect(result.header).toBeNull();
+    });
+
+    it('should get email header by id using computed', () => {
+      const headerComputed = store.getEmailHeaderById('1');
+
+      expect(headerComputed()).toBeUndefined();
     });
   });
 
@@ -216,9 +266,11 @@ describe('EmailsStore', () => {
     it('should handle null id in factory functions', () => {
       const emailComputed = store.getEmailById(null);
       const bodyComputed = store.getEmailBodyById(null);
+      const headerComputed = store.getEmailHeaderById(null);
 
       expect(emailComputed()).toBeUndefined();
       expect(bodyComputed()).toBeUndefined();
+      expect(headerComputed()).toBeUndefined();
     });
   });
 });
