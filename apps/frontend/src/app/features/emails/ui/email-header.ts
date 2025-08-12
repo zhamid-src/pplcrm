@@ -125,6 +125,10 @@ export class EmailHeader {
     // TODO: Implement reply all functionality
   }
 
+  protected markAsDoneText() {
+    return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
+  }
+
   /** Toggle email closed status */
   protected async toggleClosed() {
     const email = this.email();

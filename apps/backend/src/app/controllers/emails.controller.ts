@@ -1,9 +1,9 @@
+import { getAllEmailFolders } from '../config/email-folders.config';
 import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
-import { getAllEmailFolders } from '../config/email-folders.config';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -47,8 +47,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return all emails for the given folder */
-  public getEmails(tenant_id: string, folder_id: string) {
-    return this.getRepo().getByFolder(tenant_id, folder_id);
+  public getEmails(user_id: string, tenant_id: string, folder_id: string) {
+    return this.getRepo().getByFolder(user_id, tenant_id, folder_id);
   }
 
   /** Return all folders, sorted by sort_order */
@@ -58,10 +58,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return all folders for a tenant with email counts */
-  public async getFoldersWithCounts(tenant_id: string) {
+  public async getFoldersWithCounts(user_id: string, tenant_id: string) {
     const [folders, emailCounts] = await Promise.all([
       this.getFolders(tenant_id),
-      this.getRepo().getEmailCountsByFolder(tenant_id),
+      this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
     ]);
 
     // Add email count to each folder

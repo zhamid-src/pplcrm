@@ -27,69 +27,95 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * @param folder_id - Identifier of the folder to retrieve emails from.
    * @returns List of email rows in the folder.
    */
-  public async getByFolder(tenant_id: string, folder_id: string) {
-    const query = this.getSelect().selectAll().where('tenant_id', '=', tenant_id);
+  public async getByFolder(user_id: string, tenant_id: string, folder_id: string) {
+    const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
 
-    // Handle special folders
-    if (folder_id === '1') {
-      // All Open folder - show emails with status 'open' or null (default to open)
-      try {
-        return await query.where((eb) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)])).execute();
-      } catch (error) {
-        // If status column doesn't exist, return all emails
-        console.warn('Status column not found, returning all emails for All Open folder');
-        return await query.execute();
-      }
-    } else if (folder_id === '2') {
-      // Closed folder - show emails with status 'closed' or 'resolved'
-      try {
-        return await query.where((eb) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')])).execute();
-      } catch (error) {
-        // If status column doesn't exist, return empty array
-        console.warn('Status column not found, returning empty array for Closed folder');
-        return [];
-      }
-    } else if (folder_id === '6') {
-      // Assigned to me folder - show emails assigned to the current user
-      // Note: We'd need the user_id from the context for this to work properly
-      return await query.where('assigned_to', 'is not', null).execute();
-    }
+    const query = this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where((eb) => whereForFolder(eb));
 
-    // Regular folder - show emails in that specific folder
-    return query.where('folder_id', '=', folder_id).execute();
+    return query.execute();
+  }
+
+  /**
+   * Get email counts for all folders for a given tenant.
+   * Includes virtual folders using the same predicate builder as getByFolder.
+   *
+   * @param tenant_id - Tenant that owns the emails.
+   * @returns Object mapping folder_id to email count.
+   */
+  public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
+    // 1) Regular folder counts (group by folder_id)
+    const regular = await this.getSelect()
+      .select(['folder_id'])
+      .select((eb) => eb.fn.count('id').as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('folder_id')
+      .execute();
+
+    const counts: Record<string, number> = {};
+    for (const row of regular) counts[row.folder_id] = Number(row.count);
+
+    // 2) Virtual folder counts via the same predicate builder (no duplicated logic)
+    const [allOpenPred, closedPred, assignedPred] = await Promise.all([
+      this.buildFolderPredicate(SPECIAL.ALL_OPEN, user_id),
+      this.buildFolderPredicate(SPECIAL.CLOSED, user_id),
+      this.buildFolderPredicate(SPECIAL.ASSIGNED_TO_ME, user_id),
+    ]);
+
+    const [allOpenCount, closedCount, assignedCount] = await Promise.all([
+      this.getSelect()
+        .select((eb) => eb.fn.count('id').as('count'))
+        .where('tenant_id', '=', tenant_id)
+        .where((eb) => allOpenPred(eb))
+        .executeTakeFirst(),
+      this.getSelect()
+        .select((eb) => eb.fn.count('id').as('count'))
+        .where('tenant_id', '=', tenant_id)
+        .where((eb) => closedPred(eb))
+        .executeTakeFirst(),
+      this.getSelect()
+        .select((eb) => eb.fn.count('id').as('count'))
+        .where('tenant_id', '=', tenant_id)
+        .where((eb) => assignedPred(eb))
+        .executeTakeFirst(),
+    ]);
+
+    counts[SPECIAL.ALL_OPEN] = Number(allOpenCount?.count || 0);
+    counts[SPECIAL.CLOSED] = Number(closedCount?.count || 0);
+    counts[SPECIAL.ASSIGNED_TO_ME] = Number(assignedCount?.count || 0);
+
+    // Optional: debug
+    // console.log('Final folder counts:', counts);
+    return counts;
   }
 
   /**
    * Get email with headers and recipients for detailed view.
-   * This combines email, headers, and recipients data using separate queries for better type safety.
+   * Combines email, headers, and recipients using separate queries for type-safety.
    *
    * @param tenant_id - Tenant that owns the email.
    * @param email_id - Identifier of the email to fetch.
    * @returns Email with headers and categorized recipients.
    */
   public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string) {
-    // Get the base email record first
     const email = await this.getById({ tenant_id, id: email_id });
-    if (!email) {
-      return null;
-    }
+    if (!email) return null;
 
-    // Get email headers using the headers repository
     const emailHeaders = await this.emailHeadersRepo.getByEmailId(tenant_id, email_id);
 
-    // Get recipients by type using the recipients repository
     const [toRecipients, ccRecipients, bccRecipients] = await Promise.all([
       this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'to'),
       this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'cc'),
       this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'bcc'),
     ]);
 
-    // Combine the results
     return {
       ...email,
-      headers_json: emailHeaders?.headers_json || null,
-      raw_headers: emailHeaders?.raw_headers || null,
-      date_sent: emailHeaders?.date_sent || null,
+      headers_json: emailHeaders?.headers_json ?? null,
+      raw_headers: emailHeaders?.raw_headers ?? null,
+      date_sent: emailHeaders?.date_sent ?? null,
       to_list: toRecipients,
       cc_list: ccRecipients,
       bcc_list: bccRecipients,
@@ -114,90 +140,71 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * @param status - New status ('open', 'closed', 'resolved').
    * @returns The updated status.
    */
-  public async setStatus(tenant_id: string, id: string, status: 'open' | 'closed' | 'resolved') {
+  public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
     await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
 
     return status;
   }
 
   /**
-   * Get email counts for all folders for a given tenant.
-   * Includes special handling for virtual folders.
-   *
-   * @param tenant_id - Tenant that owns the emails.
-   * @returns Object mapping folder_id to email count.
+   * Central builder for folder predicates. Returns a function that applies the where clauses.
+   * This keeps special-folder logic in a single place and reusable across queries.
    */
-  public async getEmailCountsByFolder(tenant_id: string): Promise<Record<string, number>> {
-    // Get regular folder counts
-    const results = await this.getSelect()
-      .select(['folder_id'])
-      .select((eb) => eb.fn.count('id').as('count'))
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('folder_id')
-      .execute();
+  private async buildFolderPredicate(folder_id: string, user_id: string): Promise<(eb: any) => any> {
+    const hasStatus = await this.supportsStatusColumn();
 
-    // Convert array of results to object mapping folder_id -> count
-    const counts: Record<string, number> = {};
-    for (const result of results) {
-      counts[result.folder_id] = Number(result.count);
-    }
-    console.log('Regular folder counts:', counts);
-
-    // Add counts for special folders
-    try {
-      // All Open folder (id=1) - count open emails
-      const openEmailsResult = await this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]))
-        .executeTakeFirst();
-      counts['1'] = Number(openEmailsResult?.count || 0);
-      console.log(`All Open folder count: ${counts['1']}`);
-
-      // Closed folder (id=2) - count closed/resolved emails
-      const closedEmailsResult = await this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')]))
-        .executeTakeFirst();
-      counts['2'] = Number(closedEmailsResult?.count || 0);
-      console.log(`Closed folder count: ${counts['2']}`);
-
-      // Assigned to me folder (id=6) - count assigned emails
-      const assignedEmailsResult = await this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where('assigned_to', 'is not', null)
-        .executeTakeFirst();
-      counts['6'] = Number(assignedEmailsResult?.count || 0);
-      console.log(`Assigned to me folder count: ${counts['6']}`);
-    } catch (error) {
-      console.warn('Error counting special folders, status column may not exist:', error);
-      // If status column doesn't exist, set special folder counts to 0 or total
-      const totalEmailsResult = await this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .executeTakeFirst();
-      const totalCount = Number(totalEmailsResult?.count || 0);
-
-      counts['1'] = totalCount; // All Open gets all emails
-      counts['2'] = 0; // Closed gets none
-
-      // Try to count assigned emails separately (doesn't depend on status column)
-      try {
-        const assignedEmailsResult = await this.getSelect()
-          .select((eb) => eb.fn.count('id').as('count'))
-          .where('tenant_id', '=', tenant_id)
-          .where('assigned_to', 'is not', null)
-          .executeTakeFirst();
-        counts['6'] = Number(assignedEmailsResult?.count || 0);
-      } catch (assignedError) {
-        console.error('Error counting assigned emails:', assignedError);
-        counts['6'] = 0;
+    // Virtual folders
+    if (folder_id === SPECIAL.ALL_OPEN) {
+      if (hasStatus) {
+        return (eb: any) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]);
       }
+      // If no status column, "All Open" ≈ everything
+      return (_eb: any) => true;
     }
 
-    console.log('Final folder counts:', counts);
-    return counts;
+    if (folder_id === SPECIAL.CLOSED) {
+      if (hasStatus) {
+        return (eb: any) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')]);
+      }
+      // If no status column, "Closed" ≈ nothing
+      return (_eb: any) => false;
+    }
+
+    if (folder_id === SPECIAL.ASSIGNED_TO_ME) {
+      if (hasStatus) {
+        return (eb: any) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open')]);
+      }
+      // If no status column, just "assigned to me"
+      return (eb: any) => eb('assigned_to', '=', user_id);
+    }
+
+    // Real folder
+    return (eb: any) => eb('folder_id', '=', folder_id);
+  }
+
+  /**
+   * Quick capability check: does the `emails.status` column exist?
+   * We try a harmless filtered query; if it errors, we assume column is missing.
+   */
+  private async supportsStatusColumn(): Promise<boolean> {
+    try {
+      // Use a tiny query with a status predicate; limit to avoid touching many rows.
+      await this.getSelect()
+        .select((eb) => eb.val(1).as('ok'))
+        .where((eb) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]))
+        .limit(1)
+        .execute();
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
+
+type EmailStatus = 'open' | 'closed' | 'resolved';
+
+const SPECIAL = {
+  ALL_OPEN: '1',
+  CLOSED: '2',
+  ASSIGNED_TO_ME: '6',
+} as const;
