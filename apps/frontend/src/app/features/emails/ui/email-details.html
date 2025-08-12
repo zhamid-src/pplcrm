@@ -18,7 +18,7 @@
         type="button"
         class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-gray-50 border-b border-gray-200 hover:bg-gray-100"
         (click)="toggleComments()"
-        aria-expanded="{{ commentsExpanded() }}"
+        [attr.aria-expanded]="commentsExpanded()"
         aria-controls="comments-panel"
       >
         <span>Comments</span>
