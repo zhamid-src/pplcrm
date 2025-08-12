@@ -2,7 +2,7 @@
  * @file Container component for email details view.
  */
 import { CommonModule } from '@angular/common';
-import { Component, input } from '@angular/core';
+import { Component, input, signal } from '@angular/core';
 
 import { EmailBody } from './email-body';
 import { EmailComments } from './email-comments';
@@ -17,4 +17,9 @@ import { EmailType } from 'common/src/lib/models';
 })
 export class EmailDetails {
   public email = input<EmailType | null>(null);
+  public commentsExpanded = signal(false);
+
+  public toggleComments(): void {
+    this.commentsExpanded.update((v) => !v);
+  }
 }
