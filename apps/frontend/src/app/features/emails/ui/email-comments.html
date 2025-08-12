@@ -1,7 +1,15 @@
 <div class="w-full p-2">
   @for (comment of comments(); track comment.id) {
+  <span>{{ getUserName(comment.author_id) }} left a comment ‣ </span>
+
+  @if (comment.created_at) {
+  <!-- Long style ("2 minutes ago"), absolute after 7 days -->
+  <span class="text-xs text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
+    {{ comment.created_at | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+  </span>
+
   <div class="mb-2 rounded bg-gray-100 p-2">{{ comment.comment }}</div>
-  }
+  } }
   <textarea
     [(ngModel)]="newComment"
     placeholder="Add a comment"

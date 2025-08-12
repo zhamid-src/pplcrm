@@ -21,6 +21,7 @@ export const EmailCommentObj = z.object({
   email_id: z.string(),
   author_id: z.string(),
   comment: z.string(),
+  created_at: z.date(),
 });
 export const EmailFolderObj = z.object({
   id: z.string(),
