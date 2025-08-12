@@ -17,7 +17,8 @@ import { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  private store = inject(EmailsStore);
+  /** Store is exposed for template bindings controlling expanded body state. */
+  public store = inject(EmailsStore);
 
   public email = input<EmailType | null>(null);
 

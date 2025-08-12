@@ -261,15 +261,15 @@
     </div>
 
     <div class="flex items-center gap-1">
-      <button class="btn btn-ghost btn-sm" aria-label="Open in new">
-        <pc-icon
-          name="arrows-pointing-out"
-          [size]="4"
-          class="tooltip text-gray-500"
-          data-tip="Expand"
-          (click)="expand()"
-        ></pc-icon>
-      </button>
+      <pc-swap
+        class="tooltip"
+        data-tip="Toggle expand"
+        [size]="4"
+        [checked]="store.isBodyExpanded()"
+        swapOffIcon="arrows-pointing-out"
+        swapOnIcon="arrows-pointing-in"
+        (clickEvent)="expand()"
+      ></pc-swap>
     </div>
   </div>
 </header>

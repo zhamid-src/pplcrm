@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
+import { Swap } from '@uxcommon/swap';
 
 import { EmailsStore } from '../services/email-store';
 import { EmailAssign } from './email-assign';
@@ -13,12 +14,13 @@ import { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-header',
   standalone: true,
-  imports: [CommonModule, EmailAssign, Icon],
+  imports: [CommonModule, EmailAssign, Icon, Swap],
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
   private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
+  /** Store is exposed for template bindings controlling expanded body state. */
+  public store = inject(EmailsStore);
 
   /** Get header data from store */
   protected headerData = computed(() => {
@@ -44,9 +46,12 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
+  /**
+   * Toggles the expanded state of the email body so it fills the window (except the sidebar).
+   * Uses a shared UI signal in the `EmailsStore` so other components can react to the state.
+   */
   protected expand() {
-    console.log('Expand email:', this.email().id);
-    // TODO: Implement expand functionality
+    this.store.toggleBodyExpanded();
   }
 
   /** Get all recipients combined */

@@ -16,11 +16,23 @@ import { EmailFolderType, EmailType } from 'common/src/lib/models';
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
-  private store = inject(EmailsStore);
+  /** Store is exposed for template bindings controlling expanded body state. */
+  public store = inject(EmailsStore);
 
   // Use store's computed properties
   public selectedEmail = this.store.currentSelectedEmail;
   public selectedFolder = this.store.currentSelectedFolderId;
+
+  constructor() {
+    /**
+     * Collapses expanded email body when user presses Escape.
+     */
+    window.addEventListener('keydown', (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && this.store.isBodyExpanded()) {
+        this.store.setBodyExpanded(false);
+      }
+    });
+  }
 
   /**
    * Handle email selection from child component.

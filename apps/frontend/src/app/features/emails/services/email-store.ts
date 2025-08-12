@@ -81,6 +81,27 @@ export class EmailsStore {
   public readonly currentSelectedFolderId = signal<string | null>(null);
 
   /**
+   * Controls whether the email body is expanded to fill the window (except the sidebar).
+   * Components can read this signal to adjust their layout accordingly.
+   */
+  public readonly isBodyExpanded = signal<boolean>(false);
+
+  /**
+   * Sets the expanded state for the email body view.
+   * @param expanded - True to expand email body, false to restore normal layout
+   */
+  public setBodyExpanded(expanded: boolean): void {
+    this.isBodyExpanded.set(expanded);
+  }
+
+  /**
+   * Toggles the expanded state of the email body view.
+   */
+  public toggleBodyExpanded(): void {
+    this.isBodyExpanded.update((v) => !v);
+  }
+
+  /**
    * Emails in the currently selected folder.
    * @returns Computed signal containing array of emails in selected folder
    */
