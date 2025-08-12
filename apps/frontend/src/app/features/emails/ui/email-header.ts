@@ -6,7 +6,7 @@ import { Component, computed, effect, inject, input, signal } from '@angular/cor
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailAssign } from './email-assign';
 import { EmailType } from 'common/src/lib/models';
 
@@ -21,10 +21,7 @@ export class EmailHeader {
   private store = inject(EmailsStore);
 
   /** Get header data from store */
-  protected headerData = computed(() => {
-    const email = this.email();
-    return this.store.getEmailHeaderById(email?.id)();
-  });
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
   protected isFavourite = signal(false);
 
@@ -34,7 +31,7 @@ export class EmailHeader {
   constructor() {
     effect(() => {
       const email = this.email();
-      console.log(email);
+
       this.isFavourite.set(email.is_favourite);
       this.isClosed.set(email.status === 'closed' || email.status === 'resolved');
     });

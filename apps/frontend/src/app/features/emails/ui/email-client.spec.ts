@@ -5,13 +5,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { EmailClient } from './email-client';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType, EmailFolderType } from 'common/src/lib/models';
 
 // Mock child components
 @Component({
   selector: 'pc-email-folder-list',
-  template: '<div>Mock Folder List</div>'
+  template: '<div>Mock Folder List</div>',
 })
 class MockEmailFolderList {
   @Output() folderSelected = new EventEmitter<EmailFolderType>();
@@ -19,7 +19,7 @@ class MockEmailFolderList {
 
 @Component({
   selector: 'pc-email-list',
-  template: '<div>Mock Email List</div>'
+  template: '<div>Mock Email List</div>',
 })
 class MockEmailList {
   @Output() emailSelected = new EventEmitter<EmailType>();
@@ -27,7 +27,7 @@ class MockEmailList {
 
 @Component({
   selector: 'pc-email-details',
-  template: '<div>Mock Email Details</div>'
+  template: '<div>Mock Email Details</div>',
 })
 class MockEmailDetails {
   @Input() email: EmailType | null = null;
@@ -47,14 +47,14 @@ describe('EmailClient', () => {
     to_email: 'recipient@example.com',
     subject: 'Test Email',
     preview: 'Test preview',
-    assigned_to: undefined
+    assigned_to: undefined,
   };
 
   const mockFolder: EmailFolderType = {
     id: 'folder1',
     name: 'Inbox',
     icon: 'inbox',
-    color: '#000000'
+    color: '#000000',
   };
 
   beforeEach(async () => {
@@ -62,19 +62,12 @@ describe('EmailClient', () => {
       currentSelectedEmail: jest.fn().mockReturnValue(null),
       currentSelectedFolderId: jest.fn().mockReturnValue(null),
       selectEmail: jest.fn(),
-      selectFolder: jest.fn()
+      selectFolder: jest.fn(),
     };
 
     await TestBed.configureTestingModule({
-      declarations: [
-        EmailClient,
-        MockEmailFolderList,
-        MockEmailList,
-        MockEmailDetails
-      ],
-      providers: [
-        { provide: EmailsStore, useValue: mockStore }
-      ]
+      declarations: [EmailClient, MockEmailFolderList, MockEmailList, MockEmailDetails],
+      providers: [{ provide: EmailsStore, useValue: mockStore }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EmailClient);
@@ -94,7 +87,7 @@ describe('EmailClient', () => {
 
     it('should render child components', () => {
       fixture.detectChanges();
-      
+
       const compiled = fixture.nativeElement;
       expect(compiled.querySelector('pc-email-folder-list')).toBeTruthy();
       expect(compiled.querySelector('pc-email-list')).toBeTruthy();
@@ -135,19 +128,15 @@ describe('EmailClient', () => {
       mockEmailsStore.currentSelectedEmail.mockReturnValue(mockEmail);
       fixture.detectChanges();
 
-      const emailDetails = fixture.debugElement.query(
-        sel => sel.componentInstance instanceof MockEmailDetails
-      );
+      const emailDetails = fixture.debugElement.query((sel) => sel.componentInstance instanceof MockEmailDetails);
       expect(emailDetails.componentInstance.email).toBe(mockEmail);
     });
 
     it('should handle folder selection event from template', () => {
       fixture.detectChanges();
-      
-      const folderList = fixture.debugElement.query(
-        sel => sel.componentInstance instanceof MockEmailFolderList
-      );
-      
+
+      const folderList = fixture.debugElement.query((sel) => sel.componentInstance instanceof MockEmailFolderList);
+
       spyOn(component, 'onFolder');
       folderList.componentInstance.folderSelected.emit(mockFolder);
 
@@ -156,11 +145,9 @@ describe('EmailClient', () => {
 
     it('should handle email selection event from template', () => {
       fixture.detectChanges();
-      
-      const emailList = fixture.debugElement.query(
-        sel => sel.componentInstance instanceof MockEmailList
-      );
-      
+
+      const emailList = fixture.debugElement.query((sel) => sel.componentInstance instanceof MockEmailList);
+
       spyOn(component, 'onEmail');
       emailList.componentInstance.emailSelected.emit(mockEmail);
 
@@ -171,7 +158,7 @@ describe('EmailClient', () => {
   describe('Component Layout', () => {
     it('should have correct CSS classes for layout', () => {
       fixture.detectChanges();
-      
+
       const container = fixture.nativeElement.querySelector('div');
       expect(container.className).toContain('flex');
       expect(container.className).toContain('text-sm');
@@ -181,7 +168,7 @@ describe('EmailClient', () => {
 
     it('should apply flex-1 class to email details', () => {
       fixture.detectChanges();
-      
+
       const emailDetails = fixture.nativeElement.querySelector('pc-email-details');
       expect(emailDetails.className).toContain('flex-1');
       expect(emailDetails.className).toContain('h-full');
