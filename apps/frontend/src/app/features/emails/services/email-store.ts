@@ -184,7 +184,20 @@ export class EmailsStore {
    * @returns Promise that resolves when the comment is added
    */
   public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
-    return this.emailsService.addComment(String(emailId), authorId, commentText);
+    const createdComment = await this.emailsService.addComment(String(emailId), authorId, commentText);
+
+    // Update header cache so future reads include the new comment
+    const emailKey = String(emailId);
+    const existingHeader = this.emailHeadersCache()[emailKey];
+    if (existingHeader) {
+      const updatedHeader = {
+        ...existingHeader,
+        comments: [...((existingHeader as any).comments ?? []), createdComment],
+      } as any;
+      this.setInCache(this.emailHeadersCache, emailKey, updatedHeader);
+    }
+
+    return createdComment;
   }
 
   // =============================================================================
@@ -341,12 +354,12 @@ export class EmailsStore {
         const bodyHtml = response.body?.body_html || '';
         const headerData = response.header || null;
 
-        // Update caches only if we don't already have the data
-        if (bodyHtml && !cachedBody) {
+        // Update caches, always refreshing from server to ensure up-to-date comments/headers
+        if (bodyHtml) {
           this.setInCache(this.emailBodiesCache, emailKey, bodyHtml);
         }
 
-        if (headerData && !cachedHeader) {
+        if (headerData) {
           this.setInCache(this.emailHeadersCache, emailKey, headerData);
         }
 
