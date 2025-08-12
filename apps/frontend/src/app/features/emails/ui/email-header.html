@@ -45,7 +45,7 @@
       <!-- Close/Mark as Done -->
       <button
         class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Toggle complete"
+        [attr.data-tip]="markAsDoneText()"
         aria-label="Mark as Done"
         (click)="toggleClosed()"
       >

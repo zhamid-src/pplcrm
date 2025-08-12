@@ -32,6 +32,14 @@ function getEmailBody() {
 }
 
 /**
+ * Retrieve a single email by its ID.
+ * @returns The requested email record.
+ */
+function getEmailHeader() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input));
+}
+
+/**
  * Retrieve email body and headers combined for detailed view.
  * @returns Email body with headers and recipient information.
  */
@@ -50,21 +58,13 @@ function getEmailWithHeaders() {
 }
 
 /**
- * Retrieve a single email by its ID.
- * @returns The requested email record.
- */
-function getEmailHeader() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input));
-}
-
-/**
  * Retrieve emails within a specified folder for the tenant.
  * @returns A list of email summaries.
  */
 function getEmails() {
   return authProcedure
     .input(z.object({ folderId: z.string() }))
-    .query(({ input, ctx }) => emails.getEmails(ctx.auth.tenant_id, input.folderId));
+    .query(({ input, ctx }) => emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId));
 }
 
 /** Retrieve all email folders for the current tenant. */
@@ -74,7 +74,7 @@ function getFolders() {
 
 /** Retrieve all email folders with email counts for the current tenant. */
 function getFoldersWithCounts() {
-  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.tenant_id));
+  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
 }
 
 function setFavourite() {

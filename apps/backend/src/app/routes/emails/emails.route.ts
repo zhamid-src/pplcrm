@@ -17,9 +17,6 @@ const emails = new EmailsController();
  */
 const routes: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/folders', (req: FastifyRequest) => emails.getFolders(req.headers['tenant-id'] as string));
-  fastify.get('/folder/:folderId', (req: FastifyRequest) =>
-    emails.getEmails(req.headers['tenant-id'] as string, (req.params as any).folderId),
-  );
   fastify.get('/message/:id', (req: IdParam) =>
     emails.getEmailHeader(req.headers['tenant-id'] as string, req.params.id),
   );
