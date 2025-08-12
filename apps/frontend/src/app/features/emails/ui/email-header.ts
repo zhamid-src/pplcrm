@@ -3,6 +3,7 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 
 import { EmailsStore } from '../services/email-store';
@@ -16,6 +17,7 @@ import { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
+  private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
 
   /** Get header data from store */
@@ -140,11 +142,10 @@ export class EmailHeader {
 
     try {
       await this.store.updateEmailStatus(email.id, newStatus);
-      console.log(`Email ${email.id} status updated to: ${newStatus}`);
     } catch (error) {
       // Revert UI state on error
       this.isClosed.set(currentStatus === 'closed');
-      console.error('Failed to update email status:', error);
+      this.alertSvc.showError('Failed to update email status');
     }
   }
 

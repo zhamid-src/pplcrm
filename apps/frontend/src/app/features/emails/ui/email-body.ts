@@ -3,6 +3,7 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
 import { EmailsStore } from '../services/email-store';
@@ -18,16 +19,17 @@ import { EmailType } from 'common/src/lib/models';
   ></div>`,
 })
 export class EmailBody {
-  private store = inject(EmailsStore);
+  private alertSvc = inject(AlertService);
   private loadingEmails = signal(new Set<string>());
-
-  public email = input.required<EmailType>();
+  private store = inject(EmailsStore);
 
   // Get body from store using computed
   protected body = computed(() => {
     const email = this.email();
     return this.store.getEmailBodyById(email?.id)();
   });
+
+  public email = input.required<EmailType>();
 
   constructor() {
     effect(() => {
@@ -39,6 +41,10 @@ export class EmailBody {
         });
       }
     });
+  }
+
+  protected getBody() {
+    return this.body() || '';
   }
 
   private async loadEmailData(emailId: string) {
@@ -66,6 +72,7 @@ export class EmailBody {
       await this.store.loadEmailWithHeaders(emailId);
     } catch (error) {
       console.error('Failed to load email data:', error);
+      this.alertSvc.showError('Failed to load email data. Please try again later.');
     } finally {
       // Remove from loading set
       this.loadingEmails.update((loading) => {
@@ -74,9 +81,5 @@ export class EmailBody {
         return newSet;
       });
     }
-  }
-
-  protected getBody() {
-    return this.body() || '';
   }
 }

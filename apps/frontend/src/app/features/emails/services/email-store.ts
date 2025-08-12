@@ -3,6 +3,7 @@
  * Provides reactive state management for emails, folders, and UI selections using Angular signals.
  */
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { EmailsService } from './emails-service';
 import type { EmailFolderType, EmailType } from 'common/src/lib/models';
@@ -48,87 +49,7 @@ export class EmailsStore {
   /** Track emails currently being loaded to prevent duplicate requests */
   private readonly loadingEmails = signal<Set<string>>(new Set());
 
-  // =============================================================================
-  // SHARED HELPERS (added to enable code sharing; original comments preserved)
-  // =============================================================================
-
-  /** Safely write to a record cache signal */
-  private setInCache<T extends Record<string, unknown>>(
-    cacheSig: { (): T; update: (fn: (v: T) => T) => void },
-    key: string,
-    value: unknown,
-  ): void {
-    cacheSig.update((cache) => ({ ...(cache as Record<string, unknown>), [key]: value }) as T);
-  }
-
-  /** Read an Email by key */
-  private readEmail(emailKey: string): EmailType | undefined {
-    return this.emailsById()[emailKey];
-  }
-
-  /** Update a single Email in the store, returning the previous snapshot (for rollback) */
-  private patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
-    const prev = this.readEmail(emailKey);
-    if (!prev) return undefined;
-    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
-    return prev;
-  }
-
-  /** Replace a single Email in the store (used by rollback paths) */
-  private replaceEmail(emailKey: string, value: EmailType): void {
-    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
-  }
-
-  /** Mark an email ID as loading to dedupe concurrent fetches */
-  private markLoading(emailKey: string): void {
-    this.loadingEmails.update((s) => {
-      const n = new Set(s);
-      n.add(emailKey);
-      return n;
-    });
-  }
-
-  /** Unmark an email ID as loading */
-  private unmarkLoading(emailKey: string): void {
-    this.loadingEmails.update((s) => {
-      const n = new Set(s);
-      n.delete(emailKey);
-      return n;
-    });
-  }
-
-  /**
-   * Shared optimistic update flow with automatic rollback and optional refresh steps.
-   * `serverCall` is awaited; on failure we restore `prev`.
-   */
-  private async updateProperty(
-    emailKey: string,
-    patch: Partial<EmailType>,
-    serverCall: () => Promise<unknown>,
-    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
-  ): Promise<void> {
-    const prev = this.patchEmail(emailKey, patch);
-    if (!prev) {
-      console.warn(`Email ${emailKey} not found in store`);
-      return;
-    }
-    try {
-      await serverCall();
-
-      // Optionally refresh current folder and/or counts after successful server mutation
-      const currentFolderId = this.currentSelectedFolderId();
-      if (opts?.refreshFolder && currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-      if (opts?.refreshCounts) {
-        await this.refreshFolderCounts();
-      }
-    } catch (error) {
-      // Rollback on error
-      this.replaceEmail(emailKey, prev);
-      throw error;
-    }
-  }
+  private alertSvc = inject(AlertService);
 
   // =============================================================================
   // PUBLIC COMPUTED PROPERTIES
@@ -370,6 +291,7 @@ export class EmailsStore {
       }
     } catch (error) {
       console.error(`Failed to load email data for ${emailKey}:`, error);
+      this.alertSvc.showError('Failed to load email data. Please try again later.');
     } finally {
       // Remove from loading set
       this.unmarkLoading(emailKey);
@@ -513,6 +435,88 @@ export class EmailsStore {
         }
         return revertedEmails;
       });
+      throw error;
+    }
+  }
+
+  /** Mark an email ID as loading to dedupe concurrent fetches */
+  private markLoading(emailKey: string): void {
+    this.loadingEmails.update((s) => {
+      const n = new Set(s);
+      n.add(emailKey);
+      return n;
+    });
+  }
+
+  /** Update a single Email in the store, returning the previous snapshot (for rollback) */
+  private patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
+    const prev = this.readEmail(emailKey);
+    if (!prev) return undefined;
+    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
+    return prev;
+  }
+
+  /** Read an Email by key */
+  private readEmail(emailKey: string): EmailType | undefined {
+    return this.emailsById()[emailKey];
+  }
+
+  /** Replace a single Email in the store (used by rollback paths) */
+  private replaceEmail(emailKey: string, value: EmailType): void {
+    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
+  }
+
+  // =============================================================================
+  // SHARED HELPERS (added to enable code sharing; original comments preserved)
+  // =============================================================================
+
+  /** Safely write to a record cache signal */
+  private setInCache<T extends Record<string, unknown>>(
+    cacheSig: { (): T; update: (fn: (v: T) => T) => void },
+    key: string,
+    value: unknown,
+  ): void {
+    cacheSig.update((cache) => ({ ...(cache as Record<string, unknown>), [key]: value }) as T);
+  }
+
+  /** Unmark an email ID as loading */
+  private unmarkLoading(emailKey: string): void {
+    this.loadingEmails.update((s) => {
+      const n = new Set(s);
+      n.delete(emailKey);
+      return n;
+    });
+  }
+
+  /**
+   * Shared optimistic update flow with automatic rollback and optional refresh steps.
+   * `serverCall` is awaited; on failure we restore `prev`.
+   */
+  private async updateProperty(
+    emailKey: string,
+    patch: Partial<EmailType>,
+    serverCall: () => Promise<unknown>,
+    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
+  ): Promise<void> {
+    const prev = this.patchEmail(emailKey, patch);
+    if (!prev) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+    try {
+      await serverCall();
+
+      // Optionally refresh current folder and/or counts after successful server mutation
+      const currentFolderId = this.currentSelectedFolderId();
+      if (opts?.refreshFolder && currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      if (opts?.refreshCounts) {
+        await this.refreshFolderCounts();
+      }
+    } catch (error) {
+      // Rollback on error
+      this.replaceEmail(emailKey, prev);
       throw error;
     }
   }
