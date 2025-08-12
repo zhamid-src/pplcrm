@@ -335,10 +335,13 @@ export class EmailsStore {
       return updatedEmailsMap;
     });
 
-    this.emailIdsByFolderId.update((folderEmailsMap) => ({
-      ...folderEmailsMap,
-      [folderKey]: emailsFromServer.map((email) => String(email.id)),
-    }));
+    this.emailIdsByFolderId.update((folderEmailsMap) => {
+      const updatedMap = {
+        ...folderEmailsMap,
+        [folderKey]: emailsFromServer.map((email) => String(email.id)),
+      };
+      return updatedMap;
+    });
   }
 
   // =============================================================================
@@ -403,10 +406,18 @@ export class EmailsStore {
       // Update on server
       await this.emailsService.setStatus(emailKey, status);
 
+      // Check if email should be removed from current folder view (with animation)
+      const currentFolderId = this.currentSelectedFolderId();
+
+      // Refresh the current folder to show updated email list
+      // This ensures newly closed emails appear in Closed folder, etc.
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+
       // Refresh folder counts since status change affects virtual folders
       await this.refreshFolderCounts();
     } catch (error) {
-      console.error('Failed to update email status:', error);
       // Revert optimistic update on error
       this.emailsById.update((emails) => {
         const revertedEmails = { ...emails };
@@ -455,6 +466,20 @@ export class EmailsStore {
       throw error;
     }
   }
+
+  /**
+   * Check if an email should be removed from the current folder view based on status change.
+   * @param emailId - The email ID
+   * @param newStatus - The new status of the email
+   * @param folderId - The current folder ID
+   * @returns True if email should be removed from folder view
+   */
+
+  /**
+   * Remove an email from a folder's email list.
+   * @param emailId - The email ID to remove
+   * @param folderId - The folder ID to remove from
+   */
 }
 
 /** Type alias for email/folder identifiers */
