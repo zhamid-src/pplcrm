@@ -49,6 +49,88 @@ export class EmailsStore {
   private readonly loadingEmails = signal<Set<string>>(new Set());
 
   // =============================================================================
+  // SHARED HELPERS (added to enable code sharing; original comments preserved)
+  // =============================================================================
+
+  /** Safely write to a record cache signal */
+  private setInCache<T extends Record<string, unknown>>(
+    cacheSig: { (): T; update: (fn: (v: T) => T) => void },
+    key: string,
+    value: unknown,
+  ): void {
+    cacheSig.update((cache) => ({ ...(cache as Record<string, unknown>), [key]: value }) as T);
+  }
+
+  /** Read an Email by key */
+  private readEmail(emailKey: string): EmailType | undefined {
+    return this.emailsById()[emailKey];
+  }
+
+  /** Update a single Email in the store, returning the previous snapshot (for rollback) */
+  private patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
+    const prev = this.readEmail(emailKey);
+    if (!prev) return undefined;
+    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
+    return prev;
+  }
+
+  /** Replace a single Email in the store (used by rollback paths) */
+  private replaceEmail(emailKey: string, value: EmailType): void {
+    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
+  }
+
+  /** Mark an email ID as loading to dedupe concurrent fetches */
+  private markLoading(emailKey: string): void {
+    this.loadingEmails.update((s) => {
+      const n = new Set(s);
+      n.add(emailKey);
+      return n;
+    });
+  }
+
+  /** Unmark an email ID as loading */
+  private unmarkLoading(emailKey: string): void {
+    this.loadingEmails.update((s) => {
+      const n = new Set(s);
+      n.delete(emailKey);
+      return n;
+    });
+  }
+
+  /**
+   * Shared optimistic update flow with automatic rollback and optional refresh steps.
+   * `serverCall` is awaited; on failure we restore `prev`.
+   */
+  private async updateProperty(
+    emailKey: string,
+    patch: Partial<EmailType>,
+    serverCall: () => Promise<unknown>,
+    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
+  ): Promise<void> {
+    const prev = this.patchEmail(emailKey, patch);
+    if (!prev) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+    try {
+      await serverCall();
+
+      // Optionally refresh current folder and/or counts after successful server mutation
+      const currentFolderId = this.currentSelectedFolderId();
+      if (opts?.refreshFolder && currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      if (opts?.refreshCounts) {
+        await this.refreshFolderCounts();
+      }
+    } catch (error) {
+      // Rollback on error
+      this.replaceEmail(emailKey, prev);
+      throw error;
+    }
+  }
+
+  // =============================================================================
   // PUBLIC COMPUTED PROPERTIES
   // =============================================================================
 
@@ -129,33 +211,13 @@ export class EmailsStore {
     if (!previousEmailState) return;
 
     // Optimistic update
-    this.emailsById.update((emailsMap) => ({
-      ...emailsMap,
-      [emailKey]: { ...previousEmailState, assigned_to: userId ?? undefined },
-    }));
-
-    try {
-      await this.emailsService.assign(emailKey, userId);
-
-      // Check if email should be removed from current folder view
-      const currentFolderId = this.currentSelectedFolderId();
-
-      // Refresh the current folder to show updated email list
-      // This ensures newly closed emails appear in Closed folder, etc.
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-
-      // Refresh folder counts since status change affects virtual folders
-      await this.refreshFolderCounts();
-    } catch (error) {
-      // Rollback on error
-      this.emailsById.update((emailsMap) => ({
-        ...emailsMap,
-        [emailKey]: previousEmailState,
-      }));
-      throw error;
-    }
+    // (shared helper will handle rollback + refresh flows)
+    await this.updateProperty(
+      emailKey,
+      { assigned_to: userId ?? undefined },
+      () => this.emailsService.assign(emailKey, userId),
+      { refreshFolder: true, refreshCounts: true },
+    );
   }
 
   /**
@@ -268,11 +330,7 @@ export class EmailsStore {
     }
 
     // Mark as loading
-    this.loadingEmails.update((loading) => {
-      const newSet = new Set(loading);
-      newSet.add(emailKey);
-      return newSet;
-    });
+    this.markLoading(emailKey);
 
     try {
       // Fetch combined data from API
@@ -285,17 +343,11 @@ export class EmailsStore {
 
         // Update caches only if we don't already have the data
         if (bodyHtml && !cachedBody) {
-          this.emailBodiesCache.update((cache) => ({
-            ...cache,
-            [emailKey]: bodyHtml,
-          }));
+          this.setInCache(this.emailBodiesCache, emailKey, bodyHtml);
         }
 
         if (headerData && !cachedHeader) {
-          this.emailHeadersCache.update((cache) => ({
-            ...cache,
-            [emailKey]: headerData,
-          }));
+          this.setInCache(this.emailHeadersCache, emailKey, headerData);
         }
 
         return {
@@ -307,11 +359,7 @@ export class EmailsStore {
       console.error(`Failed to load email data for ${emailKey}:`, error);
     } finally {
       // Remove from loading set
-      this.loadingEmails.update((loading) => {
-        const newSet = new Set(loading);
-        newSet.delete(emailKey);
-        return newSet;
-      });
+      this.unmarkLoading(emailKey);
     }
 
     return { body: '', header: null };
@@ -410,24 +458,13 @@ export class EmailsStore {
     if (!previousEmailState) return;
 
     // Optimistic update for immediate UI feedback
-    this.emailsById.update((emailsMap) => ({
-      ...emailsMap,
-      [emailKey]: { ...previousEmailState, is_favourite: isFavorite },
-    }));
-
-    try {
-      await this.emailsService.setFavourite(emailKey, isFavorite);
-      // Optional: re-fetch email header if backend might change other fields
-      // const updatedEmail = await this.emailsService.getEmailHeader(emailKey);
-      // this.emailsById.update(emailsMap => ({ ...emailsMap, [emailKey]: updatedEmail }));
-    } catch (error) {
-      // Rollback optimistic update on error
-      this.emailsById.update((emailsMap) => ({
-        ...emailsMap,
-        [emailKey]: previousEmailState,
-      }));
-      throw error;
-    }
+    await this.updateProperty(
+      emailKey,
+      { is_favourite: isFavorite },
+      () => this.emailsService.setFavourite(emailKey, isFavorite),
+      // no folder recount needed for favourite toggle (kept behavior identical)
+      { refreshFolder: false, refreshCounts: false },
+    );
   }
 
   /**
@@ -448,29 +485,12 @@ export class EmailsStore {
     const previousStatus = currentEmail.status;
 
     // Optimistically update the local state
-    this.emailsById.update((emails) => {
-      const updatedEmails = { ...emails };
-      if (updatedEmails[emailKey]) {
-        updatedEmails[emailKey] = { ...updatedEmails[emailKey], status };
-      }
-      return updatedEmails;
-    });
-
+    // (shared helper will handle rollback + refresh flows)
     try {
-      // Update on server
-      await this.emailsService.setStatus(emailKey, status);
-
-      // Check if email should be removed from current folder view
-      const currentFolderId = this.currentSelectedFolderId();
-
-      // Refresh the current folder to show updated email list
-      // This ensures newly closed emails appear in Closed folder, etc.
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-
-      // Refresh folder counts since status change affects virtual folders
-      await this.refreshFolderCounts();
+      await this.updateProperty(emailKey, { status }, () => this.emailsService.setStatus(emailKey, status), {
+        refreshFolder: true,
+        refreshCounts: true,
+      });
     } catch (error) {
       // Revert optimistic update on error
       this.emailsById.update((emails) => {
