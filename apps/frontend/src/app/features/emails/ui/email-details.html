@@ -21,7 +21,13 @@
         [attr.aria-expanded]="commentsExpanded()"
         aria-controls="comments-panel"
       >
-        <span>Comments</span>
+        <span class="flex items-center gap-2">
+          <span>Comments</span>
+          <span
+            class="inline-flex items-center justify-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700"
+            >{{ commentCount() }}</span
+          >
+        </span>
         <span class="cursor-pointer ml-2 text-xs text-gray-500">@if (commentsExpanded()) { Hide } @else { Show }</span>
       </button>
 

@@ -262,7 +262,13 @@
 
     <div class="flex items-center gap-1">
       <button class="btn btn-ghost btn-sm" aria-label="Open in new">
-        <pc-icon name="arrows-pointing-out" [size]="4" class="text-gray-500"></pc-icon>
+        <pc-icon
+          name="arrows-pointing-out"
+          [size]="4"
+          class="tooltip text-gray-500"
+          data-tip="Expand"
+          (click)="expand()"
+        ></pc-icon>
       </button>
     </div>
   </div>

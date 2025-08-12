@@ -42,6 +42,11 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
+  protected expand() {
+    console.log('Expand email:', this.email().id);
+    // TODO: Implement expand functionality
+  }
+
   /** Get all recipients combined */
   protected getAllRecipients(): any[] {
     return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
