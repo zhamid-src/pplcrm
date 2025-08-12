@@ -12,18 +12,29 @@
       </span>
 
       <!-- Reply -->
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Reply" (click)="handleReply()">
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="reply"
+        aria-label="Reply"
+        (click)="handleReply()"
+      >
         <pc-icon [size]="4" name="arrow-uturn-left"></pc-icon>
       </button>
 
       <!-- Reply All -->
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Reply All" (click)="handleReplyAll()">
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="Forward"
+        aria-label="Forward"
+        (click)="handleForward()"
+      >
         <pc-icon [size]="4" name="arrow-uturn-right"></pc-icon>
       </button>
 
       <!-- Star/Favorite -->
       <button
-        class="btn btn-ghost btn-circle btn-sm"
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="Toggle favourite"
         aria-label="Star"
         data-testid="favorite-button"
         (click)="toggleFavourite()"
@@ -32,12 +43,22 @@
       </button>
 
       <!-- Close/Mark as Done -->
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Mark as Done" (click)="toggleClosed()">
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="Toggle complete"
+        aria-label="Mark as Done"
+        (click)="toggleClosed()"
+      >
         <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
       </button>
 
       <!-- Delete -->
-      <button class="btn btn-ghost btn-circle btn-sm" aria-label="Delete" (click)="handleDelete()">
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="delete"
+        aria-label="Delete"
+        (click)="handleDelete()"
+      >
         <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
       </button>
 
