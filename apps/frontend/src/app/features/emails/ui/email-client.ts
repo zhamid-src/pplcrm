@@ -1,18 +1,20 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { Component, inject } from '@angular/core';
+import { Component, HostListener, inject } from '@angular/core';
 
 import { EmailsStore } from '../services/store/emailstore';
 import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';
 import { EmailFolderType, EmailType } from 'common/src/lib/models';
+import { EmailBody } from './email-body';
+import { Swap } from '../../../uxcommon/swap';
 
 @Component({
   selector: 'pc-email-client',
   standalone: true,
-  imports: [EmailFolderList, EmailList, EmailDetails],
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, Swap],
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
@@ -36,5 +38,24 @@ export class EmailClient {
    */
   public onFolder(folder: EmailFolderType) {
     this.store.selectFolder(folder);
+  }
+
+  /**
+   * Toggle the full-screen overlay for email body.
+   */
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  /**
+   * Collapse the full-screen overlay when Escape is pressed.
+   */
+  @HostListener('document:keydown', ['$event'])
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
   }
 }
