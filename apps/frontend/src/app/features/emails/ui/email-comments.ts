@@ -8,7 +8,7 @@ import { IAuthUser } from '@common';
 import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
 import { AuthService } from '../../../auth/auth-service';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailCommentType, EmailType } from 'common/src/lib/models';
 
 @Component({

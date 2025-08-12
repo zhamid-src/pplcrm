@@ -3,7 +3,7 @@
  */
 import { Component, inject } from '@angular/core';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';

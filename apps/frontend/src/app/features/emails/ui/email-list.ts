@@ -4,7 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Output, effect, inject } from '@angular/core';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({

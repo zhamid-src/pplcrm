@@ -1,0 +1,87 @@
+/**
+ * @file Mutating actions (assign, favourite, status, comments) with optimistic flows.
+ * Centralizes rollback + optional refresh (folder contents & counts).
+ */
+import { Injectable, inject } from '@angular/core';
+
+import { EmailsService } from '../emails-service';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+import type { EmailType } from 'common/src/lib/models';
+
+@Injectable({ providedIn: 'root' })
+export class EmailActionsStore {
+  private readonly cache = inject(EmailCacheStore);
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+  private readonly svc = inject(EmailsService);
+
+  /** Add a comment and update header cache so future reads include it */
+  public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
+    const created = await this.svc.addComment(String(emailId), authorId, commentText);
+    this.cache.appendCommentToHeader(emailId, created);
+    return created;
+  }
+
+  /** Assign/unassign with optimistic update and refreshes */
+  public async assignEmailToUser(emailId: EmailId, userId: string | null): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { assigned_to: userId ?? undefined }, () => this.svc.assign(key, userId), {
+      refreshFolder: true,
+      refreshCounts: true,
+    });
+  }
+
+  /** Toggle favourite with optimistic update (no count refresh needed) */
+  public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { is_favourite: isFavorite }, () => this.svc.setFavourite(key, isFavorite), {
+      refreshFolder: false,
+      refreshCounts: false,
+    });
+  }
+
+  /** Update status and refresh counts (affects virtual folders) */
+  public async updateEmailStatus(emailId: EmailId, status: EmailStatus): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { status }, () => this.svc.setStatus(key, status), {
+      refreshFolder: true,
+      refreshCounts: true,
+    });
+  }
+
+  /**
+   * Shared optimistic update with rollback and optional refresh of
+   * current folder contents and counts.
+   */
+  private async updateProperty(
+    emailKey: string,
+    patch: Partial<EmailType>,
+    serverCall: () => Promise<unknown>,
+    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
+  ): Promise<void> {
+    const prev = this.state.patchEmail(emailKey, patch);
+    if (!prev) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+
+    try {
+      await serverCall();
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (opts?.refreshFolder && currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      if (opts?.refreshCounts) {
+        await this.folders.refreshFolderCounts();
+      }
+    } catch (e) {
+      this.state.replaceEmail(emailKey, prev);
+      throw e;
+    }
+  }
+}
+
+type EmailStatus = 'open' | 'closed' | 'resolved';

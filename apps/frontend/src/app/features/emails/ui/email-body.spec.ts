@@ -6,13 +6,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailBody } from './email-body';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 // Mock sanitize pipe
 @Component({
   selector: 'mock-sanitize-pipe',
-  template: '{{ value }}'
+  template: '{{ value }}',
 })
 class MockSanitizePipe {
   @Input() value: string = '';
@@ -32,7 +32,7 @@ describe('EmailBody', () => {
     to_email: 'recipient@example.com',
     subject: 'Test Email',
     preview: 'Test preview',
-    assigned_to: undefined
+    assigned_to: undefined,
   };
 
   beforeEach(async () => {
@@ -40,15 +40,13 @@ describe('EmailBody', () => {
       getEmailBodyById: jest.fn().mockReturnValue(() => '<p>Test email body</p>'),
       loadEmailWithHeaders: jest.fn().mockResolvedValue({
         body: '<p>Test email body</p>',
-        header: {}
-      })
+        header: {},
+      }),
     };
 
     await TestBed.configureTestingModule({
       declarations: [EmailBody],
-      providers: [
-        { provide: EmailsStore, useValue: mockStore }
-      ]
+      providers: [{ provide: EmailsStore, useValue: mockStore }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EmailBody);
@@ -68,7 +66,7 @@ describe('EmailBody', () => {
       fixture.detectChanges();
 
       // Wait for effect to run
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockEmailsStore.loadEmailWithHeaders).toHaveBeenCalledWith('1');
     });
@@ -103,17 +101,17 @@ describe('EmailBody', () => {
       const newEmail: EmailType = {
         ...mockEmail,
         id: '2',
-        subject: 'New Email'
+        subject: 'New Email',
       };
 
       fixture.detectChanges();
-      
+
       // Change email
       component.email = signal(newEmail);
       fixture.detectChanges();
 
       // Wait for effect to run
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockEmailsStore.loadEmailWithHeaders).toHaveBeenCalledWith('2');
     });
@@ -123,7 +121,7 @@ describe('EmailBody', () => {
       fixture.detectChanges();
 
       // Wait for effect to run
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockEmailsStore.loadEmailWithHeaders).not.toHaveBeenCalled();
     });
@@ -154,7 +152,7 @@ describe('EmailBody', () => {
       fixture.detectChanges();
 
       // Wait for effect to run
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Should not throw error
       expect(component).toBeTruthy();

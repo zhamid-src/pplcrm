@@ -6,7 +6,7 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
