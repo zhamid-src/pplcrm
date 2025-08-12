@@ -32,6 +32,14 @@ export class EmailStateStore {
     });
   }
 
+  /** Global UI flag: whether the email body view is expanded to fill the window */
+  public readonly isBodyExpanded = signal<boolean>(false);
+
+  /** Toggle the body expanded view */
+  public toggleBodyExpanded(): void {
+    this.isBodyExpanded.update((v) => !v);
+  }
+
   /** Patch one email and return the previous snapshot for rollback */
   public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
     const prev = this.readEmail(emailKey);

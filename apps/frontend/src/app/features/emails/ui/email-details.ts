@@ -17,7 +17,8 @@ import { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  private store = inject(EmailsStore);
+  /** Email store orchestrator to access email state and UI flags (e.g., expanded). */
+  protected store = inject(EmailsStore);
 
   public email = input<EmailType | null>(null);
 
