@@ -2,9 +2,10 @@
  * @file Component displaying header information for an email.
  */
 import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
+import { Swap } from '../../../uxcommon/swap';
 
 import { EmailsStore } from '../services/store/emailstore';
 import { EmailAssign } from './email-assign';
@@ -13,12 +14,16 @@ import { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-header',
   standalone: true,
-  imports: [CommonModule, EmailAssign, Icon],
+  // include swap for expand/collapse control
+  imports: [CommonModule, EmailAssign, Icon, Swap],
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
   private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
+
+  /** Whether the email body is currently expanded to take over the window (except sidebar). */
+  public isExpanded = this.store.isBodyExpanded;
 
   /** Get header data from store */
   protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
@@ -41,9 +46,24 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
-  protected expand() {
-    console.log('Expand email:', this.email().id);
-    // TODO: Implement expand functionality
+  /**
+   * Toggle the expanded state of the email body.
+   * When expanded, the email body fills the main content area, hiding the list and comments.
+   */
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  /**
+   * Handle Escape key to collapse the expanded view when active.
+   */
+  @HostListener('document:keydown', ['$event'])
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
   }
 
   /** Get all recipients combined */
