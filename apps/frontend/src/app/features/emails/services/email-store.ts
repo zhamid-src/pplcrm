@@ -30,14 +30,11 @@ export class EmailsStore {
   /** Cache for email body HTML content, keyed by email ID */
   private readonly emailBodiesCache = signal<Record<string, string>>({});
 
-  /** Cache for email header data with recipients, keyed by email ID */
-  private readonly emailHeadersCache = signal<Record<string, any>>({});
-
-  /** Track emails currently being loaded to prevent duplicate requests */
-  private readonly loadingEmails = signal<Set<string>>(new Set());
-
   /** Available email folders */
   private readonly emailFolders = signal<EmailFolderType[]>([]);
+
+  /** Cache for email header data with recipients, keyed by email ID */
+  private readonly emailHeadersCache = signal<Record<string, any>>({});
 
   /** Email IDs organized by folder ID for efficient lookup */
   private readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
@@ -47,6 +44,9 @@ export class EmailsStore {
 
   /** Email service for API operations */
   private readonly emailsService = inject(EmailsService);
+
+  /** Track emails currently being loaded to prevent duplicate requests */
+  private readonly loadingEmails = signal<Set<string>>(new Set());
 
   // =============================================================================
   // PUBLIC COMPUTED PROPERTIES
@@ -117,6 +117,14 @@ export class EmailsStore {
    */
   public async assignEmailToUser(emailId: EmailId, userId: string | null): Promise<void> {
     const emailKey = String(emailId);
+
+    // Get current email assignment for potential rollback
+    const currentEmail = this.emailsById()[emailKey];
+    if (!currentEmail) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+
     const previousEmailState = this.emailsById()[emailKey];
     if (!previousEmailState) return;
 
@@ -128,6 +136,18 @@ export class EmailsStore {
 
     try {
       await this.emailsService.assign(emailKey, userId);
+
+      // Check if email should be removed from current folder view
+      const currentFolderId = this.currentSelectedFolderId();
+
+      // Refresh the current folder to show updated email list
+      // This ensures newly closed emails appear in Closed folder, etc.
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+
+      // Refresh folder counts since status change affects virtual folders
+      await this.refreshFolderCounts();
     } catch (error) {
       // Rollback on error
       this.emailsById.update((emailsMap) => ({
@@ -139,20 +159,20 @@ export class EmailsStore {
   }
 
   /**
-   * Factory function to get email by ID.
-   * @param emailId - The email ID to retrieve
-   * @returns Computed signal containing the email or undefined
-   */
-  public readonly getEmailById = (emailId: EmailId | null) =>
-    computed(() => (emailId ? this.emailsById()[String(emailId)] : undefined));
-
-  /**
    * Factory function to get email body content by ID.
    * @param emailId - The email ID to get body content for
    * @returns Computed signal containing the email body HTML or undefined
    */
   public readonly getEmailBodyById = (emailId: EmailId | null) =>
     computed(() => (emailId ? this.emailBodiesCache()[String(emailId)] : undefined));
+
+  /**
+   * Factory function to get email by ID.
+   * @param emailId - The email ID to retrieve
+   * @returns Computed signal containing the email or undefined
+   */
+  public readonly getEmailById = (emailId: EmailId | null) =>
+    computed(() => (emailId ? this.emailsById()[String(emailId)] : undefined));
 
   /**
    * Factory function to get email header data by ID.
@@ -240,7 +260,6 @@ export class EmailsStore {
     // Check if this email is already being loaded
     const currentlyLoading = this.loadingEmails();
     if (currentlyLoading.has(emailKey)) {
-      console.log(`Email ${emailKey} is already being loaded, skipping duplicate request`);
       // Return cached data if available, or empty data
       return {
         body: cachedBody || '',
@@ -256,8 +275,6 @@ export class EmailsStore {
     });
 
     try {
-      console.log(`Loading email data for ${emailKey}`);
-
       // Fetch combined data from API
       const response = (await this.emailsService.getEmailWithHeaders(emailKey)) as any;
 
@@ -344,6 +361,14 @@ export class EmailsStore {
     });
   }
 
+  /**
+   * Refresh folder counts after email operations.
+   * This should be called after actions that might change email counts.
+   */
+  public async refreshFolderCounts(): Promise<void> {
+    await this.loadAllFoldersWithCounts();
+  }
+
   // =============================================================================
   // PUBLIC METHODS - SELECTION MANAGEMENT
   // =============================================================================
@@ -366,68 +391,6 @@ export class EmailsStore {
       void this.loadEmailsForFolder(folder.id);
     }
     this.currentSelectedEmailId.set(null);
-  }
-
-  /**
-   * Refresh folder counts after email operations.
-   * This should be called after actions that might change email counts.
-   */
-  public async refreshFolderCounts(): Promise<void> {
-    await this.loadAllFoldersWithCounts();
-  }
-
-  /**
-   * Update email status and refresh folder counts.
-   * @param emailId - The ID of the email to update
-   * @param status - The new status ('open', 'closed', 'resolved')
-   */
-  public async updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved'): Promise<void> {
-    const emailKey = String(emailId);
-
-    // Get current state for potential rollback
-    const currentEmail = this.emailsById()[emailKey];
-    if (!currentEmail) {
-      console.warn(`Email ${emailKey} not found in store`);
-      return;
-    }
-
-    const previousStatus = currentEmail.status;
-
-    // Optimistically update the local state
-    this.emailsById.update((emails) => {
-      const updatedEmails = { ...emails };
-      if (updatedEmails[emailKey]) {
-        updatedEmails[emailKey] = { ...updatedEmails[emailKey], status };
-      }
-      return updatedEmails;
-    });
-
-    try {
-      // Update on server
-      await this.emailsService.setStatus(emailKey, status);
-
-      // Check if email should be removed from current folder view (with animation)
-      const currentFolderId = this.currentSelectedFolderId();
-
-      // Refresh the current folder to show updated email list
-      // This ensures newly closed emails appear in Closed folder, etc.
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-
-      // Refresh folder counts since status change affects virtual folders
-      await this.refreshFolderCounts();
-    } catch (error) {
-      // Revert optimistic update on error
-      this.emailsById.update((emails) => {
-        const revertedEmails = { ...emails };
-        if (revertedEmails[emailKey]) {
-          revertedEmails[emailKey] = { ...revertedEmails[emailKey], status: previousStatus };
-        }
-        return revertedEmails;
-      });
-      throw error;
-    }
   }
 
   // =============================================================================
@@ -468,18 +431,58 @@ export class EmailsStore {
   }
 
   /**
-   * Check if an email should be removed from the current folder view based on status change.
-   * @param emailId - The email ID
-   * @param newStatus - The new status of the email
-   * @param folderId - The current folder ID
-   * @returns True if email should be removed from folder view
+   * Update email status and refresh folder counts.
+   * @param emailId - The ID of the email to update
+   * @param status - The new status ('open', 'closed', 'resolved')
    */
+  public async updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved'): Promise<void> {
+    const emailKey = String(emailId);
 
-  /**
-   * Remove an email from a folder's email list.
-   * @param emailId - The email ID to remove
-   * @param folderId - The folder ID to remove from
-   */
+    // Get current state for potential rollback
+    const currentEmail = this.emailsById()[emailKey];
+    if (!currentEmail) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+
+    const previousStatus = currentEmail.status;
+
+    // Optimistically update the local state
+    this.emailsById.update((emails) => {
+      const updatedEmails = { ...emails };
+      if (updatedEmails[emailKey]) {
+        updatedEmails[emailKey] = { ...updatedEmails[emailKey], status };
+      }
+      return updatedEmails;
+    });
+
+    try {
+      // Update on server
+      await this.emailsService.setStatus(emailKey, status);
+
+      // Check if email should be removed from current folder view
+      const currentFolderId = this.currentSelectedFolderId();
+
+      // Refresh the current folder to show updated email list
+      // This ensures newly closed emails appear in Closed folder, etc.
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+
+      // Refresh folder counts since status change affects virtual folders
+      await this.refreshFolderCounts();
+    } catch (error) {
+      // Revert optimistic update on error
+      this.emailsById.update((emails) => {
+        const revertedEmails = { ...emails };
+        if (revertedEmails[emailKey]) {
+          revertedEmails[emailKey] = { ...revertedEmails[emailKey], status: previousStatus };
+        }
+        return revertedEmails;
+      });
+      throw error;
+    }
+  }
 }
 
 /** Type alias for email/folder identifiers */
