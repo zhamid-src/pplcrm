@@ -26,7 +26,7 @@ export const icons = {
   'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
   'arrow-path': 'assets/icons/arrow-path.svg',
   'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
   'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
   'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
   'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',

@@ -21,6 +21,8 @@ export class EmailClient {
   // Use store's computed properties
   public selectedEmail = this.store.currentSelectedEmail;
   public selectedFolder = this.store.currentSelectedFolderId;
+  /** Whether the email body is expanded to fill the window (except sidebar). */
+  public isBodyExpanded = this.store.isBodyExpanded;
 
   /**
    * Handle email selection from child component.

@@ -2,7 +2,7 @@
   @if (email()) {
   <pc-email-header [email]="email()!"></pc-email-header>
   <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-4">
-    @if (!commentsExpanded()) {
+    @if (!commentsExpanded() || (email() && (store?.isBodyExpanded ? store.isBodyExpanded() : false))) {
     <!-- Body visible when comments are collapsed -->
     <pc-email-body
       class="flex-1 min-h-0 border-double border-b-2 border-gray-200 rounded-lg bg-white"
@@ -12,6 +12,7 @@
     }
 
     <!-- Comments panel: either compact with status bar or expanded occupying remaining space -->
+    @if (!(store?.isBodyExpanded ? store.isBodyExpanded() : false)) {
     <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
       <!-- Status bar -->
       <button
@@ -38,6 +39,7 @@
       </div>
       }
     </div>
+    }
   </main>
 
   } @else {

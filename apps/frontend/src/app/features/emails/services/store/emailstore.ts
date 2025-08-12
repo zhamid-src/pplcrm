@@ -31,6 +31,9 @@ export class EmailsStore {
   /** Selected folder id */
   public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
 
+  /** Whether the email body is expanded to fill the window */
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
   /** Emails in currently selected folder */
   public readonly emailsInSelectedFolder = computed(() => {
     const fid = this.folders.currentSelectedFolderId();
@@ -91,5 +94,10 @@ export class EmailsStore {
 
   public updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved') {
     return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  /** Toggle the email body expanded UI state */
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
   }
 }
