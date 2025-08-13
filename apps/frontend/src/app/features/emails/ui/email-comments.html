@@ -34,18 +34,3 @@
   ></textarea>
   <button (click)="addComment()" class="btn btn-sm btn-primary">Add Comment</button>
 </div>
-
-<dialog id="confirmDelete" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Are you sure?</h3>
-    <p class="pt-4 pb-6 font-light">The comment will be deleted permanantly. You cannot undo this.</p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-error" (click)="deleteComment()">
-        <pc-icon name="trash" />
-        Yes
-      </button>
-      <button class="btn"><pc-icon name="x-circle" />Cancel</button>
-    </form>
-  </div>
-</dialog>
