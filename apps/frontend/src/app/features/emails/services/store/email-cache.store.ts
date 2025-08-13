@@ -34,21 +34,22 @@ export class EmailCacheStore {
   public appendCommentToHeader(emailId: EmailId, createdComment: any): void {
     const key = String(emailId);
     const existing = this.emailHeadersCache()[key];
-    if (!existing) return;
-
-    const updated = { ...existing, comments: [...(existing.comments ?? []), createdComment] };
-    this.setInCache(this.emailHeadersCache, key, updated);
+    const next = existing
+      ? { ...existing, comments: [...(existing.comments ?? []), createdComment] }
+      : { comments: [createdComment] };
+    this.setInCache(this.emailHeadersCache, key, next);
   }
 
   /** Load only the body (cached) */
   public async loadEmailBody(emailId: EmailId): Promise<string> {
     const key = String(emailId);
     const cached = this.emailBodiesCache()[key];
-    if (cached) return cached;
+    if (typeof cached !== 'undefined') return cached;
 
     const res = (await this.svc.getEmailBody(key)) as any;
     const body = res?.body_html ?? '';
-    if (body) this.setInCache(this.emailBodiesCache, key, body);
+    // IMPORTANT: cache even if empty string so future checks see "loaded"
+    this.setInCache(this.emailBodiesCache, key, body);
     return body;
   }
 
@@ -61,14 +62,9 @@ export class EmailCacheStore {
     const cachedBody = this.emailBodiesCache()[key];
     const cachedHeader = this.emailHeadersCache()[key];
 
-    // If both cached and someone else is loading, just return cache
-    if (this.loadingEmails().has(key) && cachedBody && cachedHeader) {
-      return { body: cachedBody, header: cachedHeader };
-    }
-
-    // De-dupe
+    // Another call in-flight? return what we have (even if empty/null)
     if (this.loadingEmails().has(key)) {
-      return { body: cachedBody ?? '', header: cachedHeader ?? null };
+      return { body: cachedBody ?? '', header: typeof cachedHeader === 'undefined' ? null : cachedHeader };
     }
 
     this.markLoading(key);
@@ -77,8 +73,9 @@ export class EmailCacheStore {
       const bodyHtml = res?.body?.body_html ?? '';
       const header = res?.header ?? null;
 
-      if (bodyHtml) this.setInCache(this.emailBodiesCache, key, bodyHtml);
-      if (header) this.setInCache(this.emailHeadersCache, key, header);
+      // IMPORTANT: cache regardless of truthiness ('' or null still mean "loaded")
+      this.setInCache(this.emailBodiesCache, key, bodyHtml);
+      this.setInCache(this.emailHeadersCache, key, header);
 
       return { body: bodyHtml, header };
     } catch (err) {
