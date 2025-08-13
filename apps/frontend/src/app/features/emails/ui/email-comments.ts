@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, si
 import { FormsModule } from '@angular/forms';
 import type { IAuthUser } from '@common';
 import { Icon } from '@uxcommon/icons/icon';
+import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
 import { AuthService } from '../../../auth/auth-service';
@@ -23,7 +24,7 @@ export class EmailComments {
   private readonly auth = inject(AuthService);
   private readonly store = inject(EmailsStore);
 
-  private commentToDelete: Partial<EmailCommentType> | null = null;
+  private dialogs = inject(ConfirmDialogService);
 
   /** Track in-flight deletions: comment ids */
   protected readonly deleting = signal<Set<string>>(new Set());
@@ -108,10 +109,22 @@ export class EmailComments {
     return !!me && String(authorId) === String(me);
   }
 
-  public confirmDelete(comment: Partial<EmailCommentType>) {
+  public async confirmDelete(comment: Partial<EmailCommentType>) {
     if (!comment || !this.canDelete(comment)) return;
-    this.commentToDelete = comment;
-    this.showDialogById('confirmDelete');
+
+    const ok = await this.dialogs.confirm({
+      title: 'Delete comment?',
+      message: 'The comment will be deleted permanently. You cannot undo this.',
+      variant: 'danger',
+      icon: 'trash',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      allowBackdropClose: false,
+    });
+
+    if (ok) {
+      await this.deleteComment(comment); // your existing delete flow
+    }
   }
 
   /** Get the display name for a user id */
@@ -125,10 +138,7 @@ export class EmailComments {
   }
 
   /** Attempt to delete a comment (optimistic + rollback in store) */
-  protected async deleteComment(): Promise<void> {
-    if (!this.commentToDelete) return;
-
-    const comment = this.commentToDelete;
+  protected async deleteComment(comment: Partial<EmailCommentType>): Promise<void> {
     const em = this.email();
     const cid = String((comment as any).id ?? '');
     if (!em?.id || !cid) return;
@@ -148,11 +158,5 @@ export class EmailComments {
         return n;
       });
     }
-  }
-
-  /** Internal helper for showing modals */
-  protected showDialogById(id: string): void {
-    const dialog = document.querySelector<HTMLDialogElement>(`#${id}`);
-    dialog?.showModal();
   }
 }

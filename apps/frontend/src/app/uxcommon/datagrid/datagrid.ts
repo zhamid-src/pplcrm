@@ -4,6 +4,7 @@ import { debounce, getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { IconName } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {
@@ -35,6 +36,7 @@ import { Models } from 'common/src/lib/kysely.models';
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit {
+  private readonly dialogs = inject(ConfirmDialogService);
   private readonly route = inject(ActivatedRoute);
   private readonly searchSvc = inject(SearchService);
   private readonly themeSvc = inject(ThemeService);
@@ -88,12 +90,32 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     });
   }
 
-  /** Confirms deletion with modal. */
-  public confirmDelete(): void {
-    if (this.disableDelete())
-      return this.alertSvc.showError('You do not have the permission to delete rows from this table.');
+  /** Confirm and then delete selected rows */
+  public async confirmDelete(): Promise<void> {
+    if (this.disableDelete()) {
+      // keep your existing toast if you prefer
+      this.alertSvc.showError('You do not have the permission to delete rows from this table.');
+      return;
+    }
 
-    this.showDialogById('confirmDelete');
+    const ok = await this.dialogs.confirm({
+      title: 'Are you sure?',
+      message: 'The selected rows will be deleted permanently. You cannot undo this.',
+      variant: 'danger',
+      icon: 'trash',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      allowBackdropClose: false,
+    });
+
+    if (!ok) return;
+
+    try {
+      await this.deleteSelectedRows();
+    } catch (e) {
+      console.error(e);
+      this.alertSvc.showError('Failed to delete rows. Please try again.');
+    }
   }
 
   public createServerSideDatasource(): IServerSideDatasource {
@@ -215,20 +237,41 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.navigateIfValid(this.addRoute());
   }
 
-  /** Confirms export with modal. */
-  protected confirmExport(): void {
-    this.showDialogById('confirmExport');
+  /** Warn about export scope, then export */
+  protected async confirmExport(): Promise<void> {
+    const ok = await this.dialogs.confirm({
+      title: 'Export limitation',
+      message:
+        'This only exports the columns visible in the grid. If you’d like to export everything, use the Export component from the sidebar.',
+      variant: 'info',
+      icon: 'arrow-down-tray',
+      confirmText: 'Accept',
+      cancelText: 'Cancel',
+    });
+
+    if (!ok) return;
+
+    try {
+      await this.exportToCSV();
+    } catch (e) {
+      console.error(e);
+      this.alertSvc.showError('Export failed. Please try again.');
+    }
   }
 
   /** Deletes selected rows and optionally shows undo snackbar. */
   protected async deleteSelectedRows() {
     const rows = this.getSelectedRows();
+    console.log('Deleting rows:', rows);
     const deletableRows = this.getDeletableRows(rows);
+
+    console.log('Deletable rows:', deletableRows);
     if (this.handleDeleteErrors(rows, deletableRows)) return;
 
     this.api?.setGridOption('loading', true);
     try {
       const ids = deletableRows.map((row) => row.id);
+      console.log('Deleting IDs:', ids);
       const deleted = await this.gridSvc.deleteMany(ids);
 
       if (!deleted) {
@@ -296,12 +339,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     } finally {
       this.api?.setGridOption('loading', false);
     }
-  }
-
-  /** Internal helper for showing modals */
-  protected showDialogById(id: string): void {
-    const dialog = document.querySelector<HTMLDialogElement>(`#${id}`);
-    dialog?.showModal();
   }
 
   /** Compares two tag arrays */
