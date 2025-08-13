@@ -10,9 +10,9 @@ export function createServerSideDatasource<T>(deps: {
   gridSvc: AbstractAPIService<any, any>;
   searchSvc: SearchService;
   limitToTags: () => string[];
-  pageSize?: number;
+  pageSize: number; // required now so caller decides
 }): IServerSideDatasource {
-  const pageSize = deps.pageSize ?? 10;
+  const pageSize = deps.pageSize;
 
   return {
     getRows: async (params: IServerSideGetRowsParams) => {
@@ -32,7 +32,6 @@ export function createServerSideDatasource<T>(deps: {
         const data = await deps.gridSvc.getAll(options);
         params.success({ rowData: data.rows as T[], rowCount: data.count });
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.log('error', err);
         params.fail();
       } finally {

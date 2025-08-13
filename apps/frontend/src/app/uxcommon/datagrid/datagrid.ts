@@ -32,10 +32,10 @@ import {
 
 import { AbstractAPIService } from '../../abstract-api.service';
 import { confirmDeleteAndRun, doExportCsv, emitImportCsv } from './datagrid.actions';
-// Extracted helpers/services
 import { buildGridCallbacks } from './datagrid.callbacks';
 import { createServerSideDatasource } from './datagrid.datasource';
 import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
+import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { createPayload } from './datagrid.utils';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-model.strategy';
@@ -52,6 +52,7 @@ import { Models } from 'common/src/lib/kysely.models';
   templateUrl: './datagrid.html',
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit {
+  private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly route = inject(ActivatedRoute);
   private readonly searchSvc = inject(SearchService);
@@ -82,7 +83,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected gridVisible = signal(false);
   protected mergedGridOptions: Partial<GridOptions> = {};
 
-  public readonly CLIENT_SERVER_THRESHOLD = 15;
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Inputs & Outputs
@@ -113,7 +113,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Confirm and then delete selected rows */
   public async confirmDelete(): Promise<void> {
     if (this.disableDelete()) {
-      this.alertSvc.showError('You do not have the permission to delete rows from this table.');
+      this.alertSvc.showError(this.config.messages.noDeletePermission);
       return;
     }
 
@@ -125,12 +125,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       gridSvc: this.gridSvc,
       rowModelType: this.rowModelType(),
       mergedGridOptions: this.mergedGridOptions,
+      config: this.config,
     });
   }
 
   public async ngOnInit() {
     const rowCount = await this.gridSvc.count();
-    this.rowModelType.set(rowCount < this.CLIENT_SERVER_THRESHOLD ? 'clientSide' : 'serverSide');
+    this.rowModelType.set(rowCount < this.config.clientServerThreshold ? 'clientSide' : 'serverSide');
 
     // Choose strategy
     this.strategy = this.rowModelType() === 'clientSide' ? new ClientSideStrategy() : new ServerSideStrategy();
@@ -168,7 +169,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     if (this.shouldBlockEdit(row, key)) {
       this.undoMgr.undo();
-      return this.alertSvc.showError('This cell cannot be edited or deleted.');
+      return this.alertSvc.showError(this.config.messages.editBlocked);
     }
 
     const payload = createPayload(row, key);
@@ -176,7 +177,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     if (!edited) {
       this.undoMgr.undo();
-      return this.alertSvc.showError('Could not edit the row. Please try again later.');
+      return this.alertSvc.showError(this.config.messages.editFailed);
     }
 
     this.api?.flashCells({ rowNodes: [event.node], columns: [event.column] });
@@ -189,12 +190,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.api = params.api;
 
     if (this.rowModelType() === 'serverSide') {
-      const ds = createServerSideDatasource<Partial<T>>({
+      const ds = createServerSideDatasource({
         api: this.api!,
-        gridSvc: this.gridSvc as any,
+        gridSvc: this.gridSvc,
         searchSvc: this.searchSvc,
         limitToTags: () => this.limitToTags(),
-        pageSize: 10,
+        pageSize: this.config.pageSize,
       });
       this.api.setGridOption('serverSideDatasource', ds);
     }
@@ -240,6 +241,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       dialogs: this.dialogs,
       api: this.api,
       alertSvc: this.alertSvc,
+      config: this.config,
     });
   }
 
@@ -258,7 +260,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       this.api?.setSideBarVisible(false);
     } else {
       this.api?.setSideBarVisible(true);
-      this.api?.openToolPanel('filters-new');
+      this.api?.openToolPanel(this.config.filterToolPanelId);
     }
   }
 
@@ -293,7 +295,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         (this.api as any).refreshServerSide?.({ purge: true });
       }
     } catch (error) {
-      this.alertSvc.showError('Could not load the data. Please try again later.');
+      this.alertSvc.showError(this.config.messages.loadFailed);
     } finally {
       this.api?.setGridOption('loading', false);
     }
