@@ -31,6 +31,15 @@
       name="magnifying-glass"
     ></pc-icon>
 
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (clickEvent)="toggleFullScreen()"
+      (click)="$event.stopPropagation()"
+    ></pc-swap>
+
     <!-- light / dark theme switcher -->
     <pc-swap
       swapOnIcon="sun"
@@ -58,22 +67,13 @@
         class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-44 cursor-pointer font-light shadow"
       >
         <li class="hover:text-primary">
-          <a>
-            <pc-icon name="user-circle" />
-            Profile
-          </a>
+          <a> <pc-icon name="user-circle" /> Profile </a>
         </li>
         <li class="hover:text-primary">
-          <a>
-            <pc-icon name="cog-6-tooth" />
-            Settings
-          </a>
+          <a> <pc-icon name="cog-6-tooth" /> Settings </a>
         </li>
         <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle" />
-            Sign out
-          </a>
+          <a> <pc-icon name="arrow-left-start-on-rectangle" /> Sign out </a>
         </li>
       </ul>
     </div>
