@@ -12,6 +12,7 @@ import {
   PivotModule,
   RowGroupingModule,
   RowGroupingPanelModule,
+  ServerSideRowModelApiModule,
   ServerSideRowModelModule,
   SetFilterModule,
   TreeDataModule,
@@ -26,6 +27,7 @@ bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err))
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
   ServerSideRowModelModule,
+  ServerSideRowModelApiModule,
   AllCommunityModule,
   CsvExportModule,
   CellSelectionModule,
