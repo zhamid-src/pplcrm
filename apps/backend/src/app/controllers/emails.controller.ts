@@ -33,6 +33,11 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.update({ tenant_id, id, row: { assigned_to: user_id } as OperationDataType<'emails', 'insert'> });
   }
 
+  /** Delete a comment from an email */
+  public deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
+    return this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
+  }
+
   /** Return a single email and its comments */
   public async getEmailBody(tenant_id: string, id: string) {
     const email = await this.bodiesRepo.getById({ tenant_id, id });

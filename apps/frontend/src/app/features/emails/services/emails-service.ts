@@ -29,17 +29,16 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.assign.mutate({ id, user_id });
   }
 
-  public getEmailBody(id: string) {
-    return this.api.emails.getEmailBody.query(id);
+  /**
+   * Delete a comment from an email.
+   * Adjust the endpoint/shape to your backend if different.
+   */
+  public deleteComment(email_id: string, comment_id: string) {
+    return this.api.emails.deleteComment.mutate({ email_id, comment_id });
   }
 
-  /**
-   * Get email with headers and body combined for detailed view.
-   * @param id Email identifier
-   * @returns Promise resolving to email body and header data
-   */
-  public getEmailWithHeaders(id: string) {
-    return this.api.emails.getEmailWithHeaders.query(id);
+  public getEmailBody(id: string) {
+    return this.api.emails.getEmailBody.query(id);
   }
 
   /**
@@ -49,6 +48,15 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    */
   public getEmailHeader(id: string) {
     return this.api.emails.getEmailHeader.query(id);
+  }
+
+  /**
+   * Get email with headers and body combined for detailed view.
+   * @param id Email identifier
+   * @returns Promise resolving to email body and header data
+   */
+  public getEmailWithHeaders(id: string) {
+    return this.api.emails.getEmailWithHeaders.query(id);
   }
 
   /**

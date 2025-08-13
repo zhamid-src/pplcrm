@@ -33,6 +33,36 @@ export class EmailActionsStore {
     });
   }
 
+  /** Delete a comment (optimistic remove + rollback on failure) */
+  public async deleteComment(emailId: EmailId, commentId: string | number): Promise<void> {
+    const key = String(emailId);
+    const prevHeader = this.cache.getEmailHeaderById(key)(); // snapshot before change
+
+    // Optimistic: remove from cache now
+    this.cache.removeCommentFromHeader(key, commentId);
+
+    try {
+      await this.svc.deleteComment(key, String(commentId));
+      // success: nothing else to do, UI is already updated
+    } catch (e) {
+      console.error('deleteComment failed; rolling back', e);
+      if (typeof prevHeader !== 'undefined') {
+        this.cache.replaceHeader(key, prevHeader);
+      } else {
+        // If we somehow had no header snapshot, refetch to get back to server truth
+        await this.svc
+          .getEmailWithHeaders(key)
+          .then((res: any) => {
+            this.cache.replaceHeader(key, res?.header ?? null);
+          })
+          .catch(() => {
+            /* ignore */
+          });
+      }
+      throw e;
+    }
+  }
+
   /** Toggle favourite with optimistic update (no count refresh needed) */
   public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
     const key = String(emailId);

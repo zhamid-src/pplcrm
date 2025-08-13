@@ -87,6 +87,24 @@ export class EmailCacheStore {
     }
   }
 
+  /** Remove a comment from the cached header (optimistic) */
+  public removeCommentFromHeader(emailId: EmailId, commentId: string | number): void {
+    const key = String(emailId);
+    const existing = this.emailHeadersCache()[key];
+    if (!existing) return;
+    const next = {
+      ...existing,
+      comments: ((existing as any).comments ?? []).filter((c: any) => String(c.id) !== String(commentId)),
+    };
+    this.setInCache(this.emailHeadersCache, key, next);
+  }
+
+  /** Replace the cached header entirely (rollback) */
+  public replaceHeader(emailId: EmailId, header: any): void {
+    const key = String(emailId);
+    this.setInCache(this.emailHeadersCache, key, header);
+  }
+
   private markLoading(key: string): void {
     this.loadingEmails.update((s) => {
       const n = new Set(s);
