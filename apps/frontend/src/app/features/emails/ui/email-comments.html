@@ -1,36 +1,59 @@
-<div class="w-full p-2">
+<div class="p-2 space-y-3">
   @for (comment of comments(); track comment.id) {
-  <div class="mb-3">
-    <div class="flex items-center gap-2 text-sm">
+  <div
+    class="chat"
+    [class.chat-start]="comment.author_id !== myUserId"
+    [class.chat-end]="comment.author_id === myUserId"
+  >
+    <!-- (Optional) avatar: first letter fallback -->
+    <div class="chat-image avatar">
+      <div class="w-8 h-8 rounded-full bg-base-300 text-base-content !grid place-items-center leading-none">
+        <span class="text-xs font-medium uppercase"> {{ (getUserName(comment.author_id) || '?') | slice:0:1 }} </span>
+      </div>
+    </div>
+
+    <!-- Header: name + time + delete icon -->
+    <div class="chat-header flex items-center gap-2 text-xs">
       <span class="font-medium">{{ getUserName(comment.author_id) }}</span>
-      <span>left a comment ‣</span>
+      <span class="opacity-70">left a comment ‣</span>
+
       @if (comment.created_at) {
-      <span class="text-xs text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
+      <span class="text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
         {{ comment.created_at | timeAgo:{ thresholdDays: 7, style: 'long' } }}
       </span>
       }
+
       <span class="flex-1"></span>
 
-      <!-- Delete button (shown if allowed) -->
       @if (canDelete(comment)) {
       <pc-icon
         name="trash"
-        (click)="confirmDelete(comment)"
         [size]="4"
         class="tooltip cursor-pointer hover:text-error"
         [attr.data-tip]="'Delete comment'"
-      ></pc-icon>
+        (click)="confirmDelete(comment)"
+      >
+      </pc-icon>
       }
     </div>
 
-    <div class="mt-1 rounded bg-gray-100 p-2 whitespace-pre-line">{{ comment.comment }}</div>
+    <!-- Bubble -->
+    <div class="chat-bubble whitespace-pre-line" [class.chat-bubble-primary]="comment.author_id === myUserId">
+      {{ comment.comment }}
+    </div>
+    <!-- (Optional) footer
+      <div class="chat-footer opacity-70">Delivered</div>
+      -->
   </div>
   }
 
-  <textarea
-    [(ngModel)]="newComment"
-    placeholder="Add a comment"
-    class="w-full rounded border p-2 border-gray-200"
-  ></textarea>
-  <button (click)="addComment()" class="btn btn-sm btn-primary">Add Comment</button>
+  <!-- Composer -->
+  <div class="mt-4 form-control">
+    <textarea [(ngModel)]="newComment" placeholder="Add a comment" class="textarea textarea-bordered w-full">
+    </textarea>
+    <div class="mt-2 flex items-center justify-end gap-2">
+      <button type="button" class="btn btn-sm" (click)="newComment = ''">Clear</button>
+      <button type="button" class="btn btn-sm btn-primary" (click)="addComment()">Add Comment</button>
+    </div>
+  </div>
 </div>
