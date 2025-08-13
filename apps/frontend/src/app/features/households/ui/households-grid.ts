@@ -4,6 +4,7 @@
 import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
+import { tagArrayEquals, tagsToString } from '@uxcommon/datagrid/datagrid.utils';
 
 import { AbstractAPIService } from '../../../abstract-api.service';
 import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
@@ -61,20 +62,20 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
        * @param tagsB Second array of tags
        * @returns Whether they are considered equal
        */
-      equals: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB) === 0,
+      equals: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB) === 0,
       /**
        * Formats the tag array for display as a string.
        * @param params The cell parameters containing the tag array
        * @returns Comma-separated string of tags
        */
-      valueFormatter: (params: ParamsType) => this.tagsToString(params.value),
+      valueFormatter: (params: ParamsType) => tagsToString(params.value),
       /**
        * Comparator function for sorting tag arrays
        * @param tagsA First array of tags
        * @param tagsB Second array of tags
        * @returns Sort order: -1, 0, or 1
        */
-      comparator: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB),
+      comparator: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB),
     },
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },

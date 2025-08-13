@@ -4,16 +4,17 @@
  * and address confirmation workflows in a high-performance AG-Grid interface.
  */
 import { Component, inject } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
-import { DataGrid } from '@uxcommon/datagrid/datagrid';
 import { Icon } from '@icons/icon';
+import { DataGrid } from '@uxcommon/datagrid/datagrid';
+import { tagArrayEquals, tagsToString } from '@uxcommon/datagrid/datagrid.utils';
 
 import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../../abstract-api.service';
 import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-import { ActivatedRoute } from '@angular/router';
 
 interface ParamsType {
   value: string[];
@@ -72,9 +73,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    */
   private addressChangeModalId: string | null = null;
 
-  /** Tags used to limit grid results via DataGrid input. */
-  protected limitTags: string[] = [];
-
   /**
    * Column definitions for the grid.
    * Includes editable fields, tag rendering, and double-click address confirmation.
@@ -98,9 +96,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       },
       cellRenderer: TagsCellRenderer,
       onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
-      equals: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB),
     },
     {
       field: 'street_num',
@@ -152,6 +150,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     },
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
+
+  /** Tags used to limit grid results via DataGrid input. */
+  protected limitTags: string[] = [];
 
   /**
    * Initializes the grid and retrieves tag filter data from the route.

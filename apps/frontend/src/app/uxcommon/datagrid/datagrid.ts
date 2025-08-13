@@ -26,14 +26,19 @@ import {
   GridApi,
   GridOptions,
   GridReadyEvent,
-  IServerSideDatasource,
-  IServerSideGetRowsParams,
   colorSchemeDarkBlue,
   themeQuartz,
 } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../abstract-api.service';
+import { confirmDeleteAndRun, doExportCsv, emitImportCsv } from './datagrid.actions';
+// Extracted helpers/services
+import { buildGridCallbacks } from './datagrid.callbacks';
+import { createServerSideDatasource } from './datagrid.datasource';
+import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
+import { createPayload } from './datagrid.utils';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
+import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-model.strategy';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
 import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
@@ -58,6 +63,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   private lastRowHovered: string | undefined;
   private rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
 
+  // Row model strategy
+  private strategy!: RowModelStrategy;
+
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
   protected readonly distinctTags: string[] = [];
@@ -67,7 +75,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected readonly isRowSelected = signal(false);
   protected readonly router = inject(Router);
   protected readonly undoMgr = new UndoManager();
-  protected readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
@@ -76,6 +83,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected mergedGridOptions: Partial<GridOptions> = {};
 
   public readonly CLIENT_SERVER_THRESHOLD = 15;
+  public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
@@ -109,65 +117,30 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       return;
     }
 
-    const ok = await this.dialogs.confirm({
-      title: 'Are you sure?',
-      message: 'The selected rows will be deleted permanently. You cannot undo this.',
-      variant: 'danger',
-      icon: 'trash',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      allowBackdropClose: false,
+    await confirmDeleteAndRun({
+      dialogs: this.dialogs,
+      alertSvc: this.alertSvc,
+      api: this.api,
+      getSelectedRows: () => this.getSelectedRows(),
+      gridSvc: this.gridSvc,
+      rowModelType: this.rowModelType(),
+      mergedGridOptions: this.mergedGridOptions,
     });
-
-    if (!ok) return;
-
-    try {
-      await this.deleteSelectedRows();
-    } catch (e) {
-      console.error(e);
-      this.alertSvc.showError('Failed to delete rows. Please try again.');
-    }
-  }
-
-  public createServerSideDatasource(): IServerSideDatasource {
-    return {
-      getRows: async (params: IServerSideGetRowsParams) => {
-        try {
-          this.api?.setGridOption('loading', true);
-
-          const searchStr = this.searchSvc.getFilterText();
-          const { startRow, sortModel, filterModel } = params.request;
-          const options = {
-            searchStr,
-            startRow,
-            endRow: (startRow || 0) + 10, // TODO: page size
-            sortModel,
-            filterModel,
-            tags: this.limitToTags(),
-          } as getAllOptionsType;
-
-          const data = await this.gridSvc.getAll(options);
-          params.success({ rowData: data.rows, rowCount: data.count });
-        } catch (err) {
-          console.log('error', err);
-          params.fail();
-        } finally {
-          this.api?.setGridOption('loading', false);
-        }
-      },
-    };
   }
 
   public async ngOnInit() {
     const rowCount = await this.gridSvc.count();
     this.rowModelType.set(rowCount < this.CLIENT_SERVER_THRESHOLD ? 'clientSide' : 'serverSide');
 
+    // Choose strategy
+    this.strategy = this.rowModelType() === 'clientSide' ? new ClientSideStrategy() : new ServerSideStrategy();
+
     // Ensure getRowId is available (stringify to avoid number/string mismatches)
     const incoming = this.gridOptions();
     const getRowIdFn = incoming.getRowId ?? ((p: GetRowIdParams) => String((p.data as any)?.id));
 
-    // Merge defaults → incoming → callbacks
-    this.mergedGridOptions = {
+    // Merge defaults → incoming → callbacks → strategy-specific
+    this.mergedGridOptions = this.strategy.configureGridOptions({
       rowModelType: this.rowModelType(),
       ...defaultGridOptions,
       defaultColDef: {
@@ -176,8 +149,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       },
       getRowId: getRowIdFn,
       ...incoming,
-      ...this.getCallbacksGridOptions(),
-    };
+      ...buildGridCallbacks(this),
+    });
 
     // Render grid after model type is chosen
     this.gridVisible.set(true);
@@ -198,7 +171,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       return this.alertSvc.showError('This cell cannot be edited or deleted.');
     }
 
-    const payload = this.createPayload(row, key);
+    const payload = createPayload(row, key);
     const edited = await this.applyEdit(row.id, payload);
 
     if (!edited) {
@@ -216,8 +189,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.api = params.api;
 
     if (this.rowModelType() === 'serverSide') {
-      // Note: ensure SSRM modules are registered globally or pass via [modules]
-      this.api.setGridOption('serverSideDatasource', this.createServerSideDatasource());
+      const ds = createServerSideDatasource<Partial<T>>({
+        api: this.api!,
+        gridSvc: this.gridSvc as any,
+        searchSvc: this.searchSvc,
+        limitToTags: () => this.limitToTags(),
+        pageSize: 10,
+      });
+      this.api.setGridOption('serverSideDatasource', ds);
     }
 
     this.undoMgr.initialize(this.api);
@@ -242,107 +221,31 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Navigates to view route for given ID or last hovered ID. */
   public view(id?: string) {
-    if (id) return this.navigateIfValid(id);
-    if (!this.disableView()) this.navigateIfValid(this.lastRowHovered);
+    return viewIfAllowed({
+      id,
+      lastRowHovered: this.lastRowHovered,
+      disableView: this.disableView(),
+      navigate: (path) => navigateIfValid(this.router, this.route, path),
+    });
   }
 
   /** Navigates to add route. */
   protected add() {
-    this.navigateIfValid(this.addRoute());
+    navigateIfValid(this.router, this.route, this.addRoute());
   }
 
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
-    const ok = await this.dialogs.confirm({
-      title: 'Export limitation',
-      message:
-        'This only exports the columns visible in the grid. If you’d like to export everything, use the Export component from the sidebar.',
-      variant: 'info',
-      icon: 'arrow-down-tray',
-      confirmText: 'Accept',
-      cancelText: 'Cancel',
+    await doExportCsv({
+      dialogs: this.dialogs,
+      api: this.api,
+      alertSvc: this.alertSvc,
     });
-
-    if (!ok) return;
-
-    try {
-      await this.exportToCSV();
-    } catch (e) {
-      console.error(e);
-      this.alertSvc.showError('Export failed. Please try again.');
-    }
-  }
-
-  /** Deletes selected rows and updates the grid (CSRM + SSRM full/partial) */
-  protected async deleteSelectedRows(): Promise<void> {
-    const api = this.api;
-    if (!api) return;
-
-    const rows = this.getSelectedRows();
-    const deletableRows = this.getDeletableRows(rows);
-    if (this.handleDeleteErrors(rows, deletableRows)) return;
-
-    api.setGridOption('loading', true);
-    try {
-      const ids = deletableRows.map((row) => row.id);
-      const ok = await this.gridSvc.deleteMany(ids);
-
-      if (!ok) {
-        this.alertSvc.showError('Could not delete. Please try again later.');
-        return;
-      }
-
-      const isClient = this.rowModelType() === 'clientSide';
-      const idSet = new Set(ids.map(String));
-      const hasGetRowId = !!(this.mergedGridOptions as any).getRowId;
-
-      if (isClient) {
-        // CLIENT-SIDE: remove by id (preferred) or by same object refs
-        if (hasGetRowId) {
-          api.applyTransaction({ remove: ids.map((id) => ({ id })) as any[] });
-        } else {
-          const nodes = api.getSelectedNodes().filter((n) => n.data && idSet.has(String((n.data as any).id)));
-          const removeRows = nodes.map((n) => n.data!).filter(Boolean) as any[];
-          api.applyTransaction({ remove: removeRows });
-        }
-      } else {
-        // SERVER-SIDE
-        const storeType = (this.mergedGridOptions as any)?.serverSideStoreType ?? 'partial';
-        const isFullStore = storeType === 'full';
-        const canTx = isFullStore && typeof (api as any).applyServerSideTransaction === 'function';
-
-        if (canTx && hasGetRowId) {
-          // SSRM FULL STORE: local remove; if grouped, tx per route
-          const selectedNodes = api.getSelectedNodes().filter((n) => n.data && idSet.has(String((n.data as any).id)));
-          const buckets = this.bucketByRoute(selectedNodes);
-
-          if (buckets.size) {
-            for (const [routeStr, list] of buckets) {
-              (api as any).applyServerSideTransaction({
-                route: JSON.parse(routeStr),
-                remove: list.map((d) => ({ id: (d as any).id })),
-              });
-            }
-          } else {
-            (api as any).applyServerSideTransaction({ remove: ids.map((id) => ({ id })) });
-          }
-        } else {
-          // SSRM PARTIAL STORE (or API module not registered): refresh from server
-          (api as any).refreshServerSide?.({ purge: true });
-        }
-      }
-
-      api.deselectAll?.();
-
-      this.alertSvc.showSuccess('Selected rows were successfully deleted.');
-    } finally {
-      api.setGridOption('loading', false);
-    }
   }
 
   /** Triggers the import CSV flow (placeholder only). */
   protected doImportCSV() {
-    this.importCSV.emit('');
+    emitImportCsv(this.importCSV);
   }
 
   /** Actually performs export via AG Grid. */
@@ -384,7 +287,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     try {
       this.api?.setGridOption('loading', true);
       if (this.rowModelType() === 'clientSide') {
-        const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() });
+        const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
         this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
       } else {
         (this.api as any).refreshServerSide?.({ purge: true });
@@ -396,16 +299,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     }
   }
 
-  /** Compares two tag arrays */
-  protected tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return tagsA?.toString().localeCompare(tagsB?.toString());
-  }
-
-  /** Turns tag array into string */
-  protected tagsToString(tags: string[]): string {
-    return !tags || !tags[0] ? '' : tags.toString();
-  }
-
   /** Helper: applies single-field patch */
   private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
     return this.gridSvc
@@ -414,62 +307,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       .catch(() => false);
   }
 
-  /** SSRM helper: bucket selected nodes by their route (for grouped stores) */
-  private bucketByRoute(nodes: any[]): Map<string, any[]> {
-    const map = new Map<string, any[]>();
-    for (const n of nodes) {
-      const routeArr = (n as any).route ?? [];
-      const key = JSON.stringify(routeArr);
-      const list = map.get(key) ?? [];
-      if (n.data) list.push(n.data);
-      map.set(key, list);
-    }
-    return map;
-  }
-
-  /** Helper: returns single-field payload from row */
-  private createPayload(row: Partial<T>, key: keyof T): Partial<T> {
-    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
-  }
-
-  /** Internal helper: merges base and input grid options callbacks */
-  private getCallbacksGridOptions(): GridOptions<Partial<T>> {
-    return {
-      context: this,
-      onCellValueChanged: this.onCellValueChanged.bind(this),
-      onCellMouseOver: this.onCellMouseOver.bind(this),
-      onSelectionChanged: this.onSelectionChanged.bind(this),
-      onUndoEnded: this.updateUndoSizes,
-      onRedoEnded: this.updateUndoSizes,
-      onRowDataUpdated: this.updateUndoSizes,
-      onRowValueChanged: this.updateUndoSizes,
-    } as GridOptions<Partial<T>>;
-  }
-
-  /** Helper: filters rows eligible for deletion */
-  private getDeletableRows(rows: (Partial<T> & { id: string })[]): (Partial<T> & { id: string })[] {
-    return rows.filter((row) => !('deletable' in row) || row.deletable !== false);
-  }
-
-  /** Helper: checks deletion rules and shows errors */
-  private handleDeleteErrors(rows: Partial<T>[], deletableRows: Partial<T>[]) {
-    if (!rows.length) {
-      this.alertSvc.showError('Please select at least one row to delete.');
-      return true;
-    }
-    if (deletableRows.length !== rows.length) {
-      this.alertSvc.showError('Some rows cannot be deleted because these are system values.');
-    }
-    return deletableRows.length === 0;
-  }
-
-  /** Navigates to route if valid */
-  private navigateIfValid(path: string | null | undefined): void {
-    if (path) this.router.navigate([path], { relativeTo: this.route });
-  }
-
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
-    return 'deletable' in row && row.deletable === false && key === 'name';
+    return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
   }
 }
