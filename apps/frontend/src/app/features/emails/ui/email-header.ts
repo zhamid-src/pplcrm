@@ -2,12 +2,12 @@
  * @file Component displaying header information for an email.
  */
 import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 import { Swap } from '@uxcommon/swap';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailAssign } from './email-assign';
 import { EmailType } from 'common/src/lib/models';
 
@@ -22,11 +22,11 @@ export class EmailHeader {
   /** Store is exposed for template bindings controlling expanded body state. */
   public store = inject(EmailsStore);
 
+  /** Whether the email body is currently expanded to take over the window (except sidebar). */
+  public isExpanded = this.store.isBodyExpanded;
+
   /** Get header data from store */
-  protected headerData = computed(() => {
-    const email = this.email();
-    return this.store.getEmailHeaderById(email?.id)();
-  });
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
   protected isFavourite = signal(false);
 
@@ -36,7 +36,7 @@ export class EmailHeader {
   constructor() {
     effect(() => {
       const email = this.email();
-      console.log(email);
+
       this.isFavourite.set(email.is_favourite);
       this.isClosed.set(email.status === 'closed' || email.status === 'resolved');
     });
@@ -52,6 +52,18 @@ export class EmailHeader {
    */
   protected expand() {
     this.store.toggleBodyExpanded();
+  }
+
+  /**
+   * Handle Escape key to collapse the expanded view when active.
+   */
+  @HostListener('document:keydown', ['$event'])
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
   }
 
   /** Get all recipients combined */

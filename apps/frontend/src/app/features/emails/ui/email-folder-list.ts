@@ -7,7 +7,7 @@ import { Icon } from '@uxcommon/icons/icon';
 import { IconName } from '@uxcommon/icons/icons.index.new';
 
 import { Swap } from '../../../uxcommon/swap';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailFolderType } from 'common/src/lib/models';
 
 @Component({

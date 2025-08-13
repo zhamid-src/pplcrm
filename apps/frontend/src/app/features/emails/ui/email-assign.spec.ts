@@ -6,13 +6,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailAssign } from './email-assign';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 // Mock child components
 @Component({
   selector: 'pc-icon',
-  template: '<span>{{name}}</span>'
+  template: '<span>{{name}}</span>',
 })
 class MockIcon {
   @Input() name: string = '';
@@ -33,28 +33,23 @@ describe('EmailAssign', () => {
     to_email: 'recipient@example.com',
     subject: 'Test Email',
     preview: 'Test preview',
-    assigned_to: undefined
+    assigned_to: undefined,
   };
 
   const mockAssignedEmail: EmailType = {
     ...mockEmail,
     id: '2',
-    assigned_to: 'user123'
+    assigned_to: 'user123',
   };
 
   beforeEach(async () => {
     const mockStore = {
-      assignEmailToUser: jest.fn().mockResolvedValue(undefined)
+      assignEmailToUser: jest.fn().mockResolvedValue(undefined),
     };
 
     await TestBed.configureTestingModule({
-      declarations: [
-        EmailAssign,
-        MockIcon
-      ],
-      providers: [
-        { provide: EmailsStore, useValue: mockStore }
-      ]
+      declarations: [EmailAssign, MockIcon],
+      providers: [{ provide: EmailsStore, useValue: mockStore }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EmailAssign);
@@ -188,14 +183,14 @@ describe('EmailAssign', () => {
   describe('Edge Cases', () => {
     it('should handle null email gracefully', () => {
       component.email = signal(null as any);
-      
+
       expect(() => fixture.detectChanges()).not.toThrow();
     });
 
     it('should handle email without id', () => {
       const emailWithoutId = { ...mockEmail, id: undefined } as any;
       component.email = signal(emailWithoutId);
-      
+
       expect(() => fixture.detectChanges()).not.toThrow();
     });
 

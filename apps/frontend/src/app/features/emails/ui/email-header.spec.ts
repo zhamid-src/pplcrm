@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailHeader } from './email-header';
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 // Mock child components

@@ -3,7 +3,7 @@
  */
 import { Component, inject } from '@angular/core';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';
@@ -22,6 +22,8 @@ export class EmailClient {
   // Use store's computed properties
   public selectedEmail = this.store.currentSelectedEmail;
   public selectedFolder = this.store.currentSelectedFolderId;
+  /** Whether the email body is expanded to fill the window (except sidebar). */
+  public isBodyExpanded = this.store.isBodyExpanded;
 
   constructor() {
     /**

@@ -4,7 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 
-import { EmailsStore } from '../services/email-store';
+import { EmailsStore } from '../services/store/emailstore';
 import { EmailBody } from './email-body';
 import { EmailComments } from './email-comments';
 import { EmailHeader } from './email-header';
