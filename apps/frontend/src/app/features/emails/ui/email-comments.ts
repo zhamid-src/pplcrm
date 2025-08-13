@@ -66,9 +66,9 @@ export class EmailComments {
     const email = this.email();
     if (!email?.id || !this.newComment) return;
 
-    //TODO: author_id shouldn't be hardcoded
-    // Ideally, this should come from the current user context
-    const created = await this.store.addComment(email.id, '1', this.newComment);
+    const author_id = (await this.auth.getCurrentUser()).id;
+
+    const created = await this.store.addComment(email.id, author_id, this.newComment);
     this.comments.update((c) => [...c, created ?? { comment: this.newComment }]);
     this.newComment = '';
   }

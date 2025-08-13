@@ -44,6 +44,17 @@ export class AuthService extends TRPCService<'authusers'> {
   private user = signal<IAuthUser | null>(null);
 
   /**
+   * Fetches the current authenticated user from the backend and updates local state.
+   *
+   * @returns The user object if authenticated, otherwise `null`.
+   */
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  /**
    * Returns the currently authenticated user (from local state).
    *
    * @returns The authenticated user or `null` if not signed in.
@@ -127,17 +138,6 @@ export class AuthService extends TRPCService<'authusers'> {
   public async signUp(input: signUpInputType) {
     const token = await this.api.auth.signUp.mutate(input);
     return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  /**
-   * Fetches the current authenticated user from the backend and updates local state.
-   *
-   * @returns The user object if authenticated, otherwise `null`.
-   */
-  private async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
   }
 
   /**
