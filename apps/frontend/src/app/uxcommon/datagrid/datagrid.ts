@@ -277,8 +277,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       if (!deleted) {
         this.alertSvc.showError('Could not delete. Please try again later.');
       } else {
-        this.api?.applyTransaction({ remove: deletableRows });
-        this.showUndoSuccess();
+        if (this.rowModelType() === 'clientSide') {
+          this.api?.applyTransaction({ remove: deletableRows });
+        } else {
+          // For server-side, we need to use the API to remove rows
+          this.api?.applyServerSideTransaction({ remove: deletableRows });
+        }
+        this.alertSvc.showSuccess('Selected rows were successfully deleted.');
       }
     } finally {
       this.api?.setGridOption('loading', false);
@@ -351,11 +356,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     return !tags || !tags[0] ? '' : tags.toString();
   }
 
-  /** Undoes a delete (not implemented yet). */
-  protected async undoDeleteRows() {
-    // Placeholder
-  }
-
   /** Helper: applies single-field patch */
   private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
     return this.gridSvc
@@ -408,16 +408,5 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
     return 'deletable' in row && row.deletable === false && key === 'name';
-  }
-
-  /** Internal helper: shows undo snackbar after delete */
-  private showUndoSuccess() {
-    this.alertSvc.show({
-      text: 'Deleted successfully. Click Undo to undo delete',
-      type: 'success',
-      OKBtn: 'Undo',
-      duration: 3500,
-      OKBtnCallback: () => this.undoDeleteRows(),
-    });
   }
 }
