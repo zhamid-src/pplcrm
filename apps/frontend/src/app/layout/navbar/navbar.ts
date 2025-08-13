@@ -3,8 +3,9 @@
  */
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
-import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
 import { Icon } from '@icons/icon';
+import { AnimateIfDirective } from '@uxcommon/animate-if.directive';
+import { FullScreenService } from '@uxcommon/fullscreen.service';
 import { Swap } from '@uxcommon/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -24,6 +25,8 @@ export class Navbar {
   private readonly auth = inject(AuthService);
   private readonly searchSvc = inject(SearchService);
   private readonly sideBarSvc = inject(SidebarService);
+
+  private fullscreen = inject(FullScreenService);
 
   /** Indicates whether the search input is visible or not */
   protected readonly searchBarVisible = signal(false);
@@ -84,6 +87,10 @@ export class Navbar {
     this.searchBarVisible.set(false);
   }
 
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
   /**
    * Returns whether the mobile sidebar is currently open.
    *
@@ -133,6 +140,11 @@ export class Navbar {
    */
   protected signOut(): void {
     this.auth.signOut();
+  }
+
+  protected toggleFullScreen(): void {
+    console.log('Toggling fullscreen mode');
+    this.fullscreen.toggleFullScreen();
   }
 
   /**

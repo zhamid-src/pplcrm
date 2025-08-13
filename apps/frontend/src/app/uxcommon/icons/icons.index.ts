@@ -1,4 +1,8 @@
-// apps/frontend/src/app/uxcommon/icons/icons.index.ts
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons
+/*
+/****************************************************** */
 export type IconName = keyof typeof icons;
 
 export function loadIconSvg(name: IconName): Promise<string> {
@@ -73,8 +77,12 @@ export const icons = {
   'at-symbol': 'assets/icons/at-symbol.svg',
   envelope: 'assets/icons/envelope.svg',
   'inbox-stack': 'assets/icons/inbox-stack.svg',
+  inbox: 'assets/icons/inbox.svg',
   megaphone: 'assets/icons/megaphone.svg',
   'paper-airplane': 'assets/icons/paper-airplane.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
 
   /* -------------------- Time & Date -------------------- */
   clock: 'assets/icons/clock.svg',

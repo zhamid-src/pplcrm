@@ -58,13 +58,14 @@ export class EmailRepo extends BaseRepository<'emails'> {
     for (const row of regular) counts[row.folder_id] = Number(row.count);
 
     // 2) Virtual folder counts via the same predicate builder (no duplicated logic)
-    const [allOpenPred, closedPred, assignedPred] = await Promise.all([
+    const [allOpenPred, closedPred, assignedPred, unAssignedPred] = await Promise.all([
       this.buildFolderPredicate(SPECIAL.ALL_OPEN, user_id),
       this.buildFolderPredicate(SPECIAL.CLOSED, user_id),
       this.buildFolderPredicate(SPECIAL.ASSIGNED_TO_ME, user_id),
+      this.buildFolderPredicate(SPECIAL.UNASSIGNED, user_id),
     ]);
 
-    const [allOpenCount, closedCount, assignedCount] = await Promise.all([
+    const [allOpenCount, closedCount, assignedCount, unAssignedCount] = await Promise.all([
       this.getSelect()
         .select((eb) => eb.fn.count('id').as('count'))
         .where('tenant_id', '=', tenant_id)
@@ -80,11 +81,17 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .where('tenant_id', '=', tenant_id)
         .where((eb) => assignedPred(eb))
         .executeTakeFirst(),
+      this.getSelect()
+        .select((eb) => eb.fn.count('id').as('count'))
+        .where('tenant_id', '=', tenant_id)
+        .where((eb) => unAssignedPred(eb))
+        .executeTakeFirst(),
     ]);
 
     counts[SPECIAL.ALL_OPEN] = Number(allOpenCount?.count || 0);
     counts[SPECIAL.CLOSED] = Number(closedCount?.count || 0);
     counts[SPECIAL.ASSIGNED_TO_ME] = Number(assignedCount?.count || 0);
+    counts[SPECIAL.UNASSIGNED] = Number(unAssignedCount?.count || 0);
 
     // Optional: debug
     // console.log('Final folder counts:', counts);
@@ -178,6 +185,14 @@ export class EmailRepo extends BaseRepository<'emails'> {
       return (eb: any) => eb('assigned_to', '=', user_id);
     }
 
+    if (folder_id === SPECIAL.UNASSIGNED) {
+      if (hasStatus) {
+        return (eb: any) => eb.and([eb('assigned_to', 'is distinct from', user_id), eb('status', '=', 'open')]);
+      }
+      // If no status column, just "assigned to me"
+      return (eb: any) => eb('assigned_to', 'is distinct from', user_id);
+    }
+
     // Real folder
     return (eb: any) => eb('folder_id', '=', folder_id);
   }
@@ -207,4 +222,5 @@ const SPECIAL = {
   ALL_OPEN: '1',
   CLOSED: '2',
   ASSIGNED_TO_ME: '6',
+  UNASSIGNED: '8',
 } as const;
