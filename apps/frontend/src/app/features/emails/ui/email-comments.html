@@ -1,15 +1,32 @@
 <div class="w-full p-2">
   @for (comment of comments(); track comment.id) {
-  <span>{{ getUserName(comment.author_id) }} left a comment ‣ </span>
+  <div class="mb-3">
+    <div class="flex items-center gap-2 text-sm">
+      <span class="font-medium">{{ getUserName(comment.author_id) }}</span>
+      <span>left a comment ‣</span>
+      @if (comment.created_at) {
+      <span class="text-xs text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
+        {{ comment.created_at | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+      </span>
+      }
+      <span class="flex-1"></span>
 
-  @if (comment.created_at) {
-  <!-- Long style ("2 minutes ago"), absolute after 7 days -->
-  <span class="text-xs text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
-    {{ comment.created_at | timeAgo:{ thresholdDays: 7, style: 'long' } }}
-  </span>
+      <!-- Delete button (shown if allowed) -->
+      @if (canDelete(comment)) {
+      <pc-icon
+        name="trash"
+        (click)="confirmDelete(comment)"
+        [size]="4"
+        class="tooltip cursor-pointer hover:text-error"
+        [attr.data-tip]="'Delete comment'"
+      ></pc-icon>
+      }
+    </div>
 
-  <div class="mb-2 rounded bg-gray-100 p-2">{{ comment.comment }}</div>
-  } }
+    <div class="mt-1 rounded bg-gray-100 p-2 whitespace-pre-line">{{ comment.comment }}</div>
+  </div>
+  }
+
   <textarea
     [(ngModel)]="newComment"
     placeholder="Add a comment"
@@ -17,3 +34,18 @@
   ></textarea>
   <button (click)="addComment()" class="btn btn-sm btn-primary">Add Comment</button>
 </div>
+
+<dialog id="confirmDelete" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Are you sure?</h3>
+    <p class="pt-4 pb-6 font-light">The comment will be deleted permanantly. You cannot undo this.</p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-error" (click)="deleteComment()">
+        <pc-icon name="trash" />
+        Yes
+      </button>
+      <button class="btn"><pc-icon name="x-circle" />Cancel</button>
+    </form>
+  </div>
+</dialog>

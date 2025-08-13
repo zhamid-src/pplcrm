@@ -31,9 +31,6 @@ export class EmailsStore {
   /** Selected folder id */
   public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
 
-  /** Whether the email body is expanded to fill the window */
-  public readonly isBodyExpanded = this.state.isBodyExpanded;
-
   /** Emails in currently selected folder */
   public readonly emailsInSelectedFolder = computed(() => {
     const fid = this.folders.currentSelectedFolderId();
@@ -45,6 +42,9 @@ export class EmailsStore {
   public readonly getEmailBodyById = this.cache.getEmailBodyById;
   public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
 
+  /** Whether the email body is expanded to fill the window */
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
   // ----------------- Mutations (actions) -----------------
   public addComment(emailId: EmailId, authorId: string, commentText: string) {
     return this.actions.addComment(emailId, authorId, commentText);
@@ -52,6 +52,10 @@ export class EmailsStore {
 
   public assignEmailToUser(emailId: EmailId, userId: string | null) {
     return this.actions.assignEmailToUser(emailId, userId);
+  }
+
+  public deleteComment(emailId: EmailId, commentId: string | number) {
+    return this.actions.deleteComment(emailId, commentId);
   }
 
   // ----------------- Loads -----------------
@@ -88,16 +92,16 @@ export class EmailsStore {
     this.folders.selectFolder(folder);
   }
 
+  /** Toggle the email body expanded UI state */
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
+  }
+
   public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
     return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
   }
 
   public updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved') {
     return this.actions.updateEmailStatus(emailId, status);
-  }
-
-  /** Toggle the email body expanded UI state */
-  public toggleBodyExpanded(): void {
-    this.state.toggleBodyExpanded();
   }
 }

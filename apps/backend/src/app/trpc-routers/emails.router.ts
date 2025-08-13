@@ -27,6 +27,12 @@ function assign() {
     .mutation(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id));
 }
 
+function deleteComment() {
+  return authProcedure
+    .input(z.object({ email_id: z.string(), comment_id: z.string() }))
+    .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
+}
+
 function getEmailBody() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
 }
@@ -100,6 +106,7 @@ export const EmailsRouter = router({
   getEmailHeader: getEmailHeader(),
   getEmailWithHeaders: getEmailWithHeaders(),
   addComment: addComment(),
+  deleteComment: deleteComment(),
   assign: assign(),
   setFavourite: setFavourite(),
   setStatus: setStatus(),
