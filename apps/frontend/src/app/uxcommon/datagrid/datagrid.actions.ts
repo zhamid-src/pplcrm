@@ -1,28 +1,35 @@
 import type { EventEmitter } from '@angular/core';
-import type { GridApi } from 'ag-grid-community';
-import type { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 import type { AlertService } from '@uxcommon/alerts/alert-service';
+import type { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
+
+import type { GridApi } from 'ag-grid-community';
+
 import type { AbstractAPIService } from '../../abstract-api.service';
+import type { DataGridConfig } from './datagrid.tokens';
 import { bucketByRoute } from './datagrid.utils';
 
 type DeleteCtx = {
-  dialogs: ConfirmDialogService;
   alertSvc: AlertService;
   api: GridApi | undefined;
-  getSelectedRows: () => (Partial<any> & { id: string })[];
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
   gridSvc: AbstractAPIService<any, any>;
-  rowModelType: 'clientSide' | 'serverSide';
   mergedGridOptions: any;
+  rowModelType: 'clientSide' | 'serverSide';
+
+  getSelectedRows: () => (Partial<any> & { id: string })[];
 };
 
 export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+  const { messages } = ctx.config;
+
   const ok = await ctx.dialogs.confirm({
-    title: 'Are you sure?',
-    message: 'The selected rows will be deleted permanently. You cannot undo this.',
-    variant: 'danger',
-    icon: 'trash',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
+    title: messages.deleteConfirmTitle,
+    message: messages.deleteConfirmMessage,
+    variant: messages.deleteConfirmVariant,
+    icon: messages.deleteConfirmIcon,
+    confirmText: messages.deleteConfirmText,
+    cancelText: messages.deleteCancelText,
     allowBackdropClose: false,
   });
   if (!ok) return;
@@ -32,13 +39,13 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
 
   const rows = ctx.getSelectedRows();
   if (!rows.length) {
-    ctx.alertSvc.showError('Please select at least one row to delete.');
+    ctx.alertSvc.showError(messages.deleteNoneSelected);
     return;
   }
 
   const deletableRows = rows.filter((row) => !('deletable' in row) || (row as any).deletable !== false);
   if (deletableRows.length !== rows.length) {
-    ctx.alertSvc.showError('Some rows cannot be deleted because these are system values.');
+    ctx.alertSvc.showError(messages.deleteSystemValues);
   }
   if (!deletableRows.length) return;
 
@@ -47,7 +54,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     const ids = deletableRows.map((r) => r.id);
     const ok2 = await ctx.gridSvc.deleteMany(ids);
     if (!ok2) {
-      ctx.alertSvc.showError('Could not delete. Please try again later.');
+      ctx.alertSvc.showError(messages.deleteFailed);
       return;
     }
 
@@ -56,7 +63,6 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     const hasGetRowId = !!ctx.mergedGridOptions?.getRowId;
 
     if (isClient) {
-      // CLIENT-SIDE: remove by id (preferred) or by object refs
       if (hasGetRowId) {
         api.applyTransaction({ remove: ids.map((id) => ({ id })) as any[] });
       } else {
@@ -65,7 +71,6 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
         api.applyTransaction({ remove: removeRows });
       }
     } else {
-      // SERVER-SIDE
       const storeType = ctx.mergedGridOptions?.serverSideStoreType ?? 'partial';
       const isFullStore = storeType === 'full';
       const canTx = isFullStore && typeof (api as any).applyServerSideTransaction === 'function';
@@ -90,7 +95,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     }
 
     api.deselectAll?.();
-    ctx.alertSvc.showSuccess('Selected rows were successfully deleted.');
+    ctx.alertSvc.showSuccess(messages.deleteSuccess);
   } finally {
     api.setGridOption('loading', false);
   }
@@ -100,15 +105,17 @@ export async function doExportCsv(deps: {
   dialogs: ConfirmDialogService;
   api: GridApi | undefined;
   alertSvc: AlertService;
+  config: DataGridConfig;
 }) {
+  const { messages } = deps.config;
+
   const ok = await deps.dialogs.confirm({
-    title: 'Export limitation',
-    message:
-      'This only exports the columns visible in the grid. If you’d like to export everything, use the Export component from the sidebar.',
+    title: messages.exportTitle,
+    message: messages.exportMessage,
     variant: 'info',
-    icon: 'arrow-down-tray',
-    confirmText: 'Accept',
-    cancelText: 'Cancel',
+    icon: messages.exportIcon,
+    confirmText: messages.exportConfirmText,
+    cancelText: messages.exportCancelText,
   });
   if (!ok) return;
 
@@ -117,7 +124,7 @@ export async function doExportCsv(deps: {
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
-    deps.alertSvc.showError('Export failed. Please try again.');
+    deps.alertSvc.showError(messages.exportFailed);
   }
 }
 
