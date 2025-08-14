@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ViewChild, input, signal } from '@angular/core';
+import { Component, ViewChild, input, output, signal } from '@angular/core';
 import { PPlCrmInput } from '@uxcommon/input';
 
 @Component({
@@ -18,6 +18,11 @@ export class AutoComplete {
   protected hideAutoComplete = true;
 
   /**
+   * Emits the selected value when a user selects or types something meaningful.
+   */
+  public readonly valueChange = output<string>();
+
+  /**
    * A filtering service that provides suggestions based on user input.
    * Must implement a `filter()` method that returns a list of matches.
    */
@@ -28,11 +33,6 @@ export class AutoComplete {
    * The placeholder text for the input element.
    */
   public placeholder = input('');
-
-  /**
-   * Emits the selected value when a user selects or types something meaningful.
-   */
-  @Output() public valueChange = new EventEmitter<string>();
 
   /**
    * Shows the autocomplete list with matches based on the provided key.

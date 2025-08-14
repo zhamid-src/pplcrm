@@ -1,4 +1,3 @@
-import type { EventEmitter } from '@angular/core';
 import type { AlertService } from '@uxcommon/alerts/alert-service';
 import type { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 
@@ -126,8 +125,4 @@ export async function doExportCsv(deps: {
     console.error(e);
     deps.alertSvc.showError(messages.exportFailed);
   }
-}
-
-export function emitImportCsv(emitter: EventEmitter<string>) {
-  emitter.emit('');
 }

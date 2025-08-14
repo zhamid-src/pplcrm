@@ -1,9 +1,10 @@
+//tsco: ignore
 /**
  * @fileoverview Reusable input component with Google Places integration and advanced features.
  * Provides a styled input field with optional icon, debounced value changes, and Google Places autocomplete.
  */
 import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
-import { Component, EventEmitter, Output, ViewChild, WritableSignal, input, signal } from '@angular/core';
+import { Component, ViewChild, WritableSignal, input, output, signal } from '@angular/core';
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
@@ -62,6 +63,24 @@ export class PPlCrmInput {
   /** Tracks the last emitted value to prevent duplicate emissions */
   private lastEmittedValue = '';
 
+  // =============================================================================
+  // PRIVATE METHODS
+  // =============================================================================
+
+  /** Debounce time in milliseconds for value change emissions (default: 250ms) */
+  public debounceTime = input<number>(250);
+
+  /**
+   * Debounced function that emits value changes only when the value actually changes.
+   * Prevents duplicate emissions and reduces unnecessary processing.
+   */
+  private emitValueChange = debounce((value: string) => {
+    if (value !== this.lastEmittedValue) {
+      this.lastEmittedValue = value;
+      this.valueChange?.emit(value);
+    }
+  }, this.debounceTime());
+
   /**
    * Tailwind CSS classes for consistent input styling across the application.
    * Includes focus states, validation states, and disabled states.
@@ -88,11 +107,31 @@ export class PPlCrmInput {
   };
 
   // =============================================================================
-  // COMPONENT INPUTS
+  // COMPONENT OUTPUTS
   // =============================================================================
 
-  /** Debounce time in milliseconds for value change emissions (default: 250ms) */
-  public debounceTime = input<number>(250);
+  /** Emitted when a Google Places address is selected */
+  public readonly googlePlacesAddressChange = output<google.maps.places.PlaceResult>();
+
+  /** Emitted when the input gains focus */
+  public readonly gotFocus = output();
+
+  /** Emitted when the input loses focus */
+  public readonly lostFocus = output();
+
+  /** Emitted when the input value changes (debounced) */
+  public readonly valueChange = output<string>();
+
+  // =============================================================================
+  // COMPONENT PROPERTIES
+  // =============================================================================
+
+  /** ViewChild reference to the input element for direct access */
+  @ViewChild('input') public input: NgModel | undefined;
+
+  // =============================================================================
+  // COMPONENT INPUTS
+  // =============================================================================
 
   /** Whether the input is disabled */
   public disabled = input<boolean>(false);
@@ -103,52 +142,14 @@ export class PPlCrmInput {
   /** Optional icon to display at the start of the input */
   public icon = input<IconName | null>(null);
 
+  /** Form control for reactive forms integration */
+  public inputControl = new FormControl('');
+
   /** Placeholder text to display when input is empty */
   public placeholder = input<string>('');
 
   /** HTML input type (text, email, password, etc.) */
   public type = input<string>('text');
-
-  // =============================================================================
-  // COMPONENT OUTPUTS
-  // =============================================================================
-
-  /** Emitted when a Google Places address is selected */
-  @Output() public googlePlacesAddressChange = new EventEmitter<google.maps.places.PlaceResult>();
-
-  /** Emitted when the input gains focus */
-  @Output() public gotFocus = new EventEmitter();
-
-  /** Emitted when the input loses focus */
-  @Output() public lostFocus = new EventEmitter();
-
-  /** Emitted when the input value changes (debounced) */
-  @Output() public valueChange = new EventEmitter<string>();
-
-  // =============================================================================
-  // COMPONENT PROPERTIES
-  // =============================================================================
-
-  /** ViewChild reference to the input element for direct access */
-  @ViewChild('input') public input: NgModel | undefined;
-
-  /** Form control for reactive forms integration */
-  public inputControl = new FormControl('');
-
-  // =============================================================================
-  // PRIVATE METHODS
-  // =============================================================================
-
-  /**
-   * Debounced function that emits value changes only when the value actually changes.
-   * Prevents duplicate emissions and reduces unnecessary processing.
-   */
-  private emitValueChange = debounce((value: string) => {
-    if (value !== this.lastEmittedValue) {
-      this.lastEmittedValue = value;
-      this.valueChange?.emit(value);
-    }
-  }, this.debounceTime());
 
   // =============================================================================
   // PROTECTED GETTERS

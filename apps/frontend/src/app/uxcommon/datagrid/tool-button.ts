@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { IconName } from '@icons/icons.index';
 
@@ -21,7 +21,8 @@ import { IconName } from '@icons/icons.index';
   imports: [Icon],
 })
 export class GridActionComponent {
-  @Output() public action = new EventEmitter();
+  public readonly action = output<void>();
+
   public enabled = input(true);
   public icon = input.required<IconName>();
   public tip = input.required<string>();

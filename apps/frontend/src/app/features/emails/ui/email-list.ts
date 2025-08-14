@@ -2,7 +2,7 @@
  * @file Component displaying emails for a selected folder.
  */
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, EventEmitter, Output, effect, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, output } from '@angular/core';
 
 import { EmailsStore } from '../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
@@ -18,7 +18,7 @@ export class EmailList {
   private readonly store = inject(EmailsStore);
 
   /** Emit to parent so it can set selection in the store */
-  @Output() public readonly emailSelected = new EventEmitter<EmailType>();
+  public readonly emailSelected = output<EmailType>();
 
   /** Emails in the currently selected folder (reactive) */
   public readonly emails = this.store.emailsInSelectedFolder;

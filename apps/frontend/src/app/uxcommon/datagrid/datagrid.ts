@@ -1,14 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  EventEmitter,
-  OnInit,
-  Output,
-  effect,
-  inject,
-  input,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, effect, inject, input, output, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
@@ -31,7 +21,7 @@ import {
 } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../abstract-api.service';
-import { confirmDeleteAndRun, doExportCsv, emitImportCsv } from './datagrid.actions';
+import { confirmDeleteAndRun, doExportCsv } from './datagrid.actions';
 import { buildGridCallbacks } from './datagrid.callbacks';
 import { createServerSideDatasource } from './datagrid.datasource';
 import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
@@ -83,6 +73,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected gridVisible = signal(false);
   protected mergedGridOptions: Partial<GridOptions> = {};
 
+  public readonly importCSV = output<string>();
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Inputs & Outputs
@@ -94,7 +85,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public gridOptions = input<GridOptions<Partial<T>>>({});
-  @Output() public importCSV = new EventEmitter<string>();
   public limitToTags = input<string[]>([]);
   public plusIcon = input<IconName>('plus');
 
@@ -246,9 +236,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   }
 
   /** Triggers the import CSV flow (placeholder only). */
-  protected doImportCSV() {
-    emitImportCsv(this.importCSV);
-  }
+  protected doImportCSV() {}
 
   /** Actually performs export via AG Grid. */
   protected exportToCSV() {

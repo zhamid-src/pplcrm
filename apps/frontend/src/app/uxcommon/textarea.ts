@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
+import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 
 /**
@@ -19,6 +19,11 @@ export class TextArea implements OnInit {
   protected form!: FormGroup;
 
   /**
+   * Emits the current value of the textarea when the user types.
+   */
+  public readonly valueChange = output<string>();
+
+  /**
    * The name of the form control in the parent form group.
    */
   public control = input.required<string>();
@@ -33,11 +38,6 @@ export class TextArea implements OnInit {
    * Placeholder text to display when the textarea is empty.
    */
   public placeholder = input<string>('');
-
-  /**
-   * Emits the current value of the textarea when the user types.
-   */
-  @Output() public valueChange = new EventEmitter<string>();
 
   /**
    * Initializes the form group from the parent context.

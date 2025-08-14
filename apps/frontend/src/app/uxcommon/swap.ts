@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { IconName } from '@icons/icons.index';
@@ -14,6 +14,12 @@ import { IconName } from '@icons/icons.index';
 })
 export class Swap {
   /**
+   * Event emitted when the component is clicked.
+   * Use this to handle toggle logic externally.
+   */
+  public readonly clickEvent = output<void>();
+
+  /**
    * The animation to apply when swapping icons.
    * Can be either 'flip' or 'rotate'.
    * @default 'rotate'
@@ -24,12 +30,6 @@ export class Swap {
    * Indicates whether the toggle is currently checked/on.
    */
   public checked = input<boolean>(false);
-
-  /**
-   * Event emitted when the component is clicked.
-   * Use this to handle toggle logic externally.
-   */
-  @Output() public clickEvent = new EventEmitter();
   public size = input(6);
 
   /**
