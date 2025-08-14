@@ -18,17 +18,27 @@
         aria-label="Reply"
         (click)="handleReply()"
       >
-        <pc-icon [size]="4" name="arrow-uturn-left"></pc-icon>
+        <pc-icon name="reply" [size]="4"></pc-icon>
       </button>
 
       <!-- Reply All -->
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="Reply All"
+        aria-label="Reply All"
+        (click)="handleReplyAll()"
+      >
+        <pc-icon name="reply-all" [size]="4"></pc-icon>
+      </button>
+
+      <!-- Forward-->
       <button
         class="tooltip btn btn-ghost btn-circle btn-sm"
         data-tip="Forward"
         aria-label="Forward"
         (click)="handleForward()"
       >
-        <pc-icon [size]="4" name="arrow-uturn-right"></pc-icon>
+        <pc-icon name="reply" [size]="4" class="scale-x-[-1]"></pc-icon>
       </button>
 
       <!-- Star/Favorite -->
@@ -74,17 +84,17 @@
         </button>
         <ul class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
           <li>
-            <a (click)="handleForward()"><pc-icon name="arrow-uturn-right" [size]="4"></pc-icon> Forward</a>
+            <a (click)="handleForward()"><pc-icon [size]="4" name="reply" class="scale-x-[-1]"></pc-icon> Forward</a>
           </li>
           <li>
             <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
           </li>
           <li class="divider"></li>
           <li>
-            <a (click)="handleReply()"><pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Reply</a>
+            <a (click)="handleReply()"><pc-icon [size]="4" name="reply"></pc-icon> Reply</a>
           </li>
           <li>
-            <a (click)="handleReplyAll()"><pc-icon name="paper-airplane" [size]="4"></pc-icon> Reply All</a>
+            <a (click)="handleReplyAll()"><pc-icon [size]="4" name="reply-all"></pc-icon> Reply All</a>
           </li>
           <li>
             <a (click)="toggleFavourite()"
@@ -101,8 +111,12 @@
             <a (click)="handleDelete()"><pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete</a>
           </li>
           <li class="divider"></li>
-          <li><a>Print</a></li>
-          <li><a>Open in new</a></li>
+          <li>
+            <a><pc-icon [size]="4" name="print"></pc-icon>Print</a>
+          </li>
+          <li>
+            <a><pc-icon [size]="4" name="arrow-top-right-on-square"></pc-icon>Open in new</a>
+          </li>
         </ul>
       </div>
     </div>

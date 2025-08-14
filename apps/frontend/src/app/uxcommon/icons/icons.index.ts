@@ -40,6 +40,9 @@ export const icons = {
   'chevron-double-left': 'assets/icons/chevron-double-left.svg',
   'chevron-double-right': 'assets/icons/chevron-double-right.svg',
   'chevron-down': 'assets/icons/chevron-down.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  reply: 'assets/icons/reply.svg',
+  forward: 'assets/icons/forward.svg',
 
   /* -------------------- Status & Alerts -------------------- */
   'check-circle': 'assets/icons/check-circle.svg',
@@ -83,6 +86,7 @@ export const icons = {
   document: 'assets/icons/document.svg',
   'document-check': 'assets/icons/document-check.svg',
   'document-duplicate': 'assets/icons/document-duplicate.svg',
+  print: 'assets/icons/print.svg',
 
   /* -------------------- Time & Date -------------------- */
   clock: 'assets/icons/clock.svg',

@@ -2,6 +2,8 @@ import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
 
 import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 
+import { DEFAULT_DATA_GRID_CONFIG } from './datagrid.tokens';
+
 /**
  * Base grid configuration including default column definition,
  * initial grid state, and sidebar tool panel configuration.
@@ -95,8 +97,8 @@ export const defaultGridOptions: GridOptions = {
   enableFilterHandlers: true,
   pagination: true,
   //paginationAutoPageSize: true,
-  paginationPageSize: 10,
-  cacheBlockSize: 10,
+  paginationPageSize: DEFAULT_DATA_GRID_CONFIG.pageSize,
+  cacheBlockSize: DEFAULT_DATA_GRID_CONFIG.pageSize,
   rowSelection: {
     mode: 'multiRow',
     checkboxes: true,

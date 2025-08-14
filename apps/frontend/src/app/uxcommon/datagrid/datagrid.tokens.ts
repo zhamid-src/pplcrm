@@ -47,7 +47,7 @@ export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CO
 
 /** Default config used when no provider is registered */
 export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
-  pageSize: 10,
+  pageSize: 20,
   clientServerThreshold: 15,
   filterToolPanelId: 'filters-new',
   messages: {
