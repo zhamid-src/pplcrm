@@ -1,21 +1,20 @@
 <div class="p-2 space-y-3">
   @for (comment of comments(); track comment.id) {
   <div
-    class="chat"
-    [class.chat-start]="comment.author_id !== myUserId"
-    [class.chat-end]="comment.author_id === myUserId"
+    class="chat group"
+    [class.chat-start]="comment.author_id === myUserId"
+    [class.chat-end]="comment.author_id !== myUserId"
   >
-    <!-- (Optional) avatar: first letter fallback -->
+    <!-- avatar -->
     <div class="chat-image avatar">
       <div class="w-8 h-8 rounded-full bg-base-300 text-base-content !grid place-items-center leading-none">
         <span class="text-xs font-medium uppercase"> {{ (getUserName(comment.author_id) || '?') | slice:0:1 }} </span>
       </div>
     </div>
 
-    <!-- Header: name + time + delete icon -->
-    <div class="chat-header flex items-center gap-2 text-xs">
+    <!-- header -->
+    <div class="chat-header flex items-center text-xs">
       <span class="font-medium">{{ getUserName(comment.author_id) }}</span>
-      <span class="opacity-70">left a comment ‣</span>
 
       @if (comment.created_at) {
       <span class="text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
@@ -25,32 +24,25 @@
 
       <span class="flex-1"></span>
 
+      <!-- Options menu (hover-reveal on md+, always visible on mobile) -->
       @if (canDelete(comment)) {
       <pc-icon
-        name="trash"
-        [size]="4"
-        class="tooltip cursor-pointer hover:text-error"
-        [attr.data-tip]="'Delete comment'"
+        name="x-mark"
         (click)="confirmDelete(comment)"
-      >
-      </pc-icon>
+        [size]="4"
+        class="hidden group-hover:block hover:text-error ml-0 pl-0 cursor-pointer"
+      ></pc-icon>
       }
     </div>
 
-    <!-- Bubble -->
-    <div class="chat-bubble whitespace-pre-line" [class.chat-bubble-primary]="comment.author_id === myUserId">
-      {{ comment.comment }}
-    </div>
-    <!-- (Optional) footer
-      <div class="chat-footer opacity-70">Delivered</div>
-      -->
+    <!-- bubble -->
+    <div class="chat chat-bubble whitespace-pre-line">{{ comment.comment }}</div>
   </div>
   }
 
   <!-- Composer -->
   <div class="mt-4 form-control">
-    <textarea [(ngModel)]="newComment" placeholder="Add a comment" class="textarea textarea-bordered w-full">
-    </textarea>
+    <textarea [(ngModel)]="newComment" placeholder="Add a comment" class="textarea textarea-bordered w-full"></textarea>
     <div class="mt-2 flex items-center justify-end gap-2">
       <button type="button" class="btn btn-sm" (click)="newComment = ''">Clear</button>
       <button type="button" class="btn btn-sm btn-primary" (click)="addComment()">Add Comment</button>
