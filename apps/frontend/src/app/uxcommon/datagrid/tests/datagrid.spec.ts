@@ -1,4 +1,4 @@
-import * as exported from './datagrid';
+import * as exported from '../datagrid';
 
 describe('datagrid', () => {
   it('should be defined', () => {
