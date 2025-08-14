@@ -2,7 +2,7 @@
  * @file Component displaying list of email folders and handling selection.
  */
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, EventEmitter, OnInit, Output, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
 import type { IconName } from '@uxcommon/icons/icons.index.new';
 
@@ -25,7 +25,7 @@ export class EmailFolderList implements OnInit {
   protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
 
   /** Emits selected folder to parent component */
-  @Output() public readonly folderSelected = new EventEmitter<EmailFolderType>();
+  public readonly folderSelected = output<EmailFolderType>();
 
   /** List of folders from the store (reactive signal) */
   public readonly folders = this.store.allFolders;

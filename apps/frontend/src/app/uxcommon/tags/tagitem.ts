@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, Signal, input, signal } from '@angular/core';
+import { Component, Signal, input, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 
 /**
@@ -24,9 +24,10 @@ import { Icon } from '@icons/icon';
   templateUrl: './tagitem.html',
 })
 export class TagItem {
+  public readonly clickEvent = output<string>();
+  public readonly closeEvent = output<string>();
+
   public canDelete = input<boolean>(true);
-  @Output() public clickEvent = new EventEmitter<string>();
-  @Output() public closeEvent = new EventEmitter<string>();
   public invisible = input<Signal<boolean>>(signal(false));
   public name = input.required<string>();
 

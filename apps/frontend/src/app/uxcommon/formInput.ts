@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
+import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
@@ -33,6 +33,17 @@ export class FormInput implements OnInit {
   protected inputValue = '';
 
   /**
+   * Emits when the input loses focus.
+   * Sends the key, current value, and a boolean indicating if it changed.
+   */
+  public readonly lostFocus = output<{ key: string; value: string; changed: boolean }>();
+
+  /**
+   * Emits the updated value (debounced and sanitized).
+   */
+  public readonly valueChange = output<string>();
+
+  /**
    * The name of the FormControl inside the parent FormGroup.
    */
   public control = input.required<string>();
@@ -55,13 +66,6 @@ export class FormInput implements OnInit {
   public icon = input<IconName | null>(null);
 
   /**
-   * Emits when the input loses focus.
-   * Sends the key, current value, and a boolean indicating if it changed.
-   */
-  @Output()
-  public lostFocus = new EventEmitter<{ key: string; value: string; changed: boolean }>();
-
-  /**
    * Optional regex pattern that the input must match.
    */
   public pattern = input<string | RegExp>('.*');
@@ -75,12 +79,6 @@ export class FormInput implements OnInit {
    * The input type (e.g. 'text', 'email', 'number', etc.).
    */
   public type = input<string>('text');
-
-  /**
-   * Emits the updated value (debounced and sanitized).
-   */
-  @Output()
-  public valueChange = new EventEmitter<string>();
 
   public ngOnInit() {
     this.form = this.rootFormGroup.control;

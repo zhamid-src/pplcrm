@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
+import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -23,7 +23,7 @@ export class AddBtnRow implements OnInit {
    * The parent component should decide what to do next based on whether
    * the stay flag is set.
    */
-  @Output() public btn1Clicked = new EventEmitter<() => void>();
+  public readonly btn1Clicked = output<() => void>();
 
   /**
    * The icon to show on the first button.

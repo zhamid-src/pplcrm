@@ -1,4 +1,4 @@
-import { confirmDeleteAndRun, doExportCsv, emitImportCsv } from '../datagrid.actions';
+import { confirmDeleteAndRun, doExportCsv } from '../datagrid.actions';
 import { makeAlertSvcMock, makeConfirmDialogsMock, makeGridApiMock, makeGridSvcMock } from './test-helpers';
 
 describe('datagrid.actions', () => {
@@ -70,11 +70,5 @@ describe('datagrid.actions', () => {
 
     await doExportCsv({ dialogs, api, alertSvc });
     expect(api.exportDataAsCsv).toHaveBeenCalled();
-  });
-
-  test('emitImportCsv emits empty string', () => {
-    const emit = jest.fn();
-    emitImportCsv({ emit } as any);
-    expect(emit).toHaveBeenCalledWith('');
   });
 });

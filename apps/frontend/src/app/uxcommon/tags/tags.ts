@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject, input } from '@angular/core';
+import { Component, OnInit, inject, input, output } from '@angular/core';
 import { AutoComplete } from '@uxcommon/autocomplete';
 import { TagsService } from '@uxcommon/tags/tags-service';
 
@@ -11,6 +11,29 @@ import { TagItem } from './tagitem';
 })
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];
+
+  /**
+   * If the user adds a new tag then this event is emitted with the new tag.
+   */
+  public readonly tagAdded = output<string>();
+
+  /**
+   * If the user clicks on a tag then this event is emitted with the tag name.
+   * This component does not do anything else with this event.
+   */
+  public readonly tagClicked = output<string>();
+
+  /**
+   * If the user removes a tag then this event is emitted with the tag that was removed.
+   */
+  public readonly tagRemoved = output<string>();
+
+  /**
+   * If the list of tags changes then this event is emitted with the new list of tags.
+   * This can be used by the parent to update its list of tags or simply as a notification
+   * if the parent uses tags as a two-way binding.
+   */
+  public readonly tagsChange = output<string[]>();
 
   public animateRemoval = input<boolean>(true);
 
@@ -37,31 +60,8 @@ export class Tags implements OnInit {
    * allows users to add more tags. The default is false.
    */
   public readonly = input<boolean>(false);
-
-  /**
-   * If the user adds a new tag then this event is emitted with the new tag.
-   */
-  @Output() public tagAdded = new EventEmitter<string>();
-
-  /**
-   * If the user clicks on a tag then this event is emitted with the tag name.
-   * This component does not do anything else with this event.
-   */
-  @Output() public tagClicked = new EventEmitter<string>();
-
-  /**
-   * If the user removes a tag then this event is emitted with the tag that was removed.
-   */
-  @Output() public tagRemoved = new EventEmitter<string>();
   public tagSvc = inject(TagsService);
   public tags = input<string[]>([]);
-
-  /**
-   * If the list of tags changes then this event is emitted with the new list of tags.
-   * This can be used by the parent to update its list of tags or simply as a notification
-   * if the parent uses tags as a two-way binding.
-   */
-  @Output() public tagsChange = new EventEmitter<string[]>();
 
   constructor() {
     /*
