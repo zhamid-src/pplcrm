@@ -46,6 +46,7 @@ export interface Models {
   email_bodies: EmailBodies;
   email_headers: EmailHeaders;
   email_recipients: EmailRecipients;
+  email_attachments: EmailAttachments;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -291,6 +292,16 @@ interface EmailRecipients extends RecordType {
   kind: 'to' | 'cc' | 'bcc';
   name: string | null;
   email: string;
+  pos: number;
+}
+
+interface EmailAttachments extends RecordType {
+  email_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  cid: string | null;
+  is_inline: boolean;
   pos: number;
 }
 

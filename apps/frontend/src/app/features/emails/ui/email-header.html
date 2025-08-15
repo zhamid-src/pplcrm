@@ -273,6 +273,20 @@
         </div>
       </div>
     </div>
+    @if (getAttachments().length > 0) {
+    <div class="mt-2 flex flex-wrap gap-2">
+      @for (att of getAttachments(); track att.id) {
+      <a
+        class="badge badge-outline"
+        [href]="getAttachmentUrl(att)"
+        target="_blank"
+        rel="noopener"
+      >
+        {{ att.filename }}
+      </a>
+      }
+    </div>
+    }
 
     <div class="flex items-center gap-1">
       <pc-swap
