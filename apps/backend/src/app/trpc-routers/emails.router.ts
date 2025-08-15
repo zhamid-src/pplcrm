@@ -33,6 +33,22 @@ function deleteComment() {
     .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
 }
 
+function getAllAttachments() {
+  return authProcedure
+    .input(z.object({ email_id: z.string(), options: z.object({ includeInline: z.boolean() }).optional() }))
+    .query(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options));
+}
+
+function getAttachmentCountByEmails() {
+  return authProcedure.query(({ ctx }) => emails.getAttachmentCountByEmails(ctx.auth.tenant_id));
+}
+
+function getAttachmentsByEmailId() {
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input));
+}
+
 function getEmailBody() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
 }
@@ -83,6 +99,10 @@ function getFoldersWithCounts() {
   return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
 }
 
+function hasAttachment() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
+}
+
 function setFavourite() {
   return authProcedure
     .input(z.object({ id: z.string(), favourite: z.boolean() }))
@@ -110,4 +130,8 @@ export const EmailsRouter = router({
   assign: assign(),
   setFavourite: setFavourite(),
   setStatus: setStatus(),
+  hasAttachment: hasAttachment(),
+  getAllAttachments: getAllAttachments(),
+  getAttachmentCountByEmails: getAttachmentCountByEmails(),
+  getAttachmentsByEmailId: getAttachmentsByEmailId(),
 });
