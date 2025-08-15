@@ -12,7 +12,12 @@
       class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
     >
       <div class="truncate text-xs text-gray-500">{{ email.from_email }}</div>
-      <div class="truncate font-medium">{{ email.subject }}</div>
+      <div class="truncate font-medium flex items-center gap-1">
+        <span class="truncate">{{ email.subject }}</span>
+        @if (email['attachment_count'] && email['attachment_count'] > 0) {
+        <pc-icon name="paper-clip" [size]="4"></pc-icon>
+        }
+      </div>
       <div class="truncate font-light text-xs text-gray-500">{{ email.preview }}</div>
     </li>
     }

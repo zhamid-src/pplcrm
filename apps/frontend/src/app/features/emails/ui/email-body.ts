@@ -19,6 +19,20 @@ import type { EmailType } from 'common/src/lib/models';
       class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar"
       [innerHTML]="bodyHtml() | sanitizeHtml"
     ></div>
+    @if (attachments().length > 0) {
+      <div class="mt-4 flex flex-wrap gap-2">
+        @for (att of attachments(); track att.id) {
+          <a
+            class="badge badge-outline"
+            [href]="getAttachmentUrl(att)"
+            target="_blank"
+            rel="noopener"
+          >
+            {{ att.filename }}
+          </a>
+        }
+      </div>
+    }
   `,
 })
 export class EmailBody {
@@ -33,6 +47,18 @@ export class EmailBody {
     const id = this.emailId();
     return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
   });
+
+  protected readonly attachments = computed(() => {
+    const id = this.emailId();
+    if (!id) return [] as any[];
+    const header = this.store.getEmailHeaderById(id)();
+    return (header?.attachments || []).filter((a: any) => !a.is_inline);
+  });
+
+  protected getAttachmentUrl(att: any): string {
+    const id = this.emailId();
+    return id ? `/api/emails/${id}/attachments/${att.id}` : '';
+  }
 
   /** Nullable input to avoid early read before Angular sets it */
   public email = input<EmailType | null>(null);
