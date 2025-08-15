@@ -38,11 +38,12 @@ describe('EmailBody', () => {
   beforeEach(async () => {
     const mockStore = {
       getEmailBodyById: jest.fn().mockReturnValue(() => '<p>Test email body</p>'),
+      getEmailHeaderById: jest.fn().mockReturnValue(signal<any>({ attachments: [] })),
       loadEmailWithHeaders: jest.fn().mockResolvedValue({
         body: '<p>Test email body</p>',
         header: {},
       }),
-    };
+    } as unknown as EmailsStore;
 
     await TestBed.configureTestingModule({
       declarations: [EmailBody],
@@ -76,7 +77,7 @@ describe('EmailBody', () => {
     it('should display email body from store', () => {
       fixture.detectChanges();
 
-      const bodyContent = component['getBody']();
+      const bodyContent = component['bodyHtml']();
       expect(bodyContent).toBe('<p>Test email body</p>');
     });
 
@@ -84,7 +85,7 @@ describe('EmailBody', () => {
       mockEmailsStore.getEmailBodyById.mockReturnValue(() => undefined);
       fixture.detectChanges();
 
-      const bodyContent = component['getBody']();
+      const bodyContent = component['bodyHtml']();
       expect(bodyContent).toBe('');
     });
 
@@ -93,6 +94,19 @@ describe('EmailBody', () => {
 
       const compiled = fixture.nativeElement;
       expect(compiled.innerHTML).toContain('<p>Test email body</p>');
+    });
+  });
+
+  describe('Attachments Display', () => {
+    it('should render attachments when present', () => {
+      mockEmailsStore.getEmailHeaderById.mockReturnValue(
+        signal<any>({ attachments: [{ id: 'a1', filename: 'file.txt', is_inline: false }] }),
+      );
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachmentLink = compiled.querySelector('a');
+      expect(attachmentLink?.textContent).toContain('file.txt');
     });
   });
 
@@ -162,7 +176,7 @@ describe('EmailBody', () => {
       mockEmailsStore.getEmailBodyById.mockReturnValue(() => null);
       fixture.detectChanges();
 
-      const bodyContent = component['getBody']();
+      const bodyContent = component['bodyHtml']();
       expect(bodyContent).toBe('');
     });
   });

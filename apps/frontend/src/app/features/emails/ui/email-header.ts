@@ -77,16 +77,6 @@ export class EmailHeader {
     return header?.email?.bcc_list || [];
   }
 
-  /** Get attachments for the email */
-  protected getAttachments(): any[] {
-    const header = this.headerData();
-    return (header?.attachments || []).filter((a: any) => !a.is_inline);
-  }
-
-  protected getAttachmentUrl(att: any): string {
-    const e = this.email();
-    return `/api/emails/${e.id}/attachments/${att.id}`;
-  }
 
   /** Get CC recipients from header data */
   protected getCcRecipients(): any[] {
