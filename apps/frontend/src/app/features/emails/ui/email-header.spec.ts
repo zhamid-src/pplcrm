@@ -52,6 +52,7 @@ describe('EmailHeader', () => {
   beforeEach(async () => {
     const mockStore = {
       toggleEmailFavoriteStatus: jest.fn().mockResolvedValue(undefined),
+      getEmailHeaderById: jest.fn().mockReturnValue(signal<any>({ attachments: [] })),
     };
 
     await TestBed.configureTestingModule({

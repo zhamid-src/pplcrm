@@ -1,6 +1,7 @@
 import { getAllEmailFolders } from '../config/email-folders.config';
 import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
+import { EmailAttachmentsRepo } from '../repositories/emails/email-attachments.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -9,6 +10,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
 export class EmailsController extends BaseController<'emails', EmailRepo> {
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
+  private attachmentsRepo = new EmailAttachmentsRepo();
 
   constructor() {
     super(new EmailRepo());
@@ -46,9 +48,12 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Return a single email with headers, recipients, and comments */
   public async getEmailHeader(tenant_id: string, id: string) {
-    const emailWithHeaders = await this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id);
-    const comments = await this.commentsRepo.getForEmail(tenant_id, id);
-    return { email: emailWithHeaders, comments };
+    const [emailWithHeaders, comments, attachments] = await Promise.all([
+      this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id),
+      this.commentsRepo.getForEmail(tenant_id, id),
+      this.attachmentsRepo.getByEmailId(tenant_id, id),
+    ]);
+    return { email: emailWithHeaders, comments, attachments };
   }
 
   /** Return all emails for the given folder */
