@@ -37,6 +37,18 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.deleteComment.mutate({ email_id, comment_id });
   }
 
+  public getAllAttachments(id: string, options?: { includeInline: boolean }) {
+    return this.api.emails.getAllAttachments.query({ email_id: id, options });
+  }
+
+  public getAttachmentCountByEmails() {
+    return this.api.emails.getAttachmentCountByEmails.query();
+  }
+
+  public getAttachmentsByEmailId(id: string) {
+    return this.api.emails.getAttachmentsByEmailId.query(id);
+  }
+
   public getEmailBody(id: string) {
     return this.api.emails.getEmailBody.query(id);
   }
@@ -83,6 +95,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    */
   public getFoldersWithCounts() {
     return this.api.emails.getFoldersWithCounts.query();
+  }
+
+  public hasAttachment(id: string) {
+    return this.api.emails.hasAttachment.query(id);
   }
 
   public setFavourite(id: string, favourite: boolean) {

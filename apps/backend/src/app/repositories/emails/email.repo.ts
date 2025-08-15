@@ -1,14 +1,19 @@
 /**
  * Data access layer for email message records.
  */
+import { StringReference } from 'kysely';
+
 import { BaseRepository } from '../base.repo';
+import { EmailAttachmentsRepo } from './email-attachments.repo';
 import { EmailHeadersRepo } from './email-headers.repo';
 import { EmailRecipientsRepo } from './email-recipients.repo';
+import { Models } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `emails` table.
  */
 export class EmailRepo extends BaseRepository<'emails'> {
+  private emailAttachmentsRepo = new EmailAttachmentsRepo();
   private emailHeadersRepo = new EmailHeadersRepo();
   private emailRecipientsRepo = new EmailRecipientsRepo();
 
@@ -36,6 +41,22 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .where((eb) => whereForFolder(eb));
 
     return query.execute();
+  }
+
+  /** Example: list emails in a folder with an `attachment_count` field */
+  public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string) {
+    const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
+    const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // aliased 'ea'
+
+    return this.getSelect()
+      .selectAll()
+      .select((eb) =>
+        eb.fn.coalesce(eb.ref('ea.att_count' as StringReference<Models, 'emails'>), eb.val(0)).as('attachment_count'),
+      )
+      .leftJoin(ea, 'ea.email_id', 'emails.id')
+      .where('tenant_id', '=', tenant_id)
+      .where((eb) => whereForFolder(eb))
+      .execute();
   }
 
   /**
@@ -127,6 +148,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
       cc_list: ccRecipients,
       bcc_list: bccRecipients,
     };
+  }
+
+  /** One-off check */
+  public async hasAttachments(tenant_id: string, email_id: string): Promise<boolean> {
+    return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
   public async setFavourite(tenant_id: string, id: string, is_favourite: boolean) {

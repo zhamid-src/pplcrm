@@ -1,9 +1,7 @@
-/**
- * @file Orchestrator that composes the smaller stores into a single public API.
- * Keep your components injecting this class to minimize churn.
- */
+// emails.store.ts
 import { Injectable, computed, inject } from '@angular/core';
 
+import { EmailsService } from '../emails-service';
 import { EmailActionsStore } from './email-actions.store';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
@@ -12,12 +10,36 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 
 @Injectable({ providedIn: 'root' })
 export class EmailsStore {
+  // ----------------- Lazy per-email fallback -----------------
+  //  private readonly _checked = new Set<string>();
   private readonly actions = inject(EmailActionsStore);
   private readonly cache = inject(EmailCacheStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  /*
+  private readonly ensureHasAttachmentOnOpen = effect(() => {
+    const id = this.currentSelectedEmailId();
+    if (!id) return;
+
+    // Skip if already known or in-flight
+    if (this.state.hasAttachment(id)() !== undefined) return;
+    if (this._checked.has(id)) return;
+    this._checked.add(id);
+
+    // Ask backend for this one email
+    this.emailSvc
+      .hasAttachment(id)
+      .then((has) => {
+        this.state.setHasAttachment(id, !!has);
+      })
+      .catch(() => {
+        // leave as undefined on error; next open can retry
+        this._checked.delete(id);
+      });
+  });
+  */
   private readonly folders = inject(EmailFoldersStore);
   private readonly state = inject(EmailStateStore);
-
-  // ----------------- Public computed signals (compat with your original API) -----------------
 
   /** All folders */
   public readonly allFolders = this.folders.allFolders;
@@ -35,7 +57,7 @@ export class EmailsStore {
   public readonly emailsInSelectedFolder = computed(() => {
     const fid = this.folders.currentSelectedFolderId();
     if (!fid) return [] as EmailType[];
-    return this.state.emailsInFolder(fid)();
+    return this.state.emailsInFolderWithFlags(fid)();
   });
 
   // ----------------- Cache computed factories -----------------
@@ -75,8 +97,30 @@ export class EmailsStore {
     return this.cache.loadEmailWithHeaders(emailId);
   }
 
-  public loadEmailsForFolder(folderId: EmailId) {
-    return this.folders.loadEmailsForFolder(String(folderId));
+  /** Load emails for a folder, then set hasAttachment flags (bulk). */
+  public async loadEmailsForFolder(folderId: EmailId) {
+    const rows = await this.folders.loadEmailsForFolder(String(folderId));
+
+    // Prefer IDs from the response; fallback to state if needed
+    const ids =
+      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
+      this.state.emailIdsByFolderId()[String(folderId)] ||
+      [];
+
+    if (!ids.length) return rows;
+
+    try {
+      // If your endpoint accepts ids:
+      // const counts: Record<string, number> = await this.emailSvc.getAttachmentCountByEmails(ids);
+
+      // If your current endpoint returns all counts (no args), filter locally:
+      const counts: Record<string, number> = await this.emailSvc.getAttachmentCountByEmails();
+      this.state.setManyHasAttachment(ids.map((id) => ({ id, has: (counts[id] ?? 0) > 0 })));
+    } catch {
+      // ignore count failures; UI can lazily resolve per-email below
+    }
+
+    return rows;
   }
 
   public refreshFolderCounts() {
@@ -92,7 +136,6 @@ export class EmailsStore {
     this.folders.selectFolder(folder);
   }
 
-  /** Toggle the email body expanded UI state */
   public toggleBodyExpanded(): void {
     this.state.toggleBodyExpanded();
   }
