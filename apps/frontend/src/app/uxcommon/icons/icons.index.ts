@@ -83,6 +83,7 @@ export const icons = {
   inbox: 'assets/icons/inbox.svg',
   megaphone: 'assets/icons/megaphone.svg',
   'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
   document: 'assets/icons/document.svg',
   'document-check': 'assets/icons/document-check.svg',
   'document-duplicate': 'assets/icons/document-duplicate.svg',
