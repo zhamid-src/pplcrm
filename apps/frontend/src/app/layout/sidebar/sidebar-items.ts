@@ -1,7 +1,7 @@
 /**
  * Defines the structure and default list of items displayed in the sidebar navigation.
  */
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 /**
  * The sidebar items are defined here. They go in the order they're added
@@ -32,7 +32,7 @@ export interface ISidebarItem {
   /**
    * The icon to show on the item
    */
-  icon?: IconName;
+  icon?: PcIconNameType;
 
   /**
    * The name of the item. It's shown on the sidebar

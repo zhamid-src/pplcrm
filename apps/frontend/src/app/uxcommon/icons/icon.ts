@@ -1,6 +1,6 @@
 import { Component, effect, input, signal } from '@angular/core';
 
-import { IconName, loadIconSvg } from './icons.index';
+import { PcIconNameType, loadIconSvg } from './icons.index';
 import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
 
 @Component({
@@ -14,7 +14,7 @@ export class Icon {
   private _svgHtml = signal<string>('');
 
   /** The name of the icon to render (must exist in icons map). */
-  public name = input.required<IconName>();
+  public name = input.required<PcIconNameType>();
 
   /** Tailwind size (used for both height and width), default 6 -> w-6 h-6 */
   public size = input<number>(6);
@@ -45,7 +45,7 @@ export class Icon {
     }
   }
 
-  private async loadSvg(name: IconName, size: number) {
+  private async loadSvg(name: PcIconNameType, size: number) {
     // Fetch raw SVG text from /assets
     const raw = await loadIconSvg(name);
     // Inject Tailwind classes into the <svg> element

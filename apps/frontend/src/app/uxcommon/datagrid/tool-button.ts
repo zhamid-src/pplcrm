@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-grid-action',
@@ -24,7 +24,7 @@ export class GridActionComponent {
   public readonly action = output<void>();
 
   public enabled = input(true);
-  public icon = input.required<IconName>();
+  public icon = input.required<PcIconNameType>();
   public tip = input.required<string>();
 
   public emitClick() {

@@ -2,7 +2,7 @@ import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-add-btn-row',
@@ -29,7 +29,7 @@ export class AddBtnRow implements OnInit {
    * The icon to show on the first button.
    * Default is 'arrow-down-tray'.
    */
-  public btn1Icon = input<IconName>('arrow-down-tray');
+  public btn1Icon = input<PcIconNameType>('arrow-down-tray');
 
   /**
    * The text to show on the first button.

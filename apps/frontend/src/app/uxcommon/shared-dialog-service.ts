@@ -2,13 +2,13 @@
  * @file Reusable dialog service for confirm/alert/prompt using <dialog>.
  */
 import { Injectable, signal } from '@angular/core';
-import type { IconName } from '@uxcommon/icons/icons.index.new';
+import type { PcIconNameType } from '@uxcommon/icons/icons.index';
 
 export interface BaseDialogOptions {
   allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
   cancelText?: string; // default per type
   confirmText?: string; // default per type
-  icon?: IconName; // optional icon name for <pc-icon>
+  icon?: PcIconNameType; // optional icon name for <pc-icon>
   message?: string;
   title: string;
   variant?: DialogVariant;
@@ -19,7 +19,7 @@ export interface DialogState {
   cancelText: string;
   confirmText: string;
   defaultValue?: string;
-  icon?: IconName;
+  icon?: PcIconNameType;
 
   // prompt
   inputPlaceholder?: string;
@@ -91,7 +91,7 @@ export class ConfirmDialogService {
   }
 
   /** For the host to know the default icon for a variant */
-  public defaultIconFor(variant: DialogVariant): IconName {
+  public defaultIconFor(variant: DialogVariant): PcIconNameType {
     switch (variant) {
       case 'danger':
         return 'exclamation-triangle';
@@ -119,7 +119,7 @@ export class ConfirmDialogService {
       title: opts.title,
       message: opts.message,
       variant: opts.variant ?? 'neutral',
-      icon: opts.icon ?? ('pencil-square' as IconName),
+      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
       allowBackdropClose: opts.allowBackdropClose ?? true,
       confirmText: opts.confirmText ?? 'OK',
       cancelText: opts.cancelText ?? 'Cancel',

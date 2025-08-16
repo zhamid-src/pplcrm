@@ -2,7 +2,7 @@ import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 
 @Component({
@@ -63,7 +63,7 @@ export class FormInput implements OnInit {
   /**
    * An optional icon to display inside the input field.
    */
-  public icon = input<IconName | null>(null);
+  public icon = input<PcIconNameType | null>(null);
 
   /**
    * Optional regex pattern that the input must match.

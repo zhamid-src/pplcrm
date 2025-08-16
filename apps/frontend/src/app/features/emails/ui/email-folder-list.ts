@@ -4,7 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
-import type { IconName } from '@uxcommon/icons/icons.index.new';
+import type { PcIconNameType } from '@uxcommon/icons/icons.index';
 
 import { Swap } from '../../../uxcommon/swap';
 import { EmailsStore } from '../services/store/emailstore';
@@ -63,8 +63,8 @@ export class EmailFolderList implements OnInit {
   }
 
   /** Icon helper */
-  protected getIcon(folder: EmailFolderType): IconName {
-    return folder.icon as IconName;
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
   }
 
   /** Selection helper (compare as strings for safety) */

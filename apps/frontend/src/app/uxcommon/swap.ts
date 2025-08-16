@@ -1,7 +1,7 @@
 import { Component, input, output } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 /**
  * A reusable toggle/swap component that switches between two icons.
@@ -35,12 +35,12 @@ export class Swap {
   /**
    * The icon to display when the toggle is **off**.
    */
-  public swapOffIcon = input.required<IconName>();
+  public swapOffIcon = input.required<PcIconNameType>();
 
   /**
    * The icon to display when the toggle is **on**.
    */
-  public swapOnIcon = input.required<IconName>();
+  public swapOnIcon = input.required<PcIconNameType>();
 
   /**
    * Emits the click event for the parent to handle toggle logic.
