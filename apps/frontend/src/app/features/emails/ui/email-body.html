@@ -1,0 +1,12 @@
+<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
+  <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
+  @if (attachments().length > 0) {
+  <div class="mt-4 flex flex-wrap gap-2">
+    @for (att of attachments(); track att.id) {
+    <a class="badge badge-outline" [href]="getAttachmentUrl(att)" target="_blank" rel="noopener">
+      {{ att.filename }} | {{att.size_bytes | fileSize}}
+    </a>
+    }
+  </div>
+  }
+</div>
