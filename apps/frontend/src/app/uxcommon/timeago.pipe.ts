@@ -65,6 +65,11 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
     // Relative (time ago)
     if (options.style === 'short') {
       if (diffSec < 60) return 'now';
+      if (diffMin < 60) return `${diffMin}m`;
+      if (diffHr < 24) return `${diffHr}h`;
+      return `${diffDay}d`;
+    } else if (options.style === 'medium') {
+      if (diffSec < 60) return 'now';
       if (diffMin < 60) return `${diffMin}m ago`;
       if (diffHr < 24) return `${diffHr}h ago`;
       return `${diffDay}d ago`;
@@ -97,4 +102,4 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
   }
 }
 
-export type TimeAgoStyle = 'long' | 'short';
+export type TimeAgoStyle = 'long' | 'short' | 'medium';
