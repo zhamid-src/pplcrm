@@ -2,8 +2,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/file-icon.util';
 
-import { IconName } from 'ag-grid-community';
-
 import { Icon } from './icon';
 
 @Component({
@@ -17,7 +15,7 @@ export class AttachmentIconComponent {
   public className = input<string>('');
 
   // Inputs (signals API)
-  public filename = input.required<IconName>();
+  public filename = input.required<string>();
   public icon = computed(() => {
     const key = iconKeyForFilename(this.filename());
     return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;

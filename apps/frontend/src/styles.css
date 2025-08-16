@@ -2,6 +2,9 @@
 @plugin "daisyui";
 @plugin "@tailwindcss/typography";
 
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;

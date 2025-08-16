@@ -4,6 +4,7 @@
  */
 import { Injectable, inject } from '@angular/core';
 
+import { ComposePayload } from '../../ui/email-compose';
 import { EmailsService } from '../emails-service';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
@@ -61,6 +62,23 @@ export class EmailActionsStore {
       }
       throw e;
     }
+  }
+
+  /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
+  public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    const created = await this.svc.sendEmail(input); // implement in EmailsService (below)
+
+    // If you're currently in "Sent", reload to show the new item; otherwise just refresh counts.
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    if (currentFolderId) {
+      await this.folders.loadEmailsForFolder(currentFolderId);
+    }
+    await this.folders.refreshFolderCounts();
+
+    // Optional: warm header cache (if your API returns header)
+    // this.cache.replaceHeader(String(created.id), created.header ?? null);
+
+    return created;
   }
 
   /** Toggle favourite with optimistic update (no count refresh needed) */

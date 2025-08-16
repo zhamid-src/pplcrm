@@ -1,27 +1,36 @@
 <div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="newEmail()"></pc-email-folder-list>
+  <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"> </pc-email-folder-list>
+
   @if (!isBodyExpanded()) {
   <pc-email-list (emailSelected)="onEmail($event!)"></pc-email-list>
   }
-  <pc-email-details class="flex-1 h-full" [email]="selectedEmail()"></pc-email-details>
-  @if (isBodyExpanded() && selectedEmail()) {
-  <!-- Full-screen overlay for email body within the app window -->
-  <div class="absolute inset-0 z-50 bg-base-100 flex flex-col">
-    <div class="flex items-center justify-end p-2">
-      <pc-swap
-        class="hover:text-primary"
-        [checked]="true"
-        swapOffIcon="arrows-pointing-out"
-        swapOnIcon="arrows-pointing-in"
-        [size]="5"
-        (clickEvent)="toggleExpanded()"
-      ></pc-swap>
+
+  <!-- Right pane: compose OR details -->
+  <div class="flex-1 h-full p-4">
+    @if (isComposing()) {
+    <div class="h-full border border-base-300 rounded-lg bg-white p-3">
+      <!-- emits (finished) when sent/discarded -->
+      <pc-compose-email class="h-full" (finished)="closeCompose()"></pc-compose-email>
     </div>
-    <div class="flex-1 min-h-0 overflow-hidden p-4">
-      <pc-email-body
-        class="flex-1 min-h-0 border border-gray-200 rounded-lg bg-white"
-        [email]="selectedEmail()!"
-      ></pc-email-body>
+    } @else {
+    <pc-email-details class="h-full" [email]="selectedEmail()"></pc-email-details>
+    }
+  </div>
+
+  @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Keep your existing BODY overlay when expanded -->
+  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
+    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
+      <div class="flex items-center justify-end">
+        <button class="btn btn-ghost btn-sm" (click)="toggleExpanded()">
+          <pc-icon name="x-mark" class="mr-1"></pc-icon>Close
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <div class="h-full border border-base-300 rounded-lg bg-white p-3">
+          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
+        </div>
+      </div>
     </div>
   </div>
   }
