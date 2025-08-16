@@ -4,6 +4,8 @@
 import { Injectable } from '@angular/core';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
+import { ComposePayload } from '../ui/email-compose';
+import { EmailType } from 'common/src/lib/models';
 
 /** Service for interacting with email backend via tRPC */
 @Injectable({ providedIn: 'root' })
@@ -99,6 +101,21 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public hasAttachment(id: string) {
     return this.api.emails.hasAttachment.query(id);
+  }
+
+  // Fetch/FormData fallback
+  public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    const fd = new FormData();
+    fd.set('to', JSON.stringify(input.to));
+    fd.set('cc', JSON.stringify(input.cc));
+    fd.set('bcc', JSON.stringify(input.bcc));
+    fd.set('subject', input.subject);
+    fd.set('html', input.html);
+    input.attachments.forEach((f) => fd.append('attachments', f, f.name));
+
+    const res = await fetch('/api/emails/send', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error('Failed to send email');
+    return res.json() as Promise<EmailType>;
   }
 
   public setFavourite(id: string, favourite: boolean) {

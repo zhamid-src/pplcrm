@@ -1,0 +1,136 @@
+<form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (ngSubmit)="onSend()">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="font-semibold text-base">New message</div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-xs" (click)="onDiscard()">
+        <pc-icon name="trash" class="mr-1"></pc-icon>Discard
+      </button>
+      <button type="submit" class="btn btn-primary btn-sm" [disabled]="sending() || !validTo()">
+        <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
+      </button>
+    </div>
+  </div>
+
+  <!-- Recipients -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+    <input
+      class="input-pplcrm w-full"
+      placeholder="To (comma or semicolon separated)"
+      [formControl]="form.controls.to"
+    />
+    <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
+    <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
+  </div>
+
+  <!-- Subject -->
+  <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+
+  <!-- Editor card: ONE ROW toolbar + scrollable editor -->
+  <div class="rounded-lg border border-base-300 flex flex-col h-full">
+    <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
+    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b p-2 flex items-center gap-0">
+      <!-- Undo / Redo -->
+      <span class="ql-formats">
+        <button class="ql-undo" type="button" aria-label="Undo">
+          <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon>
+        </button>
+        <button class="ql-redo" type="button" aria-label="Redo">
+          <pc-icon name="arrow-uturn-right" [size]="4"></pc-icon>
+        </button>
+      </span>
+
+      <!-- Font / Size -->
+      <span class="ql-formats">
+        <select class="ql-font" aria-label="Font">
+          <option selected></option>
+          <option value="serif"></option>
+          <option value="monospace"></option>
+        </select>
+        <select class="ql-size" aria-label="Size">
+          <option value="small"></option>
+          <option selected></option>
+          <option value="large"></option>
+          <option value="huge"></option>
+        </select>
+      </span>
+
+      <!-- Bold / Italic / Underline / Strike -->
+      <span class="ql-formats">
+        <button class="ql-bold" aria-label="Bold"></button>
+        <button class="ql-italic" aria-label="Italic"></button>
+        <button class="ql-underline" aria-label="Underline"></button>
+        <button class="ql-strike" aria-label="Strikethrough"></button>
+      </span>
+
+      <!-- Text color -->
+      <span class="ql-formats">
+        <select class="ql-color" aria-label="Text color"></select>
+      </span>
+
+      <!-- Align (dropdown) -->
+      <span class="ql-formats">
+        <select class="ql-align" aria-label="Align">
+          <option selected></option>
+          <option value="center"></option>
+          <option value="right"></option>
+          <option value="justify"></option>
+        </select>
+      </span>
+
+      <!-- Link / Attach / Image -->
+      <span class="ql-formats">
+        <button class="ql-link" aria-label="Insert link"></button>
+        <button class="ql-attach" type="button" aria-label="Attach files">
+          <pc-icon name="paper-clip" [size]="4"></pc-icon>
+        </button>
+        <button class="ql-image" aria-label="Insert image"></button>
+      </span>
+
+      <!-- Lists -->
+      <span class="ql-formats">
+        <button class="ql-list" value="ordered" aria-label="Numbered list"></button>
+        <button class="ql-list" value="bullet" aria-label="Bulleted list"></button>
+      </span>
+
+      <!-- Quote -->
+      <span class="ql-formats">
+        <button class="ql-blockquote" aria-label="Blockquote"></button>
+      </span>
+
+      <!-- Remove formatting -->
+      <span class="ql-formats">
+        <button class="ql-clean" aria-label="Clear formatting"></button>
+      </span>
+    </div>
+
+    <!-- Quill editor (scrolls when content grows) -->
+    <quill-editor
+      class="compose-quill flex-1"
+      [modules]="modules"
+      [formControl]="form.controls.html"
+      [placeholder]="'Write your message…'"
+      (onEditorCreated)="onEditorCreated($event)"
+    ></quill-editor>
+  </div>
+  <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />
+
+  <!-- Attachment list -->
+  @if (attachments().length) {
+  <ul class="mt-2 space-y-1 max-h-40">
+    <li class="text-xs opacity-70">Attachments: {{ attachments().length }} file(s) • {{ totalSize()| fileSize }}</li>
+    @for (f of attachments(); track f.name + ':' + f.size + ':' + f.lastModified; let i = $index) {
+    <li class="flex items-center justify-between rounded-md border border-base-300 px-2 py-1">
+      <div class="flex items-center gap-2 min-w-0">
+        <pc-attachment-icon [filename]="f.name" class="shrink-0"></pc-attachment-icon>
+        <span class="truncate">{{ f.name }}</span>
+        <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
+      </div>
+      <button type="button" class="btn btn-ghost btn-xs" (click)="removeAttachment(i)">
+        <pc-icon name="x-mark"></pc-icon>
+      </button>
+    </li>
+    }
+  </ul>
+  }
+</form>

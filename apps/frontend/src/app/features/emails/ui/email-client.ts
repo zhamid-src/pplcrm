@@ -1,11 +1,12 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { ChangeDetectionStrategy, Component, HostListener, inject } from '@angular/core';
-import { Swap } from '@uxcommon/swap';
+import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
+import { Icon } from '@uxcommon/icons/icon';
 
 import { EmailsStore } from '../services/store/emailstore';
 import { EmailBody } from './email-body';
+import { ComposeEmailComponent } from './email-compose';
 import { EmailDetails } from './email-details';
 import { EmailFolderList } from './email-folder-list';
 import { EmailList } from './email-list';
@@ -14,7 +15,7 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-client',
   standalone: true,
-  imports: [EmailFolderList, EmailList, EmailDetails, Swap, EmailBody],
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block h-full' },
   templateUrl: 'email-client.html',
@@ -22,6 +23,8 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 export class EmailClient {
   /** App-level email store */
   protected readonly store = inject(EmailsStore);
+
+  protected isComposing = signal(false);
 
   /** Whether the email body overlay is expanded (signal from store) */
   public readonly isBodyExpanded = this.store.isBodyExpanded;
@@ -32,8 +35,22 @@ export class EmailClient {
   /** Currently selected folder id (signal from store) */
   public readonly selectedFolderId = this.store.currentSelectedFolderId;
 
+  public closeCompose() {
+    this.isComposing.set(false);
+  }
+
   public newEmail() {
-    console.log('New email button clicked');
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.isComposing.set(true);
+  }
+
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
   }
 
   /** Handle email selection from child component */
@@ -44,6 +61,11 @@ export class EmailClient {
   /** Handle folder selection from child component */
   public onFolder(folder: EmailFolderType): void {
     this.store.selectFolder(folder);
+  }
+
+  public openCompose() {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.isComposing.set(true);
   }
 
   /** Toggle the full-screen overlay for email body */

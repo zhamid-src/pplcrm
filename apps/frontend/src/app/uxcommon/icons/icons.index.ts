@@ -57,6 +57,7 @@ export const icons = {
   'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
   'chevron-double-left': 'assets/icons/chevron-double-left.svg',
   'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
   'chevron-down': 'assets/icons/chevron-down.svg',
   'reply-all': 'assets/icons/reply-all.svg',
   reply: 'assets/icons/reply.svg',
