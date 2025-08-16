@@ -1,5 +1,5 @@
 <div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <pc-email-folder-list (folderSelected)="onFolder($event)"></pc-email-folder-list>
+  <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="newEmail()"></pc-email-folder-list>
   @if (!isBodyExpanded()) {
   <pc-email-list (emailSelected)="onEmail($event!)"></pc-email-list>
   }

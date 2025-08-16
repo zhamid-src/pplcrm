@@ -32,6 +32,10 @@ export class EmailClient {
   /** Currently selected folder id (signal from store) */
   public readonly selectedFolderId = this.store.currentSelectedFolderId;
 
+  public newEmail() {
+    console.log('New email button clicked');
+  }
+
   /** Handle email selection from child component */
   public onEmail(email: EmailType): void {
     this.store.selectEmail(email);

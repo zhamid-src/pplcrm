@@ -32,6 +32,12 @@ export class EmailFolderList implements OnInit {
 
   /** Sidebar collapsed flag */
   public readonly foldersCollapsed = signal(false);
+  public readonly newEmail = output<void>();
+
+  public emitNewEmail() {
+    // Emit a new email event; parent component should handle this
+    this.newEmail.emit();
+  }
 
   /** Count helper (keeps typing flexible if counts aren’t always present) */
   public getEmailCount(folder: EmailFolderType): number {
