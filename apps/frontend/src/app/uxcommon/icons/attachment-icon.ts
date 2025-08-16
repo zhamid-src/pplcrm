@@ -1,6 +1,6 @@
 // attachment-icon.component.ts
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/file-icon.util';
+import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/pipes/file-icon.util';
 
 import { Icon } from './icon';
 

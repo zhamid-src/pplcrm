@@ -1,4 +1,4 @@
-import * as exported from './animate-if.directive';
+import * as exported from '../animate-if.directive';
 
 describe('animate-if.directive', () => {
   it('should be defined', () => {
