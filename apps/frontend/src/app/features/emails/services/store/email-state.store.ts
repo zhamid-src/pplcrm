@@ -34,15 +34,6 @@ export class EmailStateStore {
     });
   }
 
-  /** Computed: emails in a given folder (helper for orchestrator/UI) */
-  public emailsInFolder(folderId: string) {
-    return computed(() => {
-      const ids = this.emailIdsByFolderId()[folderId] ?? [];
-      const map = this.emailsById();
-      return ids.map((id) => map[id]).filter(Boolean);
-    });
-  }
-
   /** OPTIONAL: view helper that decorates emails with hasAttachment flag */
   public emailsInFolderWithFlags(folderId: string) {
     return computed(() => {
@@ -108,7 +99,7 @@ export class EmailStateStore {
           preview: s.preview ?? undefined,
           assigned_to: s.assigned_to ?? undefined,
           att_count: s.att_count ?? 0,
-          has_attachment: !!s.has_attachment || (s.attachment_count ?? 0) > 0,
+          has_attachment: (s.attachment_count ?? 0) > 0,
         };
         next[e.id] = e;
       }
