@@ -1,8 +1,8 @@
 /**
  * @file Unit tests for the {@link EmailFolderList} component.
  */
+import { EmailsService } from '../../services/emails-service';
 import { EmailFolderList } from './email-folder-list';
-import { EmailsService } from '../services/emails-service';
 
 jest.mock('../services/emails-service', () => ({
   /** Simple mock implementation of EmailsService for tests */

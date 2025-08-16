@@ -5,10 +5,10 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
-import { Swap } from '../../../uxcommon/swap';
+import { Swap } from '@uxcommon/swap';
 
-import { EmailsStore } from '../services/store/emailstore';
-import { EmailAssign } from './email-assign';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailAssign } from '../email-assign/email-assign';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
@@ -22,9 +22,6 @@ export class EmailHeader {
   private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
 
-  /** Whether the email body is currently expanded to take over the window (except sidebar). */
-  public isExpanded = this.store.isBodyExpanded;
-
   /** Get header data from store */
   protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
@@ -32,6 +29,9 @@ export class EmailHeader {
 
   /** Email to display */
   public email = input.required<EmailType>();
+
+  /** Whether the email body is currently expanded to take over the window (except sidebar). */
+  public isExpanded = this.store.isBodyExpanded;
 
   constructor() {
     effect(() => {
@@ -46,26 +46,6 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
-  /**
-   * Toggle the expanded state of the email body.
-   * When expanded, the email body fills the main content area, hiding the list and comments.
-   */
-  protected toggleExpand(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  /**
-   * Handle Escape key to collapse the expanded view when active.
-   */
-  @HostListener('document:keydown', ['$event'])
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && this.isExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.stopPropagation();
-      ev.preventDefault();
-    }
-  }
-
   /** Get all recipients combined */
   protected getAllRecipients(): any[] {
     return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
@@ -76,7 +56,6 @@ export class EmailHeader {
     const header = this.headerData();
     return header?.email?.bcc_list || [];
   }
-
 
   /** Get CC recipients from header data */
   protected getCcRecipients(): any[] {
@@ -119,6 +98,18 @@ export class EmailHeader {
   protected handleDelete() {
     console.log('Delete email:', this.email().id);
     // TODO: Implement delete functionality
+  }
+
+  /**
+   * Handle Escape key to collapse the expanded view when active.
+   */
+  @HostListener('document:keydown', ['$event'])
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
   }
 
   /** Handle forward action */
@@ -165,6 +156,14 @@ export class EmailHeader {
       this.isClosed.set(currentStatus === 'closed');
       this.alertSvc.showError('Failed to update email status');
     }
+  }
+
+  /**
+   * Toggle the expanded state of the email body.
+   * When expanded, the email body fills the main content area, hiding the list and comments.
+   */
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
   }
 
   protected async toggleFavourite() {

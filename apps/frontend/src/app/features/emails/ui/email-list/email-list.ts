@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, effect, inject, output } from '@ang
 import { Icon } from '@uxcommon/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
-import { EmailsStore } from '../services/store/emailstore';
+import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({

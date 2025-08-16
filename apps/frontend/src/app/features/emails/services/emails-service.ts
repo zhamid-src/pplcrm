@@ -4,7 +4,7 @@
 import { Injectable } from '@angular/core';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
-import { ComposePayload } from '../ui/email-compose';
+import { ComposePayload } from '../ui/email-compose/email-compose';
 import { EmailType } from 'common/src/lib/models';
 
 /** Service for interacting with email backend via tRPC */

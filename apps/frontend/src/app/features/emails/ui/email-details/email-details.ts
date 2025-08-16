@@ -4,10 +4,10 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 
-import { EmailsStore } from '../services/store/emailstore';
-import { EmailBody } from './email-body';
-import { EmailComments } from './email-comments';
-import { EmailHeader } from './email-header';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailBody } from '../email-body/email-body';
+import { EmailComments } from '../email-comments/email-comments';
+import { EmailHeader } from '../email-header/email-header';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({

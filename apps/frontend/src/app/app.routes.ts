@@ -13,7 +13,7 @@ import { HouseholdsGrid } from './features/households/ui/households-grid';
 import { PersonDetail } from './features/persons/ui/person-detail';
 import { PersonsGrid } from './features/persons/ui/persons-grid';
 import { TagsGridComponent } from './features/tags/ui/tags-grid';
-import { EmailClient } from './features/emails/ui/email-client';
+import { EmailClient } from './features/emails/ui/email-client/email-client';
 import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './temp/summary';
 

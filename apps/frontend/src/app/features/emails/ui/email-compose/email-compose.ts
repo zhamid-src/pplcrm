@@ -9,7 +9,7 @@ import { FileSizePipe } from '@uxcommon/filesize.pipe';
 import { QuillModule } from 'ngx-quill';
 import Quill from 'quill';
 
-import { EmailActionsStore } from '../services/store/email-actions.store';
+import { EmailActionsStore } from '../../services/store/email-actions.store';
 
 @Component({
   selector: 'pc-compose-email',
