@@ -20,7 +20,7 @@
     ></pc-swap>
   </div>
 
-  <ul class="flex-1 font-light">
+  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
     @for (folder of folders(); track folder.id) {
     <li
       class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-blue-50"
@@ -40,4 +40,5 @@
 
     }
   </ul>
+  <button class="btn btn-primary" (click)="emitNewEmail()">New Email</button>
 </aside>
