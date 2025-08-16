@@ -4,6 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, output } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
 import { EmailsStore } from '../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
@@ -11,7 +12,7 @@ import type { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-list',
   standalone: true,
-  imports: [CommonModule, Icon],
+  imports: [CommonModule, Icon, TimeAgoPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-list.html',
 })

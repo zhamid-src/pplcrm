@@ -11,12 +11,17 @@
       [class.bg-blue-50]="isSelected(email.id)"
       class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
     >
-      <div class="truncate text-xs text-gray-500">{{ email.from_email }}</div>
-      <div class="truncate font-medium flex items-center gap-1">
-        <span class="truncate">{{ email.subject }}</span>
+      <div class="truncate text-xs text-gray-500 flex gap-1">
+        <span class="truncate flex-1">{{ email.from_email }}</span>
+
+        <!-- TODO: use the sent time -->
+        <span class="flex-none">{{ email.updated_at | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
+      </div>
+      <div class="truncate font-medium flex gap-1">
+        <span class="truncate flex-1">{{ email.subject }}</span>
 
         @if (email.has_attachment) {
-        <pc-icon name="paper-clip" [size]="4"></pc-icon>
+        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
       <div class="truncate font-light text-xs text-gray-500">{{ email.preview }}</div>
