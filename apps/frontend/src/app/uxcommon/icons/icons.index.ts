@@ -1,24 +1,42 @@
 /****************************************************** */
 /*
-/* Look at https://heroicons.com for icons
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
 /*
 /****************************************************** */
 export type IconName = keyof typeof icons;
 
-export function loadIconSvg(name: IconName): Promise<string> {
+export async function loadIconSvg(name: IconName): Promise<string> {
   if (!_cache.has(name)) {
     _cache.set(
       name,
-      fetch(icons[name]).then((r) => r.text()),
+      fetch(icons[name])
+        .then((r) => {
+          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
+          return r.text();
+        })
+        .catch(async () => {
+          // last-resort: fetch the unknown icon (cached too)
+          if (!_cache.has(UNKNOWN)) {
+            _cache.set(
+              UNKNOWN,
+              fetch(icons[UNKNOWN]).then((r) => r.text()),
+            );
+          }
+          return _cache.get(UNKNOWN)!;
+        }),
     );
   }
   return _cache.get(name)!;
 }
 
+const UNKNOWN: IconName = 'unknown';
+
 /** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
 const _cache = new Map<IconName, Promise<string>>();
 
 export const icons = {
+  unknown: 'assets/icons/unknown.svg',
   /* -------------------- User & People -------------------- */
   'user-plus': 'assets/icons/user-plus.svg',
   'user-circle': 'assets/icons/user-circle.svg',
@@ -42,7 +60,6 @@ export const icons = {
   'chevron-down': 'assets/icons/chevron-down.svg',
   'reply-all': 'assets/icons/reply-all.svg',
   reply: 'assets/icons/reply.svg',
-  forward: 'assets/icons/forward.svg',
 
   /* -------------------- Status & Alerts -------------------- */
   'check-circle': 'assets/icons/check-circle.svg',
@@ -102,6 +119,28 @@ export const icons = {
   'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
   'lock-closed': 'assets/icons/lock-closed.svg',
   'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+
+  /* -------------------- FILE ICONS ----------------------- */
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  file: 'assets/icons/file.svg',
 
   /* -------------------- Misc -------------------- */
   'chart-pie': 'assets/icons/chart-pie.svg',

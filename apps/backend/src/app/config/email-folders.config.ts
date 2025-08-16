@@ -72,16 +72,16 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '1',
     name: 'All Open',
     icon: 'document-duplicate',
-    sort_order: 3,
+    sort_order: 4,
     is_default: false,
     is_virtual: true, // Virtual folder - shows open emails from all folders
   },
 
   {
     id: '2',
-    name: 'Closed',
+    name: 'Completed',
     icon: 'document-check',
-    sort_order: 4,
+    sort_order: 3,
     is_default: false,
     is_virtual: true, // Virtual folder - shows closed/resolved emails
   },

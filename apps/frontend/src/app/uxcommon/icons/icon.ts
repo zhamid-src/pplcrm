@@ -1,16 +1,13 @@
-import { Component, effect, input, signal } from "@angular/core";
+import { Component, effect, input, signal } from '@angular/core';
 
-import { IconName, loadIconSvg } from "./icons.index";
-import { BypassHtmlSanitizerPipe } from "apps/frontend/src/app/svg-html-pipe";
+import { IconName, loadIconSvg } from './icons.index';
+import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
 
 @Component({
   selector: 'pc-icon',
   standalone: true,
   imports: [BypassHtmlSanitizerPipe],
-  template: `
-    <!-- Inline SVG once loaded -->
-    <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
-  `,
+  template: ` <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
 })
 export class Icon {
   /** Holds the final SVG markup (with class injected). */
