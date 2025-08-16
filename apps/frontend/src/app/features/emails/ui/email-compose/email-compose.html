@@ -1,7 +1,7 @@
 <form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (ngSubmit)="onSend()">
   <!-- Header -->
   <div class="flex items-center justify-between">
-    <div class="font-semibold text-base">New message</div>
+    <div class="text-base">New message</div>
     <div class="flex items-center gap-2">
       <button type="button" class="btn btn-ghost btn-xs" (click)="onDiscard()">
         <pc-icon name="trash" class="mr-1"></pc-icon>Discard
@@ -126,7 +126,7 @@
         <span class="truncate">{{ f.name }}</span>
         <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
       </div>
-      <button type="button" class="btn btn-ghost btn-xs" (click)="removeAttachment(i)">
+      <button type="button" class="btn btn-ghost btn-xs hover:text-error" (click)="removeAttachment(i)">
         <pc-icon name="x-mark"></pc-icon>
       </button>
     </li>
