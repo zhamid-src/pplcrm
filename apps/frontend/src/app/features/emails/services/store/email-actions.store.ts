@@ -4,7 +4,7 @@
  */
 import { Injectable, inject } from '@angular/core';
 
-import { ComposePayload } from '../../ui/email-compose';
+import { ComposePayload } from '../../ui/email-compose/email-compose';
 import { EmailsService } from '../emails-service';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';

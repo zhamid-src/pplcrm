@@ -19,8 +19,8 @@ import { Icon } from '@uxcommon/icons/icon';
 import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
-import { AuthService } from '../../../auth/auth-service';
-import { EmailsStore } from '../services/store/emailstore';
+import { AuthService } from '../../../../auth/auth-service';
+import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailCommentType, EmailType } from 'common/src/lib/models';
 
 @Component({

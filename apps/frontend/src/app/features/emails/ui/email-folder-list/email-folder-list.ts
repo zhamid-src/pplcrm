@@ -6,8 +6,8 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, output, signal } fr
 import { Icon } from '@uxcommon/icons/icon';
 import type { PcIconNameType } from '@uxcommon/icons/icons.index';
 
-import { Swap } from '../../../uxcommon/swap';
-import { EmailsStore } from '../services/store/emailstore';
+import { Swap } from '../../../../uxcommon/swap';
+import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailFolderType } from 'common/src/lib/models';
 
 @Component({

@@ -9,7 +9,7 @@ import { AttachmentIconComponent } from '@uxcommon/icons/attachment-icon';
 import { Icon } from '@uxcommon/icons/icon';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
-import { EmailsStore } from '../services/store/emailstore';
+import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({

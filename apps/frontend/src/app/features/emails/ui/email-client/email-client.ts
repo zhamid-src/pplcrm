@@ -4,12 +4,12 @@
 import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
 
-import { EmailsStore } from '../services/store/emailstore';
-import { EmailBody } from './email-body';
-import { ComposeEmailComponent } from './email-compose';
-import { EmailDetails } from './email-details';
-import { EmailFolderList } from './email-folder-list';
-import { EmailList } from './email-list';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
 import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 
 @Component({

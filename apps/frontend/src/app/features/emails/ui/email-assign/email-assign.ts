@@ -7,8 +7,8 @@ import { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 
-import { AuthService } from '../../../auth/auth-service';
-import { EmailsStore } from '../services/store/emailstore';
+import { AuthService } from '../../../../auth/auth-service';
+import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
