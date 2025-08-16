@@ -8,7 +8,7 @@ import { Component, ViewChild, WritableSignal, input, output, signal } from '@an
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 /**
  * Advanced input component with Google Places integration and enhanced UX features.
@@ -140,7 +140,7 @@ export class PPlCrmInput {
   public googlePlaces = input<boolean>(false);
 
   /** Optional icon to display at the start of the input */
-  public icon = input<IconName | null>(null);
+  public icon = input<PcIconNameType | null>(null);
 
   /** Form control for reactive forms integration */
   public inputControl = new FormControl('');

@@ -1,4 +1,4 @@
-import { IconName } from './icons/icons.index';
+import { PcIconNameType } from './icons/icons.index';
 
 // file-icon.util.ts
 export type FileIconKey =
@@ -106,7 +106,7 @@ const EXT_TO_KEY: Record<string, FileIconKey> = Object.entries(EXT_MAP).reduce(
 const MULTI_EXT = ['tar.gz', 'tar.bz2', 'tar.xz', 'tgz'] as const;
 
 // Map to your <pc-icon> names (assume these exist in your icon set)
-export const ICON_FOR_KEY: Record<FileIconKey, IconName> = {
+export const ICON_FOR_KEY: Record<FileIconKey, PcIconNameType> = {
   pdf: 'file-pdf',
   doc: 'file-doc',
   sheet: 'file-sheet',

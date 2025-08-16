@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, effect, inject, input, outp
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
-import { IconName } from '@icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 
@@ -86,7 +86,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public disableView = input<boolean>(true);
   public gridOptions = input<GridOptions<Partial<T>>>({});
   public limitToTags = input<string[]>([]);
-  public plusIcon = input<IconName>('plus');
+  public plusIcon = input<PcIconNameType>('plus');
 
   constructor() {
     // React to global search

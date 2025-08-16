@@ -4,9 +4,9 @@
 /* are from the Heroicons set, some are custom.
 /*
 /****************************************************** */
-export type IconName = keyof typeof icons;
+export type PcIconNameType = keyof typeof icons;
 
-export async function loadIconSvg(name: IconName): Promise<string> {
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
   if (!_cache.has(name)) {
     _cache.set(
       name,
@@ -30,10 +30,10 @@ export async function loadIconSvg(name: IconName): Promise<string> {
   return _cache.get(name)!;
 }
 
-const UNKNOWN: IconName = 'unknown';
+const UNKNOWN: PcIconNameType = 'unknown';
 
 /** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<IconName, Promise<string>>();
+const _cache = new Map<PcIconNameType, Promise<string>>();
 
 export const icons = {
   unknown: 'assets/icons/unknown.svg',
