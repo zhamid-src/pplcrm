@@ -4,6 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
+import { FileSizePipe } from '@uxcommon/filesize.pipe';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
 import { EmailsStore } from '../services/store/emailstore';
@@ -12,23 +13,9 @@ import type { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-body',
   standalone: true,
-  imports: [CommonModule, SanitizeHtmlPipe],
+  imports: [CommonModule, SanitizeHtmlPipe, FileSizePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div
-      class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar"
-      [innerHTML]="bodyHtml() | sanitizeHtml"
-    ></div>
-    @if (attachments().length > 0) {
-      <div class="mt-4 flex flex-wrap gap-2">
-        @for (att of attachments(); track att.id) {
-          <a class="badge badge-outline" [href]="getAttachmentUrl(att)" target="_blank" rel="noopener">
-            {{ att.filename }}
-          </a>
-        }
-      </div>
-    }
-  `,
+  templateUrl: './email-body.html',
 })
 export class EmailBody {
   private readonly alerts = inject(AlertService);
@@ -40,10 +27,11 @@ export class EmailBody {
 
   protected readonly attachments = computed(() => {
     const id = this.emailId();
-    return this;
     if (!id) return [] as any[];
     const header = this.store.getEmailHeaderById(id)();
-    return (header?.attachments || []).filter((a: any) => !a.is_inline);
+    const r = (header?.attachments || []).filter((a: any) => !a.is_inline);
+    console.log(r);
+    return r;
   });
   protected readonly bodyHtml = computed(() => {
     const id = this.emailId();
