@@ -4,7 +4,7 @@ import { Component, ElementRef, EventEmitter, Output, ViewChild, computed, injec
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
-import { FileSizePipe } from '@uxcommon/filesize.pipe';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 
 import { QuillModule } from 'ngx-quill';
 import Quill from 'quill';
