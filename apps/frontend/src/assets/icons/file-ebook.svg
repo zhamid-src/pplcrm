@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+     stroke-width="1.5" stroke="currentColor">
+  <!-- Page -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M8.25 3.75h6.75L20.25 9v9.75a1.5 1.5 0 0 1-1.5 1.5H8.25a1.5 1.5 0 0 1-1.5-1.5V5.25a1.5 1.5 0 0 1 1.5-1.5Z"/>
+  <path stroke-linecap="round" stroke-linejoin="round" d="M15 3.75V9h5.25"/>
+  <!-- Bookmark ribbon -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M15 10.5v5.25l1.5-1.125L18 15.75V10.5"/>
+  <!-- Left page lines -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M10.5 12h2.25M10.5 14.25h2.25M10.5 16.5h2.25"/>
+</svg>

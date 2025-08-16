@@ -5,6 +5,8 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { FileSizePipe } from '@uxcommon/filesize.pipe';
+import { AttachmentIconComponent } from '@uxcommon/icons/attachment-icon';
+import { Icon } from '@uxcommon/icons/icon';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
 import { EmailsStore } from '../services/store/emailstore';
@@ -13,7 +15,7 @@ import type { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-body',
   standalone: true,
-  imports: [CommonModule, SanitizeHtmlPipe, FileSizePipe],
+  imports: [CommonModule, SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './email-body.html',
 })
