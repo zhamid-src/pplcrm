@@ -31,7 +31,13 @@ export class EmailList {
       const folderId = this.store.currentSelectedFolderId();
       const emails = this.emails();
 
-      if (folderId && emails.length > 0 && !this.store.currentSelectedEmailId()) {
+      // Do not auto-select for drafts (id '7') to avoid auto-opening compose
+      if (
+        folderId &&
+        folderId !== '7' &&
+        emails.length > 0 &&
+        !this.store.currentSelectedEmailId()
+      ) {
         this.selectEmail(emails[0]);
       }
     });

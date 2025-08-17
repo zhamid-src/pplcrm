@@ -10,7 +10,11 @@
     @if (isComposing()) {
     <div class="h-full border border-base-300 rounded-lg bg-white p-3 relative z-20">
       <!-- emits (finished) when sent/discarded -->
-      <pc-compose-email class="h-full" (finished)="closeCompose()"></pc-compose-email>
+      <pc-compose-email
+        class="h-full"
+        [draftId]="draftIdToLoad()"
+        (finished)="closeCompose()"
+      ></pc-compose-email>
     </div>
     } @else {
     <pc-email-details class="h-full" [email]="selectedEmail()"></pc-email-details>
