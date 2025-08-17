@@ -25,6 +25,7 @@ export class EmailClient {
   protected readonly store = inject(EmailsStore);
 
   protected isComposing = signal(false);
+  protected draftIdToLoad = signal<string | null>(null);
 
   /** Whether the email body overlay is expanded (signal from store) */
   public readonly isBodyExpanded = this.store.isBodyExpanded;
@@ -37,10 +38,12 @@ export class EmailClient {
 
   public closeCompose() {
     this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
   }
 
   public newEmail() {
     this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
     this.isComposing.set(true);
   }
 
@@ -55,7 +58,13 @@ export class EmailClient {
 
   /** Handle email selection from child component */
   public onEmail(email: EmailType): void {
-    this.store.selectEmail(email);
+    const folderId = this.store.currentSelectedFolderId();
+    if (folderId === '7') {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    } else {
+      this.store.selectEmail(email);
+    }
   }
 
   /** Handle folder selection from child component */
@@ -65,6 +74,7 @@ export class EmailClient {
 
   public openCompose() {
     this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
     this.isComposing.set(true);
   }
 
