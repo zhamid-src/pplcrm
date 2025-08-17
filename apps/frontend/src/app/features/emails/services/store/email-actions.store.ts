@@ -9,7 +9,7 @@ import { EmailsService } from '../emails-service';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
-import type { EmailType, EmailDraftType } from 'common/src/lib/models';
+import type { EmailDraftType, EmailType } from 'common/src/lib/models';
 
 @Injectable({ providedIn: 'root' })
 export class EmailActionsStore {
@@ -62,6 +62,22 @@ export class EmailActionsStore {
       }
       throw e;
     }
+  }
+
+  public getDraft(id: string): Promise<EmailDraftType> {
+    return this.svc.getDraft(id);
+  }
+
+  public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
+    console.log(input);
+    const saved = await this.svc.saveDraft(input);
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    if (currentFolderId === '7') {
+      await this.folders.loadEmailsForFolder('7');
+    } else {
+      await this.folders.refreshFolderCounts();
+    }
+    return saved as { id: string };
   }
 
   /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
@@ -129,21 +145,6 @@ export class EmailActionsStore {
       this.state.replaceEmail(emailKey, prev);
       throw e;
     }
-  }
-
-  public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
-    const saved = await this.svc.saveDraft(input);
-    const currentFolderId = this.folders.currentSelectedFolderId();
-    if (currentFolderId === '7') {
-      await this.folders.loadEmailsForFolder('7');
-    } else {
-      await this.folders.refreshFolderCounts();
-    }
-    return saved as { id: string };
-  }
-
-  public getDraft(id: string): Promise<EmailDraftType> {
-    return this.svc.getDraft(id);
   }
 }
 

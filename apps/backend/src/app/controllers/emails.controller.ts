@@ -2,18 +2,19 @@ import { getAllEmailFolders } from '../config/email-folders.config';
 import { EmailAttachmentsRepo } from '../repositories/emails/email-attachments.repo';
 import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
-import { EmailRepo } from '../repositories/emails/email.repo';
 import { EmailDraftsRepo } from '../repositories/emails/email-drafts.repo';
+import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
+  private static readonly DRAFT_FOLDER_ID = '7';
+
   private attachmentsRepo = new EmailAttachmentsRepo();
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
   private draftsRepo = new EmailDraftsRepo();
-  private static readonly DRAFT_FOLDER_ID = '7';
 
   constructor() {
     super(new EmailRepo());
@@ -53,6 +54,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public getAttachmentsByEmailId(tenant_id: string, email_id: string) {
     return this.attachmentsRepo.getByEmailId(tenant_id, email_id);
+  }
+
+  public getDraft(tenant_id: string, _user_id: string, id: string) {
+    return this.draftsRepo.getById({ tenant_id, /*user_id,*/ id });
   }
 
   /** Return a single email and its comments */
@@ -109,25 +114,27 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
     return folders.map((folder: any) => ({
       ...folder,
-      email_count:
-        folder.id === EmailsController.DRAFT_FOLDER_ID ? draftCount : emailCounts[folder.id] || 0,
+      email_count: folder.id === EmailsController.DRAFT_FOLDER_ID ? draftCount : emailCounts[folder.id] || 0,
     }));
   }
 
-  public getDraft(tenant_id: string, user_id: string, id: string) {
-    return this.draftsRepo.getById(tenant_id, user_id, id);
+  public async hasAttachment(tenant_id: string, email_id: string) {
+    this.attachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
   public saveDraft(
     tenant_id: string,
     user_id: string,
-    draft: { id?: string; to_list: string[]; cc_list?: string[]; bcc_list?: string[]; subject?: string; body_html?: string }
+    draft: {
+      id?: string;
+      to_list: string[];
+      cc_list?: string[];
+      bcc_list?: string[];
+      subject?: string;
+      body_html?: string;
+    },
   ) {
     return this.draftsRepo.saveDraft(tenant_id, user_id, draft);
-  }
-
-  public async hasAttachment(tenant_id: string, email_id: string) {
-    this.attachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
   public setFavourite(tenant_id: string, id: string, favourite: boolean) {

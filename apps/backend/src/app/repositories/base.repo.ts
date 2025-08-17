@@ -208,6 +208,7 @@ export class BaseRepository<T extends keyof Models> {
 
   /**
    * Get a single row by ID.
+   * TODO: should also check userId
    */
   public getById(
     input: {

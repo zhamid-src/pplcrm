@@ -6,6 +6,15 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
     super('email_drafts');
   }
 
+  public async countByUser(tenant_id: string, user_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select((eb) => eb.fn.count('id').as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .where('user_id', '=', user_id)
+      .executeTakeFirst();
+    return Number((res as any)?.count || 0);
+  }
+
   public listByUser(tenant_id: string, user_id: string) {
     return this.getSelect()
       .selectAll()
@@ -15,19 +24,18 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       .execute();
   }
 
-  public getById(tenant_id: string, user_id: string, id: string) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('user_id', '=', user_id)
-      .where('id', '=', id)
-      .executeTakeFirst();
-  }
-
   public async saveDraft(
     tenant_id: string,
     user_id: string,
-    draft: { id?: string; to_list: string[]; cc_list?: string[]; bcc_list?: string[]; subject?: string; body_html?: string; body_delta?: unknown };
+    draft: {
+      id?: string;
+      to_list: string[];
+      cc_list?: string[];
+      bcc_list?: string[];
+      subject?: string;
+      body_html?: string;
+      body_delta?: unknown;
+    },
   ) {
     const row: OperationDataType<'email_drafts', 'insert'> = {
       tenant_id,
@@ -50,14 +58,5 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       return this.update({ tenant_id, id: draft.id, row: upd });
     }
     return this.add({ row });
-  }
-
-  public async countByUser(tenant_id: string, user_id: string): Promise<number> {
-    const res = await this.getSelect()
-      .select((eb) => eb.fn.count('id').as('count'))
-      .where('tenant_id', '=', tenant_id)
-      .where('user_id', '=', user_id)
-      .executeTakeFirst();
-    return Number((res as any)?.count || 0);
   }
 }
