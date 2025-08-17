@@ -1,14 +1,15 @@
 <div class="flex text-sm bg-base-100 h-full overflow-hidden">
+  @if (!isComposing()) {
   <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"> </pc-email-folder-list>
 
   @if (!isBodyExpanded()) {
   <pc-email-list (emailSelected)="onEmail($event!)"></pc-email-list>
-  }
+  } }
 
   <!-- Right pane: compose OR details -->
   <div class="flex-1 h-full p-4">
     @if (isComposing()) {
-    <div class="h-full border border-base-300 rounded-lg bg-white p-3">
+    <div class="h-full border border-base-300 rounded-lg bg-white p-3 relative z-20">
       <!-- emits (finished) when sent/discarded -->
       <pc-compose-email class="h-full" (finished)="closeCompose()"></pc-compose-email>
     </div>
