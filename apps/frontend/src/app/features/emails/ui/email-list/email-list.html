@@ -12,7 +12,7 @@
       class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
     >
       <div class="truncate text-xs text-gray-500 flex gap-1">
-        <span class="truncate flex-1">{{ email.from_email }}</span>
+        <span class="truncate flex-1">{{ email.from_email || email.to_email }}</span>
 
         <!-- TODO: use the sent time -->
         <span class="flex-none">{{ email.updated_at | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
