@@ -60,6 +60,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.draftsRepo.getById({ tenant_id, /*user_id,*/ id });
   }
 
+  public deleteDraft(tenant_id: string, _user_id: string, id: string) {
+    return this.draftsRepo.delete({ tenant_id, id });
+  }
+
   /** Return a single email and its comments */
   public async getEmailBody(tenant_id: string, id: string) {
     const email = await this.bodiesRepo.getById({ tenant_id, id });
