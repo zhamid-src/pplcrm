@@ -104,6 +104,19 @@ docker run --name pplcrm-db \
   -p 5432:5432 -d postgres
 ```
 
+### Azure Blob Storage (Azurite)
+
+Run Azurite locally to emulate Azure Blob Storage:
+
+```bash
+docker run --name pplcrm-azurite -p 10000:10000 -p 10001:10001 -p 10002:10002 -d mcr.microsoft.com/azure-storage/azurite
+npm run azurite:init
+```
+
+The init script creates an `uploads` container, applies permissive CORS, and outputs a SAS URL valid for one hour that can be used for browser uploads.
+
+Override defaults with `AZURE_STORAGE_CONNECTION_STRING` or `AZURE_STORAGE_CONTAINER` environment variables.
+
 ### Migrations
 
 ```bash
