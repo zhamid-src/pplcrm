@@ -1,7 +1,7 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, ViewChild, inject, signal } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
@@ -26,6 +26,7 @@ export class EmailClient {
 
   protected isComposing = signal(false);
   protected draftIdToLoad = signal<string | null>(null);
+  @ViewChild('composer') private composer?: ComposeEmailComponent;
 
   /** Whether the email body overlay is expanded (signal from store) */
   public readonly isBodyExpanded = this.store.isBodyExpanded;
@@ -57,8 +58,18 @@ export class EmailClient {
   }
 
   /** Handle email selection from child component */
-  public onEmail(email: EmailType): void {
+  public async onEmail(email: EmailType): Promise<void> {
     const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        if (this.composer?.form.dirty) {
+          await this.composer.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+      }
+      this.closeCompose();
+    }
     if (folderId === '7') {
       this.draftIdToLoad.set(String(email.id));
       this.isComposing.set(true);

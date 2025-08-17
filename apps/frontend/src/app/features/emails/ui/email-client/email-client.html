@@ -11,6 +11,7 @@
     <div class="h-full border border-base-300 rounded-lg bg-white p-3 relative z-20">
       <!-- emits (finished) when sent/discarded -->
       <pc-compose-email
+        #composer
         class="h-full"
         [draftId]="draftIdToLoad()"
         (finished)="closeCompose()"
