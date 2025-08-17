@@ -12,15 +12,20 @@
       class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
     >
       <div class="truncate text-xs text-gray-500 flex gap-1">
+        @if (email.from_email || email.to_email) {
         <span class="truncate flex-1">{{ email.from_email || email.to_email }}</span>
-
+        } @else {
+        <span class="truncate flex-1">No recipient</span>
+        }
         <!-- TODO: use the sent time -->
         <span class="flex-none">{{ email.updated_at | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
       </div>
       <div class="truncate font-medium flex gap-1">
+        @if (email?.subject) {
         <span class="truncate flex-1">{{ email.subject }}</span>
-
-        @if (email.has_attachment) {
+        } @else {
+        <span class="truncate flex-1 italic font-light text-gray-400">No Subject</span>
+        } @if (email.has_attachment) {
         <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
