@@ -26,12 +26,14 @@
 
       <!-- Options menu (hover-reveal on md+, always visible on mobile) -->
       @if (canDelete(comment)) {
-      <pc-icon
-        name="x-mark"
+      <button
+        class="hidden group-hover:flex hover:text-error hover:font-bold cursor-pointer tooltip tooltip-left"
+        data-tip="Delete comment"
         (click)="confirmDelete(comment)"
-        [size]="4"
-        class="hidden group-hover:block hover:text-error ml-0 pl-0 cursor-pointer"
-      ></pc-icon>
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+
       }
     </div>
 

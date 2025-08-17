@@ -40,5 +40,8 @@
 
     }
   </ul>
-  <button class="btn btn-primary" (click)="emitNewEmail()">New Email</button>
+  <button class="btn btn-primary" (click)="emitNewEmail()">
+    <pc-icon name="pencil-square"></pc-icon>
+    <span [class.hidden]="foldersCollapsed()">New Email</span>
+  </button>
 </aside>
