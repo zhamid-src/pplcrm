@@ -3,10 +3,13 @@
   <div class="flex items-center justify-between">
     <div class="text-base">New message</div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-xs" (click)="onDiscard()">
-        <pc-icon name="trash" class="mr-1"></pc-icon>Discard
+      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="discard()">
+        <pc-icon name="x-circle" class="mr-1"></pc-icon>Discard
       </button>
-      <button type="submit" class="btn btn-primary btn-sm" [disabled]="sending() || !validTo()">
+      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="saveDraft()">
+        <pc-icon name="save" class="mr-1"></pc-icon>Save Draft
+      </button>
+      <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
         <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
       </button>
     </div>

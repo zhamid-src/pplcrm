@@ -10,6 +10,7 @@
   default: true;
   --color-primary: '#0ea5e9';
   --color-secondary: '#14e8a6';
+  --color-secondary-content: '#1f2937';
   --color-accent: '#0c506e';
   --color-accent-content: #f0f0f0;
   --color-neutral: '#cbd5e1';
@@ -20,6 +21,7 @@
   --color-success: '#2dd4bf';
   --color-warning: '#e5c963';
   --color-error: '#f37373';
+  --color-error-content: '#f0f0f0';
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
