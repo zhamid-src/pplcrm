@@ -15,19 +15,37 @@
     </div>
   </div>
 
-  <!-- Recipients -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-    <input
-      class="input-pplcrm w-full"
-      placeholder="To (comma or semicolon separated)"
-      [formControl]="form.controls.to"
-    />
-    <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
-    <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
-  </div>
+  <!-- Collapsible Recipients/Subject -->
+  <div class="border border-neutral rounded-md">
+    <!-- Header row with toggle -->
+    <div class="flex items-center justify-between cursor-pointer px-3 py-2 bg-base-200" (click)="toggleHeader()">
+      <span class="font-medium">Recipients & Subject</span>
+      <pc-swap
+        swapOnIcon="expand-content"
+        swapOffIcon="collapse-content"
+        animation="flip"
+        [checked]="showHeader()"
+        [size]="4"
+      ></pc-swap>
+    </div>
 
-  <!-- Subject -->
-  <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+    <!-- Collapsible body -->
+    @if (showHeader()) {
+    <div class="p-3 space-y-2">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input
+          class="input-pplcrm w-full"
+          placeholder="To (comma or semicolon separated)"
+          [formControl]="form.controls.to"
+        />
+        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
+        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
+      </div>
+
+      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+    </div>
+    }
+  </div>
 
   <!-- Editor card: ONE ROW toolbar + scrollable editor -->
   <div class="rounded-lg border border-base-300 flex flex-col h-full">

@@ -41,7 +41,7 @@
         animation="flip"
         [size]="4"
         [checked]="isCollapsed(item.name)"
-        (clickEvent)="toggleCollapse(item.name)"
+        (click)="toggleCollapse(item.name)"
       ></pc-swap>
 
       }
@@ -96,7 +96,7 @@
       swapOnIcon="x-mark"
       [checked]="isDrawerFull()"
       animation="rotate"
-      (clickEvent)="toggleDrawer()"
+      (click)="toggleDrawer()"
     ></pc-swap>
   </div>
 </div>

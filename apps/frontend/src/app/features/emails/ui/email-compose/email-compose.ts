@@ -5,6 +5,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
+import { Swap } from '@uxcommon/swap';
 
 import { QuillModule } from 'ngx-quill';
 import Quill from 'quill';
@@ -14,7 +15,7 @@ import { EmailActionsStore } from '../../services/store/email-actions.store';
 @Component({
   selector: 'pc-compose-email',
   standalone: true,
-  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe],
+  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
   host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
   templateUrl: './email-compose.html',
   styleUrls: ['./email-compose.css'],
@@ -48,6 +49,7 @@ export class ComposeEmailComponent {
     history: { delay: 500, maxStack: 200, userOnly: true },
   };
   public sending = signal(false);
+  public showHeader = signal(true);
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
@@ -105,6 +107,10 @@ export class ComposeEmailComponent {
   }
 
   public saveDraft() {}
+
+  public toggleHeader() {
+    this.showHeader.update((v) => !v);
+  }
 
   public toggleMore() {
     this.showMore.update((v) => !v);

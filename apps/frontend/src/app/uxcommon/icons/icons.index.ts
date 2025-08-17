@@ -61,6 +61,8 @@ export const icons = {
   'chevron-down': 'assets/icons/chevron-down.svg',
   'reply-all': 'assets/icons/reply-all.svg',
   reply: 'assets/icons/reply.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
 
   /* -------------------- Status & Alerts -------------------- */
   'check-circle': 'assets/icons/check-circle.svg',
