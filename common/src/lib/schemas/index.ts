@@ -47,6 +47,17 @@ export const EmailObj = z.object({
   status: z.enum(['open', 'closed', 'resolved']).nullable().default('open'),
 });
 
+export const EmailDraftObj = z.object({
+  id: z.string(),
+  to_list: z.array(z.string()),
+  cc_list: z.array(z.string()),
+  bcc_list: z.array(z.string()),
+  subject: z.string().optional(),
+  body_html: z.string().optional(),
+  body_delta: z.any().optional(),
+  updated_at: z.date(),
+});
+
 /**
  * The parameter for updating a person.
  * It's used with an ID in the API call that

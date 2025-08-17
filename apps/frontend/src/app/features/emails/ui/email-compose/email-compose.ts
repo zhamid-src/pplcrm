@@ -27,6 +27,7 @@ export class ComposeEmailComponent {
 
   public attachments = signal<File[]>([]);
   public dragOver = signal(false);
+  public draftId = signal<string | null>(null);
   @ViewChild('fileInput', { static: false }) public fileInput?: ElementRef<HTMLInputElement>;
   @Output() public finished = new EventEmitter<void>(); // notify parent to close
   public form = this.fb.group({
@@ -106,7 +107,31 @@ export class ComposeEmailComponent {
     this.attachments.set(arr);
   }
 
-  public saveDraft() {}
+  public async saveDraft() {
+    const v = this.form.getRawValue();
+    const input: DraftPayload = {
+      id: this.draftId() || undefined,
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+    };
+    const res = await this.actions.saveDraft(input);
+    this.draftId.set(res.id);
+  }
+
+  public async loadDraft(id: string) {
+    const d = await this.actions.getDraft(id);
+    this.form.patchValue({
+      to: (d.to_list || []).join(', '),
+      cc: (d.cc_list || []).join(', '),
+      bcc: (d.bcc_list || []).join(', '),
+      subject: d.subject || '',
+      html: d.body_html || '',
+    });
+    this.draftId.set(d.id);
+  }
 
   public toggleHeader() {
     this.showHeader.update((v) => !v);
@@ -161,6 +186,15 @@ export type ComposePayload = {
   bcc: string[];
   cc: string[];
   html: string; // keep HTML for simplicity; switch to Delta if you prefer
+  subject: string;
+  to: string[];
+};
+
+export type DraftPayload = {
+  id?: string;
+  bcc: string[];
+  cc: string[];
+  html: string;
   subject: string;
   to: string[];
 };
