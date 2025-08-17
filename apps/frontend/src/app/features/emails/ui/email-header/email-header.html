@@ -274,15 +274,13 @@
       </div>
     </div>
     <div class="flex items-center gap-1">
-      <pc-swap
-        class="hover:text-primary tooltip tooltip-left"
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
         [attr.data-tip]="'Expand email body'"
-        [checked]="isExpanded()"
-        swapOffIcon="arrows-pointing-out"
-        swapOnIcon="arrows-pointing-in"
+        name="expand-content"
         [size]="4"
-        (clickEvent)="toggleExpand()"
-      ></pc-swap>
+        (click)="toggleExpand()"
+      ></pc-icon>
     </div>
   </div>
 </header>

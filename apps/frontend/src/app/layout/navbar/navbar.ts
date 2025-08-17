@@ -165,6 +165,7 @@ export class Navbar {
    * Switches the visual theme between light and dark mode.
    */
   protected toggleTheme(): void {
+    console.log('Toggling theme');
     this.themeSvc.toggleTheme();
   }
 }

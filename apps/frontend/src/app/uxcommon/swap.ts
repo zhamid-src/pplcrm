@@ -17,7 +17,7 @@ export class Swap {
    * Event emitted when the component is clicked.
    * Use this to handle toggle logic externally.
    */
-  public readonly clickEvent = output<void>();
+  public readonly click = output<void>();
 
   /**
    * The animation to apply when swapping icons.
@@ -45,7 +45,8 @@ export class Swap {
   /**
    * Emits the click event for the parent to handle toggle logic.
    */
-  public emitClick() {
-    this.clickEvent.emit();
+  public emitClick(event: Event) {
+    event.stopPropagation();
+    this.click.emit();
   }
 }

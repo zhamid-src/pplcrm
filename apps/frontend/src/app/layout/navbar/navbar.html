@@ -36,8 +36,7 @@
       swapOnIcon="arrows-pointing-out"
       swapOffIcon="arrows-pointing-in"
       [checked]="!isFullScreenMode()"
-      (clickEvent)="toggleFullScreen()"
-      (click)="$event.stopPropagation()"
+      (click)="toggleFullScreen()"
     ></pc-swap>
 
     <!-- light / dark theme switcher -->
@@ -45,7 +44,7 @@
       swapOnIcon="sun"
       swapOffIcon="moon"
       [checked]="themeSvc.getTheme() === 'light'"
-      (clickEvent)="toggleTheme()"
+      (click)="toggleTheme()"
     ></pc-swap>
 
     <!-- notifications -->

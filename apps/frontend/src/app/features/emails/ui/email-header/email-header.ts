@@ -5,7 +5,6 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
-import { Swap } from '@uxcommon/swap';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
@@ -15,7 +14,7 @@ import { EmailType } from 'common/src/lib/models';
   selector: 'pc-email-header',
   standalone: true,
   // include swap for expand/collapse control
-  imports: [CommonModule, EmailAssign, Icon, Swap],
+  imports: [CommonModule, EmailAssign, Icon],
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
