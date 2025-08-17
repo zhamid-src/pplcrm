@@ -6,6 +6,7 @@ import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-at
 import { Icon } from '@icons/icon'; // your <pc-icon>
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { Swap } from '@uxcommon/swap';
+import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 
 import { QuillModule } from 'ngx-quill';
 import Quill from 'quill';
@@ -23,6 +24,7 @@ import { EmailActionsStore } from '../../services/store/email-actions.store';
 export class ComposeEmailComponent {
   private actions = inject(EmailActionsStore);
   private fb = inject(NonNullableFormBuilder);
+  private dialogs = inject(ConfirmDialogService);
   private quill!: Quill;
 
   public attachments = signal<File[]>([]);
@@ -54,8 +56,32 @@ export class ComposeEmailComponent {
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
-  public discard() {
-    this.finished.emit(); // just close; keep draft handling for later if needed
+  public async discard() {
+    const hasDraft = !!this.draftId();
+    const isDirty = this.form.dirty;
+    if (!isDirty && !hasDraft) {
+      this.finished.emit();
+      return;
+    }
+    const ok = await this.dialogs.confirm({
+      title: 'Discard draft?',
+      message: 'Your changes will be permanently removed.',
+      variant: 'danger',
+      icon: 'trash',
+      confirmText: 'Discard',
+      cancelText: 'Cancel',
+      allowBackdropClose: false,
+    });
+    if (ok) {
+      if (hasDraft) {
+        try {
+          await this.actions.deleteDraft(this.draftId()!);
+        } catch (e) {
+          console.error('Failed to delete draft', e);
+        }
+      }
+      this.finished.emit();
+    }
   }
 
   public onDragLeave(e: DragEvent) {
