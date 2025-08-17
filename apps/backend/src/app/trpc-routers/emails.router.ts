@@ -57,6 +57,12 @@ function getDraft() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
 }
 
+function deleteDraft() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
+}
+
 /**
  * Retrieve a single email by its ID.
  * @returns The requested email record.
@@ -156,6 +162,7 @@ export const EmailsRouter = router({
   getEmailWithHeaders: getEmailWithHeaders(),
   addComment: addComment(),
   deleteComment: deleteComment(),
+  deleteDraft: deleteDraft(),
   assign: assign(),
   setFavourite: setFavourite(),
   setStatus: setStatus(),
