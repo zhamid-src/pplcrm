@@ -3,6 +3,7 @@ import { EmailAttachmentsRepo } from '../repositories/emails/email-attachments.r
 import { EmailBodiesRepo } from '../repositories/emails/email-body.repo';
 import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
+import { EmailDraftsRepo } from '../repositories/emails/email-drafts.repo';
 import { BaseController } from './base.controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
@@ -11,6 +12,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   private attachmentsRepo = new EmailAttachmentsRepo();
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
+  private draftsRepo = new EmailDraftsRepo();
+  private static readonly DRAFT_FOLDER_ID = '7';
 
   constructor() {
     super(new EmailRepo());
@@ -69,7 +72,24 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return all emails for the given folder */
-  public getEmails(user_id: string, tenant_id: string, folder_id: string) {
+  public async getEmails(user_id: string, tenant_id: string, folder_id: string) {
+    if (folder_id === EmailsController.DRAFT_FOLDER_ID) {
+      const drafts = await this.draftsRepo.listByUser(tenant_id, user_id);
+      return drafts.map((d: any) => ({
+        id: d.id,
+        folder_id,
+        from_email: '',
+        to_email: Array.isArray(d.to_list) ? d.to_list.join(', ') : '',
+        subject: d.subject,
+        preview: '',
+        assigned_to: undefined,
+        updated_at: d.updated_at,
+        is_favourite: false,
+        att_count: 0,
+        has_attachment: false,
+        status: 'open',
+      }));
+    }
     return this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id);
   }
 
@@ -81,16 +101,29 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Return all folders for a tenant with email counts */
   public async getFoldersWithCounts(user_id: string, tenant_id: string) {
-    const [folders, emailCounts] = await Promise.all([
+    const [folders, emailCounts, draftCount] = await Promise.all([
       this.getFolders(tenant_id),
       this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
+      this.draftsRepo.countByUser(tenant_id, user_id),
     ]);
 
-    // Add email count to each folder
     return folders.map((folder: any) => ({
       ...folder,
-      email_count: emailCounts[folder.id] || 0,
+      email_count:
+        folder.id === EmailsController.DRAFT_FOLDER_ID ? draftCount : emailCounts[folder.id] || 0,
     }));
+  }
+
+  public getDraft(tenant_id: string, user_id: string, id: string) {
+    return this.draftsRepo.getById(tenant_id, user_id, id);
+  }
+
+  public saveDraft(
+    tenant_id: string,
+    user_id: string,
+    draft: { id?: string; to_list: string[]; cc_list?: string[]; bcc_list?: string[]; subject?: string; body_html?: string }
+  ) {
+    return this.draftsRepo.saveDraft(tenant_id, user_id, draft);
   }
 
   public async hasAttachment(tenant_id: string, email_id: string) {

@@ -4,8 +4,8 @@
 import { Injectable } from '@angular/core';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
-import { ComposePayload } from '../ui/email-compose/email-compose';
-import { EmailType } from 'common/src/lib/models';
+import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
+import { EmailType, EmailDraftType } from 'common/src/lib/models';
 
 /** Service for interacting with email backend via tRPC */
 @Injectable({ providedIn: 'root' })
@@ -53,6 +53,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public getEmailBody(id: string) {
     return this.api.emails.getEmailBody.query(id);
+  }
+
+  public getDraft(id: string) {
+    return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
   }
 
   /**
@@ -124,5 +128,9 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public setStatus(id: string, status: 'open' | 'closed' | 'resolved') {
     return this.api.emails.setStatus.mutate({ id, status });
+  }
+
+  public saveDraft(input: DraftPayload) {
+    return this.api.emails.saveDraft.mutate(input);
   }
 }

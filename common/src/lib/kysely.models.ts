@@ -47,6 +47,7 @@ export interface Models {
   email_headers: EmailHeaders;
   email_recipients: EmailRecipients;
   email_attachments: EmailAttachments;
+  email_drafts: EmailDrafts;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -303,6 +304,19 @@ interface EmailAttachments extends RecordType {
   cid: string | null;
   is_inline: boolean;
   pos: number;
+}
+
+interface EmailDrafts extends RecordType {
+  user_id: string;
+  thread_id: string | null;
+  to_list: JsonValue | null;
+  cc_list: JsonValue | null;
+  bcc_list: JsonValue | null;
+  subject: string | null;
+  body_html: string | null;
+  body_delta: JsonValue | null;
+  meta: JsonValue | null;
+  is_locked: boolean;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
