@@ -5,6 +5,7 @@ import type {
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
+  EmailDraftObj,
   PersonsObj,
   SettingsObj,
   UpdateHouseholdsObj,
@@ -28,6 +29,8 @@ export type EmailCommentType = z.infer<typeof EmailCommentObj>;
 export type EmailFolderType = z.infer<typeof EmailFolderObj>;
 
 export type EmailType = z.infer<typeof EmailObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
 
 export type PERSONINHOUSEHOLDTYPE = {
   first_name: string;
