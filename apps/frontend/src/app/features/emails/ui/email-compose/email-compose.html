@@ -61,41 +61,29 @@
         <button class="ql-italic" aria-label="Italic"></button>
         <button class="ql-underline" aria-label="Underline"></button>
         <button class="ql-strike" aria-label="Strikethrough"></button>
-      </span>
-
-      <!-- Text color -->
-      <span class="ql-formats">
-        <select class="ql-color" aria-label="Text color"></select>
+        <button class="ql-blockquote" aria-label="Blockquote"></button>
       </span>
 
       <!-- Align (dropdown) -->
       <span class="ql-formats">
+        <select class="ql-color" aria-label="Text color"></select>
         <select class="ql-align" aria-label="Align">
           <option selected></option>
           <option value="center"></option>
           <option value="right"></option>
           <option value="justify"></option>
         </select>
+        <button class="ql-list" value="ordered" aria-label="Numbered list"></button>
+        <button class="ql-list" value="bullet" aria-label="Bulleted list"></button>
       </span>
 
       <!-- Link / Attach / Image -->
       <span class="ql-formats">
         <button class="ql-link" aria-label="Insert link"></button>
+        <button class="ql-image" aria-label="Insert image"></button>
         <button class="ql-attach" type="button" aria-label="Attach files">
           <pc-icon name="paper-clip" [size]="4"></pc-icon>
         </button>
-        <button class="ql-image" aria-label="Insert image"></button>
-      </span>
-
-      <!-- Lists -->
-      <span class="ql-formats">
-        <button class="ql-list" value="ordered" aria-label="Numbered list"></button>
-        <button class="ql-list" value="bullet" aria-label="Bulleted list"></button>
-      </span>
-
-      <!-- Quote -->
-      <span class="ql-formats">
-        <button class="ql-blockquote" aria-label="Blockquote"></button>
       </span>
 
       <!-- Remove formatting -->
