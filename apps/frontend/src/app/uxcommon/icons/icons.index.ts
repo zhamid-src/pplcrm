@@ -91,6 +91,7 @@ export const icons = {
   'redo-fat': 'assets/icons/redo-fat.svg',
   'attach-fat': 'assets/icons/attach-fat.svg',
   'attach-file-off': 'assets/icons/attach-file-off.svg',
+  save: 'assets/icons/save.svg',
 
   /* -------------------- Commerce & Finance -------------------- */
   banknotes: 'assets/icons/banknotes.svg',

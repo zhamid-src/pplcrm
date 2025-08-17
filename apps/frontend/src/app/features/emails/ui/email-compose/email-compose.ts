@@ -51,7 +51,7 @@ export class ComposeEmailComponent {
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
-  public onDiscard() {
+  public discard() {
     this.finished.emit(); // just close; keep draft handling for later if needed
   }
 
@@ -103,6 +103,8 @@ export class ComposeEmailComponent {
     arr.splice(index, 1);
     this.attachments.set(arr);
   }
+
+  public saveDraft() {}
 
   public toggleMore() {
     this.showMore.update((v) => !v);
