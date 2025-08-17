@@ -1,27 +1,17 @@
 // pc-compose-email.component.ts
-import { DecimalPipe } from '@angular/common';
-import {
-  Component,
-  ElementRef,
-  EventEmitter,
-  Output,
-  ViewChild,
-  computed,
-  inject,
-  signal,
-  Input,
-} from '@angular/core';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
-import { Icon } from '@icons/icon'; // your <pc-icon>
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-import { Swap } from '@uxcommon/swap';
-import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
+import { DecimalPipe } from "@angular/common";
+import { Component, ElementRef, EventEmitter, Input, Output, ViewChild, computed, inject, signal } from "@angular/core";
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { AttachmentIconComponent } from "@icons/attachment-icon"; // your <pc-attachment-icon>
+import { Icon } from "@icons/icon"; // your <pc-icon>
+import { FileSizePipe } from "@uxcommon/pipes/filesize.pipe";
+import { ConfirmDialogService } from "@uxcommon/shared-dialog-service";
+import { Swap } from "@uxcommon/swap";
 
-import { QuillModule } from 'ngx-quill';
-import Quill from 'quill';
+import { QuillModule } from "ngx-quill";
+import Quill from "quill";
 
-import { EmailActionsStore } from '../../services/store/email-actions.store';
+import { EmailActionsStore } from "../../services/store/email-actions.store";
 
 @Component({
   selector: 'pc-compose-email',
@@ -33,22 +23,13 @@ import { EmailActionsStore } from '../../services/store/email-actions.store';
 })
 export class ComposeEmailComponent {
   private actions = inject(EmailActionsStore);
-  private fb = inject(NonNullableFormBuilder);
   private dialogs = inject(ConfirmDialogService);
+  private draftIdSignal = signal<string | null>(null);
+  private fb = inject(NonNullableFormBuilder);
   private quill!: Quill;
 
   public attachments = signal<File[]>([]);
   public dragOver = signal(false);
-  private draftIdSignal = signal<string | null>(null);
-  @Input() public set draftId(id: string | null) {
-    if (id) {
-      void this.loadDraft(id);
-    } else {
-      this.draftIdSignal.set(null);
-      this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
-      this.attachments.set([]);
-    }
-  }
   @ViewChild('fileInput', { static: false }) public fileInput?: ElementRef<HTMLInputElement>;
   @Output() public finished = new EventEmitter<void>(); // notify parent to close
   public form = this.fb.group({
@@ -75,7 +56,17 @@ export class ComposeEmailComponent {
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
-  public async discard() {
+  @Input() public set draftId(id: string | null) {
+    if (id) {
+      void this.loadDraft(id);
+    } else {
+      this.draftIdSignal.set(null);
+      this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
+      this.attachments.set([]);
+    }
+  }
+
+  public async delete() {
     const hasDraft = !!this.draftIdSignal();
     const isDirty = this.form.dirty;
     if (!isDirty && !hasDraft) {
@@ -101,6 +92,22 @@ export class ComposeEmailComponent {
       }
       this.finished.emit();
     }
+  }
+
+  public async discard() {
+    return this.delete();
+  }
+
+  public async loadDraft(id: string) {
+    const d = await this.actions.getDraft(id);
+    this.form.patchValue({
+      to: (d.to_list || []).join(', '),
+      cc: (d.cc_list || []).join(', '),
+      bcc: (d.bcc_list || []).join(', '),
+      subject: d.subject || '',
+      html: d.body_html || '',
+    });
+    this.draftIdSignal.set(d.id);
   }
 
   public onDragLeave(e: DragEvent) {
@@ -166,18 +173,6 @@ export class ComposeEmailComponent {
     this.draftIdSignal.set(res.id);
   }
 
-  public async loadDraft(id: string) {
-    const d = await this.actions.getDraft(id);
-    this.form.patchValue({
-      to: (d.to_list || []).join(', '),
-      cc: (d.cc_list || []).join(', '),
-      bcc: (d.bcc_list || []).join(', '),
-      subject: d.subject || '',
-      html: d.body_html || '',
-    });
-    this.draftIdSignal.set(d.id);
-  }
-
   public toggleHeader() {
     this.showHeader.update((v) => !v);
   }
@@ -229,17 +224,17 @@ export class ComposeEmailComponent {
 export type ComposePayload = {
   attachments: File[];
   bcc: string[];
-  cc: string[];
+cc: string[];
   html: string; // keep HTML for simplicity; switch to Delta if you prefer
   subject: string;
   to: string[];
 };
 
 export type DraftPayload = {
-  id?: string;
   bcc: string[];
-  cc: string[];
+cc: string[];
   html: string;
+  id?: string;
   subject: string;
   to: string[];
 };
