@@ -1,6 +1,16 @@
 // pc-compose-email.component.ts
 import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, EventEmitter, Output, ViewChild, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  EventEmitter,
+  Output,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+  Input,
+} from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
@@ -29,7 +39,16 @@ export class ComposeEmailComponent {
 
   public attachments = signal<File[]>([]);
   public dragOver = signal(false);
-  public draftId = signal<string | null>(null);
+  private draftIdSignal = signal<string | null>(null);
+  @Input() public set draftId(id: string | null) {
+    if (id) {
+      void this.loadDraft(id);
+    } else {
+      this.draftIdSignal.set(null);
+      this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
+      this.attachments.set([]);
+    }
+  }
   @ViewChild('fileInput', { static: false }) public fileInput?: ElementRef<HTMLInputElement>;
   @Output() public finished = new EventEmitter<void>(); // notify parent to close
   public form = this.fb.group({
@@ -57,7 +76,7 @@ export class ComposeEmailComponent {
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
   public async discard() {
-    const hasDraft = !!this.draftId();
+    const hasDraft = !!this.draftIdSignal();
     const isDirty = this.form.dirty;
     if (!isDirty && !hasDraft) {
       this.finished.emit();
@@ -75,7 +94,7 @@ export class ComposeEmailComponent {
     if (ok) {
       if (hasDraft) {
         try {
-          await this.actions.deleteDraft(this.draftId()!);
+          await this.actions.deleteDraft(this.draftIdSignal()!);
         } catch (e) {
           console.error('Failed to delete draft', e);
         }
@@ -136,7 +155,7 @@ export class ComposeEmailComponent {
   public async saveDraft() {
     const v = this.form.getRawValue();
     const input: DraftPayload = {
-      id: this.draftId() || undefined,
+      id: this.draftIdSignal() || undefined,
       to: this.parseEmails(v.to),
       cc: this.parseEmails(v.cc),
       bcc: this.parseEmails(v.bcc),
@@ -144,7 +163,7 @@ export class ComposeEmailComponent {
       html: v.html,
     };
     const res = await this.actions.saveDraft(input);
-    this.draftId.set(res.id);
+    this.draftIdSignal.set(res.id);
   }
 
   public async loadDraft(id: string) {
@@ -156,7 +175,7 @@ export class ComposeEmailComponent {
       subject: d.subject || '',
       html: d.body_html || '',
     });
-    this.draftId.set(d.id);
+    this.draftIdSignal.set(d.id);
   }
 
   public toggleHeader() {
