@@ -53,6 +53,10 @@ function getEmailBody() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
 }
 
+function getDraft() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
+}
+
 /**
  * Retrieve a single email by its ID.
  * @returns The requested email record.
@@ -115,6 +119,30 @@ function setStatus() {
     .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status));
 }
 
+function saveDraft() {
+  return authProcedure
+    .input(
+      z.object({
+        id: z.string().optional(),
+        to: z.array(z.string()),
+        cc: z.array(z.string()).optional(),
+        bcc: z.array(z.string()).optional(),
+        subject: z.string().optional(),
+        html: z.string().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
+        id: input.id,
+        to_list: input.to,
+        cc_list: input.cc ?? [],
+        bcc_list: input.bcc ?? [],
+        subject: input.subject ?? undefined,
+        body_html: input.html ?? undefined,
+      }),
+    );
+}
+
 const emails = new EmailsController();
 
 /** Router exposing email-related procedures. */
@@ -123,6 +151,7 @@ export const EmailsRouter = router({
   getFoldersWithCounts: getFoldersWithCounts(),
   getEmails: getEmails(),
   getEmailBody: getEmailBody(),
+  getDraft: getDraft(),
   getEmailHeader: getEmailHeader(),
   getEmailWithHeaders: getEmailWithHeaders(),
   addComment: addComment(),
@@ -130,6 +159,7 @@ export const EmailsRouter = router({
   assign: assign(),
   setFavourite: setFavourite(),
   setStatus: setStatus(),
+  saveDraft: saveDraft(),
   hasAttachment: hasAttachment(),
   getAllAttachments: getAllAttachments(),
   getAttachmentCountByEmails: getAttachmentCountByEmails(),
