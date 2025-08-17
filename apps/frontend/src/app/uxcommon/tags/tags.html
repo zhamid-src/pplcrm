@@ -13,8 +13,8 @@
     class="mr-1"
     [name]="tag"
     [canDelete]="canDelete()"
-    (clickEvent)="clicked(tag)"
-    (closeEvent)="closed(tag)"
+    (click)="clicked(tag)"
+    (close)="closed(tag)"
   ></pc-tagitem>
   }
 </div>

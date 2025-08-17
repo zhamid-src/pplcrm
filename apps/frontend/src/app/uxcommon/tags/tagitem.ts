@@ -9,8 +9,8 @@ import { Icon } from '@icons/icon';
  * - `canDelete`: Whether to show a delete icon (defaults to `true`).
  *
  * ## Outputs
- * - `clickEvent`: Emits the tag name when the tag is clicked.
- * - `closeEvent`: Emits the tag name when the tag is deleted. This should be handled by the parent to remove the tag from the array **after** a short delay to allow the CSS animation to complete.
+ * - `click`: Emits the tag name when the tag is clicked.
+ * - `close`: Emits the tag name when the tag is deleted. This should be handled by the parent to remove the tag from the array **after** a short delay to allow the CSS animation to complete.
  *
  * ## Template Notes
  * - The `destroy` flag should be bound to a CSS class to trigger the exit animation (`.destroy`).
@@ -24,21 +24,21 @@ import { Icon } from '@icons/icon';
   templateUrl: './tagitem.html',
 })
 export class TagItem {
-  public readonly clickEvent = output<string>();
-  public readonly closeEvent = output<string>();
+  public readonly click = output<string>();
+  public readonly close = output<string>();
 
   public canDelete = input<boolean>(true);
   public invisible = input<Signal<boolean>>(signal(false));
   public name = input.required<string>();
 
   public emitClick() {
-    this.clickEvent.emit(this.name());
+    this.click.emit(this.name());
   }
 
   public emitClose() {
     // Destroy here sets the animation by adding the class 'destroy' to the tag
     // It does mean that the tag should be removed from the array in the parent component
     // after some delay, so that the animation can complete
-    this.closeEvent.emit(this.name());
+    this.close.emit(this.name());
   }
 }
