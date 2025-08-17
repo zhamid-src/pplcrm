@@ -26,19 +26,28 @@ export class EmailList {
   public readonly emails = this.store.emailsInSelectedFolder;
 
   constructor() {
-    // Auto-select the first email in the folder when nothing is selected.
+    // Auto-select the first email when the current selection is removed.
     effect(() => {
       const folderId = this.store.currentSelectedFolderId();
       const emails = this.emails();
+      const selectedId = this.store.currentSelectedEmailId();
 
-      // Do not auto-select for drafts (id '7') to avoid auto-opening compose
-      if (
-        folderId &&
-        folderId !== '7' &&
-        emails.length > 0 &&
-        !this.store.currentSelectedEmailId()
-      ) {
-        this.selectEmail(emails[0]);
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
+        }
+        return;
+      }
+
+      // Do not auto-select for drafts (id '7') to avoid auto-opening compose.
+      if (folderId && folderId !== '7') {
+        // If nothing is selected or the current selection no longer exists in the list,
+        // automatically select the first email.
+        if (!selectedId || !emails.some((e) => e.id === selectedId)) {
+          this.selectEmail(emails[0]);
+        }
       }
     });
   }
