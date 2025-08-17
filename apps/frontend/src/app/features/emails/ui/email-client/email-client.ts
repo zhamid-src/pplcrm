@@ -37,6 +37,9 @@ export class EmailClient {
   /** Currently selected folder id (signal from store) */
   public readonly selectedFolderId = this.store.currentSelectedFolderId;
 
+  /** Emails in the currently selected folder */
+  public readonly emails = this.store.emailsInSelectedFolder;
+
   public closeCompose() {
     this.isComposing.set(false);
     this.draftIdToLoad.set(null);
