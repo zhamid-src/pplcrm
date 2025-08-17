@@ -80,6 +80,16 @@ export class EmailActionsStore {
     return saved as { id: string };
   }
 
+  public async deleteDraft(id: string): Promise<void> {
+    await this.svc.deleteDraft(id);
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    if (currentFolderId === '7') {
+      await this.folders.loadEmailsForFolder('7');
+    } else {
+      await this.folders.refreshFolderCounts();
+    }
+  }
+
   /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
   public async sendEmail(input: ComposePayload): Promise<EmailType> {
     const created = await this.svc.sendEmail(input); // implement in EmailsService (below)

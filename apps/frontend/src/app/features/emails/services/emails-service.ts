@@ -133,4 +133,8 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   public saveDraft(input: DraftPayload) {
     return this.api.emails.saveDraft.mutate(input);
   }
+
+  public deleteDraft(id: string) {
+    return this.api.emails.deleteDraft.mutate({ id });
+  }
 }
