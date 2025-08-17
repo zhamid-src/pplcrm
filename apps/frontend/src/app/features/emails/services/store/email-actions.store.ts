@@ -82,11 +82,9 @@ export class EmailActionsStore {
 
   public async deleteDraft(id: string): Promise<void> {
     await this.svc.deleteDraft(id);
-    const currentFolderId = this.folders.currentSelectedFolderId();
-    if (currentFolderId === '7') {
+    await this.folders.refreshFolderCounts();
+    if (this.folders.currentSelectedFolderId() === '7') {
       await this.folders.loadEmailsForFolder('7');
-    } else {
-      await this.folders.refreshFolderCounts();
     }
   }
 

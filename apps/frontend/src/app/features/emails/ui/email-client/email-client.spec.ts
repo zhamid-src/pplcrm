@@ -96,14 +96,14 @@ describe('EmailClient', () => {
   });
 
   describe('Email Selection', () => {
-    it('should handle email selection from child component', () => {
-      component.onEmail(mockEmail);
+    it('should handle email selection from child component', async () => {
+      await component.onEmail(mockEmail);
 
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
     });
 
-    it('should handle null email selection', () => {
-      component.onEmail(null as any);
+    it('should handle null email selection', async () => {
+      await component.onEmail(null as any);
 
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(null);
     });
@@ -183,7 +183,7 @@ describe('EmailClient', () => {
     });
 
     it('should delegate selection operations to store', () => {
-      component.onEmail(mockEmail);
+      await component.onEmail(mockEmail);
       component.onFolder(mockFolder);
 
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
@@ -192,14 +192,27 @@ describe('EmailClient', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle undefined email gracefully', () => {
-      expect(() => component.onEmail(undefined as any)).not.toThrow();
+    it('should handle undefined email gracefully', async () => {
+      await expect(component.onEmail(undefined as any)).resolves.toBeUndefined();
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(undefined);
     });
 
     it('should handle undefined folder gracefully', () => {
       expect(() => component.onFolder(undefined as any)).not.toThrow();
       expect(mockEmailsStore.selectFolder).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('Draft behaviour', () => {
+    it('saves current draft and closes compose when another email is selected', async () => {
+      mockEmailsStore.currentSelectedFolderId.mockReturnValue('1');
+      component.isComposing.set(true);
+      const saveDraft = jest.fn().mockResolvedValue(undefined);
+      (component as any).composer = { saveDraft, form: { dirty: true } };
+      await component.onEmail(mockEmail);
+      expect(saveDraft).toHaveBeenCalled();
+      expect(component.isComposing()).toBe(false);
+      expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
     });
   });
 });
