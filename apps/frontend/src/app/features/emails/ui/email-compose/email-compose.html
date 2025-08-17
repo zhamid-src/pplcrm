@@ -1,13 +1,16 @@
 <form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (ngSubmit)="onSend()">
   <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div class="text-base">New message</div>
+  <div class="flex justify-between">
+    <div class="text-base"></div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="discard()">
-        <pc-icon name="x-circle" class="mr-1"></pc-icon>Discard
+      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
+        <pc-icon name="trash" class="mr-1"></pc-icon>
       </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="saveDraft()">
-        <pc-icon name="save" class="mr-1"></pc-icon>Save Draft
+      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
+        <pc-icon name="x-circle" class="mr-1"></pc-icon>
+      </button>
+      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
+        <pc-icon name="save" class="mr-1"></pc-icon>
       </button>
       <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
         <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
