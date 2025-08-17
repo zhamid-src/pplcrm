@@ -29,14 +29,14 @@
   <!-- Editor card: ONE ROW toolbar + scrollable editor -->
   <div class="rounded-lg border border-base-300 flex flex-col h-full">
     <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
-    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b p-2 flex items-center gap-0">
+    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b flex items-center">
       <!-- Undo / Redo -->
       <span class="ql-formats">
-        <button class="ql-undo" type="button" aria-label="Undo">
-          <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon>
+        <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
+          <pc-icon name="undo-fat" [size]="4"></pc-icon>
         </button>
-        <button class="ql-redo" type="button" aria-label="Redo">
-          <pc-icon name="arrow-uturn-right" [size]="4"></pc-icon>
+        <button class="ql-redo tooltip" data-tip="Redo" type="button" aria-label="Redo">
+          <pc-icon name="redo-fat" [size]="4"></pc-icon>
         </button>
       </span>
 
@@ -57,38 +57,37 @@
 
       <!-- Bold / Italic / Underline / Strike -->
       <span class="ql-formats">
-        <button class="ql-bold" aria-label="Bold"></button>
-        <button class="ql-italic" aria-label="Italic"></button>
-        <button class="ql-underline" aria-label="Underline"></button>
-        <button class="ql-strike" aria-label="Strikethrough"></button>
-        <button class="ql-blockquote" aria-label="Blockquote"></button>
+        <button class="ql-bold tooltip" data-tip="Bold" aria-label="Bold"></button>
+        <button class="ql-italic tooltip" data-tip="Italic" aria-label="Italic"></button>
+        <button class="ql-underline tooltip" data-tip="Underline" aria-label="Underline"></button>
+        <button class="ql-strike tooltip" data-tip="Strikethrough" aria-label="Strikethrough"></button>
+        <button class="ql-blockquote tooltip" data-tip="quote" aria-label="Blockquote"></button>
       </span>
 
       <!-- Align (dropdown) -->
       <span class="ql-formats">
-        <select class="ql-color" aria-label="Text color"></select>
+        <select class="ql-color tooltip" data-tip="text color" aria-label="Text color"></select>
         <select class="ql-align" aria-label="Align">
           <option selected></option>
           <option value="center"></option>
           <option value="right"></option>
           <option value="justify"></option>
         </select>
-        <button class="ql-list" value="ordered" aria-label="Numbered list"></button>
-        <button class="ql-list" value="bullet" aria-label="Bulleted list"></button>
+        <button class="ql-list tooltip" data-tip="Numbered list" value="ordered" aria-label="Numbered list"></button>
+        <button class="ql-list tooltip" data-tip="Bulleted list" value="bullet" aria-label="Bulleted list"></button>
       </span>
 
       <!-- Link / Attach / Image -->
       <span class="ql-formats">
-        <button class="ql-link" aria-label="Insert link"></button>
-        <button class="ql-image" aria-label="Insert image"></button>
-        <button class="ql-attach" type="button" aria-label="Attach files">
-          <pc-icon name="paper-clip" [size]="4"></pc-icon>
-        </button>
+        <button class="ql-attach tooltip" data-tip="Attach files" type="button" aria-label="Attach files">
+          <pc-icon name="attach-fat" [size]="4"></pc-icon></button
+        ><button class="ql-link tooltip" data-tip="Insert link" aria-label="Insert link"></button>
+        <button class="ql-image tooltip" data-tip="Insert image" aria-label="Insert image"></button>
       </span>
 
       <!-- Remove formatting -->
       <span class="ql-formats">
-        <button class="ql-clean" aria-label="Clear formatting"></button>
+        <button class="ql-clean tooltip" data-tip="Clear formatting" aria-label="Clear formatting"></button>
       </span>
     </div>
 
@@ -114,9 +113,14 @@
         <span class="truncate">{{ f.name }}</span>
         <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
       </div>
-      <button type="button" class="btn btn-ghost btn-xs hover:text-error" (click)="removeAttachment(i)">
-        <pc-icon name="x-mark"></pc-icon>
-      </button>
+
+      <pc-icon
+        class="cursor-pointer hover:text-error tooltip tooltip-left"
+        data-tip="Remove attachment"
+        name="attach-file-off"
+        [size]="4"
+        (click)="removeAttachment(i)"
+      ></pc-icon>
     </li>
     }
   </ul>
