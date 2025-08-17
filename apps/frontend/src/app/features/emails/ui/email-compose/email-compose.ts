@@ -50,7 +50,6 @@ export class ComposeEmailComponent {
   public sending = signal(false);
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
-  public validTo = computed(() => this.parseEmails(this.form.controls.to.value).length > 0);
 
   public onDiscard() {
     this.finished.emit(); // just close; keep draft handling for later if needed
@@ -107,6 +106,11 @@ export class ComposeEmailComponent {
 
   public toggleMore() {
     this.showMore.update((v) => !v);
+  }
+
+  public validTo() {
+    const to = this.form.get('to')?.value;
+    return to && to.trim().length > 0;
   }
 
   protected onEditorCreated(q: Quill) {
