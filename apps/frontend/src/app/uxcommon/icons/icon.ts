@@ -7,11 +7,13 @@ import { BypassHtmlSanitizerPipe } from 'apps/frontend/src/app/svg-html-pipe';
   selector: 'pc-icon',
   standalone: true,
   imports: [BypassHtmlSanitizerPipe],
-  template: ` <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
+  template: ` <div [class]="class()" [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
 })
 export class Icon {
   /** Holds the final SVG markup (with class injected). */
   private _svgHtml = signal<string>('');
+
+  public class = input<string>('');
 
   /** The name of the icon to render (must exist in icons map). */
   public name = input.required<PcIconNameType>();

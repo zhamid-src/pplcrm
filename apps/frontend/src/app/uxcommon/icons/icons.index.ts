@@ -87,6 +87,10 @@ export const icons = {
   'queue-list': 'assets/icons/queue-list.svg',
   tag: 'assets/icons/tag.svg',
   trash: 'assets/icons/trash.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
 
   /* -------------------- Commerce & Finance -------------------- */
   banknotes: 'assets/icons/banknotes.svg',
