@@ -80,11 +80,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
     // 2) Virtual folder counts via the same predicate builder (no duplicated logic)
     const [allOpenPred, closedPred, assignedPred, unAssignedPred, favouritesPred] = await Promise.all([
-      this.buildFolderPredicate(SPECIAL.ALL_OPEN, user_id),
-      this.buildFolderPredicate(SPECIAL.CLOSED, user_id),
-      this.buildFolderPredicate(SPECIAL.ASSIGNED_TO_ME, user_id),
-      this.buildFolderPredicate(SPECIAL.UNASSIGNED, user_id),
-      this.buildFolderPredicate(SPECIAL.FAVOURITES, user_id),
+      this.buildFolderPredicate(SPECIAL_FOLDERS.ALL_OPEN, user_id),
+      this.buildFolderPredicate(SPECIAL_FOLDERS.CLOSED, user_id),
+      this.buildFolderPredicate(SPECIAL_FOLDERS.ASSIGNED_TO_ME, user_id),
+      this.buildFolderPredicate(SPECIAL_FOLDERS.UNASSIGNED, user_id),
+      this.buildFolderPredicate(SPECIAL_FOLDERS.FAVOURITES, user_id),
     ]);
 
     const [allOpenCount, closedCount, assignedCount, unAssignedCount, favouritesCount] = await Promise.all([
@@ -115,11 +115,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .executeTakeFirst(),
     ]);
 
-    counts[SPECIAL.ALL_OPEN] = Number(allOpenCount?.count || 0);
-    counts[SPECIAL.CLOSED] = Number(closedCount?.count || 0);
-    counts[SPECIAL.ASSIGNED_TO_ME] = Number(assignedCount?.count || 0);
-    counts[SPECIAL.UNASSIGNED] = Number(unAssignedCount?.count || 0);
-    counts[SPECIAL.FAVOURITES] = Number(favouritesCount?.count || 0);
+    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number(allOpenCount?.count || 0);
+    counts[SPECIAL_FOLDERS.CLOSED] = Number(closedCount?.count || 0);
+    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number(assignedCount?.count || 0);
+    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number(unAssignedCount?.count || 0);
+    counts[SPECIAL_FOLDERS.FAVOURITES] = Number(favouritesCount?.count || 0);
 
     // Optional: debug
     // console.log('Final folder counts:', counts);
@@ -194,7 +194,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
     const hasStatus = await this.supportsStatusColumn();
 
     // Virtual folders
-    if (folder_id === SPECIAL.ALL_OPEN) {
+    if (folder_id === SPECIAL_FOLDERS.ALL_OPEN) {
       if (hasStatus) {
         return (eb: any) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]);
       }
@@ -202,7 +202,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       return (_eb: any) => true;
     }
 
-    if (folder_id === SPECIAL.CLOSED) {
+    if (folder_id === SPECIAL_FOLDERS.CLOSED) {
       if (hasStatus) {
         return (eb: any) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')]);
       }
@@ -210,7 +210,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       return (_eb: any) => false;
     }
 
-    if (folder_id === SPECIAL.ASSIGNED_TO_ME) {
+    if (folder_id === SPECIAL_FOLDERS.ASSIGNED_TO_ME) {
       if (hasStatus) {
         return (eb: any) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open')]);
       }
@@ -218,7 +218,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       return (eb: any) => eb('assigned_to', '=', user_id);
     }
 
-    if (folder_id === SPECIAL.UNASSIGNED) {
+    if (folder_id === SPECIAL_FOLDERS.UNASSIGNED) {
       if (hasStatus) {
         return (eb: any) => eb.and([eb('assigned_to', 'is distinct from', user_id), eb('status', '=', 'open')]);
       }
@@ -226,7 +226,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       return (eb: any) => eb('assigned_to', 'is distinct from', user_id);
     }
 
-    if (folder_id === SPECIAL.FAVOURITES) {
+    if (folder_id === SPECIAL_FOLDERS.FAVOURITES) {
       if (hasStatus) {
         return (eb: any) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open')]);
       }
@@ -258,7 +258,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
 type EmailStatus = 'open' | 'closed' | 'resolved';
 
-const SPECIAL = {
+const SPECIAL_FOLDERS = {
   ALL_OPEN: '1',
   CLOSED: '2',
   ASSIGNED_TO_ME: '6',
