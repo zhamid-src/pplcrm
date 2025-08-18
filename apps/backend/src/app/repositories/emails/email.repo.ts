@@ -225,7 +225,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         return (eb: any) => eb.and([eb('assigned_to', 'is distinct from', user_id), eb('status', '=', 'open')]);
       }
       // If no status column, just "assigned to me"
-      return (eb: any) => eb('assigned_to', 'is distinct from', user_id);
+      return (eb: any) => eb('assigned_to', 'is', null);
     }
 
     if (folder_id === SPECIAL_FOLDERS.FAVOURITES) {
