@@ -105,13 +105,19 @@ export class EmailActionsStore {
     return created;
   }
 
-  /** Toggle favourite with optimistic update (no count refresh needed) */
+  /** Toggle favourite with optimistic update */
   public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
     const key = String(emailId);
-    await this.updateProperty(key, { is_favourite: isFavorite }, () => this.svc.setFavourite(key, isFavorite), {
-      refreshFolder: false,
-      refreshCounts: false,
-    });
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    await this.updateProperty(
+      key,
+      { is_favourite: isFavorite },
+      () => this.svc.setFavourite(key, isFavorite),
+      {
+        refreshFolder: currentFolderId === '9',
+        refreshCounts: true,
+      },
+    );
   }
 
   /** Update status and refresh counts (affects virtual folders) */
