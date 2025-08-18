@@ -1,30 +1,85 @@
 /**
- * Email folders configuration.
- * This replaces the email_folders database table with a hardcoded configuration.
+ * Strongly-typed email folders with a compatibility interface.
+ *
+ * - `EmailFolderConfig` (interface): broad/loose for external use (code is optional).
+ * - `StrictEmailFolderConfig` (type): discriminated union used to validate constants.
+ * - when is_virtual: true -> code is required
+ * - when is_virtual: false -> code is forbidden
+ * - `EMAIL_FOLDERS` is validated against the strict type via `satisfies`.
+ * - `SPECIAL_FOLDERS` is derived with exact keys/ids inferred from `EMAIL_FOLDERS`.
  */
-export interface EmailFolderConfig {
+
+// ---------- Public compatibility interface (loose) ----------
+// ---------- Strict types for compile-time guarantees ----------
+interface EmailFolderBase {
   icon: string;
   id: string;
   is_default: boolean;
-  is_virtual: boolean; // True for special folders that don't store emails directly
   name: string;
   sort_order: number;
 }
 
+export interface EmailFolderConfig {
+  code?: string; // optional/loose here for compatibility
+  icon: string;
+  id: string;
+  is_default: boolean;
+  is_virtual: boolean;
+  name: string;
+  sort_order: number;
+}
+
+export interface RealEmailFolder extends EmailFolderBase {
+  code?: never; // forbidden on real folders
+  is_virtual: false;
+}
+
+export interface VirtualEmailFolder extends EmailFolderBase {
+  code: string; // required when virtual
+  is_virtual: true;
+}
+
+// ---------- Derived types ----------
+type Folder = (typeof EMAIL_FOLDERS)[number];
+
+type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
+
 export type EmailStatus = 'open' | 'closed' | 'resolved';
 
-/**
- * Hardcoded email folders configuration.
- * These folders are the same for all tenants.
- */
-export const EMAIL_FOLDERS: EmailFolderConfig[] = [
+export type SpecialFolderId = OnlyVirtual['id'];
+
+export type SpecialFolderKey = OnlyVirtual['code'];
+
+export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
+
+// ---------- Helper to build SPECIAL_FOLDERS with exact keys ----------
+function createSpecialFolders<const A extends readonly StrictEmailFolderConfig[]>(folders: A) {
+  type V = Extract<A[number], { is_virtual: true }>;
+  type K = V extends { code: infer C extends string } ? C : never;
+  type IdFor<Code extends string> = Extract<V, { code: Code }>['id'];
+
+  const entries = (folders.filter((f): f is V => f.is_virtual) as readonly V[]).map((f) => [f.code, f.id] as const);
+
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in K]: IdFor<P> };
+}
+
+// Optional runtime helper
+export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
+  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
+
+// Helpful type guard
+export const isVirtualFolder = (f: StrictEmailFolderConfig): f is VirtualEmailFolder => f.is_virtual === true;
+
+// ---------- Configuration (validated against the STRICT type) ----------
+export const EMAIL_FOLDERS = [
   {
     id: '8',
     name: 'Unassigned',
     icon: 'inbox',
     sort_order: 1,
     is_default: false,
-    is_virtual: true, // Virtual folder - shows open emails from all folders
+    is_virtual: true,
+    code: 'UNASSIGNED',
   },
   {
     id: '6',
@@ -32,7 +87,8 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'user-circle',
     sort_order: 2,
     is_default: true,
-    is_virtual: true, // Virtual folder - shows assigned emails
+    is_virtual: true,
+    code: 'ASSIGNED_TO_ME',
   },
   {
     id: '9',
@@ -40,7 +96,8 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'star',
     sort_order: 3,
     is_default: false,
-    is_virtual: true, // Virtual folder - shows open favourite emails
+    is_virtual: true,
+    code: 'FAVOURITES',
   },
   {
     id: '1',
@@ -48,24 +105,26 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'document-duplicate',
     sort_order: 4,
     is_default: false,
-    is_virtual: true, // Virtual folder - shows open emails from all folders
+    is_virtual: true,
+    code: 'ALL_OPEN',
   },
-
   {
     id: '2',
     name: 'Completed',
     icon: 'document-check',
     sort_order: 5,
     is_default: false,
-    is_virtual: true, // Virtual folder - shows closed/resolved emails
+    is_virtual: true,
+    code: 'CLOSED', // external-facing name for "Completed"
   },
+  // Real folders
   {
     id: '7',
     name: 'Drafts',
     icon: 'document',
     sort_order: 6,
     is_default: false,
-    is_virtual: false, // Virtual folder - shows closed/resolved emails
+    is_virtual: false,
   },
   {
     id: '3',
@@ -73,7 +132,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'paper-airplane',
     sort_order: 7,
     is_default: false,
-    is_virtual: false, // Regular folder - stores emails with folder_id = 3
+    is_virtual: false,
   },
   {
     id: '4',
@@ -81,7 +140,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'exclamation-triangle',
     sort_order: 8,
     is_default: false,
-    is_virtual: false, // Regular folder - stores emails with folder_id = 4
+    is_virtual: false,
   },
   {
     id: '5',
@@ -89,13 +148,9 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     icon: 'trash',
     sort_order: 9,
     is_default: false,
-    is_virtual: false, // Regular folder - stores emails with folder_id = 5
+    is_virtual: false,
   },
-];
-export const SPECIAL_FOLDERS = {
-  ALL_OPEN: '1',
-  CLOSED: '2',
-  ASSIGNED_TO_ME: '6',
-  UNASSIGNED: '8',
-  FAVOURITES: '9',
-} as const;
+] as const satisfies StrictEmailFolderConfig[];
+
+// ---------- SPECIAL_FOLDERS (strongly typed) ----------
+export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
