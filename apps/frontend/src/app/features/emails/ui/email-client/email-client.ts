@@ -6,7 +6,7 @@ import { Icon } from '@uxcommon/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent } from '../email-compose/email-compose';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
 import { EmailDetails } from '../email-details/email-details';
 import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
@@ -26,6 +26,7 @@ export class EmailClient {
 
   protected isComposing = signal(false);
   protected draftIdToLoad = signal<string | null>(null);
+  protected composePrefill = signal<ComposeInitial | null>(null);
   @ViewChild('composer') private composer?: ComposeEmailComponent;
 
   /** Whether the email body overlay is expanded (signal from store) */
@@ -43,12 +44,11 @@ export class EmailClient {
   public closeCompose() {
     this.isComposing.set(false);
     this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
   }
 
   public newEmail() {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.isComposing.set(true);
+    this.openCompose();
   }
 
   // handle send from composer
@@ -86,10 +86,32 @@ export class EmailClient {
     this.store.selectFolder(folder);
   }
 
-  public openCompose() {
+  public openCompose(prefill?: ComposeInitial | null) {
     this.isBodyExpanded.set(false); // ensure body overlay is closed
     this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
     this.isComposing.set(true);
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+    if (email.from_email) recipients.add(email.from_email);
+    header?.email?.to_list?.forEach((r: any) => recipients.add(r.email));
+    header?.email?.cc_list?.forEach((r: any) => recipients.add(r.email));
+    const to = Array.from(recipients).join(', ');
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
   }
 
   /** Toggle the full-screen overlay for email body */

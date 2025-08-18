@@ -2,7 +2,7 @@
  * @file Component displaying header information for an email.
  */
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, EventEmitter, HostListener, Output, computed, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Icon } from '@uxcommon/icons/icon';
 
@@ -31,6 +31,10 @@ export class EmailHeader {
 
   /** Whether the email body is currently expanded to take over the window (except sidebar). */
   public isExpanded = this.store.isBodyExpanded;
+
+  @Output() public reply = new EventEmitter<void>();
+  @Output() public replyAll = new EventEmitter<void>();
+  @Output() public forward = new EventEmitter<void>();
 
   constructor() {
     effect(() => {
@@ -113,8 +117,7 @@ export class EmailHeader {
 
   /** Handle forward action */
   protected handleForward() {
-    console.log('Forward email:', this.email().id);
-    // TODO: Implement forward functionality
+    this.forward.emit();
   }
 
   /** Handle mark as unread action */
@@ -125,14 +128,12 @@ export class EmailHeader {
 
   /** Handle reply action */
   protected handleReply() {
-    console.log('Reply to email:', this.email().id);
-    // TODO: Implement reply functionality
+    this.reply.emit();
   }
 
   /** Handle reply all action */
   protected handleReplyAll() {
-    console.log('Reply all to email:', this.email().id);
-    // TODO: Implement reply all functionality
+    this.replyAll.emit();
   }
 
   protected markAsDoneText() {

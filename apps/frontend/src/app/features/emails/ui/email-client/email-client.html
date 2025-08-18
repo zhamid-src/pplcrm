@@ -14,11 +14,12 @@
         #composer
         class="h-full"
         [draftId]="draftIdToLoad()"
+        [initial]="composePrefill()"
         (finished)="closeCompose()"
       ></pc-compose-email>
     </div>
     } @else {
-    <pc-email-details class="h-full" [email]="selectedEmail()"></pc-email-details>
+    <pc-email-details class="h-full" [email]="selectedEmail()" (reply)="onReply($event)" (replyAll)="onReplyAll($event)" (forward)="onForward($event)"></pc-email-details>
     }
   </div>
 
