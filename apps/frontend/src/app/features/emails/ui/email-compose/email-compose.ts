@@ -66,6 +66,17 @@ export class ComposeEmailComponent {
     }
   }
 
+  @Input() public set initial(value: ComposeInitial | null) {
+    if (!value) return;
+    this.form.patchValue({
+      to: value.to ?? '',
+      cc: value.cc ?? '',
+      bcc: value.bcc ?? '',
+      subject: value.subject ?? '',
+      html: value.html ?? '',
+    });
+  }
+
   public async delete() {
     const hasDraft = !!this.draftIdSignal();
     const isDirty = this.form.dirty;
@@ -237,4 +248,12 @@ cc: string[];
   id?: string;
   subject: string;
   to: string[];
+};
+
+export type ComposeInitial = {
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  html?: string;
 };

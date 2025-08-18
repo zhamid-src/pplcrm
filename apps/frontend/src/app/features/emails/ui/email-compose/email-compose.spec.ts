@@ -53,4 +53,10 @@ describe('ComposeEmailComponent discard', () => {
     expect(actions.deleteDraft).toHaveBeenCalledWith('42');
     expect(finished).toHaveBeenCalled();
   });
+
+  it('should patch form with initial values', () => {
+    component.initial = { to: 'a@example.com', subject: 'Hello' };
+    expect(component.form.value.to).toBe('a@example.com');
+    expect(component.form.value.subject).toBe('Hello');
+  });
 });

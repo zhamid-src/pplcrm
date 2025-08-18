@@ -3,7 +3,7 @@
  * Tests the main email client container component and its interactions with the store.
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { EmailClient } from '../email-client';
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType, EmailFolderType } from 'common/src/lib/models';
@@ -31,6 +31,9 @@ class MockEmailList {
 })
 class MockEmailDetails {
   @Input() email: EmailType | null = null;
+  @Output() reply = new EventEmitter<EmailType>();
+  @Output() replyAll = new EventEmitter<EmailType>();
+  @Output() forward = new EventEmitter<EmailType>();
 }
 
 describe('EmailClient', () => {
@@ -63,7 +66,8 @@ describe('EmailClient', () => {
       currentSelectedFolderId: jest.fn().mockReturnValue(null),
       selectEmail: jest.fn(),
       selectFolder: jest.fn(),
-    };
+      getEmailHeaderById: jest.fn().mockReturnValue(signal<any>({ email: { to_list: [], cc_list: [] } })),
+    } as Partial<EmailsStore>;
 
     await TestBed.configureTestingModule({
       declarations: [EmailClient, MockEmailFolderList, MockEmailList, MockEmailDetails],
@@ -82,7 +86,7 @@ describe('EmailClient', () => {
 
     it('should initialize with store computed properties', () => {
       expect(component.selectedEmail).toBeDefined();
-      expect(component.selectedFolder).toBeDefined();
+      expect(component.selectedFolderId).toBeDefined();
     });
 
     it('should render child components', () => {
@@ -179,7 +183,7 @@ describe('EmailClient', () => {
     it('should use store computed properties for reactive updates', () => {
       // Verify that the component uses the store's computed properties
       expect(component.selectedEmail).toBe(mockEmailsStore.currentSelectedEmail);
-      expect(component.selectedFolder).toBe(mockEmailsStore.currentSelectedFolderId);
+      expect(component.selectedFolderId).toBe(mockEmailsStore.currentSelectedFolderId);
     });
 
     it('should delegate selection operations to store', () => {
@@ -213,6 +217,33 @@ describe('EmailClient', () => {
       expect(saveDraft).toHaveBeenCalled();
       expect(component.isComposing()).toBe(false);
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
+    });
+  });
+
+  describe('Reply and forward actions', () => {
+    beforeEach(() => {
+      mockEmailsStore.getEmailHeaderById.mockReturnValue(
+        signal<any>({ email: { to_list: [{ email: 'recipient@example.com' }], cc_list: [{ email: 'cc@example.com' }] } }),
+      );
+    });
+
+    it('opens compose with reply prefill', () => {
+      component.onReply(mockEmail);
+      expect(component['isComposing']()).toBe(true);
+      expect(component['composePrefill']()).toEqual({ to: 'test@example.com', subject: 'Re: Test Email' });
+    });
+
+    it('opens compose with reply-all prefill', () => {
+      component.onReplyAll(mockEmail);
+      expect(component['composePrefill']()).toEqual({
+        to: 'test@example.com, recipient@example.com, cc@example.com',
+        subject: 'Re: Test Email',
+      });
+    });
+
+    it('opens compose with forward prefill', () => {
+      component.onForward(mockEmail);
+      expect(component['composePrefill']()).toEqual({ subject: 'Fwd: Test Email' });
     });
   });
 });
