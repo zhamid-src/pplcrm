@@ -193,67 +193,16 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * This keeps special-folder logic in a single place and reusable across queries.
    */
   private async buildFolderPredicate(folder_id: string, user_id: string): Promise<(eb: any) => any> {
-    const hasStatus = await this.supportsStatusColumn();
-
     // Virtual folders
-    if (folder_id === SPECIAL_FOLDERS.ALL_OPEN) {
-      if (hasStatus) {
-        return (eb: any) => eb('status', '=', 'open');
-      }
-      // If no status column, "All Open" ≈ everything
-      return (_eb: any) => true;
-    }
-
-    if (folder_id === SPECIAL_FOLDERS.CLOSED) {
-      if (hasStatus) {
-        return (eb: any) => eb('status', '=', 'closed');
-      }
-      // If no status column, "Closed" ≈ nothing
-      return (_eb: any) => false;
-    }
-
-    if (folder_id === SPECIAL_FOLDERS.ASSIGNED_TO_ME) {
-      if (hasStatus) {
-        return (eb: any) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open')]);
-      }
-      // If no status column, just "assigned to me"
-      return (eb: any) => eb('assigned_to', '=', user_id);
-    }
-
-    if (folder_id === SPECIAL_FOLDERS.UNASSIGNED) {
-      if (hasStatus) {
-        return (eb: any) => eb.and([eb('assigned_to', 'is distinct from', user_id), eb('status', '=', 'open')]);
-      }
-      // If no status column, just "assigned to me"
-      return (eb: any) => eb('assigned_to', 'is', null);
-    }
-
-    if (folder_id === SPECIAL_FOLDERS.FAVOURITES) {
-      if (hasStatus) {
-        return (eb: any) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open')]);
-      }
-      return (eb: any) => eb('is_favourite', '=', true);
-    }
-
+    if (folder_id === SPECIAL_FOLDERS.ALL_OPEN) return (eb) => eb('status', '=', 'open');
+    else if (folder_id === SPECIAL_FOLDERS.CLOSED) return (eb) => eb('status', '=', 'closed');
+    else if (folder_id === SPECIAL_FOLDERS.ASSIGNED_TO_ME)
+      return (eb) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open')]);
+    else if (folder_id === SPECIAL_FOLDERS.UNASSIGNED)
+      return (eb) => eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open')]);
+    else if (folder_id === SPECIAL_FOLDERS.FAVOURITES)
+      return (eb) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open')]);
     // Real folder
-    return (eb: any) => eb('folder_id', '=', folder_id);
-  }
-
-  /**
-   * Quick capability check: does the `emails.status` column exist?
-   * We try a harmless filtered query; if it errors, we assume column is missing.
-   */
-  private async supportsStatusColumn(): Promise<boolean> {
-    try {
-      // Use a tiny query with a status predicate; limit to avoid touching many rows.
-      await this.getSelect()
-        .select((eb) => eb.val(1).as('ok'))
-        .where((eb) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]))
-        .limit(1)
-        .execute();
-      return true;
-    } catch {
-      return false;
-    }
+    else return (eb) => eb('folder_id', '=', folder_id);
   }
 }
