@@ -80,6 +80,8 @@ export class EmailRepo extends BaseRepository<'emails'> {
     const counts: Record<string, number> = {};
     for (const row of regular) counts[row.folder_id] = Number(row.count);
 
+    // TODO: any opportunity to optimize this?
+
     // 2) Virtual folder counts via the same predicate builder (no duplicated logic)
     const [allOpenPred, closedPred, assignedPred, unAssignedPred, favouritesPred] = await Promise.all([
       this.buildFolderPredicate(SPECIAL_FOLDERS.ALL_OPEN, user_id),
