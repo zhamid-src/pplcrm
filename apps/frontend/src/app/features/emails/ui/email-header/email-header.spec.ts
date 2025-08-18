@@ -271,27 +271,24 @@ describe('EmailHeader', () => {
     });
 
     it('should handle reply action', () => {
-      spyOn(console, 'log');
-
+      const spy = jest.fn();
+      component.reply.subscribe(spy);
       component['handleReply']();
-
-      expect(console.log).toHaveBeenCalledWith('Reply to email:', '1');
+      expect(spy).toHaveBeenCalled();
     });
 
     it('should handle reply all action', () => {
-      spyOn(console, 'log');
-
+      const spy = jest.fn();
+      component.replyAll.subscribe(spy);
       component['handleReplyAll']();
-
-      expect(console.log).toHaveBeenCalledWith('Reply all to email:', '1');
+      expect(spy).toHaveBeenCalled();
     });
 
     it('should handle forward action', () => {
-      spyOn(console, 'log');
-
+      const spy = jest.fn();
+      component.forward.subscribe(spy);
       component['handleForward']();
-
-      expect(console.log).toHaveBeenCalledWith('Forward email:', '1');
+      expect(spy).toHaveBeenCalled();
     });
 
     it('should handle mark as unread action', () => {
