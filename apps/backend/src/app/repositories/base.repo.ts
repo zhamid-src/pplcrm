@@ -154,9 +154,12 @@ export class BaseRepository<T extends keyof Models> {
     const numericIds = input.ids;
 
     const deleteQuery = this.getDelete(trx) as ReturnType<typeof BaseRepository.prototype.getDelete>;
-    const result = await deleteQuery.where('id', 'in', numericIds).where('tenant_id', '=', input.tenant_id).execute();
+    const result = await deleteQuery
+      .where('id', 'in', numericIds)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
 
-    return result !== null && result.length > 0;
+    return Number(result?.numDeletedRows ?? 0) > 0;
   }
 
   /**

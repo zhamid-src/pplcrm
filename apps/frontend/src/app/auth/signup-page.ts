@@ -105,7 +105,13 @@ export class SignUpPage {
     // TODO: better error message
     return this.authService
       .signUp(this.form.getRawValue() as signUpInputType)
-      .then((user) => user && this.alertSvc.showSuccess(`Welcome ${user.first_name}!`))
+      .then((user) => {
+        if (user) {
+          this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
+        } else {
+          this.alertSvc.showError('Unable to complete signup.');
+        }
+      })
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }
