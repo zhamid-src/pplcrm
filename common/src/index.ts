@@ -27,3 +27,7 @@ export {
 } from './lib/schemas';
 
 export { debounce, sleep } from './lib/utils';
+
+export { SPECIAL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus } from './lib/emails';
