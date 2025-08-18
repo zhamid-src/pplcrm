@@ -130,9 +130,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           });
           return Promise.reject(trpcError);
         }
+        return Promise.resolve(false);
       },
     );
-    return true;
+    return Promise.resolve(false);
   }
 
   /**
@@ -140,7 +141,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @param input Object containing `email` and `password`.
    * @returns Newly generated auth and refresh tokens.
    * @throws If credentials are invalid.
-  */
+   */
   public async signIn(input: signInInputType) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
