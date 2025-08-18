@@ -39,7 +39,13 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .where('tag_id', 'in', tag_ids as TypeId<'map_peoples_tags'>)
         .execute();
 
-      return (await trx.deleteFrom('tags').where('id', 'in', tag_ids).where('deletable', '=', true).execute()) !== null;
+      const result = await trx
+        .deleteFrom('tags')
+        .where('id', 'in', tag_ids)
+        .where('deletable', '=', true)
+        .executeTakeFirst();
+
+      return Number(result?.numDeletedRows ?? 0) > 0;
     });
   }
 
