@@ -10,6 +10,7 @@ import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-co
 import { EmailDetails } from '../email-details/email-details';
 import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
+import { ALL_FOLDERS } from 'common/src/lib/emails';
 import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 
 @Component({
@@ -21,13 +22,17 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
+  @ViewChild('composer') private composer?: ComposeEmailComponent;
+
   /** App-level email store */
   protected readonly store = inject(EmailsStore);
 
-  protected isComposing = signal(false);
-  protected draftIdToLoad = signal<string | null>(null);
   protected composePrefill = signal<ComposeInitial | null>(null);
-  @ViewChild('composer') private composer?: ComposeEmailComponent;
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
+
+  /** Emails in the currently selected folder */
+  public readonly emails = this.store.emailsInSelectedFolder;
 
   /** Whether the email body overlay is expanded (signal from store) */
   public readonly isBodyExpanded = this.store.isBodyExpanded;
@@ -37,9 +42,6 @@ export class EmailClient {
 
   /** Currently selected folder id (signal from store) */
   public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  /** Emails in the currently selected folder */
-  public readonly emails = this.store.emailsInSelectedFolder;
 
   public closeCompose() {
     this.isComposing.set(false);
@@ -73,7 +75,7 @@ export class EmailClient {
       }
       this.closeCompose();
     }
-    if (folderId === '7') {
+    if (folderId === ALL_FOLDERS.DRAFTS) {
       this.draftIdToLoad.set(String(email.id));
       this.isComposing.set(true);
     } else {
@@ -86,11 +88,9 @@ export class EmailClient {
     this.store.selectFolder(folder);
   }
 
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
   }
 
   public onReply(email: EmailType) {
@@ -109,9 +109,11 @@ export class EmailClient {
     this.openCompose({ to, subject });
   }
 
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
   }
 
   /** Toggle the full-screen overlay for email body */

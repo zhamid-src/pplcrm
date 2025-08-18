@@ -23,6 +23,16 @@ export const EmailCommentObj = z.object({
   comment: z.string(),
   created_at: z.date(),
 });
+export const EmailDraftObj = z.object({
+  id: z.string(),
+  to_list: z.array(z.string()),
+  cc_list: z.array(z.string()),
+  bcc_list: z.array(z.string()),
+  subject: z.string().optional(),
+  body_html: z.string().optional(),
+  body_delta: z.any().optional(),
+  updated_at: z.date(),
+});
 export const EmailFolderObj = z.object({
   id: z.string(),
   name: z.string(),
@@ -44,18 +54,7 @@ export const EmailObj = z.object({
   is_favourite: z.boolean(),
   att_count: z.number(),
   has_attachment: z.boolean(),
-  status: z.enum(['open', 'closed', 'resolved']).nullable().default('open'),
-});
-
-export const EmailDraftObj = z.object({
-  id: z.string(),
-  to_list: z.array(z.string()),
-  cc_list: z.array(z.string()),
-  bcc_list: z.array(z.string()),
-  subject: z.string().optional(),
-  body_html: z.string().optional(),
-  body_delta: z.any().optional(),
-  updated_at: z.date(),
+  status: z.enum(['open', 'closed']).nullable().default('open'),
 });
 
 /**

@@ -33,6 +33,12 @@ function deleteComment() {
     .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
 }
 
+function deleteDraft() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
+}
+
 function getAllAttachments() {
   return authProcedure
     .input(z.object({ email_id: z.string(), options: z.object({ includeInline: z.boolean() }).optional() }))
@@ -49,18 +55,14 @@ function getAttachmentsByEmailId() {
     .query(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input));
 }
 
+function getDraft() {
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
+}
+
 function getEmailBody() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
-}
-
-function getDraft() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
-}
-
-function deleteDraft() {
-  return authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
 }
 
 /**
@@ -113,18 +115,6 @@ function hasAttachment() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
 }
 
-function setFavourite() {
-  return authProcedure
-    .input(z.object({ id: z.string(), favourite: z.boolean() }))
-    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
-}
-
-function setStatus() {
-  return authProcedure
-    .input(z.object({ id: z.string(), status: z.enum(['open', 'closed', 'resolved']) }))
-    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status));
-}
-
 function saveDraft() {
   return authProcedure
     .input(
@@ -147,6 +137,18 @@ function saveDraft() {
         body_html: input.html ?? undefined,
       }),
     );
+}
+
+function setFavourite() {
+  return authProcedure
+    .input(z.object({ id: z.string(), favourite: z.boolean() }))
+    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
+}
+
+function setStatus() {
+  return authProcedure
+    .input(z.object({ id: z.string(), status: z.enum(['open', 'closed']) }))
+    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status));
 }
 
 const emails = new EmailsController();

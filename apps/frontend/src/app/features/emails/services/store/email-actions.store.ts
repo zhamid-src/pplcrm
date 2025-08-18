@@ -9,6 +9,7 @@ import { EmailsService } from '../emails-service';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
+import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import type { EmailDraftType, EmailType } from 'common/src/lib/models';
 
 @Injectable({ providedIn: 'root' })
@@ -64,6 +65,14 @@ export class EmailActionsStore {
     }
   }
 
+  public async deleteDraft(id: string): Promise<void> {
+    await this.svc.deleteDraft(id);
+    await this.folders.refreshFolderCounts();
+    if (this.folders.currentSelectedFolderId() === ALL_FOLDERS.DRAFTS) {
+      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
+    }
+  }
+
   public getDraft(id: string): Promise<EmailDraftType> {
     return this.svc.getDraft(id);
   }
@@ -72,20 +81,12 @@ export class EmailActionsStore {
     console.log(input);
     const saved = await this.svc.saveDraft(input);
     const currentFolderId = this.folders.currentSelectedFolderId();
-    if (currentFolderId === '7') {
-      await this.folders.loadEmailsForFolder('7');
+    if (currentFolderId === ALL_FOLDERS.DRAFTS) {
+      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
     } else {
       await this.folders.refreshFolderCounts();
     }
     return saved as { id: string };
-  }
-
-  public async deleteDraft(id: string): Promise<void> {
-    await this.svc.deleteDraft(id);
-    await this.folders.refreshFolderCounts();
-    if (this.folders.currentSelectedFolderId() === '7') {
-      await this.folders.loadEmailsForFolder('7');
-    }
   }
 
   /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
@@ -109,15 +110,10 @@ export class EmailActionsStore {
   public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
     const key = String(emailId);
     const currentFolderId = this.folders.currentSelectedFolderId();
-    await this.updateProperty(
-      key,
-      { is_favourite: isFavorite },
-      () => this.svc.setFavourite(key, isFavorite),
-      {
-        refreshFolder: currentFolderId === '9',
-        refreshCounts: true,
-      },
-    );
+    await this.updateProperty(key, { is_favourite: isFavorite }, () => this.svc.setFavourite(key, isFavorite), {
+      refreshFolder: currentFolderId === ALL_FOLDERS.FAVOURITES,
+      refreshCounts: true,
+    });
   }
 
   /** Update status and refresh counts (affects virtual folders) */
@@ -161,5 +157,3 @@ export class EmailActionsStore {
     }
   }
 }
-
-type EmailStatus = 'open' | 'closed' | 'resolved';

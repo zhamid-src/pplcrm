@@ -15,6 +15,7 @@ import type {
   Updateable,
 } from 'kysely';
 import type { ExtractColumnType } from 'node_modules/kysely/dist/esm/util/type-utils';
+import { EmailStatus } from './emails';
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
@@ -267,7 +268,7 @@ interface Emails extends RecordType {
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
-  status: 'open' | 'closed' | 'resolved' | null;
+  status: EmailStatus | null;
 }
 
 interface EmailComments extends RecordType {
