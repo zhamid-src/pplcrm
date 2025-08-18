@@ -69,6 +69,14 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     is_virtual: true, // Virtual folder - shows assigned emails
   },
   {
+    id: '9',
+    name: 'Favourites',
+    icon: 'star',
+    sort_order: 3,
+    is_default: false,
+    is_virtual: true, // Virtual folder - shows open favourite emails
+  },
+  {
     id: '1',
     name: 'All Open',
     icon: 'document-duplicate',
@@ -81,7 +89,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '2',
     name: 'Completed',
     icon: 'document-check',
-    sort_order: 3,
+    sort_order: 5,
     is_default: false,
     is_virtual: true, // Virtual folder - shows closed/resolved emails
   },
@@ -89,7 +97,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '7',
     name: 'Drafts',
     icon: 'document',
-    sort_order: 5,
+    sort_order: 6,
     is_default: false,
     is_virtual: false, // Virtual folder - shows closed/resolved emails
   },
@@ -97,7 +105,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '3',
     name: 'Sent',
     icon: 'paper-airplane',
-    sort_order: 6,
+    sort_order: 7,
     is_default: false,
     is_virtual: false, // Regular folder - stores emails with folder_id = 3
   },
@@ -105,7 +113,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '4',
     name: 'Spam',
     icon: 'exclamation-triangle',
-    sort_order: 7,
+    sort_order: 8,
     is_default: false,
     is_virtual: false, // Regular folder - stores emails with folder_id = 4
   },
@@ -113,7 +121,7 @@ export const EMAIL_FOLDERS: EmailFolderConfig[] = [
     id: '5',
     name: 'Trash',
     icon: 'trash',
-    sort_order: 8,
+    sort_order: 9,
     is_default: false,
     is_virtual: false, // Regular folder - stores emails with folder_id = 5
   },
