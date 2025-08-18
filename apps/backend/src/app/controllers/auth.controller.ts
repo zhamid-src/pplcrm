@@ -80,8 +80,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const password = await this.hashPassword(plaintextPassword);
 
     // Check if the code is valid
-    const minutes = await this.getCodeAge(code);
-    if (minutes > 15) {
+    const msec = await this.getCodeAge(code);
+    // 15 minutes in milliseconds
+    if (msec > 90000) {
+      // TODO: use a constant for 90000
       throw new TRPCError({
         message: 'The code is expired. Please request a new code',
         code: 'BAD_REQUEST',
@@ -105,7 +107,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   public async sendPasswordResetEmail(email: string) {
     const user = await this.getUserByEmail(email);
-    const code = this.getRepo().addPasswordResetCode(user.id);
+    const code = await this.getRepo().addPasswordResetCode(user.id);
 
     // send the reset email
     const transport = nodemailer.createTransport({
@@ -122,10 +124,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       },
       (err: Error | null) => {
         if (err) {
-          throw new TRPCError({
+          const trpcError = new TRPCError({
             message: 'Something went wrong, please try again',
             code: 'INTERNAL_SERVER_ERROR',
           });
+          return Promise.reject(trpcError);
         }
       },
     );
@@ -180,7 +183,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.verifyUserDoesNotExist(email);
     const password = await this.hashPassword(input.password);
 
-    this.tenants.transaction().execute(async (trx) => {
+    await this.tenants.transaction().execute(async (trx) => {
       const tenant_id = await this.createTenant(trx, input.organization);
       const user = await this.createUser(trx, tenant_id, password, email, input);
       const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
@@ -268,7 +271,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const signer = createSigner({
       algorithm: 'HS256',
       key,
-      clockTimestamp: Date.now(),
+      clockTimestamp: Date.now() / 1000, // Convert to seconds
       expiresIn: '30m',
     });
     const auth_token = signer({
@@ -369,14 +372,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Hashed password.
    */
   private async hashPassword(password: string) {
-    await bcrypt.hash(password, 12);
-    if (!password) {
+    const hashedPassword = await bcrypt.hash(password, 12);
+    if (!hashedPassword) {
       throw new TRPCError({
         message: 'Something went wrong, please try again',
         code: 'INTERNAL_SERVER_ERROR',
       });
     }
-    return password;
+    return hashedPassword;
   }
 
   /**
