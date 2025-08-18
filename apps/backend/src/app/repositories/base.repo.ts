@@ -156,7 +156,7 @@ export class BaseRepository<T extends keyof Models> {
     const deleteQuery = this.getDelete(trx) as ReturnType<typeof BaseRepository.prototype.getDelete>;
     const result = await deleteQuery.where('id', 'in', numericIds).where('tenant_id', '=', input.tenant_id).execute();
 
-    return result !== null;
+    return result !== null && result.length > 0;
   }
 
   /**

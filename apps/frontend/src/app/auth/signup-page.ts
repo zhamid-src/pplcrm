@@ -6,10 +6,10 @@ import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { signUpInputType } from '@common';
+import { Icon } from '@icons/icon';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
-import { Icon } from '@icons/icon';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -105,7 +105,7 @@ export class SignUpPage {
     // TODO: better error message
     return this.authService
       .signUp(this.form.getRawValue() as signUpInputType)
-      .then((user) => user && this.alertSvc.showError('Unknown error'))
+      .then((user) => user && this.alertSvc.showSuccess(`Welcome ${user.first_name}!`))
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }
