@@ -1,9 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { EmailActionsStore } from './email-actions.store';
-import { EmailFoldersStore } from './email-folders.store';
+
 import { EmailsService } from '../emails-service';
+import { EmailActionsStore } from './email-actions.store';
 import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
 import { EmailStateStore } from './email-state.store';
+import { ALL_FOLDERS } from 'common/src/lib/emails';
 
 describe('EmailActionsStore deleteDraft', () => {
   let store: EmailActionsStore;
@@ -17,7 +19,7 @@ describe('EmailActionsStore deleteDraft', () => {
   beforeEach(() => {
     svc = { deleteDraft: jest.fn().mockResolvedValue(undefined) };
     folders = {
-      currentSelectedFolderId: jest.fn().mockReturnValue('7'),
+      currentSelectedFolderId: jest.fn().mockReturnValue(ALL_FOLDERS.DRAFTS),
       loadEmailsForFolder: jest.fn().mockResolvedValue(undefined),
       refreshFolderCounts: jest.fn().mockResolvedValue(undefined),
     };
@@ -37,6 +39,6 @@ describe('EmailActionsStore deleteDraft', () => {
     await store.deleteDraft('42');
     expect(svc.deleteDraft).toHaveBeenCalledWith('42');
     expect(folders.refreshFolderCounts).toHaveBeenCalled();
-    expect(folders.loadEmailsForFolder).toHaveBeenCalledWith('7');
+    expect(folders.loadEmailsForFolder).toHaveBeenCalledWith(ALL_FOLDERS.DRAFTS);
   });
 });

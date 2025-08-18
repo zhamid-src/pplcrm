@@ -28,20 +28,19 @@ export class EmailHeader {
 
   /** Email to display */
   public email = input.required<EmailType>();
+  @Output() public forward = new EventEmitter<void>();
 
   /** Whether the email body is currently expanded to take over the window (except sidebar). */
   public isExpanded = this.store.isBodyExpanded;
-
   @Output() public reply = new EventEmitter<void>();
   @Output() public replyAll = new EventEmitter<void>();
-  @Output() public forward = new EventEmitter<void>();
 
   constructor() {
     effect(() => {
       const email = this.email();
 
       this.isFavourite.set(email.is_favourite);
-      this.isClosed.set(email.status === 'closed' || email.status === 'resolved');
+      this.isClosed.set(email.status === 'closed');
     });
   }
 

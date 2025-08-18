@@ -2,10 +2,11 @@
  * @file Service for interacting with the email backend via tRPC.
  */
 import { Injectable } from '@angular/core';
+import { EmailStatus } from '@common';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
-import { EmailType, EmailDraftType } from 'common/src/lib/models';
+import { EmailDraftType, EmailType } from 'common/src/lib/models';
 
 /** Service for interacting with email backend via tRPC */
 @Injectable({ providedIn: 'root' })
@@ -39,6 +40,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.deleteComment.mutate({ email_id, comment_id });
   }
 
+  public deleteDraft(id: string) {
+    return this.api.emails.deleteDraft.mutate({ id });
+  }
+
   public getAllAttachments(id: string, options?: { includeInline: boolean }) {
     return this.api.emails.getAllAttachments.query({ email_id: id, options });
   }
@@ -51,12 +56,12 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.getAttachmentsByEmailId.query(id);
   }
 
-  public getEmailBody(id: string) {
-    return this.api.emails.getEmailBody.query(id);
-  }
-
   public getDraft(id: string) {
     return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
+  }
+
+  public getEmailBody(id: string) {
+    return this.api.emails.getEmailBody.query(id);
   }
 
   /**
@@ -107,6 +112,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.hasAttachment.query(id);
   }
 
+  public saveDraft(input: DraftPayload) {
+    return this.api.emails.saveDraft.mutate(input);
+  }
+
   // Fetch/FormData fallback
   public async sendEmail(input: ComposePayload): Promise<EmailType> {
     const fd = new FormData();
@@ -126,15 +135,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.setFavourite.mutate({ id, favourite });
   }
 
-  public setStatus(id: string, status: 'open' | 'closed' | 'resolved') {
+  public setStatus(id: string, status: EmailStatus) {
     return this.api.emails.setStatus.mutate({ id, status });
-  }
-
-  public saveDraft(input: DraftPayload) {
-    return this.api.emails.saveDraft.mutate(input);
-  }
-
-  public deleteDraft(id: string) {
-    return this.api.emails.deleteDraft.mutate({ id });
   }
 }

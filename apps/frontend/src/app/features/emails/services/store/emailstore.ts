@@ -1,5 +1,6 @@
 // emails.store.ts
 import { Injectable, computed, inject } from '@angular/core';
+import { EmailStatus } from '@common';
 
 import { EmailsService } from '../emails-service';
 import { EmailActionsStore } from './email-actions.store';
@@ -144,7 +145,7 @@ export class EmailsStore {
     return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
   }
 
-  public updateEmailStatus(emailId: EmailId, status: 'open' | 'closed' | 'resolved') {
+  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
     return this.actions.updateEmailStatus(emailId, status);
   }
 }

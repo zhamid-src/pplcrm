@@ -5,12 +5,11 @@ import { EmailCommentsRepo } from '../repositories/emails/email-comments.repo';
 import { EmailDraftsRepo } from '../repositories/emails/email-drafts.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
+import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
-  private static readonly DRAFT_FOLDER_ID = '7';
-
   private attachmentsRepo = new EmailAttachmentsRepo();
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
@@ -44,6 +43,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
   }
 
+  public deleteDraft(tenant_id: string, _user_id: string, id: string) {
+    return this.draftsRepo.delete({ tenant_id, id });
+  }
+
   public getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
     return this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
   }
@@ -58,10 +61,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public getDraft(tenant_id: string, _user_id: string, id: string) {
     return this.draftsRepo.getById({ tenant_id, /*user_id,*/ id });
-  }
-
-  public deleteDraft(tenant_id: string, _user_id: string, id: string) {
-    return this.draftsRepo.delete({ tenant_id, id });
   }
 
   /** Return a single email and its comments */
@@ -82,7 +81,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Return all emails for the given folder */
   public async getEmails(user_id: string, tenant_id: string, folder_id: string) {
-    if (folder_id === EmailsController.DRAFT_FOLDER_ID) {
+    if (folder_id === ALL_FOLDERS.DRAFTS) {
       const drafts = await this.draftsRepo.listByUser(tenant_id, user_id);
       return drafts.map((d: any) => ({
         id: d.id,
@@ -118,7 +117,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
     return folders.map((folder: any) => ({
       ...folder,
-      email_count: folder.id === EmailsController.DRAFT_FOLDER_ID ? draftCount : emailCounts[folder.id] || 0,
+      email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
     }));
   }
 
@@ -146,7 +145,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Update email status (open/closed/resolved) */
-  public setStatus(tenant_id: string, id: string, status: 'open' | 'closed' | 'resolved') {
+  public setStatus(tenant_id: string, id: string, status: EmailStatus) {
     return this.getRepo().setStatus(tenant_id, id, status);
   }
 }

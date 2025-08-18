@@ -179,7 +179,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
    *
    * @param tenant_id - Tenant that owns the email.
    * @param id - Email ID to update.
-   * @param status - New status ('open', 'closed', 'resolved').
+   * @param status - New status ('open', 'closed').
    * @returns The updated status.
    */
   public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
@@ -198,7 +198,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
     // Virtual folders
     if (folder_id === SPECIAL_FOLDERS.ALL_OPEN) {
       if (hasStatus) {
-        return (eb: any) => eb.or([eb('status', '=', 'open'), eb('status', 'is', null)]);
+        return (eb: any) => eb('status', '=', 'open');
       }
       // If no status column, "All Open" ≈ everything
       return (_eb: any) => true;
@@ -206,7 +206,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
     if (folder_id === SPECIAL_FOLDERS.CLOSED) {
       if (hasStatus) {
-        return (eb: any) => eb.or([eb('status', '=', 'closed'), eb('status', '=', 'resolved')]);
+        return (eb: any) => eb('status', '=', 'closed');
       }
       // If no status column, "Closed" ≈ nothing
       return (_eb: any) => false;
