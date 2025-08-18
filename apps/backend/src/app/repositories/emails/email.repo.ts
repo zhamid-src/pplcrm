@@ -1,6 +1,8 @@
 /**
  * Data access layer for email message records.
  */
+import { EmailStatus, SPECIAL_FOLDERS } from '@common';
+
 import { StringReference } from 'kysely';
 
 import { BaseRepository } from '../base.repo';
@@ -255,13 +257,3 @@ export class EmailRepo extends BaseRepository<'emails'> {
     }
   }
 }
-
-type EmailStatus = 'open' | 'closed' | 'resolved';
-
-const SPECIAL_FOLDERS = {
-  ALL_OPEN: '1',
-  CLOSED: '2',
-  ASSIGNED_TO_ME: '6',
-  UNASSIGNED: '8',
-  FAVOURITES: '9',
-} as const;
