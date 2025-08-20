@@ -8,6 +8,8 @@ import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
+import { JSendFailError } from '@common';
+import { TRPCClientError } from '@trpc/client';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
@@ -120,7 +122,15 @@ export class SignInPage {
 
     return this.authService
       .signIn({ email, password })
-      .catch((err) => this.alertSvc.showError(err.message))
+      .catch((err) => {
+        if (err instanceof JSendFailError) {
+          this.form.setErrors({ message: err.data['message'] ?? 'Unable to sign in.' });
+        } else if (err instanceof TRPCClientError) {
+          this.form.setErrors({ message: err.message });
+        } else {
+          this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+        }
+      })
       .finally(() => this.loading.set(false));
   }
 

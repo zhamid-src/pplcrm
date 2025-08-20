@@ -1,10 +1,13 @@
-import { ApplicationConfig, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
 
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { jsendInterceptor } from '@services/jsend.interceptor';
+import { GlobalErrorHandler } from '@services/global-error-handler';
 
 /**
  * Initializes the user session during app startup.
@@ -79,5 +82,11 @@ export const appConfig: ApplicationConfig = {
       const initializerFn = initSession(inject(AuthService));
       return initializerFn();
     }),
+
+    /** HTTP client with JSend interceptor */
+    provideHttpClient(withInterceptors([jsendInterceptor])),
+
+    /** Global error handler */
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
   ],
 };
