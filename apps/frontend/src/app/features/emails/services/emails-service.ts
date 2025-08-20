@@ -2,7 +2,7 @@
  * @file Service for interacting with the email backend via tRPC.
  */
 import { Injectable } from '@angular/core';
-import { EmailStatus } from '@common';
+import { EmailStatus, jsend, JSend } from '@common';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
@@ -127,8 +127,8 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     input.attachments.forEach((f) => fd.append('attachments', f, f.name));
 
     const res = await fetch('/api/emails/send', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error('Failed to send email');
-    return res.json() as Promise<EmailType>;
+    const json = (await res.json()) as JSend<EmailType>;
+    return jsend.unwrap(json);
   }
 
   public setFavourite(id: string, favourite: boolean) {
