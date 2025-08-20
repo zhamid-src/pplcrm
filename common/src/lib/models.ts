@@ -13,7 +13,7 @@ import type {
   UpdateTagObj,
   getAllOptions,
   sortModelItem,
-} from '../schemas';
+} from './schema';
 
 /**
  * Used to get the current time in string from the database

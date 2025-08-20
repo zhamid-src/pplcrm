@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { EmailClient } from '../email-client';
 import { EmailsStore } from '../../services/store/emailstore';
-import { EmailType, EmailFolderType } from 'common/src/lib/models';
+import { EmailType, EmailFolderType } from 'common/src/lib/models/models';
 
 // Mock child components
 @Component({
@@ -223,7 +223,9 @@ describe('EmailClient', () => {
   describe('Reply and forward actions', () => {
     beforeEach(() => {
       mockEmailsStore.getEmailHeaderById.mockReturnValue(
-        signal<any>({ email: { to_list: [{ email: 'recipient@example.com' }], cc_list: [{ email: 'cc@example.com' }] } }),
+        signal<any>({
+          email: { to_list: [{ email: 'recipient@example.com' }], cc_list: [{ email: 'cc@example.com' }] },
+        }),
       );
     });
 

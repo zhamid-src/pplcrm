@@ -4,9 +4,9 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/alerts/alert-service';
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { AttachmentIconComponent } from '@uxcommon/icons/attachment-icon';
 import { Icon } from '@uxcommon/icons/icon';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';

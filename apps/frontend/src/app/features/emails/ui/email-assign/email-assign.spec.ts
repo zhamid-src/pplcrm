@@ -7,7 +7,7 @@ import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailAssign } from './email-assign';
 import { EmailsStore } from '../services/store/emailstore';
-import { EmailType } from 'common/src/lib/models';
+import { EmailType } from 'common/src/lib/models/models';
 
 // Mock child components
 @Component({
