@@ -3,7 +3,6 @@ import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
-import { TRPC_ERROR_CODES_BY_KEY } from '@trpc/server/rpc';
 
 import { get, set } from 'idb-keyval';
 
@@ -11,6 +10,7 @@ import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
 import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 import { environment } from '../../environments/environment';
+import { ErrorService } from '@services/error.service';
 
 /**
  * Base service providing type-safe tRPC client functionality with advanced features.
@@ -67,6 +67,9 @@ export class TRPCService<T> {
   /** Token service for authentication management */
   protected readonly tokenService = inject(TokenService);
 
+  /** Global error service */
+  protected readonly errorSvc = inject(ErrorService);
+
   /** Abort controller for canceling ongoing requests */
   protected ac = new AbortController();
 
@@ -86,7 +89,12 @@ export class TRPCService<T> {
 
   constructor() {
     this.api = createTRPCClient<TRPCRouter>({
-      links: [loggerLink(), refreshLink(this.tokenService, this.router), errorLink, httpLink(this.tokenService)],
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpLink(this.tokenService),
+      ],
     });
   }
 
@@ -170,28 +178,36 @@ function httpLink(tokenSvc: TokenService) {
 }
 
 /**
- * A TRPC link that intercepts errors and replaces BAD_REQUEST messages with friendlier ones.
+ * Creates a TRPC link that normalises errors and forwards server issues to the
+ * global ErrorService.
  */
-const errorLink: TRPCLink<TRPCRouter> = () => {
-  return ({ next, op }) => {
-    return observable((observer) => {
-      const unsubscribe = next(op).subscribe({
-        next(value) {
-          observer.next(value);
-        },
-        error(err) {
-          if (err instanceof TRPCClientError) {
-            if (err.shape?.code === TRPC_ERROR_CODES_BY_KEY.BAD_REQUEST) {
-              err.message = 'Please check your input and try again';
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  return () => {
+    return ({ next, op }) => {
+      return observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next(value) {
+            observer.next(value);
+          },
+          error(err) {
+            const meta = (op as any).meta as { skipErrorHandler?: boolean } | undefined;
+            if (err instanceof TRPCClientError) {
+              if (err.data?.code === 'BAD_REQUEST') {
+                err.message = 'Please check your input and try again';
+              } else if (!meta?.skipErrorHandler) {
+                errorSvc.handle(err);
+              }
+            } else if (!meta?.skipErrorHandler) {
+              errorSvc.handle(err);
             }
-          }
-          observer.error(err);
-        },
-        complete() {
-          observer.complete();
-        },
+            observer.error(err);
+          },
+          complete() {
+            observer.complete();
+          },
+        });
+        return unsubscribe;
       });
-      return unsubscribe;
-    });
+    };
   };
-};
+}
