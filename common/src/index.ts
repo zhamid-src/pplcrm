@@ -32,6 +32,12 @@ export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 
 export type { EmailStatus, EmailFolderConfig } from './lib/emails';
 
-export { jsend, JSendFailError, JSendServerError, httpStatusForJSend } from './lib/jsend';
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
 
-export type { JSend, JSendSuccess, JSendFail, JSendStatus, JSendError } from './lib/jsend';
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
