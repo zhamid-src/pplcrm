@@ -1,31 +1,20 @@
-export interface JSendError {
+export interface JSendErrorInterface {
   code?: string | number;
   message: string;
   status: 'error';
 }
 
-export interface JSendFail<E extends object = Record<string, unknown>> {
+export interface JSendFailInterface<E extends object = Record<string, unknown>> {
   data: E;
   status: 'fail';
 }
 
-export interface JSendSuccess<T> {
+export interface JSendSuccessInterface<T> {
   data: T;
   status: 'success';
 }
 
-export class JSendFailError<E extends object = Record<string, unknown>> extends Error {
-  public override name = 'JSendFailError';
-
-  constructor(
-    public readonly data: E,
-    public readonly statusCode: number = 400,
-  ) {
-    super('Request failed');
-  }
-}
-
-export class JSendServerError extends Error {
+export class JSendError extends Error {
   public override name = 'JSendServerError';
 
   constructor(
@@ -37,10 +26,21 @@ export class JSendServerError extends Error {
   }
 }
 
+export class JSendFail<E extends object = Record<string, unknown>> extends Error {
+  public override name = 'JSendFailError';
+
+  constructor(
+    public readonly data: E,
+    public readonly statusCode: number = 400,
+  ) {
+    super('Request failed');
+  }
+}
+
 export type JSend<T = unknown, E extends object = Record<string, unknown>> =
-  | JSendSuccess<T>
-  | JSendFail<E>
-  | JSendError;
+  | JSendSuccessInterface<T>
+  | JSendFailInterface<E>
+  | JSendErrorInterface;
 
 export type JSendStatus = 'success' | 'fail' | 'error';
 
@@ -52,13 +52,13 @@ export function httpStatusForJSend(obj: JSend): number {
 }
 
 export const jsend = {
-  success<T>(data: T): JSendSuccess<T> {
+  success<T>(data: T): JSendSuccessInterface<T> {
     return { status: 'success', data };
   },
-  fail<E extends object = Record<string, unknown>>(data: E): JSendFail<E> {
+  fail<E extends object = Record<string, unknown>>(data: E): JSendFailInterface<E> {
     return { status: 'fail', data };
   },
-  error(message: string, code?: string | number): JSendError {
+  error(message: string, code?: string | number): JSendErrorInterface {
     return {
       status: 'error',
       message,
@@ -66,21 +66,21 @@ export const jsend = {
     };
   },
 
-  isSuccess<T = unknown>(x: unknown): x is JSendSuccess<T> {
+  isSuccess<T = unknown>(x: unknown): x is JSendSuccessInterface<T> {
     return typeof x === 'object' && x !== null && (x as any).status === 'success' && 'data' in (x as any);
   },
-  isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFail<E> {
+  isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFailInterface<E> {
     return typeof x === 'object' && x !== null && (x as any).status === 'fail' && 'data' in (x as any);
   },
-  isError(x: unknown): x is JSendError {
+  isError(x: unknown): x is JSendErrorInterface {
     return typeof x === 'object' && x !== null && (x as any).status === 'error' && 'message' in (x as any);
   },
 
   /** Unwraps success; throws typed errors for fail/error. */
   unwrap<T>(res: JSend<T>): T {
     if (this.isSuccess<T>(res)) return res.data;
-    if (this.isFail(res)) throw new JSendFailError(res.data as any, 400);
-    if (this.isError(res)) throw new JSendServerError(res.message, res.code, 500);
+    if (this.isFail(res)) throw new JSendFail(res.data as any, 400);
+    if (this.isError(res)) throw new JSendError(res.message, res.code, 500);
     throw new Error('Unknown JSend shape');
   },
 };
