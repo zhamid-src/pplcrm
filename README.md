@@ -90,8 +90,7 @@ SMTP_PASS=password
 **Local:**
 
 ```bash
-psql -U postgres
-CREATE DATABASE pplcrm;
+psql -U pplcrm
 ```
 
 **Docker:**

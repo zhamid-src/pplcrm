@@ -111,12 +111,15 @@ export class SignInPage {
     // if we're here then we should clear the auth token
     this.tokenService.clearAll();
 
-    if (this.form.invalid) return this.alertSvc.showError('Please enter a valid email and password.');
+    const email = this.email?.value;
+    const password = this.password?.value;
+    if (this.form.invalid || !email || !password)
+      return this.alertSvc.showError('Please enter a valid email and password.');
 
     this.loading.set(true);
 
     return this.authService
-      .signIn({ email: this.email?.value || '', password: this.password?.value || '' })
+      .signIn({ email, password })
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }

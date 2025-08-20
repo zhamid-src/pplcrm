@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { signUpInputType } from '@common';
+import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertService } from '@uxcommon/alerts/alert-service';
@@ -105,7 +105,8 @@ export class SignUpPage {
     // TODO: better error message
     return this.authService
       .signUp(this.form.getRawValue() as signUpInputType)
-      .then((user) => {
+      .then((data) => {
+        const user = data as IAuthUser;
         if (user) {
           this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
         } else {

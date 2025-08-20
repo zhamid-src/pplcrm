@@ -29,6 +29,13 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
   }
 
   /**
+   * Delete multiple rows by ID(s).
+   */
+  public async deleteByUserId(user_id: string, tenant_id: string, trx?: Transaction<Models>) {
+    return this.getDelete(trx).where('user_id', '=', user_id).where('tenant_id', '=', tenant_id).executeTakeFirst();
+  }
+
+  /**
    * Get a single session row by the associated user ID.
    *
    * @param user_id - The user ID whose session to retrieve
