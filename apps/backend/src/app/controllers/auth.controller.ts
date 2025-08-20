@@ -41,12 +41,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Auth user record or null if not found.
    */
   public async currentUser(auth: IAuthKeyPayload) {
+    // TODO: return jsend fail
     if (!auth?.user_id) {
       return null;
     }
     const options = {
       columns: ['id', 'email', 'first_name'],
     } as QueryParams<'authusers'>;
+
+    // TODO: catch and return JSendFailError
     const user = await this.getRepo()
       .getById({ tenant_id: auth.tenant_id, id: auth.user_id, options })
       .catch(() => null);
