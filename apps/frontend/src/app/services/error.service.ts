@@ -1,8 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/alerts/alert-service';
 import { JSendServerError } from '@common';
 import { TRPCClientError } from '@trpc/client';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { TokenService } from '../backend-svc/token-service';
 
@@ -25,6 +25,7 @@ export class ErrorService {
 
   /** Handle an error and surface a toast to the user. */
   public handle(error: unknown): void {
+    console.error('ErrorService.handle:', error);
     // Handle JSend server errors produced by the HTTP interceptor
     if (error instanceof JSendServerError) {
       if (!this.redirectFromStatus(error.statusCode)) {
@@ -45,11 +46,20 @@ export class ErrorService {
     this.alerts.showError(msg);
   }
 
-  /** Map HTTP status codes to auth redirects. */
-  private redirectFromStatus(status?: number): boolean {
-    if (status === 401) return this.redirect('UNAUTHORIZED');
-    if (status === 403) return this.redirect('FORBIDDEN');
-    return false;
+  /** Perform auth redirects with throttling and returnUrl preservation. */
+  private redirect(code: 'UNAUTHORIZED' | 'FORBIDDEN'): boolean {
+    const now = Date.now();
+    if (now - this.lastRedirect < 3000) return false;
+    this.lastRedirect = now;
+
+    if (code === 'UNAUTHORIZED') {
+      this.tokenSvc.clearAll();
+      const returnUrl = this.router.url;
+      this.router.navigate(['/signin'], { queryParams: { returnUrl } });
+    } else {
+      this.router.navigate(['/403']);
+    }
+    return true;
   }
 
   /** Map tRPC error codes to auth redirects. */
@@ -61,19 +71,10 @@ export class ErrorService {
     return false;
   }
 
-  /** Perform auth redirects with throttling and returnUrl preservation. */
-  private redirect(code: 'UNAUTHORIZED' | 'FORBIDDEN'): boolean {
-    const now = Date.now();
-    if (now - this.lastRedirect < 3000) return false;
-    this.lastRedirect = now;
-
-    if (code === 'UNAUTHORIZED') {
-      this.tokenSvc.clearAll();
-      const returnUrl = this.router.url;
-      this.router.navigate(['/login'], { queryParams: { returnUrl } });
-    } else {
-      this.router.navigate(['/403']);
-    }
-    return true;
+  /** Map HTTP status codes to auth redirects. */
+  private redirectFromStatus(status?: number): boolean {
+    if (status === 401) return this.redirect('UNAUTHORIZED');
+    if (status === 403) return this.redirect('FORBIDDEN');
+    return false;
   }
 }
