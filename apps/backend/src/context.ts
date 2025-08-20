@@ -40,7 +40,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
     const verifier = createVerifier({
       algorithms: ['HS256'],
       key,
-      clockTimestamp: Date.now(),
+      clockTimestamp: Date.now() / 1000,
       ignoreExpiration: false,
     });
 
