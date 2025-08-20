@@ -159,6 +159,8 @@ export class ComposeEmailComponent {
       };
       await this.actions.sendEmail(input);
       this.finished.emit(); // close composer
+    } catch {
+      // Error surfaced via EmailActionsStore
     } finally {
       this.sending.set(false);
     }
