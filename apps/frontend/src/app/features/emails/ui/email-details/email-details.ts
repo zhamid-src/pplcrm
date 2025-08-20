@@ -2,7 +2,18 @@
  * @file Container component for email details view.
  */
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, EventEmitter, Output, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  EventEmitter,
+  Output,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailBody } from '../email-body/email-body';
@@ -28,10 +39,9 @@ export class EmailDetails {
     return (header as any)?.comments?.length ?? 0;
   });
   public commentsExpanded = signal(false);
-
+  @Output() public forward = new EventEmitter<EmailType>();
   @Output() public reply = new EventEmitter<EmailType>();
   @Output() public replyAll = new EventEmitter<EmailType>();
-  @Output() public forward = new EventEmitter<EmailType>();
 
   constructor() {
     // Only fetch when header value is truly undefined (not when it's null/empty).
@@ -50,6 +60,11 @@ export class EmailDetails {
     this.commentsExpanded.update((v) => !v);
   }
 
+  protected emitForward() {
+    const e = this.email();
+    if (e) this.forward.emit(e);
+  }
+
   protected emitReply() {
     const e = this.email();
     if (e) this.reply.emit(e);
@@ -58,10 +73,5 @@ export class EmailDetails {
   protected emitReplyAll() {
     const e = this.email();
     if (e) this.replyAll.emit(e);
-  }
-
-  protected emitForward() {
-    const e = this.email();
-    if (e) this.forward.emit(e);
   }
 }

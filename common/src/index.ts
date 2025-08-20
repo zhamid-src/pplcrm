@@ -24,7 +24,7 @@ export {
   UpdateTagObj,
   sortModelItem,
   getAllOptions,
-} from './lib/schemas';
+} from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';
 
