@@ -11,6 +11,7 @@ import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import type { EmailDraftType, EmailType } from 'common/src/lib/models';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 @Injectable({ providedIn: 'root' })
 export class EmailActionsStore {
@@ -18,6 +19,7 @@ export class EmailActionsStore {
   private readonly folders = inject(EmailFoldersStore);
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
+  private readonly alerts = inject(AlertService);
 
   /** Add a comment and update header cache so future reads include it */
   public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
@@ -91,19 +93,24 @@ export class EmailActionsStore {
 
   /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
   public async sendEmail(input: ComposePayload): Promise<EmailType> {
-    const created = await this.svc.sendEmail(input); // implement in EmailsService (below)
+    try {
+      const created = await this.svc.sendEmail(input);
 
-    // If you're currently in "Sent", reload to show the new item; otherwise just refresh counts.
-    const currentFolderId = this.folders.currentSelectedFolderId();
-    if (currentFolderId) {
-      await this.folders.loadEmailsForFolder(currentFolderId);
+      // If you're currently in "Sent", reload to show the new item; otherwise just refresh counts.
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+
+      // Optional: warm header cache (if your API returns header)
+      // this.cache.replaceHeader(String(created.id), created.header ?? null);
+
+      return created;
+    } catch (e) {
+      this.alerts.showError((e as Error).message);
+      throw e;
     }
-    await this.folders.refreshFolderCounts();
-
-    // Optional: warm header cache (if your API returns header)
-    // this.cache.replaceHeader(String(created.id), created.header ?? null);
-
-    return created;
   }
 
   /** Toggle favourite with optimistic update */
