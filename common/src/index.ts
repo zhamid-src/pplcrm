@@ -31,3 +31,7 @@ export { debounce, sleep } from './lib/utils';
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 
 export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export { jsend, JSendFailError, JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type { JSend, JSendSuccess, JSendFail, JSendStatus, JSendError } from './lib/jsend';
