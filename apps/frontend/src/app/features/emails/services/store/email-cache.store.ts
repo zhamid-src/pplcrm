@@ -81,6 +81,9 @@ export class EmailCacheStore {
     } catch (err) {
       console.error(`Failed to load email data for ${key}:`, err);
       this.alerts.showError('Failed to load email data. Please try again later.');
+      // Cache empty values to avoid endless re-fetch loops on subsequent calls
+      this.setInCache(this.emailBodiesCache, key, '');
+      this.setInCache(this.emailHeadersCache, key, null);
       return { body: '', header: null };
     } finally {
       this.unmarkLoading(key);
