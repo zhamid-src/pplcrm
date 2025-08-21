@@ -1,5 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 
+import { ServerEmail } from 'common/src/lib/emails';
 import type { EmailType } from 'common/src/lib/models';
 
 @Injectable({ providedIn: 'root' })
@@ -52,6 +53,18 @@ export class EmailStateStore {
     return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
   }
 
+  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+
+    // Optional: mark any requested ids that didn't come back as false
+    if (fillFalseForIds?.length) {
+      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
+    }
+
+    this.setManyHasAttachment(map);
+  }
+
   /** Patch one email and return the previous snapshot for rollback */
   public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
     const prev = this.readEmail(emailKey);
@@ -78,40 +91,47 @@ export class EmailStateStore {
    * Keeps normalized `emailsById` and the per-folder list in sync.
    * (Does not change hasAttachment flags — let orchestrator fill them.)
    */
-  public setEmailsForFolder(folderId: string, serverEmails: any[]): void {
-    const flags = serverEmails.map((s) => ({
-      id: String(s.id),
-      has: s.has_attachment !== undefined ? !!s.has_attachment : (s.attachment_count ?? 0) > 0,
-    }));
+  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[]): void {
+    const ids: string[] = [];
+    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
 
     this.emailsById.update((map) => {
       const next = { ...map };
       for (const s of serverEmails) {
+        const id = String(s.id);
+        ids.push(id);
+
+        // reuse your existing helper; prefer hasMap[id] when provided
+        const { has, count } = deriveHasAndCount(s);
+        flagsMap[id] = has;
+
         const e: EmailType = {
-          id: String(s.id),
+          id,
           folder_id: String(s.folder_id),
           updated_at: new Date(s.updated_at),
-          is_favourite: s.is_favourite,
+          is_favourite: !!s.is_favourite,
+          attachment_count: count,
           status: (s as any).status || 'open',
           from_email: s.from_email ?? undefined,
           to_email: s.to_email ?? undefined,
           subject: s.subject ?? undefined,
           preview: s.preview ?? undefined,
           assigned_to: s.assigned_to ?? undefined,
-          att_count: s.att_count ?? 0,
-          has_attachment: (s.attachment_count ?? 0) > 0,
+          has_attachment: has, // keep in the normalized email too
         };
-        next[e.id] = e;
+
+        next[id] = e;
       }
       return next;
     });
 
     this.emailIdsByFolderId.update((byFolder) => ({
       ...byFolder,
-      [String(folderId)]: serverEmails.map((e) => String(e.id)),
+      [String(folderId)]: ids,
     }));
 
-    this.setManyHasAttachment(flags);
+    // seed/refresh the per-id flags cache
+    this.setManyHasAttachment(flagsMap);
   }
 
   /** ---------- NEW: mutators for hasAttachment flags ---------- */
@@ -122,13 +142,8 @@ export class EmailStateStore {
   }
 
   /** Bulk set flags (e.g., from counts API or per-email checks) */
-  public setManyHasAttachment(entries: Array<{ id: string; has: boolean | undefined }>) {
-    if (!entries.length) return;
-    this.hasAttachmentByEmailId.update((m) => {
-      const next = { ...m };
-      for (const { id, has } of entries) next[id] = has;
-      return next;
-    });
+  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
+    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
   }
 
   /** Toggle the body expanded view */
@@ -138,3 +153,20 @@ export class EmailStateStore {
 }
 
 export type EmailId = string | number;
+
+function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
+  if (typeof s.has_attachment === 'boolean') {
+    const n = toNum(s.attachment_count);
+    // if backend didn’t send a count, synthesize a minimal one
+    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
+  }
+  const count = toNum(s.attachment_count);
+  return { has: count > 0, count };
+}
+
+function toNum(n: unknown): number {
+  if (typeof n === 'bigint') return Number(n);
+  if (typeof n === 'string') return Number(n) || 0;
+  if (typeof n === 'number') return n;
+  return 0;
+}

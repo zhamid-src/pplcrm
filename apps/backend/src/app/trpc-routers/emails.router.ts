@@ -45,10 +45,6 @@ function getAllAttachments() {
     .query(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options));
 }
 
-function getAttachmentCountByEmails() {
-  return authProcedure.query(({ ctx }) => emails.getAttachmentCountByEmails(ctx.auth.tenant_id));
-}
-
 function getAttachmentsByEmailId() {
   return authProcedure
     .input(z.string())
@@ -115,6 +111,12 @@ function hasAttachment() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
 }
 
+function hasAttachmentByEmailIds() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .query(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input));
+}
+
 function saveDraft() {
   return authProcedure
     .input(
@@ -171,6 +173,6 @@ export const EmailsRouter = router({
   saveDraft: saveDraft(),
   hasAttachment: hasAttachment(),
   getAllAttachments: getAllAttachments(),
-  getAttachmentCountByEmails: getAttachmentCountByEmails(),
+  hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
   getAttachmentsByEmailId: getAttachmentsByEmailId(),
 });

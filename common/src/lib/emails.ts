@@ -50,11 +50,33 @@ export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
 
 export type EmailStatus = 'open' | 'closed';
 
+export type HasRow = {
+  email_id: string;
+  has: boolean;
+};
+
 export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
 
 export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
 
 export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
+
+export type ServerEmail = {
+  assigned_to?: string | null;
+  attachment_count?: number | string | bigint | null;
+  folder_id: string | number;
+  from_email?: string | null;
+
+  // any of these might be present depending on endpoint:
+  has_attachment?: boolean | null;
+  id: string | number;
+  is_favourite: boolean;
+  preview?: string | null;
+  status?: string;
+  subject?: string | null;
+  to_email?: string | null;
+  updated_at: string | Date;
+};
 
 export type SpecialFolderId = OnlyVirtual['id'];
 

@@ -2,10 +2,11 @@
  * @file Service for interacting with the email backend via tRPC.
  */
 import { Injectable } from '@angular/core';
-import { EmailStatus, jsend, JSend } from '@common';
+import { EmailStatus, JSend, jsend } from '@common';
 
 import { TRPCService } from '../../../backend-svc/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
+import { HasRow } from 'common/src/lib/emails';
 import { EmailDraftType, EmailType } from 'common/src/lib/models';
 
 /** Service for interacting with email backend via tRPC */
@@ -46,10 +47,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public getAllAttachments(id: string, options?: { includeInline: boolean }) {
     return this.api.emails.getAllAttachments.query({ email_id: id, options });
-  }
-
-  public getAttachmentCountByEmails() {
-    return this.api.emails.getAttachmentCountByEmails.query();
   }
 
   public getAttachmentsByEmailId(id: string) {
@@ -110,6 +107,13 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public hasAttachment(id: string) {
     return this.api.emails.hasAttachment.query(id);
+  }
+
+  public async hasAttachmentByEmailIds(ids: string[]): Promise<Partial<Record<string, boolean>>> {
+    const rows: HasRow[] = await this.api.emails.hasAttachmentByEmailIds.query(ids);
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+    return map;
   }
 
   public saveDraft(input: DraftPayload) {

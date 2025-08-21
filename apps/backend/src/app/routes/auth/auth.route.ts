@@ -16,7 +16,11 @@ const auth = new AuthController();
  * @param done - Callback to signal completion of route registration.
  */
 const routes: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.get('', (req: FastifyRequest) => auth.getAll(req.headers['tenant-id'] as string));
+  fastify.get('', async (req: FastifyRequest, reply) => {
+    const data = await auth.getAll(req.headers['tenant-id'] as string);
+    return reply.jsendSuccess(data);
+  });
+
   fastify.get('/:id', (req: IdParam) =>
     auth.getById({ tenant_id: req.headers['tenant-id'] as string, id: req.params.id }),
   );

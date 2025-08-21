@@ -3,13 +3,10 @@
  */
 import { EmailStatus, SPECIAL_FOLDERS } from '@common';
 
-import { StringReference } from 'kysely';
-
 import { BaseRepository } from '../base.repo';
 import { EmailAttachmentsRepo } from './email-attachments.repo';
 import { EmailHeadersRepo } from './email-headers.repo';
 import { EmailRecipientsRepo } from './email-recipients.repo';
-import { Models } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `emails` table.
@@ -24,6 +21,10 @@ export class EmailRepo extends BaseRepository<'emails'> {
    */
   constructor() {
     super('emails');
+  }
+
+  public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
+    return this.emailAttachmentsRepo.getByEmailId(tenant_id, email_id);
   }
 
   /**
@@ -48,17 +49,37 @@ export class EmailRepo extends BaseRepository<'emails'> {
   /** Example: list emails in a folder with an `attachment_count` field */
   public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string) {
     const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
+
+    // Subquery ea: { email_id, att_count }
     const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // aliased 'ea'
 
-    return this.getSelect()
-      .selectAll()
-      .select((eb) =>
-        eb.fn.coalesce(eb.ref('ea.att_count' as StringReference<Models, 'emails'>), eb.val(0)).as('attachment_count'),
-      )
-      .leftJoin(ea, 'ea.email_id', 'emails.id')
-      .where('tenant_id', '=', tenant_id)
-      .where((eb) => whereForFolder(eb))
-      .execute();
+    return (
+      this.getSelect()
+        .selectAll()
+        // numeric count (coalesced to 0)
+        .select((eb) =>
+          eb.fn
+            // NOTE: ea.att_count (not ea.attachment_count)
+            .coalesce(eb.ref('ea.att_count' as any /* StringReference<Models, 'emails'> */), eb.val(0))
+            .as('attachment_count'),
+        )
+        // boolean has_attachment via EXISTS (faster than COUNT)
+        .select((eb) =>
+          eb
+            .exists(
+              eb
+                .selectFrom('email_attachments as a')
+                .select('a.id') // any column works inside EXISTS
+                .whereRef('a.tenant_id', '=', 'emails.tenant_id')
+                .whereRef('a.email_id', '=', 'emails.id'),
+            )
+            .as('has_attachment'),
+        )
+        .leftJoin(ea, 'ea.email_id', 'emails.id')
+        .where('tenant_id', '=', tenant_id)
+        .where((eb) => whereForFolder(eb))
+        .execute()
+    );
   }
 
   /**

@@ -8,6 +8,7 @@ import z from 'zod';
 
 import { authProcedure, publicProcedure, router } from '../../trpc';
 import { AuthController } from '../controllers/auth.controller';
+import { wrapTrpc } from './utils/wrap-trpc';
 
 /**
  * Get the currently authenticated user.
@@ -15,7 +16,7 @@ import { AuthController } from '../controllers/auth.controller';
  * @returns The current user profile based on the access token.
  */
 function currentUser() {
-  return authProcedure.query(async ({ ctx }) => controller.currentUser(ctx.auth));
+  return authProcedure.query(wrapTrpc(({ ctx }) => controller.currentUser(ctx.auth)));
 }
 
 /**
@@ -23,8 +24,8 @@ function currentUser() {
  * Only minimal fields are returned.
  */
 function getUsers() {
-  return authProcedure.query(({ ctx }) =>
-    controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name'] }),
+  return authProcedure.query(
+    wrapTrpc(({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name'] })),
   );
 }
 
@@ -37,7 +38,7 @@ function getUsers() {
 function renewAuthToken() {
   return publicProcedure
     .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
-    .mutation(async ({ input }) => controller.renewAuthToken(input));
+    .mutation(wrapTrpc(({ input }) => controller.renewAuthToken(input)));
 }
 
 /**
@@ -49,7 +50,7 @@ function renewAuthToken() {
 function resetPassword() {
   return publicProcedure
     .input(z.object({ password: z.string(), code: z.string() }))
-    .mutation(async ({ input }) => controller.resetPassword(input.password, input.code));
+    .mutation(wrapTrpc(({ input }) => controller.resetPassword(input.password, input.code)));
 }
 
 /**
@@ -61,7 +62,7 @@ function resetPassword() {
 function sendPasswordResetEmail() {
   return publicProcedure
     .input(z.object({ email: z.string() }))
-    .mutation(async ({ input }) => controller.sendPasswordResetEmail(input.email));
+    .mutation(wrapTrpc(({ input }) => controller.sendPasswordResetEmail(input.email)));
 }
 
 /**
@@ -71,7 +72,7 @@ function sendPasswordResetEmail() {
  * @returns Access and refresh tokens upon successful login.
  */
 function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(async ({ input }) => controller.signIn(input));
+  return publicProcedure.input(signInInputObj).mutation(wrapTrpc(({ input }) => controller.signIn(input)));
 }
 
 /**
@@ -80,7 +81,7 @@ function signIn() {
  * @returns A success confirmation.
  */
 function signOut() {
-  return publicProcedure.mutation(async ({ ctx }) => controller.signOut(ctx.auth));
+  return publicProcedure.mutation(wrapTrpc(({ ctx }) => controller.signOut(ctx.auth)));
 }
 
 /**
@@ -90,7 +91,7 @@ function signOut() {
  * @returns Access and refresh tokens upon successful registration.
  */
 function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(async ({ input }) => controller.signUp(input));
+  return publicProcedure.input(signUpInputObj).mutation(wrapTrpc(({ input }) => controller.signUp(input)));
 }
 
 const controller = new AuthController();
