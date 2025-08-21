@@ -111,14 +111,16 @@ export class EmailsStore {
     if (!ids.length) return rows;
 
     try {
-      // If your endpoint accepts ids:
-      // const counts: Record<string, number> = await this.emailSvc.getAttachmentCountByEmails(ids);
+      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
 
-      // If your current endpoint returns all counts (no args), filter locally:
-      const counts: Record<string, number> = await this.emailSvc.getAttachmentCountByEmails();
-      this.state.setManyHasAttachment(ids.map((id) => ({ id, has: (counts[id] ?? 0) > 0 })));
+      const merged: Record<string, boolean> = {};
+      for (const id of ids) {
+        const key = String(id); // <- normalize the key
+        merged[key] = !!partial[key];
+      }
+      this.state.setManyHasAttachment(merged);
     } catch {
-      // ignore count failures; UI can lazily resolve per-email below
+      // ignore failures; UI can lazily resolve per-email elsewhere
     }
 
     return rows;

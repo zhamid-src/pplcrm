@@ -1,16 +1,17 @@
+import { JSendFailError, JSendServerError, jsend } from '@common';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import { TRPCError } from '@trpc/server';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 
 import { default as fastify } from 'fastify';
 
+import jsendErrorHandler from './app/plugins/jsend-error-handler.plugin';
 import { routes } from './app/routes';
 import { trpcRouter } from './app/trpc-routers';
 import { createContext } from './context';
 import { env } from './env';
-import { jsend, JSendFailError, JSendServerError } from '@common';
-import { TRPCError } from '@trpc/server';
 
 /**
  * Wrapper class for a Fastify server instance.
@@ -39,12 +40,13 @@ export class FastifyServer {
       exposeHeadRoutes: false,
     });
 
-    // Register REST routes
-    this.server.register(routes);
-
     // Register core Fastify plugins
     this.server.register(cors, { ...opts });
     this.server.register(sensible);
+    this.server.register(jsendErrorHandler);
+
+    // Register REST routes
+    this.server.register(routes);
 
     // Register tRPC plugin for RPC-based APIs
     this.server.register(fastifyTRPCPlugin, {

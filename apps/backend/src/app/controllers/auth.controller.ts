@@ -1,12 +1,21 @@
 import * as bcrypt from 'bcrypt';
 
 import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
-import { TRPCError } from '@trpc/server';
 
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
 
+import {
+  AppError,
+  BadRequestError,
+  ConflictError,
+  InternalError,
+  NotFoundError,
+  PreconditionFailedError,
+  ServerMisconfigError,
+  UnauthorizedError,
+} from '../errors/app-errors';
 import { AuthUsersRepo } from '../repositories/auth/authusers.repo';
 import { QueryParams } from '../repositories/base.repo';
 import { SessionsRepo } from '../repositories/sessions/sessions.repo';
@@ -41,19 +50,20 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Auth user record or null if not found.
    */
   public async currentUser(auth: IAuthKeyPayload) {
-    // TODO: return jsend fail
+    // There's no user ID, which means that the user is unauthorized
     if (!auth?.user_id) {
-      return null;
+      throw new UnauthorizedError('User is not authenticated. Please sign in');
     }
     const options = {
       columns: ['id', 'email', 'first_name'],
     } as QueryParams<'authusers'>;
 
-    // TODO: catch and return JSendFailError
-    const user = await this.getRepo()
-      .getById({ tenant_id: auth.tenant_id, id: auth.user_id, options })
-      .catch(() => null);
-    return user || null;
+    try {
+      const user = await this.getRepo().getById({ tenant_id: auth.tenant_id, id: auth.user_id, options });
+      return user || null;
+    } catch (err) {
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
   }
 
   /**
@@ -63,14 +73,22 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   public async renewAuthToken(input: IToken) {
     if (!input?.auth_token || !input?.refresh_token) {
-      throw new TRPCError({
-        message: 'Missing auth token',
-        code: 'UNAUTHORIZED',
-      });
+      throw new UnauthorizedError('Missing auth token');
     }
-    const decode = createDecoder();
-    const payload = decode(input.auth_token);
-    return this.createTokens(payload);
+    try {
+      const decode = createDecoder();
+      const payload = decode(input.auth_token) as any;
+
+      // Basic payload validation before issuing new tokens
+      if (!payload?.user_id || !payload?.tenant_id || !payload?.name) {
+        throw new UnauthorizedError('Invalid auth token');
+      }
+
+      return this.createTokens(payload);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new UnauthorizedError('Invalid auth token', undefined, { cause: err });
+    }
   }
 
   /**
@@ -87,18 +105,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     // 15 minutes in milliseconds
     if (msec > 90000) {
       // TODO: use a constant for 90000
-      throw new TRPCError({
-        message: 'The code is expired. Please request a new code',
-        code: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('The code is expired. Please request a new code');
     }
 
     const result = await this.getRepo().updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
-      throw new TRPCError({
-        message: 'Wrong code, please try again',
-        code: 'UNAUTHORIZED',
-      });
+      throw new UnauthorizedError('Wrong code, please try again');
     }
   }
 
@@ -117,25 +129,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       sendmail: true,
     });
 
-    transport.sendMail(
-      {
-        from: '"CampaignRaven" <pplcrm@campaignraven.com>',
-        to: email,
-        subject: 'Your password reset link',
-        text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
-        html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
-      },
-      (err: Error | null) => {
-        if (err) {
-          const trpcError = new TRPCError({
-            message: 'Something went wrong, please try again',
-            code: 'INTERNAL_SERVER_ERROR',
-          });
-          return Promise.reject(trpcError);
-        }
-        return Promise.resolve(false);
-      },
-    );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        transport.sendMail(
+          {
+            from: '"CampaignRaven" <pplcrm@campaignraven.com>',
+            to: email,
+            subject: 'Your password reset link',
+            text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
+            html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
+          },
+          (err: Error | null) => {
+            if (err) return reject(new InternalError('Something went wrong, please try again'));
+            return resolve();
+          },
+        );
+      });
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
     return Promise.resolve(false);
   }
 
@@ -149,10 +162,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
     if (!bcrypt.compareSync(input.password, user.password)) {
-      throw new TRPCError({
-        message: 'Sorry this email or password is not valid. If you forgot your password, you can reset it.',
-        code: 'UNAUTHORIZED',
-      });
+      throw new UnauthorizedError(
+        'Sorry this email or password is not valid. If you forgot your password, you can reset it.',
+      );
     }
 
     return this.createTokens({
@@ -180,26 +192,31 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Newly generated auth and refresh tokens.
    * @throws If email is already registered or internal error occurs.
    */
-  public async signUp(input: signUpInputType): Promise<IToken | TRPCError> {
+  public async signUp(input: signUpInputType): Promise<IToken> {
     const email = input.email.toLowerCase();
     let token = { auth_token: '', refresh_token: '' };
 
-    await this.verifyUserDoesNotExist(email);
-    const password = await this.hashPassword(input.password);
+    try {
+      await this.verifyUserDoesNotExist(email);
+      const password = await this.hashPassword(input.password);
 
-    await this.tenants.transaction().execute(async (trx) => {
-      const tenant_id = await this.createTenant(trx, input.organization);
-      const user = await this.createUser(trx, tenant_id, password, email, input);
-      const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
-      await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
-      token = await this.createTokens({
-        user_id: profile.id,
-        tenant_id: user.tenant_id,
-        name: user.first_name,
+      await this.tenants.transaction().execute(async (trx) => {
+        const tenant_id = await this.createTenant(trx, input.organization);
+        const user = await this.createUser(trx, tenant_id, password, email, input);
+        const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
+        await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
+        token = await this.createTokens({
+          user_id: profile.id,
+          tenant_id: user.tenant_id,
+          name: user.first_name,
+        });
       });
-    });
 
-    return token;
+      return token;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
   }
 
   /**
@@ -215,10 +232,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
     const profile = await this.profiles.add({ row }, trx);
     if (!profile) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+      throw new InternalError('Something went wrong, please try again');
     }
     return profile;
   }
@@ -234,10 +248,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const row = { name } as OperationDataType<'tenants', 'insert'>;
     const tenantAddResult = await this.tenants.add({ row }, trx);
     if (!tenantAddResult) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+      throw new InternalError('Something went wrong, please try again');
     }
     return tenantAddResult.id;
   }
@@ -263,28 +274,33 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const currentSession = await this.sessions.add({ row });
 
     if (!currentSession) {
-      throw new TRPCError({
-        message: 'Session creation failed',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+      throw new InternalError('Session creation failed');
     }
 
     const session_id = currentSession.session_id;
 
     const key = process.env['SHARED_SECRET'];
+    if (!key) {
+      throw new ServerMisconfigError('Server misconfiguration');
+    }
+
     const signer = createSigner({
       algorithm: 'HS256',
       key,
       clockTimestamp: Date.now() / 1000, // Convert to seconds
       expiresIn: '30m',
     });
-    const auth_token = signer({
-      user_id: input.user_id,
-      tenant_id: input.tenant_id,
-      name: input.name,
-      session_id,
-    });
-    return { auth_token, refresh_token: currentSession.refresh_token };
+    try {
+      const auth_token = signer({
+        user_id: input.user_id,
+        tenant_id: input.tenant_id,
+        name: input.name,
+        session_id,
+      });
+      return { auth_token, refresh_token: currentSession.refresh_token };
+    } catch (err) {
+      throw new InternalError('Token creation failed', undefined, { cause: err });
+    }
   }
 
   /**
@@ -316,15 +332,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       first_name: input.first_name,
       verified: false,
     } as OperationDataType<'authusers', 'insert'>;
-    const user = await this.getRepo().add({ row }, trx);
-
-    if (!user) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+    try {
+      const user = await this.getRepo().add({ row }, trx);
+      if (!user) throw new InternalError('Something went wrong, please try again');
+      return user;
+    } catch (err) {
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
     }
-    return user;
   }
 
   /**
@@ -336,13 +350,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private async getCodeAge(code: string): Promise<number> {
     const nowData: QueryResult<INow> = await this.getRepo().nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+      throw new InternalError('Something went wrong, please try again');
     }
 
     const data: AuthUsersType = (await this.getRepo().getPasswordResetCodeTime(code)) as AuthUsersType;
+    if (!data) {
+      throw new PreconditionFailedError('Invalid password reset code');
+    }
     const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
     const then = new Date(thenTimestamp);
 
@@ -361,10 +375,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
 
     if (!user) {
-      throw new TRPCError({
-        message: 'User not found',
-        code: 'NOT_FOUND',
-      });
+      throw new NotFoundError('User not found');
     }
     return user;
   }
@@ -378,10 +389,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private async hashPassword(password: string) {
     const hashedPassword = await bcrypt.hash(password, 12);
     if (!hashedPassword) {
-      throw new TRPCError({
-        message: 'Something went wrong, please try again',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
+      throw new InternalError('Something went wrong, please try again');
     }
     return hashedPassword;
   }
@@ -414,10 +422,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private async verifyUserDoesNotExist(email: string) {
     const exists = await this.getRepo().existsByEmail(email);
     if (exists) {
-      throw new TRPCError({
-        message: 'This email already exists. Did you want to sign in?',
-        code: 'CONFLICT',
-      });
+      throw new ConflictError('This email already exists. Did you want to sign in?');
     }
   }
 }

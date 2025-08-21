@@ -52,7 +52,7 @@ export const EmailObj = z.object({
   assigned_to: z.string().optional(),
   updated_at: z.date(),
   is_favourite: z.boolean(),
-  att_count: z.number(),
+  attachment_count: z.number(),
   has_attachment: z.boolean(),
   status: z.enum(['open', 'closed']).nullable().default('open'),
 });

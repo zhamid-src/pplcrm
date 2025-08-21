@@ -1,7 +1,10 @@
 /**
  * Repository for accessing email attachments.
  */
+import { sql } from 'kysely';
+
 import { BaseRepository } from '../base.repo';
+import { HasRow } from 'common/src/lib/emails';
 
 /**
  * Data access for the `email_attachments` table.
@@ -35,7 +38,7 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   public getCountByEmails(tenant_id: string) {
     return this.getSelect()
       .select(['email_id'])
-      .select(({ fn }) => fn.count('id').as('att_count'))
+      .select(({ fn }) => fn.count('id').as('attachment_count'))
       .where('tenant_id', '=', tenant_id)
       .groupBy('email_id')
       .execute();
@@ -44,7 +47,7 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   public getSelectForCountByEmails(tenant_id: string) {
     return this.getSelect()
       .select(['email_id'])
-      .select(({ fn }) => fn.count('id').as('att_count'))
+      .select(({ fn }) => fn.count('id').as('attachment_count'))
       .where('tenant_id', '=', tenant_id)
       .groupBy('email_id')
       .as('ea');
@@ -59,5 +62,17 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
       .limit(1)
       .executeTakeFirst();
     return !!row;
+  }
+
+  public hasAttachmentByEmailIds(tenant_id: string, ids: string[]): Promise<HasRow[]> {
+    if (!ids?.length) return Promise.resolve([]);
+
+    return this.getSelect()
+      .select(['email_id'])
+      .select(() => sql<boolean>`count(id) > 0`.as('has'))
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', ids)
+      .groupBy('email_id')
+      .execute() as Promise<HasRow[]>;
   }
 }
