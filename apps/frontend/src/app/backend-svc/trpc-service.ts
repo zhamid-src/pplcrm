@@ -1,16 +1,16 @@
 import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
+import { ErrorService } from '@services/error.service';
 import { TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 
 import { get, set } from 'idb-keyval';
 
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
 import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 import { environment } from '../../environments/environment';
-import { ErrorService } from '@services/error.service';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
 
 /**
  * Base service providing type-safe tRPC client functionality with advanced features.
@@ -61,14 +61,14 @@ import { ErrorService } from '@services/error.service';
   providedIn: 'root',
 })
 export class TRPCService<T> {
+  /** Global error service */
+  protected readonly errorSvc = inject(ErrorService);
+
   /** Angular router for navigation during auth flows */
   protected readonly router = inject(Router);
 
   /** Token service for authentication management */
   protected readonly tokenService = inject(TokenService);
-
-  /** Global error service */
-  protected readonly errorSvc = inject(ErrorService);
 
   /** Abort controller for canceling ongoing requests */
   protected ac = new AbortController();
@@ -182,32 +182,38 @@ function httpLink(tokenSvc: TokenService) {
  * global ErrorService.
  */
 function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  return () => {
-    return ({ next, op }) => {
-      return observable((observer) => {
+  const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
+
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
         const unsubscribe = next(op).subscribe({
-          next(value) {
-            observer.next(value);
-          },
-          error(err) {
+          next: (value) => observer.next(value),
+          error: (err) => {
             const meta = (op as any).meta as { skipErrorHandler?: boolean } | undefined;
+
             if (err instanceof TRPCClientError) {
-              if (err.data?.code === 'BAD_REQUEST') {
-                err.message = 'Please check your input and try again';
-              } else if (!meta?.skipErrorHandler) {
-                errorSvc.handle(err);
+              const code = err.data?.code as string | undefined;
+              const path = op.path ?? '';
+              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                err.message = GENERIC_LOGIN_MSG;
+              } else if (code === 'BAD_REQUEST') {
+                err.message = GENERIC_INPUT_MSG;
               }
-            } else if (!meta?.skipErrorHandler) {
-              errorSvc.handle(err);
+
+              if (!meta?.skipErrorHandler) errorSvc.handle(err);
+            } else {
+              if (!meta?.skipErrorHandler) errorSvc.handle(err as any);
             }
+
             observer.error(err);
           },
-          complete() {
-            observer.complete();
-          },
+          complete: () => observer.complete(),
         });
         return unsubscribe;
       });
-    };
-  };
 }

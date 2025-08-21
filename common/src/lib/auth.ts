@@ -56,14 +56,17 @@ export interface IToken {
   refresh_token: string | null;
 }
 
+export type signInInputType = z.infer<typeof signInInputObj>;
+
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
 /**
  * The list of objects that are required to login a user.
  */
 export const signInInputObj = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.email(),
+  password: z.string().min(8).max(72),
 });
-export type signInInputType = z.infer<typeof signInInputObj>;
 
 /**
  * The list of objects that are required to create a new
@@ -91,4 +94,3 @@ export const signUpInputObj = z.object({
    */
   first_name: z.string().max(100),
 });
-export type signUpInputType = z.infer<typeof signUpInputObj>;

@@ -81,7 +81,7 @@ function signIn() {
  * @returns A success confirmation.
  */
 function signOut() {
-  return publicProcedure.mutation(wrapTrpc(({ ctx }) => controller.signOut(ctx.auth)));
+  return authProcedure.mutation(wrapTrpc(({ ctx }) => controller.signOut(ctx.auth)));
 }
 
 /**

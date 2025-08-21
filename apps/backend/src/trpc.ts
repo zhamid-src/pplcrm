@@ -1,15 +1,36 @@
 // tsco:ignore
 //
 import { TRPCError, initTRPC } from '@trpc/server';
-import { Context } from './context';
+import { ZodError } from 'zod';
+import type { Context } from './context';
 
-// Initialize tRPC instance with context type
-const trpc = initTRPC.context<Context>().create();
+const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
 
-/**
- * Generic tRPC middleware export.
- * Can be used to create custom middleware for procedures.
- */
+const trpc = initTRPC.context<Context>().create({
+  errorFormatter({ shape, error }) {
+    // Path may be on error.path, or on shape.data.path (or absent)
+    const pathStr: string = (error as any).path ?? ((shape.data as any)?.path as string | undefined) ?? '';
+
+    const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
+
+    // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
+    const isZodOrBadRequest =
+      Boolean((shape.data as any)?.zodError) || error.cause instanceof ZodError || error.code === 'BAD_REQUEST';
+
+    // Collapse auth-ish cases
+    const isCredsProblem =
+      error.code === 'UNAUTHORIZED' ||
+      error.code === 'NOT_FOUND' ||
+      (error.cause as any)?.name === 'InvalidCredentialsError' ||
+      (error.cause as any)?.code === 'USER_NOT_FOUND';
+
+    if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
+      return { ...shape, message: GENERIC_LOGIN_MSG };
+    }
+    return shape;
+  },
+});
+
 export const middleware = trpc.middleware;
 
 /**
@@ -36,15 +57,8 @@ const isAuthed = middleware(async (opts) => {
   if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
-
-  return opts.next({
-    ctx: {
-      ...ctx,
-      auth: ctx.auth,
-    },
-  });
+  return opts.next({ ctx: { ...ctx, auth: ctx.auth } });
 });
-
 /**
  * Procedure requiring authentication.
  * Use this for all endpoints that must be protected.

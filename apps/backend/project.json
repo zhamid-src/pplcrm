@@ -19,7 +19,7 @@
         "esbuildOptions": {
           "packages": "external",
           "loader": { ".html": "text" },
-          "sourcemap": true,
+          "sourcemap": "inline",
           "outExtension": { ".js": ".js" }
         }
       },
@@ -40,17 +40,15 @@
     "serve": {
       "executor": "@nx/js:node",
       "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "backend:build"
-      },
+      "options": { "buildTarget": "backend:build" },
       "configurations": {
         "development": {
           "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--env-file=.env.development"]
+          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
         },
         "production": {
           "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--env-file=.env.production"]
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
         }
       }
     },

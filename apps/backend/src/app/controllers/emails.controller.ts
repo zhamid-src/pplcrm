@@ -233,9 +233,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
     try {
-      const updated = await this.getRepo().setFavourite(tenant_id, id, favourite);
-      if (!updated) throw new NotFoundError('Email not found');
-      return updated;
+      return this.getRepo().setFavourite(tenant_id, id, favourite);
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to set favourite', undefined, { cause: err });
