@@ -47,7 +47,7 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   public getSelectForCountByEmails(tenant_id: string) {
     return this.getSelect()
       .select(['email_id'])
-      .select(({ fn }) => fn.count('id').as('attachment_count'))
+      .select(({ fn }) => fn.count('id').as('att_count'))
       .where('tenant_id', '=', tenant_id)
       .groupBy('email_id')
       .as('ea');
