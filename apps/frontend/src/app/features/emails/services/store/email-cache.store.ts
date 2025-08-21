@@ -3,15 +3,12 @@
  * Owns: body/header caches, "loading" set, and combined fetch helpers.
  */
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { EmailsService } from '../emails-service';
 import type { EmailId } from './email-state.store';
 
 @Injectable({ providedIn: 'root' })
 export class EmailCacheStore {
-  private readonly alerts = inject(AlertService);
-
   /** Cache for email body HTML content, keyed by email ID */
   private readonly emailBodiesCache = signal<Record<string, string>>({});
 
@@ -80,7 +77,6 @@ export class EmailCacheStore {
       return { body: bodyHtml, header };
     } catch (err) {
       console.error(`Failed to load email data for ${key}:`, err);
-      this.alerts.showError('Failed to load email data. Please try again later.');
       // Cache empty values to avoid endless re-fetch loops on subsequent calls
       this.setInCache(this.emailBodiesCache, key, '');
       this.setInCache(this.emailHeadersCache, key, null);
