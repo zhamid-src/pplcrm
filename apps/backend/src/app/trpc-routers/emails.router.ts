@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { authProcedure, router } from '../../trpc';
 import { EmailsController } from '../controllers/emails.controller';
+import { wrapTrpc } from './utils/wrap-trpc';
 
 /**
  * Add a comment to an existing email.
@@ -14,7 +15,9 @@ import { EmailsController } from '../controllers/emails.controller';
 function addComment() {
   return authProcedure
     .input(z.object({ id: z.string(), author_id: z.string(), comment: z.string() }))
-    .mutation(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment));
+    .mutation(
+      wrapTrpc(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment)),
+    );
 }
 
 /**
@@ -24,41 +27,43 @@ function addComment() {
 function assign() {
   return authProcedure
     .input(z.object({ id: z.string(), user_id: z.string().nullable() }))
-    .mutation(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id)));
 }
 
 function deleteComment() {
   return authProcedure
     .input(z.object({ email_id: z.string(), comment_id: z.string() }))
-    .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id)));
 }
 
 function deleteDraft() {
   return authProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id)));
 }
 
 function getAllAttachments() {
   return authProcedure
     .input(z.object({ email_id: z.string(), options: z.object({ includeInline: z.boolean() }).optional() }))
-    .query(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options));
+    .query(wrapTrpc(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options)));
 }
 
 function getAttachmentsByEmailId() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input));
+    .query(wrapTrpc(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input)));
 }
 
 function getDraft() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
+    .query(wrapTrpc(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input)));
 }
 
 function getEmailBody() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
+  return authProcedure
+    .input(z.string())
+    .query(wrapTrpc(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input)));
 }
 
 /**
@@ -66,7 +71,9 @@ function getEmailBody() {
  * @returns The requested email record.
  */
 function getEmailHeader() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input));
+  return authProcedure
+    .input(z.string())
+    .query(wrapTrpc(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input)));
 }
 
 /**
@@ -74,17 +81,18 @@ function getEmailHeader() {
  * @returns Email body with headers and recipient information.
  */
 function getEmailWithHeaders() {
-  return authProcedure.input(z.string()).query(async ({ input, ctx }) => {
-    const [emailBody, emailHeader] = await Promise.all([
-      emails.getEmailBody(ctx.auth.tenant_id, input),
-      emails.getEmailHeader(ctx.auth.tenant_id, input),
-    ]);
+  return authProcedure.input(z.string()).query(
+    wrapTrpc(async ({ input, ctx }) => {
+      const tenantId = ctx.auth.tenant_id;
 
-    return {
-      body: emailBody,
-      header: emailHeader,
-    };
-  });
+      const [body, header] = await Promise.all([
+        emails.getEmailBody(tenantId, input),
+        emails.getEmailHeader(tenantId, input),
+      ]);
+
+      return { body, header };
+    }),
+  );
 }
 
 /**
@@ -94,27 +102,29 @@ function getEmailWithHeaders() {
 function getEmails() {
   return authProcedure
     .input(z.object({ folderId: z.string() }))
-    .query(({ input, ctx }) => emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId));
+    .query(wrapTrpc(({ input, ctx }) => emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId)));
 }
 
 /** Retrieve all email folders for the current tenant. */
 function getFolders() {
-  return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
+  return authProcedure.query(wrapTrpc(({ ctx }) => emails.getFolders(ctx.auth.tenant_id)));
 }
 
 /** Retrieve all email folders with email counts for the current tenant. */
 function getFoldersWithCounts() {
-  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
+  return authProcedure.query(wrapTrpc(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id)));
 }
 
 function hasAttachment() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
+  return authProcedure
+    .input(z.string())
+    .query(wrapTrpc(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input)));
 }
 
 function hasAttachmentByEmailIds() {
   return authProcedure
     .input(z.array(z.string()))
-    .query(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input));
+    .query(wrapTrpc(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input)));
 }
 
 function saveDraft() {
@@ -129,28 +139,30 @@ function saveDraft() {
         html: z.string().optional(),
       }),
     )
-    .mutation(({ input, ctx }) =>
-      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
-        id: input.id,
-        to_list: input.to,
-        cc_list: input.cc ?? [],
-        bcc_list: input.bcc ?? [],
-        subject: input.subject ?? undefined,
-        body_html: input.html ?? undefined,
-      }),
+    .mutation(
+      wrapTrpc(({ input, ctx }) =>
+        emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
+          id: input.id,
+          to_list: input.to,
+          cc_list: input.cc ?? [],
+          bcc_list: input.bcc ?? [],
+          subject: input.subject ?? undefined,
+          body_html: input.html ?? undefined,
+        }),
+      ),
     );
 }
 
 function setFavourite() {
   return authProcedure
     .input(z.object({ id: z.string(), favourite: z.boolean() }))
-    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite)));
 }
 
 function setStatus() {
   return authProcedure
     .input(z.object({ id: z.string(), status: z.enum(['open', 'closed']) }))
-    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status)));
 }
 
 const emails = new EmailsController();
