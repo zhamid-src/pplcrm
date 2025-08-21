@@ -52,7 +52,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async currentUser(auth: IAuthKeyPayload) {
     // There's no user ID, which means that the user is unauthorized
     if (!auth?.user_id) {
-      throw new UnauthorizedError('User is not authenticated. Please sign in');
+      throw new UnauthorizedError();
     }
     const options = {
       columns: ['id', 'email', 'first_name'],
@@ -73,7 +73,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    */
   public async renewAuthToken(input: IToken) {
     if (!input?.auth_token || !input?.refresh_token) {
-      throw new UnauthorizedError('Missing auth token');
+      throw new UnauthorizedError();
     }
     try {
       const decode = createDecoder();
@@ -81,13 +81,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       // Basic payload validation before issuing new tokens
       if (!payload?.user_id || !payload?.tenant_id || !payload?.name) {
-        throw new UnauthorizedError('Invalid auth token');
+        throw new UnauthorizedError();
       }
 
       return this.createTokens(payload);
     } catch (err) {
       if (err instanceof AppError) throw err;
-      throw new UnauthorizedError('Invalid auth token', undefined, { cause: err });
+      throw new UnauthorizedError();
     }
   }
 
@@ -110,7 +110,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const result = await this.getRepo().updatePassword(password, code);
     if (result.numUpdatedRows === BigInt(0)) {
-      throw new UnauthorizedError('Wrong code, please try again');
+      throw new UnauthorizedError();
     }
   }
 
@@ -162,9 +162,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
     if (!bcrypt.compareSync(input.password, user.password)) {
-      throw new UnauthorizedError(
-        'Sorry this email or password is not valid. If you forgot your password, you can reset it.',
-      );
+      throw new UnauthorizedError();
     }
 
     return this.createTokens({

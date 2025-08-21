@@ -2,6 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Attach: Nx backend (9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "address": "localhost",
+      "restart": true,
+      "protocol": "inspector",
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/apps/backend/**/*.js"],
+      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
+      "disableOptimisticBPs": true,
+      "trace": true,
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
       "type": "node",
       "request": "launch",
       "name": "Debug Backend (TS-Node)",

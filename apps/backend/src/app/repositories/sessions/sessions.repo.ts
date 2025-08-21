@@ -24,8 +24,9 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
    * @param trx - Optional Kysely transaction
    * @returns A promise resolving to the deletion result
    */
-  public deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
-    return this.getDelete(trx).where('session_id', '=', session_id).execute();
+  public async deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
+    const result = await this.getDelete(trx).where('session_id', '=', session_id).executeTakeFirst();
+    return Number(result?.numDeletedRows ?? 0);
   }
 
   /**

@@ -3,13 +3,20 @@
  * Features reactive forms, validation, password visibility toggle, and token persistence options.
  */
 import { Component, effect, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormControl,
+  NonNullableFormBuilder,
+  ReactiveFormsModule,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
+import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
-import { JSendFailError } from '@common';
-import { TRPCClientError } from '@trpc/client';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
@@ -45,7 +52,7 @@ import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
 export class SignInPage {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
-  private readonly fb = inject(FormBuilder);
+  private readonly fb = inject(NonNullableFormBuilder);
   private readonly router = inject(Router);
   private readonly tokenService = inject(TokenService);
 
@@ -60,8 +67,8 @@ export class SignInPage {
 
   /** Form group capturing the user's email and password */
   public form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    email: this.fb.control('', { validators: [Validators.required, Validators.email] }),
+    password: this.fb.control('', { validators: [Validators.required, Validators.minLength(8)] }),
   });
 
   /**
@@ -73,20 +80,12 @@ export class SignInPage {
     });
   }
 
-  /**
-   * Returns the form control for email.
-   * @returns The email AbstractControl
-   */
-  public get email() {
-    return this.form.get('email');
+  public get email(): FormControl<string> {
+    return this.form.controls.email;
   }
 
-  /**
-   * Returns the form control for password.
-   * @returns The password AbstractControl
-   */
-  public get password() {
-    return this.form.get('password');
+  public get password(): FormControl<string> {
+    return this.form.controls.password;
   }
 
   /**
@@ -110,28 +109,54 @@ export class SignInPage {
    * Shows error if form is invalid or authentication fails.
    */
   public async signIn() {
-    // if we're here then we should clear the auth token
+    // clear any stale auth
     this.tokenService.clearAll();
 
-    const email = this.email?.value;
-    const password = this.password?.value;
-    if (this.form.invalid || !email || !password)
-      return this.alertSvc.showError('Please enter a valid email and password.');
+    // normalize inputs
+    const rawEmail = (this.email?.value ?? '').toString();
+    const email = rawEmail.trim().toLowerCase();
+    const password = (this.password?.value ?? '').toString();
+
+    // write back the normalized email (no revalidate spam)
+    if (this.email && rawEmail !== email) {
+      this.email.setValue(email, { emitEvent: false });
+    }
+
+    // force validation messages to appear
+    this.form.markAllAsTouched();
+    this.form.updateValueAndValidity({ onlySelf: false, emitEvent: false });
+
+    // block backend if invalid
+    if (!email || !password || this.form.invalid) {
+      const msg = this.email?.hasError('required')
+        ? 'Email is required.'
+        : this.email?.hasError('email')
+          ? 'Please enter a valid email address.'
+          : this.password?.hasError('minlength')
+            ? 'Password must be at least 8 characters.'
+            : 'Please enter a valid email and password.';
+      this.alertSvc.showError(msg);
+      return;
+    }
 
     this.loading.set(true);
-
-    return this.authService
-      .signIn({ email, password })
-      .catch((err) => {
-        if (err instanceof JSendFailError) {
-          this.form.setErrors({ message: err.data['message'] ?? 'Unable to sign in.' });
-        } else if (err instanceof TRPCClientError) {
-          this.form.setErrors({ message: err.message });
-        } else {
-          this.alertSvc.showError(err instanceof Error ? err.message : String(err));
-        }
-      })
-      .finally(() => this.loading.set(false));
+    try {
+      await this.authService.signIn({ email, password });
+    } catch (err) {
+      // your existing error handling...
+      if (err instanceof JSendFailError) {
+        const message = err.data['message'] ?? 'Unable to sign in.';
+        this.form.setErrors({ message });
+        this.alertSvc.showError(message);
+      } else if (err instanceof TRPCClientError) {
+        this.form.setErrors({ message: err.message });
+        this.alertSvc.showError(err.message);
+      } else {
+        this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   /**
@@ -166,3 +191,12 @@ export class SignInPage {
     return this.getError()?.length;
   }
 }
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
