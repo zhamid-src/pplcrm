@@ -92,7 +92,7 @@ function getByHouseholdId() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => persons.getById({ tenant_id: ctx.auth.tenant_id, id: input }));
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
 /**

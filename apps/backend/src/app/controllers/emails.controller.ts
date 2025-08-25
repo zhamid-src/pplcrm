@@ -135,9 +135,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Get a draft by ID for a given tenant and user */
-  public async getDraft(tenant_id: string, _user_id: string, id: string) {
+  public async getDraft(tenant_id: string, _user_id: string, value: string) {
     try {
-      const draft = await this.draftsRepo.getById({ tenant_id, /*user_id,*/ id });
+      const draft = await this.draftsRepo.getOneBy('id', { tenant_id, column_value: value });
       if (!draft) throw new NotFoundError('Draft not found');
       return draft;
     } catch (err) {
@@ -147,16 +147,18 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return a single email and its comments */
-  public async getEmailBody(tenant_id: string, id: string) {
+  public async getEmailBody(tenant_id: string, value: string) {
     try {
-      const email = await this.bodiesRepo.getByColumn('email_id', { tenant_id, column: id });
+      const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, column_value: value });
       if (email) return email;
 
       // If no body exists, attempt to load from drafts table
-      const draft = (await this.draftsRepo.getById({ tenant_id, id })) as EmailDraftType | undefined;
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, column_value: value })) as
+        | EmailDraftType
+        | undefined;
       if (draft)
         return {
-          email_id: id,
+          email_id: value,
           body_html: draft.body_html ?? '',
           body_delta: (draft as any).body_delta ?? null,
         } as any;
@@ -179,7 +181,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       if (emailWithHeaders) return { email: emailWithHeaders, comments, attachments };
 
       // Fallback to draft if regular email not found
-      const draft = (await this.draftsRepo.getById({ tenant_id, id })) as EmailDraftType | undefined;
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, column_value: id })) as
+        | EmailDraftType
+        | undefined;
       if (draft)
         return {
           email: {

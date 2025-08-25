@@ -67,7 +67,7 @@ function getAllWithCounts() {
 function getById() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => tags.getById({ tenant_id: ctx.auth.tenant_id, id: input }));
+    .query(({ input, ctx }) => tags.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
 /**
