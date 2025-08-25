@@ -148,8 +148,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   /** Return a single email and its comments */
   public async getEmailBody(tenant_id: string, id: string) {
     try {
-      const email = await this.bodiesRepo.getById({ tenant_id, id });
-      if (!email) throw new NotFoundError('Email body not found');
+      const email = await this.bodiesRepo.getByColumn('email_id', { tenant_id, column: id });
+      if (!email) throw new NotFoundError('Failed to fetch email body');
       return email;
     } catch (err) {
       if (err instanceof AppError) throw err;
