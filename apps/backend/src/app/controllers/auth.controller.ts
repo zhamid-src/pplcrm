@@ -61,7 +61,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     try {
       const user = await this.getRepo().getOneBy('id', {
         tenant_id: auth.tenant_id,
-        column_value: auth.user_id,
+        value: auth.user_id,
         options,
       });
       return user || null;
