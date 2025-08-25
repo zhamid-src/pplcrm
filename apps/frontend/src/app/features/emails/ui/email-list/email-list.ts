@@ -7,7 +7,6 @@ import { Icon } from '@uxcommon/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({
@@ -42,8 +41,7 @@ export class EmailList {
         return;
       }
 
-      // Do not auto-select for drafts (id '7') to avoid auto-opening compose.
-      if (folderId && folderId !== ALL_FOLDERS.DRAFTS) {
+      if (folderId) {
         // If nothing is selected or the current selection no longer exists in the list,
         // automatically select the first email.
         if (!selectedId || !emails.some((e) => e.id === selectedId)) {
