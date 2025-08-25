@@ -259,9 +259,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       body_html?: string;
     },
   ) {
-    if (!Array.isArray(draft.to_list) || draft.to_list.length === 0) {
-      throw new BadRequestError('Draft must include at least one recipient');
-    }
     try {
       const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
       if (!saved) throw new InternalError('Failed to save draft');
