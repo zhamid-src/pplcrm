@@ -34,8 +34,8 @@ export class EmailRepo extends BaseRepository<'emails'> {
       const trashId = ALL_FOLDERS.TRASH;
 
       const res = await this.getDelete(trx)
-        .where('tenant_id', '=', tenantId as any)
-        .where('folder_id', '=', trashId as any)
+        .where('tenant_id', '=', tenantId)
+        .where('folder_id', '=', trashId)
         .executeTakeFirst();
 
       // email_trash rows should be cleaned via FK ON DELETE CASCADE
@@ -49,14 +49,10 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
   /**
    * Get all emails within a folder for a given tenant.
-   * Handles special folders: All Open (id=1) and Closed (id=2).
-   *
-   * @param tenant_id - Tenant that owns the emails.
-   * @param folder_id - Identifier of the folder to retrieve emails from.
-   * @returns List of email rows in the folder.
+   * Handles special folders via central predicate builder.
    */
   public async getByFolder(user_id: string, tenant_id: string, folder_id: string) {
-    const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
+    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
 
     const query = this.getSelect()
       .selectAll()
@@ -68,35 +64,26 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
   /**
    * Get emails by folder with attachment count and has_attachment flag.
-   * Uses a subquery to count attachments per email.
-   *
-   * @param user_id - User ID for folder-specific logic.
-   * @param tenant_id - Tenant that owns the emails.
-   * @param folder_id - Identifier of the folder to retrieve emails from.
-   * @returns List of emails with attachment info.
+   * LEFT JOIN subquery for counts + EXISTS for boolean.
    */
   public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string) {
-    const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
+    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
 
-    const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // aliased 'ea'
+    // Subquery: SELECT email_id, COUNT(*)::int AS att_count FROM email_attachments ... GROUP BY email_id
+    const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // should be aliased as 'ea'
 
     return (
       this.getSelect()
         .selectAll()
         // numeric count (coalesced to 0)
-        .select((eb) =>
-          eb.fn
-            // NOTE: ea.att_count (not ea.attachment_count)
-            .coalesce(eb.ref('ea.att_count' as any /* StringReference<Models, 'emails'> */), eb.val(0))
-            .as('attachment_count'),
-        )
-        // boolean has_attachment via EXISTS (faster than COUNT)
+        .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
+        // boolean has_attachment via EXISTS (fast)
         .select((eb) =>
           eb
             .exists(
               eb
                 .selectFrom('email_attachments as a')
-                .select('a.id') // any column works inside EXISTS
+                .select('a.id')
                 .whereRef('a.tenant_id', '=', 'emails.tenant_id')
                 .whereRef('a.email_id', '=', 'emails.id'),
             )
@@ -120,14 +107,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
   }
 
   /**
-   * Get email counts for all folders for a given tenant.
-   * Includes virtual folders using the same predicate builder as getByFolder.
-   *
-   * @param tenant_id - Tenant that owns the emails.
-   * @returns Object mapping folder_id to email count.
+   * Get email counts for all folders (real + virtual) for a tenant in ONE query.
+   * Uses Postgres filtered aggregates for virtual folders.
    */
   public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
-    // 1) Regular folder counts (group by folder_id)
+    // 1) Regular per-folder counts
     const regular = await this.getSelect()
       .select(['folder_id'])
       .select((eb) => eb.fn.count('id').as('count'))
@@ -135,66 +119,47 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .groupBy('folder_id')
       .execute();
 
+    // 2) Virtual counts (tenant-wide, not grouped)
+    const virtual = await this.getSelect()
+      .select(() => [
+        sql<number>`count(*) filter (where status = 'open' and folder_id is distinct from ${ALL_FOLDERS.TRASH})`.as(
+          'all_open',
+        ),
+        sql<number>`count(*) filter (where status = 'closed' and folder_id is distinct from ${ALL_FOLDERS.TRASH})`.as(
+          'closed',
+        ),
+        sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id is distinct from ${ALL_FOLDERS.TRASH})`.as(
+          'assigned',
+        ),
+        sql<number>`count(*) filter (where assigned_to is null and status = 'open' and folder_id is distinct from ${ALL_FOLDERS.TRASH})`.as(
+          'unassigned',
+        ),
+        sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id is distinct from ${ALL_FOLDERS.TRASH})`.as(
+          'favourites',
+        ),
+      ])
+      .where('tenant_id', '=', tenant_id)
+      .executeTakeFirst();
+
     const counts: Record<string, number> = {};
-    for (const row of regular) counts[row.folder_id] = Number(row.count);
 
-    // TODO: any opportunity to optimize this?
+    // Real folders
+    for (const row of regular) {
+      counts[row.folder_id as unknown as string] = Number((row as any).count ?? 0);
+    }
 
-    // 2) Virtual folder counts via the same predicate builder (no duplicated logic)
-    const [allOpenPred, closedPred, assignedPred, unAssignedPred, favouritesPred] = await Promise.all([
-      this.buildFolderPredicate(SPECIAL_FOLDERS.ALL_OPEN, user_id),
-      this.buildFolderPredicate(SPECIAL_FOLDERS.CLOSED, user_id),
-      this.buildFolderPredicate(SPECIAL_FOLDERS.ASSIGNED_TO_ME, user_id),
-      this.buildFolderPredicate(SPECIAL_FOLDERS.UNASSIGNED, user_id),
-      this.buildFolderPredicate(SPECIAL_FOLDERS.FAVOURITES, user_id),
-    ]);
+    // Virtual folders (COALESCE to 0 if tenant has no emails)
+    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number((virtual as any)?.all_open ?? 0);
+    counts[SPECIAL_FOLDERS.CLOSED] = Number((virtual as any)?.closed ?? 0);
+    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number((virtual as any)?.assigned ?? 0);
+    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number((virtual as any)?.unassigned ?? 0);
+    counts[SPECIAL_FOLDERS.FAVOURITES] = Number((virtual as any)?.favourites ?? 0);
 
-    const [allOpenCount, closedCount, assignedCount, unAssignedCount, favouritesCount] = await Promise.all([
-      this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => allOpenPred(eb))
-        .executeTakeFirst(),
-      this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => closedPred(eb))
-        .executeTakeFirst(),
-      this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => assignedPred(eb))
-        .executeTakeFirst(),
-      this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => unAssignedPred(eb))
-        .executeTakeFirst(),
-      this.getSelect()
-        .select((eb) => eb.fn.count('id').as('count'))
-        .where('tenant_id', '=', tenant_id)
-        .where((eb) => favouritesPred(eb))
-        .executeTakeFirst(),
-    ]);
-
-    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number(allOpenCount?.count || 0);
-    counts[SPECIAL_FOLDERS.CLOSED] = Number(closedCount?.count || 0);
-    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number(assignedCount?.count || 0);
-    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number(unAssignedCount?.count || 0);
-    counts[SPECIAL_FOLDERS.FAVOURITES] = Number(favouritesCount?.count || 0);
-
-    // Optional: debug
-    // console.log('Final folder counts:', counts);
     return counts;
   }
 
   /**
    * Get email with headers and recipients for detailed view.
-   * Combines email, headers, and recipients using separate queries for type-safety.
-   *
-   * @param tenant_id - Tenant that owns the email.
-   * @param email_id - Identifier of the email to fetch.
-   * @returns Email with headers and categorized recipients.
    */
   public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string) {
     const email = await this.getOneBy('id', { tenant_id, value: email_id });
@@ -221,11 +186,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
   /**
    * Check if an email has any attachments.
-   * Uses a subquery to check for existence of attachments.
-   *
-   * @param tenant_id - Tenant that owns the email.
-   * @param email_id - Identifier of the email to check.
-   * @returns True if the email has attachments, false otherwise.
    */
   public async hasAttachments(tenant_id: string, email_id: string): Promise<boolean> {
     return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
@@ -233,23 +193,18 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
   /**
    * Move emails to Trash folder and remember their original folder.
-   * Uses a transaction to ensure atomicity.
-   *
-   * @param tenant_id - Tenant that owns the emails.
-   * @param emailIds - List of email IDs to move to Trash.
-   * @returns Number of emails moved to Trash.
    */
   public async moveToTrash(tenant_id: string, emailIds: string[]) {
     if (!emailIds?.length) return 0;
 
     return this.transaction().execute(async (trx) => {
-      const folder_id = ALL_FOLDERS.TRASH;
+      const trashFolderId = ALL_FOLDERS.TRASH;
 
-      // Remember where each email came from (skip ones already in Trash)
-      await this.emailTrashRepo.addFromEmails({ tenant_id, emailIds, folder_id }, trx);
+      // Remember provenance (skip ones already in Trash)
+      await this.emailTrashRepo.addFromEmails({ tenant_id, emailIds, folder_id: trashFolderId }, trx);
 
       const res = (await this.getUpdate(trx)
-        .set({ folder_id: folder_id, deleted_at: new Date() })
+        .set({ folder_id: trashFolderId, deleted_at: new Date() })
         .where('tenant_id', '=', tenant_id)
         .where('id', 'in', emailIds)
         .executeTakeFirst()) as unknown as UpdateResult;
@@ -258,36 +213,33 @@ export class EmailRepo extends BaseRepository<'emails'> {
     });
   }
 
-  /** Restore emails from Trash back to their previous folders. */
+  /** Restore emails from Trash back to their previous folders (joined UPDATE … FROM). */
   public async restoreFromTrash(tenantId: string, emailIds: string[]): Promise<number> {
-    if (!emailIds?.length) return Promise.resolve(0);
+    if (!emailIds?.length) return 0;
 
     return this.transaction().execute(async (trx) => {
-      // Update emails by pulling the original folder from email_trash (per email)
-      const updated = await this.getUpdate(trx)
-        .set({
-          // If from_folder_id is TEXT, CAST to BIGINT. Keep current folder if no trash row exists.
-          folder_id: sql<string>`
-          COALESCE(
-            CAST((
-              SELECT et.from_folder_id
-              FROM email_trash AS et
-              WHERE et.tenant_id = emails.tenant_id
-                AND et.email_id  = emails.id
-            ) AS bigint),
-            folder_id
-          )
-        `,
-          deleted_at: null, // or trashed_at: null if that’s your field
-        })
-        .where('tenant_id', '=', tenantId)
-        .where('id', 'in', emailIds as any) // ensure ids match your DB type
-        .executeTakeFirst();
+      // UPDATE emails e
+      // SET folder_id = et.from_folder_id, deleted_at = null
+      // FROM email_trash et
+      // WHERE e.tenant_id = et.tenant_id AND e.id = et.email_id
+      //   AND e.tenant_id = :tenantId AND e.id IN (:emailIds)
 
-      // Clean up provenance rows
+      const updated = (await this.getUpdate(trx)
+        .set({
+          folder_id: sql`et.from_folder_id`,
+          deleted_at: null,
+        })
+        .from('email_trash as et')
+        .whereRef('et.tenant_id', '=', 'emails.tenant_id')
+        .whereRef('et.email_id', '=', 'emails.id')
+        .where('emails.tenant_id', '=', tenantId)
+        .where('emails.id', 'in', emailIds)
+        .executeTakeFirst()) as unknown as UpdateResult;
+
+      // Clean up only the provenance rows we used
       await this.emailTrashRepo.deleteMany({ tenant_id: tenantId, ids: emailIds }, trx);
 
-      return Number((updated as any)?.numUpdatedRows ?? 0);
+      return Number(updated?.numUpdatedRows ?? 0);
     });
   }
 
@@ -303,50 +255,38 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
   /**
    * Update the status of an email.
-   *
-   * @param tenant_id - Tenant that owns the email.
-   * @param id - Email ID to update.
-   * @param status - New status ('open', 'closed').
-   * @returns The updated status.
    */
   public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
     await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
-
     return status;
   }
 
   /**
    * Central builder for folder predicates. Returns a function that applies the where clauses.
-   * This keeps special-folder logic in a single place and reusable across queries.
+   * Kept non-async (pure) and dedupes "not in trash".
    */
-  private async buildFolderPredicate(folder_id: string, user_id: string): Promise<(eb: any) => any> {
-    // Virtual folders
-    if (folder_id === SPECIAL_FOLDERS.ALL_OPEN)
-      return (eb) => eb.and([eb('status', '=', 'open'), eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH)]);
-    else if (folder_id === SPECIAL_FOLDERS.CLOSED)
-      return (eb) => eb.and([eb('status', '=', 'closed'), eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH)]);
-    else if (folder_id === SPECIAL_FOLDERS.ASSIGNED_TO_ME)
-      return (eb) =>
-        eb.and([
-          eb('assigned_to', '=', user_id),
-          eb('status', '=', 'open'),
-          eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH),
-        ]);
-    else if (folder_id === SPECIAL_FOLDERS.UNASSIGNED)
-      return (eb) =>
-        eb.and([
-          eb('assigned_to', 'is', null),
-          eb('status', '=', 'open'),
-          eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH),
-        ]);
-    else if (folder_id === SPECIAL_FOLDERS.FAVOURITES)
-      return (eb) =>
-        eb.and([
-          eb('is_favourite', '=', true),
-          eb('status', '=', 'open'),
-          eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH),
-        ]);
-    // Real folder
-    else return (eb) => eb('folder_id', '=', folder_id);
+  private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
+    switch (folder_id) {
+      case SPECIAL_FOLDERS.ALL_OPEN:
+        return (eb) => eb.and([eb('status', '=', 'open'), this.notInTrash(eb)]);
+      case SPECIAL_FOLDERS.CLOSED:
+        return (eb) => eb.and([eb('status', '=', 'closed'), this.notInTrash(eb)]);
+      case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
+        return (eb) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), this.notInTrash(eb)]);
+      case SPECIAL_FOLDERS.UNASSIGNED:
+        return (eb) => eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), this.notInTrash(eb)]);
+      case SPECIAL_FOLDERS.FAVOURITES:
+        return (eb) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), this.notInTrash(eb)]);
+      default:
+        // Real folder
+        return (eb) => eb('folder_id', '=', folder_id);
+    }
+  }
+
+  // ---------- predicate builder (centralized special-folder logic) ----------
+
+  /** small helper to avoid Trash in virtual folders */
+  private notInTrash(eb: any) {
+    return eb('folder_id', 'is distinct from', ALL_FOLDERS.TRASH);
   }
 }
