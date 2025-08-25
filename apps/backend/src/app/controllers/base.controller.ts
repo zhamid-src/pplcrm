@@ -139,7 +139,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     const id = input.id as OperandValueExpressionOrList<Models, T, 'id'>;
 
-    return this.repo.getOneBy('id', { column_value: id, tenant_id });
+    return this.repo.getOneBy('id', { value: id, tenant_id });
   }
 
   /**
