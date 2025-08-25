@@ -11,7 +11,7 @@ import { EmailType } from 'common/src/lib/models/models';
 
 // Mock sanitize pipe
 @Component({
-  selector: 'mock-sanitize-pipe',
+  selector: 'pc-mock-sanitize-pipe',
   template: '{{ value }}',
 })
 class MockSanitizePipe {
