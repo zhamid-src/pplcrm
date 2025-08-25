@@ -19,7 +19,7 @@ const persons = new PersonsController();
 const routes: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('', schema.getAll, (req: FastifyRequest) => persons.getAll(req.headers['tenant-id'] as string));
   fastify.get('/:id', schema.findFromId, (req: IdParam) =>
-    persons.getById({ tenant_id: req.headers['tenant-id'] as string, id: req.params.id }),
+    persons.getOneById({ tenant_id: req.headers['tenant-id'] as string, id: req.params.id }),
   );
   fastify.get('/count', schema.count, (req: FastifyRequest) => persons.getCount(req.headers['tenant-id'] as string));
 

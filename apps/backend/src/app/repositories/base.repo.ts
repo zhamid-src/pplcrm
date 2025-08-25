@@ -172,9 +172,7 @@ export class BaseRepository<T extends keyof Models> {
    */
   public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
     const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
-
     const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
-
     return result.length > 0;
   }
 
@@ -236,7 +234,7 @@ export class BaseRepository<T extends keyof Models> {
       .where('tenant_id', '=', input.tenant_id);
   }
 
-  protected getOneBy<C extends ColName<T>>(
+  public getOneBy<C extends ColName<T>>(
     column: C,
     input: {
       tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
@@ -258,73 +256,6 @@ export class BaseRepository<T extends keyof Models> {
     trx?: Transaction<Models>,
   ) {
     return this.selectBy(column, input, trx).execute();
-  }
-
-  /**
-   * Get a single row by ID.
-   * TODO: should also check userId
-   */
-  public getById(
-    input: {
-      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-      id: OperandValueExpressionOrList<Models, T, 'id'>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getOneBy('id', { tenant_id: input.tenant_id, value: input.id, options: input.options }, trx);
-  }
-
-  public getAllById(
-    input: {
-      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-      id: OperandValueExpressionOrList<Models, T, 'id'>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getManyBy('id', { tenant_id: input.tenant_id, value: input.id, options: input.options }, trx);
-  }
-
-  public getByColumn(
-    column: ReferenceExpression<Models, T>,
-    input: {
-      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-      column: string; // existing API: this is the VALUE, not the column name
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    // Casts keep the existing (loose) signature intact without breaking callers.
-    return this.getOneBy(
-      column as unknown as ColName<T>,
-      {
-        tenant_id: input.tenant_id,
-        value: input.column as any,
-        options: input.options,
-      },
-      trx,
-    );
-  }
-
-  public getAllByColumn(
-    column: ReferenceExpression<Models, T>,
-    input: {
-      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-      column: string; // existing API: this is the VALUE, not the column name
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getManyBy(
-      column as unknown as ColName<T>,
-      {
-        tenant_id: input.tenant_id,
-        value: input.column as any,
-        options: input.options,
-      },
-      trx,
-    );
   }
 
   /**

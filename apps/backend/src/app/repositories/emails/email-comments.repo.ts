@@ -22,6 +22,6 @@ export class EmailCommentsRepo extends BaseRepository<'email_comments'> {
    * @returns All comment rows linked to the email.
    */
   public getForEmail(tenant_id: string, email_id: string) {
-    return this.getAllByColumn('email_id', { tenant_id, column: email_id });
+    return this.getManyBy('email_id', { tenant_id, value: email_id });
   }
 }

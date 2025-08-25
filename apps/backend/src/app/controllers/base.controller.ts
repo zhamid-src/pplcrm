@@ -119,20 +119,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   }
 
   /**
-   * Finds a single row by ID for a given tenant.
-   *
-   * @param input.tenant_id - Tenant ID
-   * @param input.id - Row ID
-   * @returns A Promise resolving to the found row or `undefined`
-   */
-  public getById(input: { tenant_id: string; id: string }) {
-    const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-    const id = input.id as OperandValueExpressionOrList<Models, T, 'id'>;
-
-    return this.repo.getById({ id, tenant_id });
-  }
-
-  /**
    * Counts the number of rows for a given tenant.
    *
    * @param tenant_id - Tenant ID to filter by
@@ -140,6 +126,20 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    */
   public getCount(tenant_id: string) {
     return this.repo.count(tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>);
+  }
+
+  /**
+   * Finds a single row by ID for a given tenant.
+   *
+   * @param input.tenant_id - Tenant ID
+   * @param input.id - Row ID
+   * @returns A Promise resolving to the found row or `undefined`
+   */
+  public getOneById(input: { tenant_id: string; id: string }) {
+    const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+    const id = input.id as OperandValueExpressionOrList<Models, T, 'id'>;
+
+    return this.repo.getOneBy('id', { column_value: id, tenant_id });
   }
 
   /**

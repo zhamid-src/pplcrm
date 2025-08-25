@@ -24,7 +24,7 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
 
   /** Get attachments for a given email ordered by position */
   public getByEmailId(tenant_id: string, email_id: string) {
-    return this.getAllByColumn('email_id', { tenant_id, column: email_id });
+    return this.getManyBy('email_id', { tenant_id, value: email_id });
   }
 
   /** Subquery: attachment counts grouped by email_id (for joins) */

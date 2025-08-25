@@ -197,7 +197,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * @returns Email with headers and categorized recipients.
    */
   public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string) {
-    const email = await this.getById({ tenant_id, id: email_id });
+    const email = await this.getOneBy('id', { tenant_id, column_value: email_id });
     if (!email) return null;
 
     const emailHeaders = await this.emailHeadersRepo.getByEmailId(tenant_id, email_id);

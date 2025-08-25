@@ -87,16 +87,4 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
 
     return Number(result?.numDeletedRows ?? 0) > 0;
   }
-
-  /**
-   * Get email_trash rows by tenant and email ID.
-   * Returns the original folder ID (from_folder_id) for each email.
-   */
-  public override getById(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .select(['email_id', 'from_folder_id'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('email_id', '=', input.id)
-      .execute();
-  }
 }

@@ -59,7 +59,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     } as QueryParams<'authusers'>;
 
     try {
-      const user = await this.getRepo().getById({ tenant_id: auth.tenant_id, id: auth.user_id, options });
+      const user = await this.getRepo().getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        column_value: auth.user_id,
+        options,
+      });
       return user || null;
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
