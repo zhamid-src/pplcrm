@@ -89,6 +89,8 @@ export const icons = {
   'queue-list': 'assets/icons/queue-list.svg',
   tag: 'assets/icons/tag.svg',
   trash: 'assets/icons/trash.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
   'undo-fat': 'assets/icons/undo-fat.svg',
   'redo-fat': 'assets/icons/redo-fat.svg',
   'attach-fat': 'assets/icons/attach-fat.svg',

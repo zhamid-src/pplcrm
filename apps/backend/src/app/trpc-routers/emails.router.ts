@@ -45,7 +45,7 @@ function deleteDraft() {
 function deleteEmail() {
   return authProcedure
     .input(z.string())
-    .mutation(wrapTrpc(({ input, ctx }) => emails.delete(ctx.auth.tenant_id, input)));
+    .mutation(wrapTrpc(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input])));
 }
 
 function deleteEmails() {
@@ -139,6 +139,12 @@ function hasAttachmentByEmailIds() {
     .query(wrapTrpc(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input)));
 }
 
+function restoreFromTrash() {
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(wrapTrpc(({ input, ctx }) => emails.restoreFromTrash(ctx.auth.tenant_id, input)));
+}
+
 function saveDraft() {
   return authProcedure
     .input(
@@ -197,6 +203,7 @@ export const EmailsRouter = router({
   setFavourite: setFavourite(),
   setStatus: setStatus(),
   saveDraft: saveDraft(),
+  restoreFromTrash: restoreFromTrash(),
   hasAttachment: hasAttachment(),
   getAllAttachments: getAllAttachments(),
   hasAttachmentByEmailIds: hasAttachmentByEmailIds(),

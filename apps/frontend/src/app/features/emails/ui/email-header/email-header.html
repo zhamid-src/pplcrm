@@ -41,6 +41,7 @@
         <pc-icon name="reply" [size]="4" class="scale-x-[-1]"></pc-icon>
       </button>
 
+      @if (!isFolderTrash()) {
       <!-- Star/Favorite -->
       <button
         class="tooltip btn btn-ghost btn-circle btn-sm"
@@ -61,15 +62,30 @@
       >
         <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
       </button>
+      } @else {
+      <!-- Restore from Trash -->
+      <button
+        class="tooltip btn btn-ghost btn-circle btn-sm"
+        data-tip="Restore from Trash"
+        aria-label="Restore from Trash"
+        (click)="restoreFromTrash()"
+      >
+        <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+      </button>
+      }
 
       <!-- Delete -->
       <button
         class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="delete"
-        aria-label="Delete"
-        (click)="handleDelete()"
+        [attr.data-tip]="getTrashText()"
+        [attr.aria-label]="getTrashText()"
+        (click)="deleteEmail()"
       >
+        @if (isFolderTrash()) {
+        <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+        } @else {
         <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+        }
       </button>
 
       <!-- More Actions Dropdown -->
@@ -108,7 +124,7 @@
             >
           </li>
           <li>
-            <a (click)="handleDelete()"><pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete</a>
+            <a (click)="deleteEmail()"><pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete</a>
           </li>
           <div class="divider my-0 h-0"></div>
           <li>

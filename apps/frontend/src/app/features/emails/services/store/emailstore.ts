@@ -81,6 +81,10 @@ export class EmailsStore {
     return this.actions.deleteComment(emailId, commentId);
   }
 
+  public deleteEmail(emailId: EmailId) {
+    return this.actions.deleteEmail(emailId);
+  }
+
   // ----------------- Loads -----------------
   public loadAllFolders() {
     return this.folders.loadAllFolders();
@@ -128,6 +132,10 @@ export class EmailsStore {
 
   public refreshFolderCounts() {
     return this.folders.refreshFolderCounts();
+  }
+
+  public restoreFromTrash(emailId: EmailId) {
+    return this.actions.restoreFromTrash(emailId);
   }
 
   // ----------------- Read/selection helpers -----------------

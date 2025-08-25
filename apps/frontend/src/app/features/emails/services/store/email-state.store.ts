@@ -77,6 +77,28 @@ export class EmailStateStore {
     return this.emailsById()[emailKey];
   }
 
+  /** Remove an email from all state collections */
+  public removeEmail(emailId: string): void {
+    // Remove from normalized map
+    this.emailsById.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+
+    // Remove from folder lists
+    this.emailIdsByFolderId.update((map) => {
+      const next: Record<string, string[]> = {};
+      for (const [fid, ids] of Object.entries(map)) {
+        next[fid] = ids.filter((id) => id !== emailId);
+      }
+      return next;
+    });
+
+    // Clear attachment flag
+    this.clearHasAttachment(emailId);
+  }
+
   public replaceEmail(emailKey: string, value: EmailType): void {
     this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
   }

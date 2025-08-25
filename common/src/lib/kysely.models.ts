@@ -3,7 +3,7 @@
 //
 // ====================================================================
 // When adding a new table, you have to  :-
-// 1. Add a model and add it to the interfaxe Models
+// 1. Add a model and add it to the interface Models
 
 // ====================================================================
 import type {
@@ -15,7 +15,7 @@ import type {
   Updateable,
 } from 'kysely';
 import type { ExtractColumnType } from 'node_modules/kysely/dist/esm/util/type-utils';
-import { EmailStatus } from './emails';
+import type { EmailStatus } from './emails';
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
@@ -24,8 +24,9 @@ type JsonObject = { [K in string]?: JsonValue };
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> =
-  T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
+type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S, I | undefined, U>
+  : ColumnType<T, T | undefined, T>;
 
 export interface Models {
   authusers: AuthUsers;
@@ -49,6 +50,7 @@ export interface Models {
   email_recipients: EmailRecipients;
   email_attachments: EmailAttachments;
   email_drafts: EmailDrafts;
+  email_trash: EmailTrash;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -71,8 +73,10 @@ export type GetOperandType<
     ? never
     : TablesOperationMap[T][Op][Key];
 
-export type OperationDataType<T extends Keys<Models>, Op extends 'select' | 'update' | 'insert'> =
-  T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
+export type OperationDataType<
+  T extends Keys<Models>,
+  Op extends 'select' | 'update' | 'insert',
+> = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
 // export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
 type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
 
@@ -268,6 +272,7 @@ interface Emails extends RecordType {
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
+  deleted_at: Timestamp | null;
   status: EmailStatus | null;
 }
 
@@ -318,6 +323,12 @@ interface EmailDrafts extends RecordType {
   body_delta: JsonValue | null;
   meta: JsonValue | null;
   is_locked: boolean;
+}
+
+interface EmailTrash extends RecordType {
+  email_id: string;
+  from_folder_id: string;
+  trashed_at: Timestamp;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */

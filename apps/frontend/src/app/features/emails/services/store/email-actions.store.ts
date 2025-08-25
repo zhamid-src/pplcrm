@@ -3,6 +3,7 @@
  * Centralizes rollback + optional refresh (folder contents & counts).
  */
 import { Injectable, inject } from '@angular/core';
+import { AlertService } from '@uxcommon/alerts/alert-service';
 
 import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
 import { EmailsService } from '../emails-service';
@@ -11,15 +12,14 @@ import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import type { EmailDraftType, EmailType } from 'common/src/lib/models';
-import { AlertService } from '@uxcommon/alerts/alert-service';
 
 @Injectable({ providedIn: 'root' })
 export class EmailActionsStore {
+  private readonly alerts = inject(AlertService);
   private readonly cache = inject(EmailCacheStore);
   private readonly folders = inject(EmailFoldersStore);
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
-  private readonly alerts = inject(AlertService);
 
   /** Add a comment and update header cache so future reads include it */
   public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
@@ -75,8 +75,42 @@ export class EmailActionsStore {
     }
   }
 
+  /** Delete an email and refresh folders/counts */
+  public async deleteEmail(emailId: EmailId): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.delete(key);
+      this.state.removeEmail(key);
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError((e as Error).message);
+      throw e;
+    }
+  }
+
   public getDraft(id: string): Promise<EmailDraftType> {
     return this.svc.getDraft(id);
+  }
+
+  public async restoreFromTrash(emailId: EmailId): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.restoreFromTrash([key]);
+      this.state.removeEmail(key); // Remove from current state as it's no longer in Trash
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError((e as Error).message);
+      throw e;
+    }
   }
 
   public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
