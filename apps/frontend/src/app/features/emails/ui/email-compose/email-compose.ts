@@ -119,6 +119,7 @@ export class ComposeEmailComponent {
       html: d.body_html || '',
     });
     this.draftIdSignal.set(d.id);
+    this.form.markAsPristine();
   }
 
   public onDragLeave(e: DragEvent) {
