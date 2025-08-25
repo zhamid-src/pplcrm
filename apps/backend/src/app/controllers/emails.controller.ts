@@ -7,7 +7,7 @@ import { EmailDraftsRepo } from '../repositories/emails/email-drafts.repo';
 import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType, TypeTenantId } from 'common/src/lib/kysely.models';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -60,6 +60,17 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /**
+   * Deletes a single row by ID for a given tenant.
+   *
+   * @param tenant_id - The tenant's ID
+   * @param idToDelete - The row's ID
+   * @returns A Promise resolving to the deleted row (if any)
+   */
+  public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
+    return this.deleteMany(tenant_id, [idToDelete]);
+  }
+
   /** Delete a comment from an email */
   public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
     try {
@@ -72,6 +83,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Delete a draft by ID for a given tenant and user */
   public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
     try {
       const deleted = await this.draftsRepo.delete({ tenant_id, id });
@@ -83,6 +95,27 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /**
+   * Deletes multiple rows by ID for a given tenant.
+   *
+   * @param tenant_id - The tenant's ID
+   * @param idsToDelete - Array of row IDs to delete
+   * @returns A Promise resolving to the deleted rows (if any)
+   */
+  public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
+    // Go through idsToDelete and check which ones are in the trash folder (hard delete)
+    // and which ones are not (soft delete - move to trash)
+    const emailsInTrash = await this.getRepo().getByIdsInFolder(tenant_id as string, idsToDelete, ALL_FOLDERS.TRASH);
+    const idsInTrash = emailsInTrash.map((e) => String(e.id));
+    const idsNotInTrash = idsToDelete.filter((id) => !idsInTrash.includes(id));
+
+    const numTrashed =
+      idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
+    const numDeleted = idsInTrash.length > 0 && (await super.deleteMany(tenant_id, idsInTrash));
+    return numTrashed !== 0 || numDeleted;
+  }
+
+  /** Get all attachments for a given email */
   public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
     try {
       return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
@@ -91,6 +124,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Get attachments by email ID */
   public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
     try {
       return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
@@ -99,6 +133,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Get a draft by ID for a given tenant and user */
   public async getDraft(tenant_id: string, _user_id: string, id: string) {
     try {
       const draft = await this.draftsRepo.getById({ tenant_id, /*user_id,*/ id });
@@ -188,6 +223,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Check if a given email has attachments */
   public async hasAttachment(tenant_id: string, email_id: string) {
     try {
       return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
@@ -196,6 +232,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Check which emails (by IDs) have attachments */
   public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
     if (!email_ids?.length) return Promise.resolve([]);
 
@@ -204,6 +241,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     } catch (err) {
       throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
     }
+  }
+
+  public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
+    return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
   }
 
   public async saveDraft(

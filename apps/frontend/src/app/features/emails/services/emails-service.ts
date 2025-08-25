@@ -33,6 +33,11 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.assign.mutate({ id, user_id });
   }
 
+  /** Delete a single email by ID */
+  public delete(id: string) {
+    return this.api.emails.delete.mutate(id);
+  }
+
   /**
    * Delete a comment from an email.
    * Adjust the endpoint/shape to your backend if different.
@@ -43,6 +48,11 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 
   public deleteDraft(id: string) {
     return this.api.emails.deleteDraft.mutate({ id });
+  }
+
+  /** Delete multiple emails by their IDs */
+  public deleteMany(ids: string[]) {
+    return this.api.emails.deleteMany.mutate(ids);
   }
 
   public getAllAttachments(id: string, options?: { includeInline: boolean }) {
@@ -114,6 +124,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     const map: Record<string, boolean> = {};
     for (const r of rows) map[String(r.email_id)] = !!r.has;
     return map;
+  }
+
+  public restoreFromTrash(ids: string[]): Promise<number> {
+    return this.api.emails.restoreFromTrash.mutate(ids);
   }
 
   public saveDraft(input: DraftPayload) {

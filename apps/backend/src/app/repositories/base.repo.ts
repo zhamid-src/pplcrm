@@ -85,7 +85,8 @@ export class BaseRepository<T extends keyof Models> {
    * Insert a single row.
    */
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(input.row).returningAll().executeTakeFirst();
+    const results = await this.addMany({ rows: [input.row] }, trx);
+    return results[0];
   }
 
   /**
@@ -108,7 +109,6 @@ export class BaseRepository<T extends keyof Models> {
     const insertResult = await this.getInsert(trx)
       .values(input.row)
       .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
-
       .returningAll()
       .executeTakeFirst();
 
@@ -153,6 +153,8 @@ export class BaseRepository<T extends keyof Models> {
     // Convert to numbers if needed
     const numericIds = input.ids;
 
+    if (numericIds.length === 0) return false;
+
     const deleteQuery = this.getDelete(trx) as ReturnType<typeof BaseRepository.prototype.getDelete>;
     const result = await deleteQuery
       .where('id', 'in', numericIds)
@@ -188,6 +190,11 @@ export class BaseRepository<T extends keyof Models> {
       columns: [input.column],
       limit: 3,
     };
+
+    if (!input.key) {
+      // If no key provided, return empty result
+      return Promise.resolve([]);
+    }
 
     return this.getSelectWithColumns(options, trx)
       .where(input.column, 'ilike', input.key + '%')

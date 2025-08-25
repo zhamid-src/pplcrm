@@ -8,6 +8,7 @@ import { Icon } from '@uxcommon/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
+import { ALL_FOLDERS } from 'common/src/lib/emails';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
@@ -46,6 +47,16 @@ export class EmailHeader {
 
   public getFavouriteIcon() {
     return this.isFavourite() ? 'star-filled' : 'star';
+  }
+
+  /** Handle delete action */
+  protected async deleteEmail() {
+    try {
+      await this.store.deleteEmail(this.email().id);
+    } catch (e) {
+      console.error('Failed to delete email', e);
+      this.alertSvc.showError('Failed to delete email');
+    }
   }
 
   /** Get all recipients combined */
@@ -96,10 +107,8 @@ export class EmailHeader {
     return header?.email?.to_list || [];
   }
 
-  /** Handle delete action */
-  protected handleDelete() {
-    console.log('Delete email:', this.email().id);
-    // TODO: Implement delete functionality
+  protected getTrashText() {
+    return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
   }
 
   /**
@@ -135,8 +144,17 @@ export class EmailHeader {
     this.replyAll.emit();
   }
 
+  protected isFolderTrash(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.TRASH;
+  }
+
   protected markAsDoneText() {
     return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
+  }
+
+  protected restoreFromTrash() {
+    this.store.restoreFromTrash(this.email().id);
   }
 
   /** Toggle email closed status */
