@@ -63,7 +63,7 @@ export class EmailClient {
   }
 
   /** Handle email selection from child component */
-  public async onEmail(email: EmailType): Promise<void> {
+  public async onEmail(email: EmailType | null): Promise<void> {
     const folderId = this.store.currentSelectedFolderId();
     if (this.isComposing()) {
       try {
@@ -75,11 +75,14 @@ export class EmailClient {
       }
       this.closeCompose();
     }
-    if (folderId === ALL_FOLDERS.DRAFTS) {
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
       this.draftIdToLoad.set(String(email.id));
       this.isComposing.set(true);
-    } else {
-      this.store.selectEmail(email);
     }
   }
 

@@ -7,6 +7,7 @@ import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { EmailClient } from '../email-client';
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType, EmailFolderType } from 'common/src/lib/models/models';
+import { ALL_FOLDERS } from 'common/src/lib/emails';
 
 // Mock child components
 @Component({
@@ -217,6 +218,14 @@ describe('EmailClient', () => {
       expect(saveDraft).toHaveBeenCalled();
       expect(component.isComposing()).toBe(false);
       expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
+    });
+
+    it('selects draft email and opens composer when draft folder is active', async () => {
+      mockEmailsStore.currentSelectedFolderId.mockReturnValue(ALL_FOLDERS.DRAFTS);
+      await component.onEmail(mockEmail);
+      expect(mockEmailsStore.selectEmail).toHaveBeenCalledWith(mockEmail);
+      expect(component.isComposing()).toBe(true);
+      expect(component['draftIdToLoad']()).toBe(String(mockEmail.id));
     });
   });
 
