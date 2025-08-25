@@ -18,6 +18,9 @@ describe('auth REST routes', () => {
 
     const routes = (await import('./auth.route')).default;
     app = Fastify();
+    app.decorateReply('jsendSuccess', function (this: any, payload: any) {
+      this.send({ status: 'success', data: payload });
+    });
     app.register(routes, { prefix: '/auth' });
     await app.ready();
   });
@@ -30,7 +33,7 @@ describe('auth REST routes', () => {
   it('gets all auth users', async () => {
     const res = await app.inject({ method: 'GET', url: '/auth', headers: { 'tenant-id': tenantId } });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(rows);
+    expect(JSON.parse(res.body)).toEqual({ status: 'success', data: rows });
   });
 
   it('gets an auth user by id', async () => {
