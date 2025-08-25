@@ -8,6 +8,7 @@ import { EmailRepo } from '../repositories/emails/email.repo';
 import { BaseController } from './base.controller';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import { OperationDataType, TypeTenantId } from 'common/src/lib/kysely.models';
+import { EmailDraftType } from 'common/src/lib/models';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -152,7 +153,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       if (email) return email;
 
       // If no body exists, attempt to load from drafts table
-      const draft = await this.draftsRepo.getById({ tenant_id, id });
+      const draft = (await this.draftsRepo.getById({ tenant_id, id })) as EmailDraftType | undefined;
       if (draft)
         return {
           email_id: id,
@@ -178,7 +179,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       if (emailWithHeaders) return { email: emailWithHeaders, comments, attachments };
 
       // Fallback to draft if regular email not found
-      const draft = await this.draftsRepo.getById({ tenant_id, id });
+      const draft = (await this.draftsRepo.getById({ tenant_id, id })) as EmailDraftType | undefined;
       if (draft)
         return {
           email: {
