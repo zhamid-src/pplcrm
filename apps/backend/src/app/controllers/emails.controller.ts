@@ -149,8 +149,18 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   public async getEmailBody(tenant_id: string, id: string) {
     try {
       const email = await this.bodiesRepo.getByColumn('email_id', { tenant_id, column: id });
-      if (!email) throw new NotFoundError('Failed to fetch email body');
-      return email;
+      if (email) return email;
+
+      // If no body exists, attempt to load from drafts table
+      const draft = await this.draftsRepo.getById({ tenant_id, id });
+      if (draft)
+        return {
+          email_id: id,
+          body_html: draft.body_html ?? '',
+          body_delta: (draft as any).body_delta ?? null,
+        } as any;
+
+      throw new NotFoundError('Failed to fetch email body');
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to fetch email body', undefined, { cause: err });
@@ -165,8 +175,25 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         this.commentsRepo.getForEmail(tenant_id, id),
         this.attachmentsRepo.getByEmailId(tenant_id, id),
       ]);
-      if (!emailWithHeaders) throw new NotFoundError('Email not found');
-      return { email: emailWithHeaders, comments, attachments };
+      if (emailWithHeaders) return { email: emailWithHeaders, comments, attachments };
+
+      // Fallback to draft if regular email not found
+      const draft = await this.draftsRepo.getById({ tenant_id, id });
+      if (draft)
+        return {
+          email: {
+            id: draft.id,
+            to_list: (draft.to_list || []).map((e: string) => ({ email: e })),
+            cc_list: (draft.cc_list || []).map((e: string) => ({ email: e })),
+            bcc_list: (draft.bcc_list || []).map((e: string) => ({ email: e })),
+            from_email: null,
+            subject: draft.subject,
+          },
+          comments: [],
+          attachments: [],
+        } as any;
+
+      throw new NotFoundError('Email not found');
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to fetch email header', undefined, { cause: err });
