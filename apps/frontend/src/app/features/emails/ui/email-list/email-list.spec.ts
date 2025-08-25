@@ -31,7 +31,7 @@ describe('EmailList', () => {
     component = TestBed.runInInjectionContext(() => new EmailList());
   });
 
-  it('auto-selects the first email in drafts folder', () => {
+  it('auto-selects the first email in drafts folder', async () => {
     const draftEmail: EmailType = {
       id: '1',
       folder_id: ALL_FOLDERS.DRAFTS,
@@ -46,6 +46,9 @@ describe('EmailList', () => {
     component.emailSelected.subscribe((e) => (emitted = e));
 
     emailsSignal.set([draftEmail]);
+
+    // Allow the signal effect to run before asserting
+    await new Promise((resolve) => setTimeout(resolve));
 
     expect(emitted).toEqual(draftEmail);
   });
