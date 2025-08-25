@@ -42,6 +42,9 @@ const dialect = new PostgresDialect({
   pool: new Pool(env.db),
 });
 
+/** Helper types for the DRY selectors */
+type ColName<TB extends keyof Models> = keyof Models[TB] & string;
+
 /**
  * The base operator class that implements regular db functions.
  * Other tables should extend this class. There is generally a
@@ -216,6 +219,47 @@ export class BaseRepository<T extends keyof Models> {
     return this.getSelectWithColumns(input.options, trx).where('tenant_id', '=', input.tenant_id).execute();
   }
 
+  /** ----------------------------------------------------------------
+   * DRY helpers for selecting by column + tenant
+   * ---------------------------------------------------------------- */
+  protected selectBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where(column as any, '=', input.value as any)
+      .where('tenant_id', '=', input.tenant_id);
+  }
+
+  protected getOneBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).executeTakeFirst();
+  }
+
+  protected getManyBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).execute();
+  }
+
   /**
    * Get a single row by ID.
    * TODO: should also check userId
@@ -228,10 +272,59 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
+    return this.getOneBy('id', { tenant_id: input.tenant_id, value: input.id, options: input.options }, trx);
+  }
+
+  public getAllById(
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      id: OperandValueExpressionOrList<Models, T, 'id'>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getManyBy('id', { tenant_id: input.tenant_id, value: input.id, options: input.options }, trx);
+  }
+
+  public getByColumn(
+    column: ReferenceExpression<Models, T>,
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      column: string; // existing API: this is the VALUE, not the column name
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    // Casts keep the existing (loose) signature intact without breaking callers.
+    return this.getOneBy(
+      column as unknown as ColName<T>,
+      {
+        tenant_id: input.tenant_id,
+        value: input.column as any,
+        options: input.options,
+      },
+      trx,
+    );
+  }
+
+  public getAllByColumn(
+    column: ReferenceExpression<Models, T>,
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      column: string; // existing API: this is the VALUE, not the column name
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getManyBy(
+      column as unknown as ColName<T>,
+      {
+        tenant_id: input.tenant_id,
+        value: input.column as any,
+        options: input.options,
+      },
+      trx,
+    );
   }
 
   /**

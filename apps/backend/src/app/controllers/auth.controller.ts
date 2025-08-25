@@ -103,8 +103,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     // Check if the code is valid
     const msec = await this.getCodeAge(code);
     // 15 minutes in milliseconds
-    if (msec > 90000) {
-      // TODO: use a constant for 90000
+    if (msec > 15 * 60 * 1000) {
       throw new BadRequestError('The code is expired. Please request a new code');
     }
 

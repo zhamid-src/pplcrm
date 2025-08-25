@@ -78,7 +78,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
   public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string) {
     const whereForFolder = await this.buildFolderPredicate(folder_id, user_id);
 
-    // Subquery ea: { email_id, att_count }
     const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // aliased 'ea'
 
     return (

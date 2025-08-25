@@ -15,23 +15,16 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   }
 
   public getAllAttachments(tenant_id: string, email_id: string, opts?: { includeInline?: boolean }) {
-    let q = this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .orderBy('pos asc');
+    let q = this.selectBy('email_id', { tenant_id, value: email_id }).orderBy('pos', 'asc');
+
     if (!opts?.includeInline) q = q.where('is_inline', '=', false);
+
     return q.execute();
   }
 
   /** Get attachments for a given email ordered by position */
   public getByEmailId(tenant_id: string, email_id: string) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .orderBy('pos')
-      .execute();
+    return this.getAllByColumn('email_id', { tenant_id, column: email_id });
   }
 
   /** Subquery: attachment counts grouped by email_id (for joins) */
