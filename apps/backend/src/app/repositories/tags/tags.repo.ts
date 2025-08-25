@@ -40,7 +40,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .execute();
 
       const result = await trx
-        .deleteFrom('tags')
+        .deleteFrom(this.table)
         .where('id', 'in', tag_ids)
         .where('deletable', '=', true)
         .executeTakeFirst();
