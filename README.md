@@ -32,7 +32,7 @@
 - `main.ts` boots a `FastifyServer` instance (`fastify.server.ts`) that registers REST routes and mounts tRPC.
 - Controllers (`controllers/`) host business logic; repositories (`repositories/`) implement CRUD with Kysely.
 - Authentication uses `fast-jwt` for access/refresh tokens, `bcrypt` for password hashing, and session tracking.
-- API is exposed via both tRPC routers (`trpc-routers/`) and REST routes (`rest-routes/`, `rest-schema/`).
+- API is exposed via both tRPC routers and REST routes, organized by domain under `apps/backend/src/app/modules`.
 
 ---
 

@@ -9,7 +9,7 @@ import { default as fastify } from 'fastify';
 
 import jsendErrorHandler from './app/plugins/jsend-error-handler.plugin';
 import { routes } from './app/routes';
-import { trpcRouter } from './app/trpc-routers';
+import { trpcRouter } from './app/modules/trpc';
 import { createContext } from './context';
 import { env } from './env';
 
