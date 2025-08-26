@@ -2,7 +2,7 @@ import type { Router } from '@angular/router';
 import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 
-import type { TRPCRouter } from '../../../../../backend/src/app/trpc-routers';
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
 import type { TokenService } from './token-service';
 

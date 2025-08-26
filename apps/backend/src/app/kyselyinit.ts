@@ -1,4 +1,4 @@
-import { BaseRepository } from './repositories/base.repo';
+import { BaseRepository } from './lib/base.repo';
 import '../env';
 
 /**
