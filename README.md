@@ -39,7 +39,7 @@
 ## 🎨 Frontend Highlights
 
 - Standalone Angular 20 components (`app.ts`, `app.routes.ts`) using signals and reactive forms.
-- `backend-svc/` provides tRPC client setup, token storage, and search utilities.
+- `services/api/` provides tRPC client setup, token storage, and search utilities.
 - Feature modules in `components/` (persons, households, tags, etc.) with grids, detail pages, and services.
 - Reusable UI elements live in `layout/` and `uxcommon/` (navbar, sidebar, alerts, icons, etc.).
 

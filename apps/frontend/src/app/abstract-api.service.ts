@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { getAllOptionsType } from '@common';
 
-import { TRPCService } from 'apps/frontend/src/app/backend-svc/trpc-service';
+import { TRPCService } from '@services/api/trpc-service';
 import { Models } from 'common/src/lib/kysely.models';
 
 /**
