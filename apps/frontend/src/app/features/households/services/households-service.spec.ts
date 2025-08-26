@@ -4,7 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { HouseholdsService } from './households-service';
-import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
+import { TokenService } from '@services/api/token-service';
 
 describe('HouseholdsService', () => {
   let service: HouseholdsService;

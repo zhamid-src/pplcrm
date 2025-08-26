@@ -7,7 +7,7 @@ import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCError } from '@trpc/server';
 
-import { TRPCService } from '../backend-svc/trpc-service';
+import { TRPCService } from '@services/api/trpc-service';
 
 /**
  * Authentication service responsible for managing the user's authentication state.

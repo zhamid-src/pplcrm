@@ -9,7 +9,7 @@ import { FullScreenService } from '@uxcommon/fullscreen.service';
 import { Swap } from '@uxcommon/swap/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
+import { SearchService } from '@services/api/search-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 
