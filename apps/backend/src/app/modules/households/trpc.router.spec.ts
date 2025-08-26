@@ -20,7 +20,7 @@ describe('HouseholdsRouter', () => {
     jest.spyOn(HouseholdsController.prototype, 'detachTag').mockResolvedValue(undefined as any);
     jest.spyOn(HouseholdsController.prototype, 'getAll').mockResolvedValue([{ id: '1' }] as any);
     jest.spyOn(HouseholdsController.prototype, 'getAllWithPeopleCount').mockResolvedValue({ rows: [], count: 0 } as any);
-    jest.spyOn(HouseholdsController.prototype, 'getById').mockResolvedValue({ id: '1' } as any);
+    jest.spyOn(HouseholdsController.prototype, 'getOneById').mockResolvedValue({ id: '1' } as any);
     jest.spyOn(HouseholdsController.prototype, 'getDistinctTags').mockResolvedValue(['a']);
     jest.spyOn(HouseholdsController.prototype, 'getTags').mockResolvedValue(['a']);
     jest.spyOn(HouseholdsController.prototype, 'update').mockResolvedValue({ id: '1' } as any);
