@@ -9,7 +9,6 @@ import {
   NonNullableFormBuilder,
   ReactiveFormsModule,
   ValidatorFn,
-  Validators,
 } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
@@ -17,8 +16,10 @@ import { Icon } from '@icons/icon';
 import { TokenService } from '@services/api/token-service';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
 
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
+import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-utils';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
@@ -46,7 +47,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-login',
-  imports: [ReactiveFormsModule, RouterLink, Icon, Alerts],
+  imports: [ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent, PasswordInputComponent],
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
@@ -59,16 +60,13 @@ export class SignInPage {
   /** Signal indicating whether login loading is in progress */
   protected readonly loading = signal(false);
 
-  /** Controls whether the password is visible or masked */
-  protected hidePassword = true;
-
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
 
   /** Form group capturing the user's email and password */
   public form = this.fb.group({
-    email: this.fb.control('', { validators: [Validators.required, Validators.email] }),
-    password: this.fb.control('', { validators: [Validators.required, Validators.minLength(8)] }),
+    email: emailControl(this.fb),
+    password: passwordControl(this.fb),
   });
 
   /**
@@ -86,22 +84,6 @@ export class SignInPage {
 
   public get password(): FormControl<string> {
     return this.form.controls.password;
-  }
-
-  /**
-   * Returns input type based on visibility toggle.
-   * @returns 'password' or 'text'
-   */
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  /**
-   * Returns icon name for password visibility toggle.
-   * @returns 'eye' or 'eye-slash'
-   */
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
   /**
@@ -168,28 +150,6 @@ export class SignInPage {
     this.tokenService.setPersistence((target as HTMLInputElement).checked);
   }
 
-  /**
-   * Toggles the password visibility state.
-   */
-  public toggleVisibility() {
-    this.hidePassword = !this.hidePassword;
-  }
-
-  /**
-   * Gets any custom form-level error messages.
-   * @returns The error message or null
-   */
-  protected getError() {
-    return this.form?.errors ? this.form?.errors['message'] : null;
-  }
-
-  /**
-   * Checks if any form-level error exists.
-   * @returns True if there's an error message; otherwise false
-   */
-  protected hasError() {
-    return this.getError()?.length;
-  }
 }
 
 export function emailSafeValidator(): ValidatorFn {
