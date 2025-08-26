@@ -16,7 +16,7 @@ describe('TagsRouter', () => {
     jest.spyOn(TagsController.prototype, 'getCount').mockResolvedValue(1);
     jest.spyOn(TagsController.prototype, 'getAll').mockResolvedValue([{ id: '1' }] as any);
     jest.spyOn(TagsController.prototype, 'updateTag').mockResolvedValue({ id: '1' } as any);
-    jest.spyOn(TagsController.prototype, 'getById').mockResolvedValue({ id: '1' } as any);
+    jest.spyOn(TagsController.prototype, 'getOneById').mockResolvedValue({ id: '1' } as any);
     jest.spyOn(TagsController.prototype, 'delete').mockResolvedValue(true as any);
     jest.spyOn(TagsController.prototype, 'deleteMany').mockResolvedValue(true as any);
     jest.spyOn(TagsController.prototype, 'findByName').mockResolvedValue([{ id: '1' }]);

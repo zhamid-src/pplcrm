@@ -12,7 +12,7 @@ describe('auth REST routes', () => {
   beforeAll(async () => {
     jest.spyOn(AuthController.prototype, 'getAll').mockResolvedValue(rows as any);
     jest
-      .spyOn(AuthController.prototype, 'getById')
+      .spyOn(AuthController.prototype, 'getOneById')
       .mockImplementation(async ({ id }) => rows.find((r) => r.id === id) as any);
     jest.spyOn(AuthController.prototype, 'getCount').mockResolvedValue(rows.length);
 
