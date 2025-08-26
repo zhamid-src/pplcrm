@@ -3,7 +3,7 @@
  */
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
-import { TagsService } from 'apps/frontend/src/app/verticals/tags/services/tags-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@uxcommon/datagrid/datagrid';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';

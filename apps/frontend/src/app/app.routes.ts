@@ -1,4 +1,10 @@
 import { Route } from '@angular/router';
+import { EmailClient } from '@experiences/emails/ui/email-client/email-client';
+import { HouseholdDetail } from '@experiences/households/ui/household-detail';
+import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
+import { PersonDetail } from '@experiences/persons/ui/person-detail';
+import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
+import { TagsGridComponent } from '@experiences/tags/ui/tags-grid';
 import { NotFound } from '@uxcommon/not-found/not-found';
 import { AddTag } from '@uxcommon/tags/add-tag';
 
@@ -8,12 +14,6 @@ import { NewPasswordPage } from './auth/new-password-page/new-password-page';
 import { ResetPasswordPage } from './auth/reset-password-page/reset-password-page';
 import { SignInPage } from './auth/signin-page/signin-page';
 import { SignUpPage } from './auth/signup-page/signup-page';
-import { EmailClient } from './verticals/emails/ui/email-client/email-client';
-import { HouseholdDetail } from './verticals/households/ui/household-detail';
-import { HouseholdsGrid } from './verticals/households/ui/households-grid';
-import { PersonDetail } from './verticals/persons/ui/person-detail';
-import { PersonsGrid } from './verticals/persons/ui/persons-grid';
-import { TagsGridComponent } from './verticals/tags/ui/tags-grid';
 import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './summary/summary';
 

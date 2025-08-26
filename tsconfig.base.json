@@ -23,7 +23,7 @@
       "@pipes/*": ["apps/frontend/src/app/pipes/*"],
       "@services/*": ["apps/frontend/src/app/services/*"],
       "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"],
-      "@features/*": ["apps/frontend/src/app/features/*"],
+      "@experiences/*": ["apps/frontend/src/app/experiences/*"],
       "@icons/*": ["apps/frontend/src/app/uxcommon/icons/*"]
     }
   },
