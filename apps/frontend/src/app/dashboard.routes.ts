@@ -5,7 +5,7 @@ export const dashboardRoutes: Routes = [
 
   {
     path: 'summary',
-    loadComponent: () => import('./summary/summary').then((m) => m.Summary),
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
   },
 
   {
@@ -56,7 +56,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./uxcommon/tags/add-tag').then((m) => m.AddTag),
+        loadComponent: () => import('./uxcommon/components/tags/add-tag').then((m) => m.AddTag),
       },
     ],
   },

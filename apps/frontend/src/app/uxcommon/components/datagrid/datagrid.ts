@@ -3,8 +3,10 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { AbstractAPIService } from '@services/api/abstract-api.service';
+import { SearchService } from '@services/api/search-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/services/shared-dialog.service';
+import { ConfirmDialogService } from '@services/shared-dialog.service';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {
@@ -20,7 +22,6 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 
-import { AbstractAPIService } from '../../services/api/abstract-api.service';
 import { confirmDeleteAndRun, doExportCsv } from './datagrid.actions';
 import { buildGridCallbacks } from './datagrid.callbacks';
 import { createServerSideDatasource } from './datagrid.datasource';
@@ -31,7 +32,6 @@ import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-model.strategy';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
-import { SearchService } from '@services/api/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
 

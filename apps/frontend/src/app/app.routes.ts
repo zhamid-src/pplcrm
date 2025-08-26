@@ -38,6 +38,6 @@ export const appRoutes = [
   // Fallback
   {
     path: '**',
-    loadComponent: () => import('./uxcommon/not-found/not-found').then((m) => m.NotFound),
+    loadComponent: () => import('./uxcommon/components/not-found/not-found').then((m) => m.NotFound),
   },
 ] as const satisfies Routes;

@@ -1,4 +1,4 @@
-import { PcIconNameType } from '../icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 // file-icon.util.ts
 export type FileIconKey =

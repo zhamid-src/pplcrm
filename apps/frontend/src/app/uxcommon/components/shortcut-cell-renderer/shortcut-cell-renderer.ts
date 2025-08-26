@@ -17,7 +17,7 @@ import { Models } from 'common/src/lib/kysely.models';
 @Component({
   selector: 'pc-shortcut-cell-renderer',
   imports: [Icon],
-  templateUrl: './components/shortcut-cell-renderer.html',
+  templateUrl: './shortcut-cell-renderer.html',
   styles: [
     `
       .ag-row-hover {

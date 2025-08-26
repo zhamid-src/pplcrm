@@ -10,8 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
-
-import { ConfirmDialogService, DialogVariant } from './shared-dialog-service';
+import { ConfirmDialogService, DialogVariant } from '@services/shared-dialog.service';
 
 @Component({
   selector: 'pc-dialog-host',
