@@ -1,12 +1,11 @@
 import {
   ApplicationConfig,
   ErrorHandler,
-  Environment,
   inject,
   provideAppInitializer,
-  provideEnvironment,
   provideZonelessChangeDetection,
 } from '@angular/core';
+import { ENVIRONMENT } from './environment-token';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -55,14 +54,14 @@ export function tokenGetter() {
  */
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideEnvironment(environment),
+    { provide: ENVIRONMENT, useValue: environment },
     /**
      * Provides Google Maps API Loader globally with the 'places' library.
      */
     {
       provide: Loader,
       useFactory: () => {
-        const env = inject(Environment);
+        const env = inject(ENVIRONMENT);
         return new Loader({
           apiKey: env.googleMapsApiKey,
           libraries: ['places'],
