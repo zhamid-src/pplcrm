@@ -2,7 +2,7 @@
  * @file Reusable dialog service for confirm/alert/prompt using <dialog>.
  */
 import { Injectable, signal } from '@angular/core';
-import type { PcIconNameType } from '@uxcommon/icons/icons.index';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 
 export interface BaseDialogOptions {
   allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm

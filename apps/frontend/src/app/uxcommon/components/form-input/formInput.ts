@@ -3,7 +3,7 @@ import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/for
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/alerts/alert-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 @Component({
   selector: 'pc-form-input',

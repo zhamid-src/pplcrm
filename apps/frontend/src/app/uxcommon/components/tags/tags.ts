@@ -1,13 +1,13 @@
 import { Component, OnInit, inject, input, output } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AutoComplete } from '@uxcommon/autocomplete/autocomplete';
+import { TagsService } from '@experiences/components/tags/services/components/tags-service';
+import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 
 import { TagItem } from './tagitem';
 
 @Component({
   selector: 'pc-tags',
   imports: [TagItem, AutoComplete],
-  templateUrl: './tags.html',
+  templateUrl: './components/tags.html',
 })
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];

@@ -12,7 +12,7 @@ const config: Config = {
   moduleNameMapper: {
     '^common/(.*)$': '<rootDir>/../../common/$1',
     '^@uxcommon/(.*)$': '<rootDir>/src/app/uxcommon/$1',
-    '^@icons/(.*)$': '<rootDir>/src/app/uxcommon/icons/$1',
+    '^@icons/(.*)$': '<rootDir>/src/app/uxcommon/components/icons/$1',
     '^@services/(.*)$': '<rootDir>/src/app/services/$1',
     '^@pipes/(.*)$': '<rootDir>/src/app/pipes/$1',
     '^@common$': '<rootDir>/../../common/src/index.ts',

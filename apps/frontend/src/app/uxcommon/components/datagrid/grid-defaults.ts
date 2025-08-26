@@ -1,8 +1,8 @@
-import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer/shortcut-cell-renderer';
+import { ShortcutCellRenderer } from '@uxcommon/components/shortcut-cell-renderer/shortcut-cell-renderer';
 
 import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 
-import { DEFAULT_DATA_GRID_CONFIG } from './datagrid.tokens';
+import { DEFAULT_DATA_GRID_CONFIG } from './components/datagrid.tokens';
 
 /**
  * Base grid configuration including default column definition,

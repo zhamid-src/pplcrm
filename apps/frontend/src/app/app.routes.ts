@@ -4,9 +4,9 @@ import { HouseholdDetail } from '@experiences/households/ui/household-detail';
 import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
 import { PersonDetail } from '@experiences/persons/ui/person-detail';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
-import { TagsGridComponent } from '@experiences/tags/ui/tags-grid';
-import { NotFound } from '@uxcommon/not-found/not-found';
-import { AddTag } from '@uxcommon/tags/add-tag';
+import { TagsGridComponent } from '@experiences/components/tags/ui/components/tags-grid';
+import { NotFound } from '@uxcommon/components/not-found/not-found';
+import { AddTag } from '@uxcommon/components/tags/add-tag';
 
 import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login/login-guard';

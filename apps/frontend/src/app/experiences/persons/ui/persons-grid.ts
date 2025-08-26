@@ -7,13 +7,13 @@ import { Component, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { Icon } from '@icons/icon';
-import { DataGrid } from '@uxcommon/datagrid/datagrid';
-import { tagArrayEquals, tagsToString } from '@uxcommon/datagrid/datagrid.utils';
+import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { tagArrayEquals, tagsToString } from '@uxcommon/components/datagrid/datagrid.utils';
 
 import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
+import { TagsCellRenderer } from '../../components/tags/ui/components/tags-cell-renderer';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 interface ParamsType {
