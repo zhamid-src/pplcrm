@@ -3,7 +3,7 @@
  */
 import { Transaction, UpdateResult, sql } from 'kysely';
 
-import { GetOperandType, Models } from '../../../../../../common/src/lib/kysely.models';
+import { GetOperandType, Models } from '../../../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
 
 /**
