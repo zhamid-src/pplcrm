@@ -1,24 +1,59 @@
-import { jsend } from '@common'; // your shared jsend helpers
+import { jsend } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
 import { AppError } from '../errors/app-errors';
-import { toTRPCError } from '../errors/to-trpc-errors';
 
-async function jsendErrorHandler(app: FastifyInstance) {
+async function jsendPlugin(app: FastifyInstance) {
+  // Reply helpers
+  app.decorateReply('jsendSuccess', function (data: unknown, meta?: Record<string, unknown>) {
+    const body = jsend.success(data);
+    return this.code(200).send(meta ? { ...body, meta } : body);
+  });
+
+  app.decorateReply(
+    'jsendFail',
+    function <E extends object = Record<string, unknown>>(
+      data: E,
+      statusCode = 400,
+      meta?: Record<string, unknown>,
+    ) {
+      const body = jsend.fail(data);
+      return this.code(statusCode).send(meta ? { ...body, meta } : body);
+    },
+  );
+
+  app.decorateReply(
+    'jsendError',
+    function (
+      message: string,
+      statusCode = 500,
+      code?: string | number,
+      data?: unknown,
+      meta?: Record<string, unknown>,
+    ) {
+      const body: any = jsend.error(message, code);
+      if (data !== undefined) body.data = data;
+      if (meta) body.meta = meta;
+      return this.code(statusCode).send(body);
+    },
+  );
+
   app.setErrorHandler((err: any, _req: FastifyRequest, reply: FastifyReply) => {
     // Domain errors -> JSend
     if (err instanceof AppError) {
       if (err.status >= 500) {
         return reply.code(err.status).send(jsend.error(err.message, err.code));
       }
-      return reply.code(err.status).send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
+      return reply
+        .code(err.status)
+        .send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
     }
 
     // tRPC errors (if thrown in REST by accident)
-    if (err instanceof (toTRPCError as any)) {
+    if (err instanceof TRPCError) {
       const status = statusFromTRPC(err.code);
       if (status >= 500) {
         return reply.code(status).send(jsend.error(err.message, err.code));
@@ -73,4 +108,4 @@ declare module 'fastify' {
   }
 }
 
-export default fp(jsendErrorHandler);
+export default fp(jsendPlugin);
