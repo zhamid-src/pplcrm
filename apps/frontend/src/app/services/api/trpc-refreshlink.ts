@@ -1,10 +1,10 @@
 import type { Router } from '@angular/router';
 import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
-import { environment } from '../../../environments/environment';
 
+import type { TRPCRouter } from '../../../../../backend/src/app/trpc-routers';
+import { environment } from '../../../environments/environment';
 import type { TokenService } from './token-service';
-import type { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
 
 interface JwtPayload {
   exp?: number;
