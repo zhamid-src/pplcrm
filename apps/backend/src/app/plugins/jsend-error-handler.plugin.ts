@@ -8,22 +8,17 @@ import { AppError } from '../errors/app-errors';
 
 async function jsendPlugin(app: FastifyInstance) {
   // Reply helpers
-  app.decorateReply('jsendSuccess', function (data: unknown, meta?: Record<string, unknown>) {
+  app.decorateReply('jsendSuccess', function (this: FastifyReply, data: unknown, meta?: Record<string, unknown>) {
     const body = jsend.success(data);
     return this.code(200).send(meta ? { ...body, meta } : body);
   });
 
-  app.decorateReply(
-    'jsendFail',
-    function <E extends object = Record<string, unknown>>(
-      data: E,
-      statusCode = 400,
-      meta?: Record<string, unknown>,
-    ) {
-      const body = jsend.fail(data);
-      return this.code(statusCode).send(meta ? { ...body, meta } : body);
-    },
-  );
+  app.decorateReply('jsendFail', function <
+    E extends object = Record<string, unknown>,
+  >(this: FastifyReply, data: E, statusCode = 400, meta?: Record<string, unknown>) {
+    const body = jsend.fail(data);
+    return this.code(statusCode).send(meta ? { ...body, meta } : body);
+  });
 
   app.decorateReply(
     'jsendError',
@@ -47,9 +42,7 @@ async function jsendPlugin(app: FastifyInstance) {
       if (err.status >= 500) {
         return reply.code(err.status).send(jsend.error(err.message, err.code));
       }
-      return reply
-        .code(err.status)
-        .send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
+      return reply.code(err.status).send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
     }
 
     // tRPC errors (if thrown in REST by accident)
