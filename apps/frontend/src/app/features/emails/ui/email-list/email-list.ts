@@ -4,7 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, output } from '@angular/core';
 import { Icon } from '@uxcommon/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/timeago.pipe';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
