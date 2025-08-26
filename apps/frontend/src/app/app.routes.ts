@@ -15,7 +15,7 @@ import { PersonDetail } from './features/persons/ui/person-detail';
 import { PersonsGrid } from './features/persons/ui/persons-grid';
 import { TagsGridComponent } from './features/tags/ui/tags-grid';
 import { Dashboard } from './layout/dashboards/dashboard';
-import { Summary } from './temp/summary';
+import { Summary } from './summary/summary';
 
 /**
  * The main route configuration for the application.
