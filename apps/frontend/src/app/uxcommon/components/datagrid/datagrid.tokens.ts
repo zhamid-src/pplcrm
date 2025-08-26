@@ -1,5 +1,5 @@
 import { InjectionToken, Provider } from '@angular/core';
-import type { BaseDialogOptions } from '@uxcommon/services/shared-dialog.service';
+import type { BaseDialogOptions } from '@services/shared-dialog.service';
 
 export interface DataGridConfig {
   clientServerThreshold: number;

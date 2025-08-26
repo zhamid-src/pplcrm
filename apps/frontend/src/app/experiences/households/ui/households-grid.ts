@@ -3,11 +3,11 @@
  */
 import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
+import { TagsCellRenderer } from '@experiences/tags/ui/tags-cell-renderer';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { tagArrayEquals, tagsToString } from '@uxcommon/components/datagrid/datagrid.utils';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { TagsCellRenderer } from '../../components/tags/ui/components/tags-cell-renderer';
 import { HouseholdsService } from '../services/households-service';
 
 interface ParamsType {

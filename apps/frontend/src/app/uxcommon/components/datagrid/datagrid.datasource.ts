@@ -1,9 +1,8 @@
 import type { getAllOptionsType } from '@common';
+import { AbstractAPIService } from '@services/api/abstract-api.service';
+import type { SearchService } from '@services/api/search-service';
 
 import type { GridApi, IServerSideDatasource, IServerSideGetRowsParams } from 'ag-grid-community';
-
-import type { AbstractAPIService } from '../../services/api/abstract-api.service';
-import type { SearchService } from '@services/api/search-service';
 
 export function createServerSideDatasource<T>(deps: {
   api: GridApi;

@@ -4,7 +4,7 @@ import { PPlCrmInput } from '@uxcommon/components/input/input';
 @Component({
   selector: 'pc-autocomplete',
   imports: [PPlCrmInput],
-  templateUrl: './components/autocomplete.html',
+  templateUrl: './autocomplete.html',
 })
 export class AutoComplete {
   /**

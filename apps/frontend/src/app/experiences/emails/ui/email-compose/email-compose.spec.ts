@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ComposeEmailComponent } from './email-compose';
 import { EmailActionsStore } from '../../services/store/email-actions.store';
-import { ConfirmDialogService } from '@uxcommon/services/shared-dialog.service';
+import { ConfirmDialogService } from '@services/shared-dialog.service';
 
 describe('ComposeEmailComponent discard', () => {
   let component: ComposeEmailComponent;
@@ -13,7 +13,10 @@ describe('ComposeEmailComponent discard', () => {
     await TestBed.configureTestingModule({
       imports: [ComposeEmailComponent],
       providers: [
-        { provide: EmailActionsStore, useValue: { deleteDraft: jest.fn(), saveDraft: jest.fn(), sendEmail: jest.fn() } },
+        {
+          provide: EmailActionsStore,
+          useValue: { deleteDraft: jest.fn(), saveDraft: jest.fn(), sendEmail: jest.fn() },
+        },
         { provide: ConfirmDialogService, useValue: { confirm: jest.fn() } },
       ],
     }).compileComponents();

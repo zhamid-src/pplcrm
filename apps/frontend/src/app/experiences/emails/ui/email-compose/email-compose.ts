@@ -5,7 +5,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-import { ConfirmDialogService } from '@uxcommon/services/shared-dialog.service';
+import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { Swap } from '@uxcommon/components/swap/swap';
 
 import { QuillModule } from 'ngx-quill';
