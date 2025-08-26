@@ -4,8 +4,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { IAuthUser } from '@common';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Icon } from '@uxcommon/icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 
 import { AuthService } from '../../../../auth/auth-service';
 import { EmailsStore } from '../../services/store/emailstore';

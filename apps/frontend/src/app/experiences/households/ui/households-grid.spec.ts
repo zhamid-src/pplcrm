@@ -1,7 +1,7 @@
 /**
  * @file Unit tests for {@link HouseholdsGrid} component.
  */
-jest.mock('@uxcommon/datagrid/datagrid', () => {
+jest.mock('@uxcommon/components/datagrid/datagrid', () => {
   return {
     DataGrid: class {
       protected tagArrayEquals() {
@@ -15,7 +15,7 @@ jest.mock('@uxcommon/datagrid/datagrid', () => {
   };
 });
 
-jest.mock('../../tags/ui/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
+jest.mock('../../components/tags/ui/components/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
 
 import { HouseholdsGrid } from './households-grid';
 

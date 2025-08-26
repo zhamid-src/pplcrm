@@ -1,7 +1,7 @@
 import { Component, effect, input, signal } from '@angular/core';
 
 import { PcIconNameType, loadIconSvg } from './icons.index';
-import { BypassHtmlSanitizerPipe } from '@uxcommon/svg-html-pipe/svg-html-pipe';
+import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 @Component({
   selector: 'pc-icon',

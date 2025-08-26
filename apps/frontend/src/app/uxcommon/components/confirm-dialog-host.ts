@@ -9,7 +9,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Icon } from '@uxcommon/icons/icon';
+import { Icon } from '@uxcommon/components/icons/icon';
 
 import { ConfirmDialogService, DialogVariant } from './shared-dialog-service';
 

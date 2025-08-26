@@ -7,7 +7,7 @@ import { Icon } from '@icons/icon';
 import { SearchService } from '@services/api/search-service';
 import { FullScreenService } from '@services/fullscreen.service';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Swap } from '@uxcommon/swap/swap';
+import { Swap } from '@uxcommon/components/swap/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';

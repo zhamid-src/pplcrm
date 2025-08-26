@@ -5,11 +5,11 @@ import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
-import { AddBtnRow } from '@uxcommon/add-btn-row/add-btn-row';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { FormInput } from '@uxcommon/form-input/formInput';
-import { Tags } from '@uxcommon/tags/tags';
-import { TextArea } from '@uxcommon/textarea/textarea';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { FormInput } from '@uxcommon/components/form-input/formInput';
+import { Tags } from '@uxcommon/components/tags/tags';
+import { TextArea } from '@uxcommon/components/textarea/textarea';
 
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';

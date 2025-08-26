@@ -1,10 +1,10 @@
 import { Component, ViewChild, input, output, signal } from '@angular/core';
-import { PPlCrmInput } from '@uxcommon/input/input';
+import { PPlCrmInput } from '@uxcommon/components/input/input';
 
 @Component({
   selector: 'pc-autocomplete',
   imports: [PPlCrmInput],
-  templateUrl: './autocomplete.html',
+  templateUrl: './components/autocomplete.html',
 })
 export class AutoComplete {
   /**

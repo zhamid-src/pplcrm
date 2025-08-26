@@ -3,8 +3,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { debounce, getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/services/shared-dialog.service';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { JSendServerError } from '@common';
 import { TRPCClientError } from '@trpc/client';
-import { AlertService } from '@uxcommon/alerts/alert-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { TokenService } from '@services/api/token-service';
 

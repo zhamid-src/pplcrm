@@ -2,7 +2,7 @@
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
 import { ChangeDetectionStrategy, Component, HostListener, ViewChild, inject, signal } from '@angular/core';
-import { Icon } from '@uxcommon/icons/icon';
+import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailBody } from '../email-body/email-body';
