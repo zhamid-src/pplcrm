@@ -1,7 +1,16 @@
-import { ApplicationConfig, ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import {
+  ApplicationConfig,
+  ErrorHandler,
+  Environment,
+  inject,
+  provideAppInitializer,
+  provideEnvironment,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 import { RouteReuseStrategy, provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
+import { environment } from '../environments/environment';
 
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
@@ -46,15 +55,19 @@ export function tokenGetter() {
  */
 export const appConfig: ApplicationConfig = {
   providers: [
+    provideEnvironment(environment),
     /**
      * Provides Google Maps API Loader globally with the 'places' library.
      */
     {
       provide: Loader,
-      useValue: new Loader({
-        apiKey: 'AIzaSyDgTt8H7-BgZ05pW9G74fGcvBjAf2QN6WY',
-        libraries: ['places'],
-      }),
+      useFactory: () => {
+        const env = inject(Environment);
+        return new Loader({
+          apiKey: env.googleMapsApiKey,
+          libraries: ['places'],
+        });
+      },
     },
 
     /**
