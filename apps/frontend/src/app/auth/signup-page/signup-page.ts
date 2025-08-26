@@ -7,10 +7,16 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
-import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
 
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
+import {
+  emailControl,
+  passwordControl,
+  passwordBreachNumber,
+  passwordInBreach,
+} from 'apps/frontend/src/app/auth/auth-utils';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 /**
@@ -20,7 +26,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-signup',
-  imports: [CommonModule, PasswordCheckerModule, ReactiveFormsModule, Icon, RouterModule, Alerts],
+  imports: [CommonModule, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent, PasswordInputComponent],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
@@ -31,16 +37,17 @@ export class SignUpPage {
   /** Reactive form with user registration fields */
   protected form = this.fb.group({
     organization: ['', [Validators.required]],
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    email: emailControl(this.fb),
+    password: passwordControl(this.fb),
     first_name: ['', [Validators.required]],
     middle_names: [''],
     last_name: [''],
     terms: [''],
   });
 
-  /** Whether password input is hidden */
-  protected hidePassword = true;
+  /** Utilities for password breach checking */
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
 
   /** Signal indicating whether form submission is in progress */
   protected loading = signal(false);
@@ -78,22 +85,6 @@ export class SignUpPage {
   }
 
   /**
-   * Returns input type for password field based on visibility toggle.
-   * @returns 'password' or 'text'
-   */
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  /**
-   * Returns icon name for visibility toggle.
-   * @returns 'eye' or 'eye-slash'
-   */
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
-  }
-
-  /**
    * Handles form submission for user registration.
    * Displays alerts for error or success states.
    */
@@ -117,28 +108,4 @@ export class SignUpPage {
       .finally(() => this.loading.set(false));
   }
 
-  /**
-   * Toggles password visibility.
-   */
-  public toggleVisibility() {
-    this.hidePassword = !this.hidePassword;
-  }
-
-  /**
-   * Returns the number of times the password was found in a data breach.
-   * Requires external library support.
-   * @returns Number of pwned password occurrences
-   */
-  protected passwordBreachNumber() {
-    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  /**
-   * Returns whether the password was found in a data breach.
-   * Requires external library support.
-   * @returns Truthy if password was breached, falsy otherwise
-   */
-  protected passwordInBreach() {
-    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
 }
