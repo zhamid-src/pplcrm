@@ -4,6 +4,7 @@
  */
 import { TestBed } from '@angular/core/testing';
 import { DomSanitizer } from '@angular/platform-browser';
+
 import { SanitizeHtmlPipe } from './sanitize-html.pipe';
 
 describe('SanitizeHtmlPipe', () => {
@@ -12,21 +13,18 @@ describe('SanitizeHtmlPipe', () => {
 
   beforeEach(() => {
     const mockSanitizer = {
-      bypassSecurityTrustHtml: jest.fn().mockImplementation((html) => ({ 
-        changingThisBreaksApplicationSecurity: html 
+      bypassSecurityTrustHtml: jest.fn().mockImplementation((html) => ({
+        changingThisBreaksApplicationSecurity: html,
       })),
       sanitize: jest.fn(),
       bypassSecurityTrustStyle: jest.fn(),
       bypassSecurityTrustScript: jest.fn(),
       bypassSecurityTrustUrl: jest.fn(),
-      bypassSecurityTrustResourceUrl: jest.fn()
+      bypassSecurityTrustResourceUrl: jest.fn(),
     };
 
     TestBed.configureTestingModule({
-      providers: [
-        SanitizeHtmlPipe,
-        { provide: DomSanitizer, useValue: mockSanitizer }
-      ]
+      providers: [SanitizeHtmlPipe, { provide: DomSanitizer, useValue: mockSanitizer }],
     });
 
     pipe = TestBed.inject(SanitizeHtmlPipe);
@@ -46,7 +44,7 @@ describe('SanitizeHtmlPipe', () => {
   describe('HTML Sanitization', () => {
     it('should sanitize basic HTML content', () => {
       const htmlContent = '<p>Hello World</p>';
-      
+
       const result = pipe.transform(htmlContent);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(htmlContent);
@@ -64,7 +62,7 @@ describe('SanitizeHtmlPipe', () => {
           </ul>
         </div>
       `;
-      
+
       const result = pipe.transform(complexHtml);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(complexHtml);
@@ -73,7 +71,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should handle HTML with inline styles', () => {
       const styledHtml = '<p style="color: red; font-weight: bold;">Styled content</p>';
-      
+
       const result = pipe.transform(styledHtml);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(styledHtml);
@@ -82,7 +80,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should handle HTML with links', () => {
       const htmlWithLinks = '<p>Visit <a href="https://example.com">our website</a> for more info.</p>';
-      
+
       const result = pipe.transform(htmlWithLinks);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(htmlWithLinks);
@@ -91,7 +89,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should handle HTML with images', () => {
       const htmlWithImages = '<p>Check out this image: <img src="https://example.com/image.jpg" alt="Test"></p>';
-      
+
       const result = pipe.transform(htmlWithImages);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(htmlWithImages);
@@ -123,7 +121,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should handle plain text without HTML tags', () => {
       const plainText = 'This is just plain text without any HTML tags.';
-      
+
       const result = pipe.transform(plainText);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(plainText);
@@ -134,7 +132,7 @@ describe('SanitizeHtmlPipe', () => {
   describe('Security Considerations', () => {
     it('should bypass security for trusted HTML content', () => {
       const trustedHtml = '<p>This content is trusted by the application</p>';
-      
+
       pipe.transform(trustedHtml);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(trustedHtml);
@@ -142,7 +140,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should handle potentially dangerous HTML (relies on DomSanitizer)', () => {
       const dangerousHtml = '<script>alert("XSS")</script><p>Content</p>';
-      
+
       const result = pipe.transform(dangerousHtml);
 
       // The pipe passes through to DomSanitizer, which should handle the security
@@ -154,7 +152,7 @@ describe('SanitizeHtmlPipe', () => {
   describe('Performance', () => {
     it('should handle large HTML content', () => {
       const largeHtml = '<div>' + 'Content '.repeat(1000) + '</div>';
-      
+
       const result = pipe.transform(largeHtml);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(largeHtml);
@@ -163,7 +161,7 @@ describe('SanitizeHtmlPipe', () => {
 
     it('should be called only once per transformation', () => {
       const htmlContent = '<p>Test content</p>';
-      
+
       pipe.transform(htmlContent);
 
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledTimes(1);

@@ -7,7 +7,7 @@ import { AlertService } from '@uxcommon/alerts/alert-service';
 import { AttachmentIconComponent } from '@uxcommon/icons/attachment-icon';
 import { Icon } from '@uxcommon/icons/icon';
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html.pipe';
+import { SanitizeHtmlPipe } from '@uxcommon/sanitize-html/sanitize-html.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
@@ -37,7 +37,7 @@ export class EmailBody {
   });
   protected readonly bodyHtml = computed(() => {
     const id = this.emailId();
-    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
+    return id ? this.store.getEmailBodyById(id)() ?? '' : '';
   });
 
   /** Nullable input to avoid early read before Angular sets it */

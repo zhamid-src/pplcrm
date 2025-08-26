@@ -1,19 +1,19 @@
 import { Route } from '@angular/router';
-import { NotFound } from '@uxcommon/not-found';
+import { NotFound } from '@uxcommon/not-found/not-found';
 import { AddTag } from '@uxcommon/tags/add-tag';
 
 import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login-guard';
-import { NewPasswordPage } from './auth/new-password-page';
-import { ResetPasswordPage } from './auth/reset-password-page';
-import { SignInPage } from './auth/signin-page';
-import { SignUpPage } from './auth/signup-page';
+import { loginGuard } from './auth/login/login-guard';
+import { NewPasswordPage } from './auth/new-password-page/new-password-page';
+import { ResetPasswordPage } from './auth/reset-password-page/reset-password-page';
+import { SignInPage } from './auth/signin-page/signin-page';
+import { SignUpPage } from './auth/signup-page/signup-page';
+import { EmailClient } from './features/emails/ui/email-client/email-client';
 import { HouseholdDetail } from './features/households/ui/household-detail';
 import { HouseholdsGrid } from './features/households/ui/households-grid';
 import { PersonDetail } from './features/persons/ui/person-detail';
 import { PersonsGrid } from './features/persons/ui/persons-grid';
 import { TagsGridComponent } from './features/tags/ui/tags-grid';
-import { EmailClient } from './features/emails/ui/email-client/email-client';
 import { Dashboard } from './layout/dashboards/dashboard';
 import { Summary } from './temp/summary';
 

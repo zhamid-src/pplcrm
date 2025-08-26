@@ -5,7 +5,7 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/alerts/alerts';
-import { Breadcrumb } from '@uxcommon/breadcrumb';
+import { Breadcrumb } from '@uxcommon/breadcrumb/breadcrumb';
 
 import { Navbar } from '../navbar/navbar';
 import { Sidebar } from '../sidebar/sidebar';

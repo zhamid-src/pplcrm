@@ -5,11 +5,11 @@ import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
-import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { AddBtnRow } from '@uxcommon/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/alerts/alert-service';
-import { FormInput } from '@uxcommon/formInput';
+import { FormInput } from '@uxcommon/form-input/formInput';
 import { Tags } from '@uxcommon/tags/tags';
-import { TextArea } from '@uxcommon/textarea';
+import { TextArea } from '@uxcommon/textarea/textarea';
 
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
@@ -117,9 +117,8 @@ export class PersonDetail implements OnInit {
 
   /** Returns the full name of the person constructed from form inputs */
   protected getFormName() {
-    return `${this.form.get('first_name')?.value} ${
-      this.form.get('middle_names')?.value
-    }  ${this.form.get('last_name')?.value}`;
+    return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')?.value}  ${this.form.get('last_name')
+      ?.value}`;
   }
 
   /** Returns the last updated date of the person */
