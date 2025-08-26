@@ -4,12 +4,12 @@
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { SearchService } from '@services/api/search-service';
+import { FullScreenService } from '@services/fullscreen.service';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { FullScreenService } from '@uxcommon/fullscreen.service';
 import { Swap } from '@uxcommon/swap/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SearchService } from '@services/api/search-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 
