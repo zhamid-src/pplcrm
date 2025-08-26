@@ -12,7 +12,7 @@ describe('households REST routes', () => {
   beforeAll(async () => {
     jest.spyOn(HouseholdsController.prototype, 'getAll').mockResolvedValue(rows as any);
     jest
-      .spyOn(HouseholdsController.prototype, 'getById')
+      .spyOn(HouseholdsController.prototype, 'getOneById')
       .mockImplementation(async ({ id }) => rows.find((r) => r.id === id) as any);
     jest.spyOn(HouseholdsController.prototype, 'getCount').mockResolvedValue(rows.length);
 
