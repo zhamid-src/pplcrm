@@ -1,13 +1,10 @@
-import { JSendFailError, JSendServerError, jsend } from '@common';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
-import { TRPCError } from '@trpc/server';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 
-import { default as fastify } from 'fastify';
+import fastify from 'fastify';
 
-import jsendErrorHandler from './app/plugins/jsend-error-handler.plugin';
+import jsendPlugin from './app/plugins/jsend-error-handler.plugin';
 import { routes } from './app/routes';
 import { trpcRouter } from './app/modules/trpc';
 import { createContext } from './context';
@@ -43,7 +40,7 @@ export class FastifyServer {
     // Register core Fastify plugins
     this.server.register(cors, { ...opts });
     this.server.register(sensible);
-    this.server.register(jsendErrorHandler);
+    this.server.register(jsendPlugin);
 
     // Register REST routes
     this.server.register(routes);
@@ -55,21 +52,6 @@ export class FastifyServer {
         router: trpcRouter,
         createContext,
       },
-    });
-
-    // Global error handler producing JSend-compliant responses for REST routes
-    this.server.setErrorHandler((error, _req, reply) => {
-      if (error instanceof JSendFailError) {
-        return reply.status(error.statusCode).send(jsend.fail(error.data));
-      }
-      if (error instanceof JSendServerError) {
-        return reply.status(error.statusCode).send(jsend.error(error.messageText, error.code));
-      }
-      if (error instanceof TRPCError) {
-        const status = getHTTPStatusCodeFromError(error);
-        return reply.status(status).send(jsend.error(error.message, error.code));
-      }
-      return reply.status(500).send(jsend.error('Internal Server Error'));
     });
   }
 
