@@ -13,6 +13,7 @@ import type { EmailFolderType } from 'common/src/lib/models';
 export class EmailFoldersStore {
   /** Available email folders */
   private readonly emailFolders = signal<EmailFolderType[]>([]);
+  private readonly loading = signal(true);
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
 
@@ -21,6 +22,7 @@ export class EmailFoldersStore {
 
   /** Currently selected folder ID */
   public readonly currentSelectedFolderId = signal<string | null>(null);
+  public readonly isLoading = this.loading.asReadonly();
 
   public async loadAllFolders(): Promise<EmailFolderType[]> {
     const folders = (await this.svc.getFolders()) as EmailFolderType[];
@@ -41,11 +43,16 @@ export class EmailFoldersStore {
   }
 
   public async loadEmailsForFolder(folderId: string): Promise<void> {
-    const raw = await this.svc.getEmails(folderId); // raw DB-ish rows
+    this.loading.set(true);
+    try {
+      const raw = await this.svc.getEmails(folderId); // raw DB-ish rows
 
-    const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
+      const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
 
-    this.state.setEmailsForFolder(folderId, emailsFromServer);
+      this.state.setEmailsForFolder(folderId, emailsFromServer);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   /** Refresh counts (after a mutation) */
