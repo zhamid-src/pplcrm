@@ -1,9 +1,9 @@
 /**
  * @file Tests for {@link TagsCellRenderer} functionality.
  */
-import { TagsCellRenderer } from './tags-cell-renderer';
+import { TagsCellRenderer } from './components/tags-cell-renderer';
 
-jest.mock('@uxcommon/tags/tags', () => ({ Tags: class {} }), { virtual: true });
+jest.mock('@uxcommon/components/tags/tags', () => ({ Tags: class {} }), { virtual: true });
 
 describe('TagsCellRenderer', () => {
   it('should remove tag using service and update grid', () => {

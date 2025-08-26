@@ -3,7 +3,7 @@
  * Centralizes rollback + optional refresh (folder contents & counts).
  */
 import { Injectable, inject } from '@angular/core';
-import { AlertService } from '@uxcommon/alerts/alert-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
 import { EmailsService } from '../emails-service';

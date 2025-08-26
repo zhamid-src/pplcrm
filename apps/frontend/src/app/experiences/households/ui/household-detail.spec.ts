@@ -1,11 +1,19 @@
 /**
  * @file Unit tests for the {@link HouseholdDetail} component.
  */
-jest.mock('@uxcommon/formInput', () => ({ FormInput: class {} }), { virtual: true });
-jest.mock('@uxcommon/input', () => ({ PPlCrmInput: class {} }), { virtual: true });
-jest.mock('@uxcommon/tags/tags', () => ({ Tags: class {} }), { virtual: true });
-jest.mock('@uxcommon/textarea', () => ({ TextArea: class {} }), { virtual: true });
-jest.mock('@uxcommon/add-btn-row', () => ({ AddBtnRow: class {} }), { virtual: true });
+jest.mock('@uxcommon/components/form-input/formInput', () => ({ FormInput: class {} }), {
+  virtual: true,
+});
+jest.mock('@uxcommon/components/input/input', () => ({ PPlCrmInput: class {} }), {
+  virtual: true,
+});
+jest.mock('@uxcommon/components/tags/tags', () => ({ Tags: class {} }), { virtual: true });
+jest.mock('@uxcommon/components/textarea/textarea', () => ({ TextArea: class {} }), {
+  virtual: true,
+});
+jest.mock('@uxcommon/components/add-btn-row/add-btn-row', () => ({ AddBtnRow: class {} }), {
+  virtual: true,
+});
 jest.mock('../../persons/ui/people-in-household', () => ({ PeopleInHousehold: class {} }), { virtual: true });
 jest.mock('./household-detail.html', () => '', { virtual: true });
 
@@ -13,7 +21,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormBuilder } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { HouseholdDetail } from './household-detail';
-import { AlertService } from '@uxcommon/alerts/alert-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 

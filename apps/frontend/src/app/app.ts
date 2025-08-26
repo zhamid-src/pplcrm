@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { ConfirmDialogHost } from '@uxcommon/confirm-dialog-host';
+import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
 
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 

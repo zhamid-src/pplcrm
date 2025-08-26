@@ -1,6 +1,6 @@
 import { Component, ViewEncapsulation } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { DataGrid } from '@uxcommon/datagrid/datagrid';
+import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
 import { ICellRendererAngularComp } from 'ag-grid-angular';
 import { ICellRendererParams } from 'ag-grid-community';
@@ -17,7 +17,7 @@ import { Models } from 'common/src/lib/kysely.models';
 @Component({
   selector: 'pc-shortcut-cell-renderer',
   imports: [Icon],
-  templateUrl: './shortcut-cell-renderer.html',
+  templateUrl: './components/shortcut-cell-renderer.html',
   styles: [
     `
       .ag-row-hover {

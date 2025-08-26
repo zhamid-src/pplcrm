@@ -3,9 +3,9 @@
  */
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, output, signal } from '@angular/core';
-import { Icon } from '@uxcommon/icons/icon';
-import type { PcIconNameType } from '@uxcommon/icons/icons.index';
-import { Swap } from '@uxcommon/swap/swap';
+import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailFolderType } from 'common/src/lib/models';

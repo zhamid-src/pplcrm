@@ -1,11 +1,11 @@
-import type { AlertService } from '@uxcommon/alerts/alert-service';
-import type { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { ConfirmDialogService } from '@uxcommon/services/shared-dialog.service';
 
 import type { GridApi } from 'ag-grid-community';
 
 import type { AbstractAPIService } from '../../services/api/abstract-api.service';
-import type { DataGridConfig } from './datagrid.tokens';
-import { bucketByRoute } from './datagrid.utils';
+import type { DataGridConfig } from './components/datagrid.tokens';
+import { bucketByRoute } from './components/datagrid.utils';
 
 type DeleteCtx = {
   alertSvc: AlertService;
