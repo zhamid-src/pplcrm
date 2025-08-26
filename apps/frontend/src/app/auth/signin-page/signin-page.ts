@@ -19,7 +19,7 @@ import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { TokenService } from 'apps/frontend/src/app/backend-svc/token-service';
+import { TokenService } from '@services/api/token-service';
 
 /**
  * Sign-in page component providing comprehensive user authentication interface.

@@ -31,7 +31,7 @@ import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-model.strategy';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
-import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
+import { SearchService } from '@services/api/search-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
 
