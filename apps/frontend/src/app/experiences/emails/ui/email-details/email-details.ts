@@ -29,7 +29,8 @@ import type { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
-  protected store = inject(EmailsStore);
+  protected readonly store = inject(EmailsStore);
+  protected readonly isLoading = this.store.emailsLoading;
 
   public email = input<EmailType | null>(null);
   public commentCount = computed(() => {

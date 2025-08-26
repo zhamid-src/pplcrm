@@ -60,6 +60,7 @@ export class EmailsStore {
     if (!fid) return [] as EmailType[];
     return this.state.emailsInFolderWithFlags(fid)();
   });
+  public readonly emailsLoading = this.folders.isLoading;
 
   // ----------------- Cache computed factories -----------------
   public readonly getEmailBodyById = this.cache.getEmailBodyById;

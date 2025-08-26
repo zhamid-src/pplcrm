@@ -47,6 +47,10 @@
     }
   </main>
 
+  } @else if (isLoading()) {
+  <div class="min-h-screen flex items-center justify-center">
+    <span class="loading loading-bars"></span>
+  </div>
   } @else {
   <div class="flex flex-1 flex-col items-center justify-center gap-3 text-gray-400 uppercase tracking-widest">
     <img class="max-w-64" src="assets/waiting.svg" />
