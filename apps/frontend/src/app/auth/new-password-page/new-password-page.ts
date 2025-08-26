@@ -3,18 +3,23 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
-import { PasswordCheckerModule } from '@triangular/password-checker';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
 
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
+import {
+  passwordControl,
+  passwordBreachNumber,
+  passwordInBreach,
+} from 'apps/frontend/src/app/auth/auth-utils';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-new-password',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordCheckerModule, Icon, Alerts],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent, PasswordInputComponent],
   templateUrl: './new-password-page.html',
 })
 /**
@@ -30,9 +35,6 @@ export class NewPasswordPage implements OnInit {
   /** Reset code extracted from query params */
   private code: string | null = null;
 
-  /** Flag to control password visibility toggle */
-  private hidePassword = true;
-
   /** Error state to control UI feedback */
   protected readonly error = signal(false);
 
@@ -44,30 +46,18 @@ export class NewPasswordPage implements OnInit {
 
   /** Reactive form with the new password control */
   public form = this.fb.group({
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    password: passwordControl(this.fb),
   });
+
+  /** Utilities for password breach checking */
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
 
   /**
    * Get the password form control.
    */
   public get password() {
     return this.form.get('password');
-  }
-
-  /**
-   * Get the appropriate input type based on password visibility state.
-   * @returns `'password'` or `'text'`
-   */
-  public getVisibility() {
-    return this.hidePassword ? 'password' : 'text';
-  }
-
-  /**
-   * Get the icon name for password visibility toggle.
-   * @returns `'eye-slash'` or `'eye'`
-   */
-  public getVisibilityIcon() {
-    return this.hidePassword ? 'eye-slash' : 'eye';
   }
 
   /**
@@ -111,34 +101,4 @@ export class NewPasswordPage implements OnInit {
     }
   }
 
-  /**
-   * Toggle the visibility of the password input.
-   */
-  public toggleVisibility() {
-    this.hidePassword = !this.hidePassword;
-  }
-
-  /**
-   * Get the number of known password breaches for the entered password (if any).
-   * Uses third-party library, so the error object is typed as `any`.
-   *
-   * @returns Number of password breaches or undefined
-   */
-  protected passwordBreachNumber() {
-    // This uses an external library. I can't find any exported interface that
-    // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
-    return (this.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
-
-  /**
-   * Check whether the password was found in a known data breach.
-   * Uses third-party library, so the error object is typed as `any`.
-   *
-   * @returns True if password is in a breach, false otherwise
-   */
-  protected passwordInBreach() {
-    // This uses an external library. I can't find any exported interface that
-    // has the pwnedPasswordOccurrence property, so I am forced to use 'as any'
-    return (this?.password?.errors as any)?.pwnedPasswordOccurrence;
-  }
 }

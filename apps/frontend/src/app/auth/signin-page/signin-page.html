@@ -1,103 +1,68 @@
 <!-- Template for user sign-in with email and password form. -->
-<div class="bg-image flex min-h-screen font-light" data-theme="light">
-  <div class="card card-compact glass m-auto w-96 shadow-xl">
-    <div class="card-title mb-0 shadow-lg">
-      <img class="p-5" src="assets/logo.svg" />
-    </div>
-    <pc-alerts />
-    <div class="card-body">
-      <label class="label text-base text-neutral-600">Enter your email and password to sign in</label>
-      <form [formGroup]="form">
-        <div class="space-y-3">
-          <label class="relative block">
-            <pc-icon
-              [size]="4"
-              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform pt-0.5 text-sm text-gray-300"
-              name="at-symbol"
-            />
+<pc-auth-layout>
+  <label class="label text-base text-neutral-600">Enter your email and password to sign in</label>
+  <form [formGroup]="form">
+    <div class="space-y-3">
+      <label class="relative block">
+        <pc-icon
+          [size]="4"
+          class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform pt-0.5 text-sm text-gray-300"
+          name="at-symbol"
+        />
 
-            <input
-              type="email"
-              placeholder="Enter your email"
-              formControlName="email"
-              aria-placeholder="email"
-              class="input-pplcrm pl-11 text-sm"
-              autocomplete="email"
-            />
-          </label>
+        <input
+          type="email"
+          placeholder="Enter your email"
+          formControlName="email"
+          aria-placeholder="email"
+          class="input-pplcrm pl-11 text-sm"
+          autocomplete="email"
+        />
+      </label>
 
-          @if (email.dirty && email.invalid) {
-          <span class="label-text-alt text-error">Please enter a valid email</span>
-          }
+      @if (email.dirty && email.invalid) {
+      <span class="label-text-alt text-error">Please enter a valid email</span>
+      }
 
-          <label class="group relative block">
-            <pc-icon
-              [size]="4"
-              class="focus-within:text-primary pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform text-sm text-gray-300"
-              name="lock-closed"
-            />
+      <pc-password-input [control]="password" autocomplete="current-password" placeholder="Enter your password"></pc-password-input>
 
-            <input
-              class="input-pplcrm pl-11 pr-8 text-sm"
-              [class.border-error]="hasError()"
-              [type]="getVisibility()"
-              formControlName="password"
-              autocomplete="current-password"
-              placeholder="Enter your password"
-            />
-
-            <pc-icon
-              [size]="4"
-              class="absolute right-3 top-1/3 h-3 w-3 -translate-y-1/2 transform cursor-pointer pr-5 pt-2 text-xs text-gray-500"
-              [name]="getVisibilityIcon()"
-              (click)="toggleVisibility()"
-            />
-          </label>
-
-          <!--
-          @if (password?.invalid) {
-            <span class="label-text-alt text-slate-400">Min character: 8</span>
-          }-->
-
-          <div class="flex items-center justify-between pt-2">
-            <div class="flex items-center">
-              <input
-                id="remember_me"
-                name="remember_me"
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-sm"
-                [checked]="persistence"
-                (change)="togglePersistence($event.target)"
-              />
-              <label for="remember_me" class="ml-2 block text-sm text-neutral-600"> Remember me </label>
-            </div>
-            <div class="text-sm">
-              <a routerLink="/resetpassword" class="link link-hover text-neutral-600"> Forgot your password? </a>
-            </div>
-          </div>
-          <div>
-            <button
-              type="submit"
-              class="btn btn-primary w-full"
-              (click)="signIn()"
-              [disabled]="loading() || (form.dirty && form.invalid)"
-            >
-              @if (loading()) {
-              <span class="loading loading-dots loading-lg text-primary"></span>
-              } @else { SIGN IN }
-            </button>
-          </div>
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-600"> Remember me </label>
         </div>
-      </form>
-      <div class="py-3 text-center">
-        <a routerLink="/signup" class="link link-hover text-neutral-600">SIGN UP</a>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-600"> Forgot your password? </a>
+        </div>
       </div>
-      <div class="text-center text-xs text-neutral-500">
-        <span>
-          Copyright © 2024
-          <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a></span
+      <div>
+        <button
+          type="submit"
+          class="btn btn-primary w-full"
+          (click)="signIn()"
+          [disabled]="loading() || (form.dirty && form.invalid)"
         >
+          @if (loading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
       </div>
     </div>
+  </form>
+  <div class="py-3 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-600">SIGN UP</a>
   </div>
-</div>
+  <div class="text-center text-xs text-neutral-500">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a></span
+    >
+  </div>
+</pc-auth-layout>
