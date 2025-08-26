@@ -39,7 +39,7 @@ describe('SidebarService', () => {
   });
 
   it('should return route for destination', () => {
-    expect(service.getRoute('people')).toBe('/console/people');
+    expect(service.getRoute('people')).toBe('/people');
   });
 
   it('should return undefined for unknown destination', () => {

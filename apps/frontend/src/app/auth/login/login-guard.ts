@@ -20,7 +20,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  *
  * **Behavior:**
  * - **Unauthenticated users**: Can access the route (e.g., login page)
- * - **Authenticated users**: Redirected to `/console/summary` dashboard
+ * - **Authenticated users**: Redirected to `/summary` dashboard
  *
  * @returns `true` if user is not authenticated, otherwise navigates to dashboard
  *
@@ -37,4 +37,4 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * @see {@link authGuard} for the opposite behavior (protecting authenticated routes)
  */
 export const loginGuard: CanActivateFn = () =>
-  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/console/summary') : true;
+  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;

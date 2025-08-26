@@ -2,7 +2,7 @@
  * @fileoverview E2E tests for authentication flow.
  * Tests sign-in, sign-up, and authentication guard functionality.
  */
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.describe('Authentication', () => {
   test.describe('Sign-in Page', () => {
@@ -83,7 +83,7 @@ test.describe('Authentication', () => {
   test.describe('Authentication Guards', () => {
     test('should redirect unauthenticated users to sign-in', async ({ page }) => {
       // Try to access protected route
-      await page.goto('/console/summary');
+      await page.goto('/summary');
 
       // Should redirect to sign-in
       await expect(page).toHaveURL(/\/signin/);

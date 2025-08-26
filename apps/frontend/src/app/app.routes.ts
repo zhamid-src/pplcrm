@@ -26,7 +26,7 @@ export const appRoutes: Route[] = [
   /**
    * Default redirect to summary page inside the dashboard.
    */
-  { path: '', redirectTo: 'console/summary', pathMatch: 'full' },
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
   /**
    * Auth pages (sign-in, sign-up, reset password).
@@ -40,7 +40,7 @@ export const appRoutes: Route[] = [
    * Main dashboard protected by authGuard.
    */
   {
-    path: 'console',
+    path: '',
     component: Dashboard,
     canActivate: [authGuard],
     children: [
