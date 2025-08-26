@@ -7,7 +7,7 @@ import { observable } from '@trpc/server/observable';
 
 import { get, set } from 'idb-keyval';
 
-import { TRPCRouter } from '../../../../../backend/src/app/trpc-routers';
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';

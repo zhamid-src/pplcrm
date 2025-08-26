@@ -1,164 +1,43 @@
-import { Route } from '@angular/router';
-import { EmailClient } from '@experiences/emails/ui/email-client/email-client';
-import { HouseholdDetail } from '@experiences/households/ui/household-detail';
-import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
-import { PersonDetail } from '@experiences/persons/ui/person-detail';
-import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
-import { TagsGridComponent } from '@experiences/components/tags/ui/components/tags-grid';
-import { NotFound } from '@uxcommon/components/not-found/not-found';
-import { AddTag } from '@uxcommon/components/tags/add-tag';
+import type { Routes } from '@angular/router';
 
 import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login/login-guard';
-import { NewPasswordPage } from './auth/new-password-page/new-password-page';
-import { ResetPasswordPage } from './auth/reset-password-page/reset-password-page';
-import { SignInPage } from './auth/signin-page/signin-page';
-import { SignUpPage } from './auth/signup-page/signup-page';
-import { Dashboard } from './layout/dashboards/dashboard';
-import { Summary } from './summary/summary';
 
-/**
- * The main route configuration for the application.
- *
- * Includes routing for authentication, dashboard, and fallback routes.
- */
-export const appRoutes: Route[] = [
-  /**
-   * Default redirect to summary page inside the dashboard.
-   */
+export const appRoutes = [
+  // Default redirect to summary inside the dashboard shell
   { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
-  /**
-   * Auth pages (sign-in, sign-up, reset password).
-   */
-  { path: 'signin', component: SignInPage, canActivate: [loginGuard] },
-  { path: 'signup', component: SignUpPage },
-  { path: 'resetpassword', component: ResetPasswordPage },
-  { path: 'newpassword', component: NewPasswordPage },
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'newpassword',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
 
-  /**
-   * Main dashboard protected by authGuard.
-   */
+  // Main dashboard shell + children (protected)
   {
     path: '',
-    component: Dashboard,
     canActivate: [authGuard],
-    children: [
-      {
-        path: '',
-        redirectTo: 'summary',
-        pathMatch: 'full',
-      },
-      /**
-       * Dashboard summary page.
-       */
-      {
-        path: 'summary',
-        component: Summary,
-      },
-
-      /**
-       * People management routes.
-       */
-      {
-        path: 'people',
-        children: [
-          {
-            path: '',
-            component: PersonsGrid,
-            data: { shouldReuse: true, key: 'persongridroot' },
-          },
-          {
-            path: 'add',
-            component: PersonDetail,
-          },
-          {
-            path: ':id',
-            component: PersonDetail,
-          },
-        ],
-      },
-
-      /**
-       * Household management routes.
-       */
-      {
-        path: 'households',
-        children: [
-          {
-            path: '',
-            component: HouseholdsGrid,
-            data: { shouldReuse: true, key: 'householdsgridroot' },
-          },
-          {
-            path: 'add',
-            component: HouseholdDetail,
-          },
-          {
-            path: ':id',
-            component: HouseholdDetail,
-          },
-        ],
-      },
-
-      /**
-       * Tag management routes.
-       */
-      {
-        path: 'tags',
-        children: [
-          {
-            path: '',
-            component: TagsGridComponent,
-            data: { shouldReuse: true, key: 'tagsgridroot' },
-          },
-          {
-            path: 'add',
-            component: AddTag,
-          },
-        ],
-      },
-
-      /**
-       * Volunteer management route.
-       */
-      {
-        path: 'volunteers',
-        children: [
-          {
-            path: '',
-            component: PersonsGrid,
-            data: { shouldReuse: true, key: 'volunteersgridroot', tags: ['volunteer'] },
-          },
-        ],
-      },
-
-      /**
-       * Donor management route.
-       */
-      {
-        path: 'donors',
-        children: [
-          {
-            path: '',
-            component: PersonsGrid,
-            data: { shouldReuse: true, key: 'donorsgridroot', tags: ['donor'] },
-          },
-        ],
-      },
-
-      {
-        path: 'emails',
-        component: EmailClient,
-      },
-    ],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
   },
 
-  /**
-   * Fallback route for undefined paths.
-   */
+  // Fallback
   {
     path: '**',
-    component: NotFound,
+    loadComponent: () => import('./uxcommon/not-found/not-found').then((m) => m.NotFound),
   },
-];
+] as const satisfies Routes;
