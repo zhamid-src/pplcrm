@@ -20,7 +20,7 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 
-import { AbstractAPIService } from '../../abstract-api.service';
+import { AbstractAPIService } from '../../services/api/abstract-api.service';
 import { confirmDeleteAndRun, doExportCsv } from './datagrid.actions';
 import { buildGridCallbacks } from './datagrid.callbacks';
 import { createServerSideDatasource } from './datagrid.datasource';
