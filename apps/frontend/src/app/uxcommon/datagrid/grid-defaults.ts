@@ -1,4 +1,4 @@
-import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer';
+import { ShortcutCellRenderer } from '@uxcommon/shortcut-cell-renderer/shortcut-cell-renderer';
 
 import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 

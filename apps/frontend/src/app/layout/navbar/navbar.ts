@@ -6,12 +6,12 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { FullScreenService } from '@uxcommon/fullscreen.service';
-import { Swap } from '@uxcommon/swap';
+import { Swap } from '@uxcommon/swap/swap';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 
 @Component({
   selector: 'pc-navbar',

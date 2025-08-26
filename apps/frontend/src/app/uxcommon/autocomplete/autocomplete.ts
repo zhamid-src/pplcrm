@@ -1,5 +1,5 @@
 import { Component, ViewChild, input, output, signal } from '@angular/core';
-import { PPlCrmInput } from '@uxcommon/input';
+import { PPlCrmInput } from '@uxcommon/input/input';
 
 @Component({
   selector: 'pc-autocomplete',

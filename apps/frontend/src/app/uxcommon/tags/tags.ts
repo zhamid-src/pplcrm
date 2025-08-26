@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, input, output } from '@angular/core';
-import { AutoComplete } from '@uxcommon/autocomplete';
-import { TagsService } from '@uxcommon/tags/tags-service';
+import { TagsService } from '@features/tags/services/tags-service';
+import { AutoComplete } from '@uxcommon/autocomplete/autocomplete';
 
 import { TagItem } from './tagitem';
 

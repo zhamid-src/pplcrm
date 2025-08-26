@@ -1,17 +1,17 @@
 // pc-compose-email.component.ts
-import { DecimalPipe } from "@angular/common";
-import { Component, ElementRef, EventEmitter, Input, Output, ViewChild, computed, inject, signal } from "@angular/core";
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
-import { AttachmentIconComponent } from "@icons/attachment-icon"; // your <pc-attachment-icon>
-import { Icon } from "@icons/icon"; // your <pc-icon>
-import { FileSizePipe } from "@uxcommon/pipes/filesize.pipe";
-import { ConfirmDialogService } from "@uxcommon/shared-dialog-service";
-import { Swap } from "@uxcommon/swap";
+import { DecimalPipe } from '@angular/common';
+import { Component, ElementRef, EventEmitter, Input, Output, ViewChild, computed, inject, signal } from '@angular/core';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
+import { Icon } from '@icons/icon'; // your <pc-icon>
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
+import { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
+import { Swap } from '@uxcommon/swap/swap';
 
-import { QuillModule } from "ngx-quill";
-import Quill from "quill";
+import { QuillModule } from 'ngx-quill';
+import Quill from 'quill';
 
-import { EmailActionsStore } from "../../services/store/email-actions.store";
+import { EmailActionsStore } from '../../services/store/email-actions.store';
 
 @Component({
   selector: 'pc-compose-email',
@@ -235,10 +235,18 @@ export class ComposeEmailComponent {
   }
 }
 
+export type ComposeInitial = {
+  bcc?: string;
+  cc?: string;
+  html?: string;
+  subject?: string;
+  to?: string;
+};
+
 export type ComposePayload = {
   attachments: File[];
   bcc: string[];
-cc: string[];
+  cc: string[];
   html: string; // keep HTML for simplicity; switch to Delta if you prefer
   subject: string;
   to: string[];
@@ -246,17 +254,9 @@ cc: string[];
 
 export type DraftPayload = {
   bcc: string[];
-cc: string[];
+  cc: string[];
   html: string;
   id?: string;
   subject: string;
   to: string[];
-};
-
-export type ComposeInitial = {
-  to?: string;
-  cc?: string;
-  bcc?: string;
-  subject?: string;
-  html?: string;
 };

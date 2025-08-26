@@ -32,7 +32,7 @@ import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
 import { SearchService } from 'apps/frontend/src/app/backend-svc/search-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
 
 @Component({

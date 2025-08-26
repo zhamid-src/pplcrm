@@ -5,16 +5,16 @@ import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
-import { AddBtnRow } from '@uxcommon/add-btn-row';
+import { AddBtnRow } from '@uxcommon/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/alerts/alert-service';
-import { FormInput } from '@uxcommon/formInput';
-import { PPlCrmInput } from '@uxcommon/input';
+import { FormInput } from '@uxcommon/form-input/formInput';
+import { PPlCrmInput } from '@uxcommon/input/input';
 import { Tags } from '@uxcommon/tags/tags';
-import { TextArea } from '@uxcommon/textarea';
+import { TextArea } from '@uxcommon/textarea/textarea';
 
 import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { HouseholdsService } from '../services/households-service';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
 import { Households } from 'common/src/lib/kysely.models';
 

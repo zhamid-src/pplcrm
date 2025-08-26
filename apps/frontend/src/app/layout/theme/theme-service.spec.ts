@@ -9,7 +9,7 @@ describe('ThemeService', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
-      value: jest.fn().mockReturnValue({ matches: false, addEventListener })
+      value: jest.fn().mockReturnValue({ matches: false, addEventListener }),
     });
     localStorage.clear();
     addEventListener.mockReset();
