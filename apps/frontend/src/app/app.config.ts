@@ -4,7 +4,7 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
 
 import { appRoutes } from './app.routes';
-import { CustomRouteReuseStrategy } from './components/route-reuse-strategy';
+import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { jsendInterceptor } from '@services/jsend.interceptor';
 import { GlobalErrorHandler } from '@services/global-error-handler';
