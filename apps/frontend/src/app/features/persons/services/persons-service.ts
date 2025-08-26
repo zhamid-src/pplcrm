@@ -6,7 +6,7 @@
 import { Injectable } from '@angular/core';
 import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
 
-import { AbstractAPIService } from '../../../abstract-api.service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 /**
  * Service for comprehensive person record management in the CRM system.

@@ -12,7 +12,7 @@ import { tagArrayEquals, tagsToString } from '@uxcommon/datagrid/datagrid.utils'
 
 import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
 
-import { AbstractAPIService } from '../../../abstract-api.service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { TagsCellRenderer } from '../../tags/ui/tags-cell-renderer';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
 

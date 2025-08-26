@@ -3,7 +3,7 @@ import type { ConfirmDialogService } from '@uxcommon/shared-dialog-service';
 
 import type { GridApi } from 'ag-grid-community';
 
-import type { AbstractAPIService } from '../../abstract-api.service';
+import type { AbstractAPIService } from '../../services/api/abstract-api.service';
 import type { DataGridConfig } from './datagrid.tokens';
 import { bucketByRoute } from './datagrid.utils';
 
