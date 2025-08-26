@@ -14,12 +14,12 @@ import {
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
+import { TokenService } from '@services/api/token-service';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/alerts/alert-service';
 import { Alerts } from '@uxcommon/alerts/alerts';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { TokenService } from '@services/api/token-service';
 
 /**
  * Sign-in page component providing comprehensive user authentication interface.
@@ -76,7 +76,7 @@ export class SignInPage {
    */
   constructor() {
     effect(() => {
-      if (this.authService.getUser()) this.router.navigate(['console', 'summary']);
+      if (this.authService.getUser()) this.router.navigate(['summary']);
     });
   }
 

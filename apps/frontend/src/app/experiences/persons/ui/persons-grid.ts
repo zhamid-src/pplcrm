@@ -183,7 +183,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     dialog.close();
 
     if (this.addressChangeModalId !== null) {
-      this.router.navigate(['console', 'households', this.addressChangeModalId]);
+      this.router.navigate(['households', this.addressChangeModalId]);
     }
   }
 

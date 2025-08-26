@@ -1,6 +1,8 @@
 /**
  * @file Unit tests for {@link PersonsGrid} component.
  */
+import { PersonsGrid } from './persons-grid';
+
 jest.mock('@angular/core', () => {
   const actual = jest.requireActual('@angular/core');
   return {
@@ -25,10 +27,10 @@ jest.mock('@uxcommon/datagrid/datagrid', () => {
 });
 
 jest.mock('../../tags/ui/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
-jest.mock('@icons/icon', () => ({ Icon: class {} }), { virtual: true });
-jest.mock('./persons-grid.html', () => '', { virtual: true });
 
-import { PersonsGrid } from './persons-grid';
+jest.mock('@icons/icon', () => ({ Icon: class {} }), { virtual: true });
+
+jest.mock('./persons-grid.html', () => '', { virtual: true });
 
 describe('PersonsGrid', () => {
   let component: PersonsGrid;
@@ -52,6 +54,6 @@ describe('PersonsGrid', () => {
     document.querySelector = jest.fn().mockReturnValue({ close });
     (component as any).routeToHouseholds();
     expect(close).toHaveBeenCalled();
-    expect(router.navigate).toHaveBeenCalledWith(['console', 'households', 'h2']);
+    expect(router.navigate).toHaveBeenCalledWith(['households', 'h2']);
   });
 });

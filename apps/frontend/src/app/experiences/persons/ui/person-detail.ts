@@ -130,7 +130,7 @@ export class PersonDetail implements OnInit {
   protected navigateToHousehold() {
     const household_id = this.person()?.household_id;
     if (household_id) {
-      this.router.navigate(['console', 'households', household_id]);
+      this.router.navigate(['households', household_id]);
     }
   }
 

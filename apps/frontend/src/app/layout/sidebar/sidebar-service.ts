@@ -46,7 +46,7 @@ export class SidebarService {
    * to find the first route that matches the provided destination.
    *
    * @param destination - The last segment of the desired route (e.g., "tags", "people")
-   * @returns The full route path if found (e.g., "/console/tags"); otherwise, undefined
+   * @returns The full route path if found (e.g., "/tags"); otherwise, undefined
    */
   public getRoute(destination: string): string | undefined {
     const allItems = this.flattenItems(this.items);

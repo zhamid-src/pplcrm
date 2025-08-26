@@ -21,7 +21,7 @@ export class Summary {
   }
 
   public Info() {
-    this.alert.showInfo("This is an <a href='/console/households' class='link'>info</a> alert");
+    this.alert.showInfo("This is an <a href='/households' class='link'>info</a> alert");
   }
 
   public Success() {
