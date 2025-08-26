@@ -1,49 +1,43 @@
 import type { Routes } from '@angular/router';
-import { NotFound } from './uxcommon/not-found/not-found';
 
 import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login/login-guard';
-import { NewPasswordPage } from './auth/new-password-page/new-password-page';
-import { ResetPasswordPage } from './auth/reset-password-page/reset-password-page';
-import { SignInPage } from './auth/signin-page/signin-page';
-import { SignUpPage } from './auth/signup-page/signup-page';
 
-/**
- * The main route configuration for the application.
- *
- * Includes routing for authentication, dashboard, and fallback routes.
- */
-export const appRoutes: Routes = [
-  /**
-   * Default redirect to summary page inside the dashboard.
-   */
+export const appRoutes = [
+  // Default redirect to summary inside the dashboard shell
   { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
-  /**
-   * Auth pages (sign-in, sign-up, reset password).
-   */
-  { path: 'signin', component: SignInPage, canActivate: [loginGuard] },
-  { path: 'signup', component: SignUpPage },
-  { path: 'resetpassword', component: ResetPasswordPage },
-  { path: 'newpassword', component: NewPasswordPage },
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'newpassword',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
 
-  /**
-   * Main dashboard protected by authGuard.
-   */
+  // Main dashboard shell + children (protected)
   {
     path: '',
     canActivate: [authGuard],
-    component: () =>
-      import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    children: () =>
-      import('./dashboard.routes').then((m) => m.dashboardRoutes),
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
   },
 
-  /**
-   * Fallback route for undefined paths.
-   */
+  // Fallback
   {
     path: '**',
-    component: NotFound,
+    loadComponent: () => import('./uxcommon/not-found/not-found').then((m) => m.NotFound),
   },
-];
+] as const satisfies Routes;
