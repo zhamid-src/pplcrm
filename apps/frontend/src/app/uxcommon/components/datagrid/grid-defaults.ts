@@ -91,6 +91,7 @@ export const defaultGridOptions: GridOptions = {
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
   initialState: BASE_GRID_CONFIG.initialState,
   sideBar: BASE_GRID_CONFIG.sideBar,
+  suppressServerSideFullWidthLoadingRow: true,
   cellSelection: true,
   copyHeadersToClipboard: true,
   enableCellEditingOnBackspace: true,
@@ -106,5 +107,5 @@ export const defaultGridOptions: GridOptions = {
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
   undoRedoCellEditing: true,
-  overlayLoadingTemplate: '<div class="loading loading-ring loading-xl" />',
+  overlayLoadingTemplate: '<div class="loading loading-bars  loading-xl text-accent" />',
 };
