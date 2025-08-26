@@ -21,12 +21,20 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     super(new EmailRepo());
   }
 
+  /** Generic error handler to reduce repetition */
+  private handle<T>(fn: () => Promise<T>, message: string) {
+    return fn().catch((err) => {
+      if (err instanceof AppError) throw err;
+      throw new InternalError(message, undefined, { cause: err });
+    });
+  }
+
   /** Add a comment to an email */
   public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
     if (!comment?.trim()) {
       throw new BadRequestError('Comment cannot be empty');
     }
-    try {
+    return this.handle(async () => {
       const row = await this.commentsRepo.add({
         row: {
           tenant_id,
@@ -39,15 +47,12 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       });
       if (!row) throw new InternalError('Failed to add comment');
       return row;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to add comment', undefined, { cause: err });
-    }
+    }, 'Failed to add comment');
   }
 
   /** Assign an email to a user */
   public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
-    try {
+    return this.handle(async () => {
       const updated = await this.update({
         tenant_id,
         id,
@@ -55,10 +60,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       });
       if (!updated) throw new NotFoundError('Email not found');
       return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to assign email', undefined, { cause: err });
-    }
+    }, 'Failed to assign email');
   }
 
   /**
@@ -74,26 +76,20 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Delete a comment from an email */
   public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
-    try {
+    return this.handle(async () => {
       const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
       if (!deleted) throw new NotFoundError('Comment not found');
       return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete comment', undefined, { cause: err });
-    }
+    }, 'Failed to delete comment');
   }
 
   /** Delete a draft by ID for a given tenant and user */
   public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
-    try {
+    return this.handle(async () => {
       const deleted = await this.draftsRepo.delete({ tenant_id, id });
       if (!deleted) throw new NotFoundError('Draft not found');
       return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete draft', undefined, { cause: err });
-    }
+    }, 'Failed to delete draft');
   }
 
   /**
@@ -118,41 +114,35 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Get all attachments for a given email */
   public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
-    try {
-      return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments', undefined, { cause: err });
-    }
+    return this.handle(
+      () => this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options),
+      'Failed to fetch attachments',
+    );
   }
 
   /** Get attachments by email ID */
   public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments for email', undefined, { cause: err });
-    }
+    return this.handle(
+      () => this.attachmentsRepo.getByEmailId(tenant_id, email_id),
+      'Failed to fetch attachments for email',
+    );
   }
 
   /** Get a draft by ID for a given tenant and user */
   public async getDraft(tenant_id: string, _user_id: string, value: string) {
-    try {
+    return this.handle(async () => {
       const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
       if (!draft) throw new NotFoundError('Draft not found');
       return draft;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch draft', undefined, { cause: err });
-    }
+    }, 'Failed to fetch draft');
   }
 
   /** Return a single email and its comments */
   public async getEmailBody(tenant_id: string, value: string) {
-    try {
+    return this.handle(async () => {
       const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
       if (email) return email;
 
-      // If no body exists, attempt to load from drafts table
       const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
       if (draft)
         return {
@@ -162,15 +152,12 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         } as any;
 
       throw new NotFoundError('Failed to fetch email body');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email body', undefined, { cause: err });
-    }
+    }, 'Failed to fetch email body');
   }
 
   /** Return a single email with headers, recipients, and comments */
   public async getEmailHeader(tenant_id: string, id: string) {
-    try {
+    return this.handle(async () => {
       const [emailWithHeaders, comments, attachments] = await Promise.all([
         this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id),
         this.commentsRepo.getForEmail(tenant_id, id),
@@ -178,7 +165,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       ]);
       if (emailWithHeaders) return { email: emailWithHeaders, comments, attachments };
 
-      // Fallback to draft if regular email not found
       const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;
       if (draft)
         return {
@@ -195,15 +181,12 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         } as any;
 
       throw new NotFoundError('Email not found');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email header', undefined, { cause: err });
-    }
+    }, 'Failed to fetch email header');
   }
 
   /** Return all emails for the given folder */
   public async getEmails(user_id: string, tenant_id: string, folder_id: string) {
-    try {
+    return this.handle(async () => {
       if (folder_id === ALL_FOLDERS.DRAFTS) {
         const drafts = await this.draftsRepo.listByUser(tenant_id, user_id);
         return drafts.map((d: any) => ({
@@ -222,9 +205,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         }));
       }
       return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id);
-    } catch (err) {
-      throw new InternalError('Failed to fetch emails', undefined, { cause: err });
-    }
+    }, 'Failed to fetch emails');
   }
 
   /** Return all folders, sorted by sort_order */
@@ -235,7 +216,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   /** Return all folders for a tenant with email counts */
   public async getFoldersWithCounts(user_id: string, tenant_id: string) {
-    try {
+    return this.handle(async () => {
       const [folders, emailCounts, draftCount] = await Promise.all([
         this.getFolders(tenant_id),
         this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
@@ -246,29 +227,24 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         ...folder,
         email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
       }));
-    } catch (err) {
-      throw new InternalError('Failed to fetch folder counts', undefined, { cause: err });
-    }
+    }, 'Failed to fetch folder counts');
   }
 
   /** Check if a given email has attachments */
   public async hasAttachment(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flag', undefined, { cause: err });
-    }
+    return this.handle(
+      () => this.attachmentsRepo.hasAttachment(tenant_id, email_id),
+      'Failed to check attachment flag',
+    );
   }
 
   /** Check which emails (by IDs) have attachments */
   public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
     if (!email_ids?.length) return Promise.resolve([]);
-
-    try {
-      return this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
-    }
+    return this.handle(
+      () => this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids),
+      'Failed to check attachment flags',
+    );
   }
 
   public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
@@ -287,34 +263,26 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       body_html?: string;
     },
   ) {
-    try {
+    return this.handle(async () => {
       const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
       if (!saved) throw new InternalError('Failed to save draft');
       return saved;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to save draft', undefined, { cause: err });
-    }
+    }, 'Failed to save draft');
   }
 
   public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
-    try {
-      return this.getRepo().setFavourite(tenant_id, id, favourite);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set favourite', undefined, { cause: err });
-    }
+    return this.handle(
+      () => this.getRepo().setFavourite(tenant_id, id, favourite),
+      'Failed to set favourite',
+    );
   }
 
   /** Update email status (open/closed/resolved) */
   public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
-    try {
+    return this.handle(async () => {
       const updated = await this.getRepo().setStatus(tenant_id, id, status);
       if (!updated) throw new NotFoundError('Email not found');
       return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set status', undefined, { cause: err });
-    }
+    }, 'Failed to set status');
   }
 }
