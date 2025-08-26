@@ -4,7 +4,7 @@
 import { ICellRendererAngularComp } from 'ag-grid-angular';
 import { GridApi, ICellRendererParams } from 'ag-grid-community';
 import { Component } from '@angular/core';
-import { Tags } from '@uxcommon/tags/tags';
+import { Tags } from '@uxcommon/components/tags/tags';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { Models } from 'common/src/lib/kysely.models';

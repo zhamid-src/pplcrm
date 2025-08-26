@@ -8,8 +8,8 @@ import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { PasswordCheckerModule } from '@triangular/password-checker';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Alerts } from '@uxcommon/alerts/alerts';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 

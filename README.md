@@ -41,7 +41,8 @@
 - Standalone Angular 20 components (`app.ts`, `app.routes.ts`) using signals and reactive forms.
 - `services/api/` provides tRPC client setup, token storage, and search utilities.
 - Feature modules in `components/` (persons, households, tags, etc.) with grids, detail pages, and services.
-- Reusable UI elements live in `layout/` and `uxcommon/` (navbar, sidebar, alerts, icons, etc.).
+- Reusable UI elements live in `layout/` and `uxcommon/`, which now groups shared
+  Angular pieces into `components/`, `directives/`, `pipes/`, and `services/`.
 
 ---
 

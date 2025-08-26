@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Tags } from '@uxcommon/tags/tags';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Tags } from '@uxcommon/components/tags/tags';
 
 @Component({
   selector: 'pc-summary',

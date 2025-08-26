@@ -3,8 +3,8 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, HostListener, Output, computed, effect, inject, input, signal } from '@angular/core';
-import { AlertService } from '@uxcommon/alerts/alert-service';
-import { Icon } from '@uxcommon/icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';

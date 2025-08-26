@@ -11,7 +11,7 @@ jest.mock('@angular/core', () => {
   };
 });
 
-jest.mock('@uxcommon/datagrid/datagrid', () => {
+jest.mock('@uxcommon/components/datagrid/datagrid', () => {
   return {
     DataGrid: class {
       protected router = { navigate: jest.fn() };
@@ -26,7 +26,7 @@ jest.mock('@uxcommon/datagrid/datagrid', () => {
   };
 });
 
-jest.mock('../../tags/ui/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
+jest.mock('../../components/tags/ui/components/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
 
 jest.mock('@icons/icon', () => ({ Icon: class {} }), { virtual: true });
 
