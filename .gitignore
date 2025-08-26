@@ -7,3 +7,7 @@ dist
 tmp
 test-results/.last-run.json
 package-lock.json
+
+# Environment files
+.env
+.env.*
