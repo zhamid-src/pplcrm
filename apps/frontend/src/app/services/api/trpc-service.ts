@@ -7,7 +7,7 @@ import { observable } from '@trpc/server/observable';
 
 import { get, set } from 'idb-keyval';
 
-import { TRPCRouter } from '../../../../backend/src/app/trpc-routers';
+import { TRPCRouter } from '../../../../../backend/src/app/trpc-routers';
 import { environment } from '../../../environments/environment';
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
@@ -163,21 +163,6 @@ export class TRPCService<T> {
 }
 
 /**
- * Creates a TRPC HTTP batch link with the auth token included in headers.
- *
- * @param tokenSvc - The TokenService instance
- */
-function httpLink(tokenSvc: TokenService) {
-  return httpBatchLink({
-    url: environment.apiUrl,
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}
-
-/**
  * Creates a TRPC link that normalises errors and forwards server issues to the
  * global ErrorService.
  */
@@ -216,4 +201,19 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
         });
         return unsubscribe;
       });
+}
+
+/**
+ * Creates a TRPC HTTP batch link with the auth token included in headers.
+ *
+ * @param tokenSvc - The TokenService instance
+ */
+function httpLink(tokenSvc: TokenService) {
+  return httpBatchLink({
+    url: environment.apiUrl,
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
 }
