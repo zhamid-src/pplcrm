@@ -4,7 +4,7 @@
  */
 import { TestBed } from '@angular/core/testing';
 import { EmailsService } from './emails-service';
-import { TRPCService } from '../../../backend-svc/trpc-service';
+import { TRPCService } from '@services/api/trpc-service';
 
 describe('EmailsService', () => {
   let service: EmailsService;
