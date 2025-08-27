@@ -17,7 +17,9 @@ interface ParamsType {
 @Component({
   selector: 'pc-households-grid',
   imports: [DataGrid],
-  template: ` <pc-datagrid [colDefs]="col" [disableDelete]="true" [disableView]="false" addRoute="add"></pc-datagrid> `,
+  template: `
+    <pc-datagrid [colDefs]="col" [disableDelete]="true" [disableView]="false" addRoute="add"> </pc-datagrid>
+  `,
   providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
 })
 

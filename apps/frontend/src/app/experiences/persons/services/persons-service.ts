@@ -140,7 +140,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param options - Optional filters
    */
   public async getAllWithAddress(options?: getAllOptionsType) {
-    await sleep(2500);
+    await sleep(1500); // simulate server delay
     return this.api.persons.getAllWithAddress.query(options, {
       signal: this.ac.signal,
     });

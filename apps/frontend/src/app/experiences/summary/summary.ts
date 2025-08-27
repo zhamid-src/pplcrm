@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@uxcommon/components/tags/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-summary',
@@ -8,7 +9,10 @@ import { Tags } from '@uxcommon/components/tags/tags';
   templateUrl: './summary.html',
 })
 export class Summary {
+  private readonly _loading = createLoadingGate();
   private readonly alert = inject(AlertService);
+
+  protected readonly isLoading = this._loading.visible;
 
   public canDelete = true;
   public readonly = false;
@@ -39,5 +43,15 @@ export class Summary {
       type: 'warning',
       title: 'W!',
     });
+  }
+
+  public spinner() {
+    console.log('spinner starting');
+    const end = this._loading.begin();
+
+    setTimeout(() => {
+      console.log('spinner ending');
+      end();
+    }, 300);
   }
 }
