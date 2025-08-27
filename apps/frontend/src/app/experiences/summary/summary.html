@@ -7,3 +7,8 @@
 <button class="btn" (click)="Success()">Success</button>
 <button class="btn" (click)="Warning()">Warning</button>
 <button class="btn" (click)="Error()">Error</button>
+<button class="btn" (click)="spinner()">Spinner for default min. duration</button>
+
+@if (isLoading()) {
+<div class="loading loading-bars loading-xl"></div>
+}

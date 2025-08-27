@@ -281,6 +281,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
+    console.log('refresh triggered');
     const end = this._loading.begin();
     try {
       if (this.rowModelType() === 'clientSide') {

@@ -2,7 +2,7 @@
  * @file Service responsible for managing household data via tRPC.
  */
 import { Injectable } from '@angular/core';
-import { UpdateHouseholdsType, getAllOptionsType } from '@common';
+import { UpdateHouseholdsType, getAllOptionsType, sleep } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -122,7 +122,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * Uses AbortController signal to allow cancellation.
    * @returns A promise resolving to the household data.
    */
-  private getAllWithPeopleCount(options?: getAllOptionsType) {
+  private async getAllWithPeopleCount(options?: getAllOptionsType) {
+    await sleep(1500); // simulate server delay
     return this.api.households.getAllWithPeopleCount.query(options, {
       signal: this.ac.signal,
     });

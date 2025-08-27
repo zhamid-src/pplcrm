@@ -14,7 +14,7 @@ export type loadingGate = {
  * Once shown, it stays at least `minDuration` to avoid flicker.
  */
 export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 400; // ms before showing
+  const delay = options?.delay ?? 300; // ms before showing
   const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
 
   const visible = signal(false);
@@ -44,7 +44,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
         visible.set(true);
         shownAt = Date.now();
       }
-    }, delay + 2000);
+    }, delay);
   }
 
   function scheduleHide() {
