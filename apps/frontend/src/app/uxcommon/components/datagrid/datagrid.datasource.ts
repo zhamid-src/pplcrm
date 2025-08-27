@@ -17,6 +17,7 @@ export function createServerSideDatasource<T>(deps: {
 
   return {
     getRows: async (params: IServerSideGetRowsParams) => {
+      console.log('getrows');
       const end = deps._loading.begin();
       try {
         const { startRow, sortModel, filterModel } = params.request;
@@ -36,6 +37,7 @@ export function createServerSideDatasource<T>(deps: {
         console.log('error', err);
         params.fail();
       } finally {
+        console.log('getrows finally');
         end();
       }
     },

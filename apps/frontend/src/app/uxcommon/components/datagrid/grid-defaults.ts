@@ -107,5 +107,5 @@ export const defaultGridOptions: GridOptions = {
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
   undoRedoCellEditing: true,
-  overlayLoadingTemplate: '<div class="loading loading-bars  loading-xl text-accent" />',
+  overlayLoadingTemplate: '<img class="animate-wiggle w-25" src="assets/logo-sq.svg" />',
 };

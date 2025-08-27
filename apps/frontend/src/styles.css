@@ -115,6 +115,30 @@ body {
   --ag-modal-overlay-background-color: rgba(18, 35, 46, 0.95);
 }
 
+@theme {
+  --animate-wiggle: wiggle 2s ease-in-out infinite;
+  @keyframes wiggle {
+    0% {
+      scale: 1;
+      opacity: 1;
+    }
+    25% {
+      opacity: 0.8;
+    }
+    50% {
+      scale: 0.95;
+      opacity: 1;
+    }
+    75% {
+      opacity: 0.8;
+    }
+    100% {
+      scale: 1;
+      opacity: 1;
+    }
+  }
+}
+
 @layer utilities {
   @keyframes up {
     0% {
