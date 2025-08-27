@@ -30,7 +30,9 @@
     </li>
   </ul>
 
-  @if (gridVisible()) {
+  @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (gridVisible()) {
   <ag-grid-angular
     class="flex-1 font-light"
     [theme]="getTheme()"

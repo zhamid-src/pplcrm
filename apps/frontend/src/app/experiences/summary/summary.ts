@@ -1,11 +1,12 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-summary',
-  imports: [Tags],
+  imports: [Tags, Icon],
   templateUrl: './summary.html',
 })
 export class Summary {
@@ -13,6 +14,8 @@ export class Summary {
   private readonly alert = inject(AlertService);
 
   protected readonly isLoading = this._loading.visible;
+
+  protected ravenLoaded = signal(false);
 
   public canDelete = true;
   public readonly = false;
@@ -53,5 +56,9 @@ export class Summary {
       console.log('spinner ending');
       end();
     }, 300);
+  }
+
+  public toggleRaven() {
+    this.ravenLoaded.set(!this.ravenLoaded());
   }
 }

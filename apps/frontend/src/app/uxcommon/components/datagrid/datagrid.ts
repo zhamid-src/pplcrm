@@ -51,7 +51,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   private _loading = createLoadingGate();
   private debouncedFilter = debounce(() => this.api?.onFilterChanged());
-  private isLoading = this._loading.visible;
 
   // Other State
   private lastRowHovered: string | undefined;
@@ -74,6 +73,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected api: GridApi<Partial<T>> | undefined;
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
   protected gridVisible = signal(false);
+  protected isLoading = this._loading.visible;
   protected mergedGridOptions: Partial<GridOptions> = {};
 
   public readonly importCSV = output<string>();
@@ -92,7 +92,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public plusIcon = input<PcIconNameType>('plus');
 
   constructor() {
-    effect(() => this.api?.setGridOption('loading', this.isLoading()));
+    effect(() => {
+      const loading = this.isLoading();
+      this.api?.setGridOption('loading', loading);
+    });
 
     // React to global search
     effect(() => {
@@ -195,10 +198,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         pageSize: this.config.pageSize,
       });
       this.api.setGridOption('serverSideDatasource', ds);
+    } else {
+      this.refresh(); // get data for the client side row model
     }
 
     this.undoMgr.initialize(this.api);
-    this.refresh();
   }
 
   /** Called when selection changes. Updates selected state. */
@@ -281,19 +285,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
-    console.log('refresh triggered');
-    const end = this._loading.begin();
     try {
       if (this.rowModelType() === 'clientSide') {
-        const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
-        this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
+        this.refreshClientSide();
       } else {
-        (this.api as any).refreshServerSide?.({ purge: true });
+        console.log('refresh');
+        this.api?.refreshServerSide({ purge: false });
       }
     } catch (error) {
       this.alertSvc.showError(this.config.messages.loadFailed);
-    } finally {
-      end();
     }
   }
 
@@ -303,6 +303,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       .update(id, data as U)
       .then(() => true)
       .catch(() => false);
+  }
+
+  private async refreshClientSide() {
+    const end = this._loading.begin();
+    try {
+      const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
+      this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
+    } finally {
+      end();
+    }
   }
 
   /** Helper: prevents editing specific fields */

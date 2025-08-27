@@ -73,6 +73,7 @@ export const icons = {
   'star-filled': 'assets/icons/star-filled.svg',
   'x-circle': 'assets/icons/x-circle.svg',
   'x-mark': 'assets/icons/x-mark.svg',
+  loading: 'assets/icons/loading.svg',
 
   /* -------------------- UI Controls -------------------- */
   'bars-3': 'assets/icons/bars-3.svg',

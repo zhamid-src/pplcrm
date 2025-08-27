@@ -49,10 +49,10 @@ export class ServerSideStrategy implements RowModelStrategy {
 
   public init(api: GridApi) {
     // Datasource is attached from the component.
-    (api as any).setGridOption?.('serverSideEnableClientSideSort', false);
+    api.setGridOption?.('serverSideEnableClientSideSort', false);
   }
 
   public refresh(api: GridApi) {
-    (api as any).refreshServerSide?.({ purge: true });
+    api.refreshServerSide?.({ purge: false });
   }
 }
