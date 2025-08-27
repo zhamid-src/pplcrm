@@ -54,6 +54,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   // Other State
   private lastRowHovered: string | undefined;
+  private oldFilterText = '';
   private rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
 
   // Row model strategy
@@ -100,10 +101,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     // React to global search
     effect(() => {
       const quickFilterText = this.searchSvc.getFilterText();
-      if (this.rowModelType() === 'clientSide') {
-        this.api?.updateGridOptions({ quickFilterText });
-      } else {
-        this.debouncedFilter();
+
+      // Keep track of the old filter text to avoid unnecessary roundtrip
+      if (quickFilterText != this.oldFilterText) {
+        this.oldFilterText = quickFilterText;
+        if (this.rowModelType() === 'clientSide') {
+          this.api?.updateGridOptions({ quickFilterText });
+        } else {
+          this.debouncedFilter();
+        }
       }
     });
   }
