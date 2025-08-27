@@ -2,7 +2,7 @@
  * @fileoverview Sign-in page component providing user authentication interface.
  * Features reactive forms, validation, password visibility toggle, and token persistence options.
  */
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, effect, inject } from '@angular/core';
 import { AbstractControl, FormControl, NonNullableFormBuilder, ReactiveFormsModule, ValidatorFn } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
@@ -10,6 +10,7 @@ import { Icon } from '@icons/icon';
 import { TokenService } from '@services/api/token-service';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -52,7 +53,9 @@ export class SignInPage {
   private readonly tokenService = inject(TokenService);
 
   /** Signal indicating whether login loading is in progress */
-  protected readonly loading = signal(false);
+  private _loading = createLoadingGate();
+
+  protected isLoading = this._loading.visible;
 
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
@@ -115,7 +118,7 @@ export class SignInPage {
       return;
     }
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       await this.authService.signIn({ email, password });
     } catch (err) {
@@ -131,7 +134,7 @@ export class SignInPage {
         this.alertSvc.showError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 

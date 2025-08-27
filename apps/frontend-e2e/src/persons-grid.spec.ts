@@ -44,7 +44,7 @@ test.describe('Persons Grid', () => {
       await page.reload();
 
       // Should show loading indicator
-      await expect(page.locator('.ag-overlay-loading-wrapper, .loading, .spinner')).toBeVisible();
+      await expect(page.locator('.ag-overlay-loading-wrapper, .loading, ._loading')).toBeVisible();
     });
   });
 

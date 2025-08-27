@@ -11,6 +11,7 @@ import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { PPlCrmInput } from '@uxcommon/components/input/input';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TextArea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
@@ -33,6 +34,9 @@ export class HouseholdDetail implements OnInit {
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
+
+  /** Whether a background operation is in progress */
+  private _loading = createLoadingGate();
 
   /** Reactive signal for storing the loaded household */
   protected readonly household = signal<Households | null>(null);
@@ -71,9 +75,7 @@ export class HouseholdDetail implements OnInit {
 
   /** ID of the household being edited */
   protected id: string | null = null;
-
-  /** Whether a background operation is in progress */
-  protected loading = signal(false);
+  protected isLoading = this._loading.visible;
 
   /** List of people linked to the household */
   protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
@@ -95,8 +97,7 @@ export class HouseholdDetail implements OnInit {
    * @param place - Google PlaceResult object from address input
    */
   public handleAddressChange(place: google.maps.places.PlaceResult) {
-    this.loading.set(true);
-
+    const end = this._loading.begin();
     try {
       if (!place?.address_components?.length) {
         this.alertSvc.showError('Please select the correct address from the list or leave it blank');
@@ -108,7 +109,7 @@ export class HouseholdDetail implements OnInit {
       this.form.markAsDirty();
       this.addressVerified = true;
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
@@ -169,12 +170,12 @@ export class HouseholdDetail implements OnInit {
    * @param data - The household data to submit
    */
   private add(data: UpdateHouseholdsType) {
-    this.loading.set(true);
+    const end = this._loading.begin();
     this.householdsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Household added'))
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
-      .finally(() => this.loading.set(false));
+      .finally(() => end());
   }
 
   /**
@@ -193,7 +194,7 @@ export class HouseholdDetail implements OnInit {
   private async loadHousehold() {
     if (!this.id) return;
 
-    this.loading.set(true);
+    const end = this._loading.begin();
 
     try {
       this.household.set((await this.householdsSvc.getById(this.id)) as Households);
@@ -201,7 +202,7 @@ export class HouseholdDetail implements OnInit {
       this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
       this.refreshForm();
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
@@ -224,7 +225,7 @@ export class HouseholdDetail implements OnInit {
       return;
     }
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     this.householdsSvc
       .update(this.id, data)
       .then(() => {
@@ -232,6 +233,6 @@ export class HouseholdDetail implements OnInit {
         this.form.markAsPristine();
       })
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
-      .finally(() => this.loading.set(false));
+      .finally(() => end());
   }
 }

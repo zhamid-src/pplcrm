@@ -5,8 +5,9 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { AbstractAPIService } from '@services/api/abstract-api.service';
 import { SearchService } from '@services/api/search-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AgGridModule } from 'ag-grid-angular';
 import {
@@ -48,7 +49,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   private readonly searchSvc = inject(SearchService);
   private readonly themeSvc = inject(ThemeService);
 
+  private _loading = createLoadingGate();
   private debouncedFilter = debounce(() => this.api?.onFilterChanged());
+  private isLoading = this._loading.visible;
 
   // Other State
   private lastRowHovered: string | undefined;
@@ -89,6 +92,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public plusIcon = input<PcIconNameType>('plus');
 
   constructor() {
+    effect(() => this.api?.setGridOption('loading', this.isLoading()));
+
     // React to global search
     effect(() => {
       const quickFilterText = this.searchSvc.getFilterText();
@@ -108,6 +113,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     }
 
     await confirmDeleteAndRun({
+      _loading: this._loading,
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
       api: this.api,
@@ -181,6 +187,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     if (this.rowModelType() === 'serverSide') {
       const ds = createServerSideDatasource({
+        _loading: this._loading,
         api: this.api!,
         gridSvc: this.gridSvc,
         searchSvc: this.searchSvc,
@@ -274,8 +281,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
+    const end = this._loading.begin();
     try {
-      this.api?.setGridOption('loading', true);
       if (this.rowModelType() === 'clientSide') {
         const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
         this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
@@ -285,7 +292,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     } catch (error) {
       this.alertSvc.showError(this.config.messages.loadFailed);
     } finally {
-      this.api?.setGridOption('loading', false);
+      end();
     }
   }
 

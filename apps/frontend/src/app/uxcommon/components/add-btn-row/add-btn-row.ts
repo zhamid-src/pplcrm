@@ -53,7 +53,7 @@ export class AddBtnRow implements OnInit {
    * A required flag indicating whether the form is currently loading.
    * Used to disable buttons and prevent double submissions.
    */
-  public loading = input.required<boolean>();
+  public isLoading = input.required<boolean>();
 
   /**
    * Navigates the user back to the previous route.

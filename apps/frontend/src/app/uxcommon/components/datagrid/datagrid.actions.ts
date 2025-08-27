@@ -1,6 +1,7 @@
 import { AbstractAPIService } from '@services/api/abstract-api.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { ConfirmDialogService } from '@services/shared-dialog.service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
 
 import type { GridApi } from 'ag-grid-community';
 
@@ -15,6 +16,7 @@ type DeleteCtx = {
   gridSvc: AbstractAPIService<any, any>;
   mergedGridOptions: any;
   rowModelType: 'clientSide' | 'serverSide';
+  _loading: loadingGate;
 
   getSelectedRows: () => (Partial<any> & { id: string })[];
 };
@@ -48,7 +50,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
   }
   if (!deletableRows.length) return;
 
-  api.setGridOption('loading', true);
+  const end = ctx._loading.begin();
   try {
     const ids = deletableRows.map((r) => r.id);
     const ok2 = await ctx.gridSvc.deleteMany(ids);
@@ -96,7 +98,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     api.deselectAll?.();
     ctx.alertSvc.showSuccess(messages.deleteSuccess);
   } finally {
-    api.setGridOption('loading', false);
+    end();
   }
 }
 

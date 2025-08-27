@@ -6,6 +6,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -30,11 +31,12 @@ export class NewPasswordPage implements OnInit {
   /** Reset code extracted from query params */
   private code: string | null = null;
 
+  /** loading state to disable UI and show loading indication */
+  private _loading = createLoadingGate();
+
   /** Error state to control UI feedback */
   protected readonly error = signal(false);
-
-  /** loading state to disable UI and show loading indication */
-  protected readonly loading = signal(false);
+  protected readonly isLoading = this._loading.visible;
 
   /** Utilities for password breach checking */
   protected passwordBreachNumber = passwordBreachNumber;
@@ -79,7 +81,7 @@ export class NewPasswordPage implements OnInit {
       return;
     }
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       const error = await this.authService.resetPassword({
         code: this.code || '',
@@ -92,7 +94,7 @@ export class NewPasswordPage implements OnInit {
         this.router.navigateByUrl('signin');
       }
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 }

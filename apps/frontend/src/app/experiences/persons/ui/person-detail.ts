@@ -10,6 +10,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TextArea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
@@ -33,8 +34,10 @@ export class PersonDetail implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  private _loading = createLoadingGate();
+
   protected readonly addressString = signal<string | null>(null);
-  protected readonly loading = signal(false);
+  protected readonly isLoading = this._loading.visible;
   protected readonly person = signal<Persons | null>(null);
 
   /** Reactive form group for person data */
@@ -149,13 +152,12 @@ export class PersonDetail implements OnInit {
    * @param data - Person data to be added
    */
   private add(data: UpdatePersonsType) {
-    this.loading.set(true);
-
+    const end = this._loading.begin();
     this.personsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Person added'))
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
-      .finally(() => this.loading.set(false));
+      .finally(() => end());
   }
 
   /**
@@ -187,7 +189,7 @@ export class PersonDetail implements OnInit {
   private async loadPerson() {
     if (!this.id) return;
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       this.person.set((await this.personsSvc.getById(this.id)) as Persons);
 
@@ -196,7 +198,7 @@ export class PersonDetail implements OnInit {
 
       this.refreshForm();
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
@@ -217,7 +219,7 @@ export class PersonDetail implements OnInit {
   private update(data: Partial<UpdatePersonsType>) {
     if (!this.id) return;
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     this.personsSvc
       .update(this.id, data)
       .then(() => {
@@ -225,7 +227,7 @@ export class PersonDetail implements OnInit {
         this.form.markAsPristine();
       })
       .catch((err) => this.alertSvc.showError(err))
-      .finally(() => this.loading.set(false));
+      .finally(() => end());
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailBody } from '../email-body/email-body';
@@ -28,8 +29,12 @@ import type { EmailType } from 'common/src/lib/models';
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
+  private noEmailMsgDelay = createLoadingGate();
+
   protected readonly store = inject(EmailsStore);
   protected readonly isLoading = this.store.emailsLoading;
+
+  protected showNoEmailMsg = this.noEmailMsgDelay.visible;
 
   public readonly forward = output<EmailType>();
   public readonly reply = output<EmailType>();
@@ -55,6 +60,8 @@ export class EmailDetails {
         this.store.loadEmailWithHeaders(e.id).catch((err) => console.error('Failed to load email header:', err));
       }
     });
+
+    effect(() => this.noEmailMsgDelay.begin());
   }
 
   public toggleComments(): void {

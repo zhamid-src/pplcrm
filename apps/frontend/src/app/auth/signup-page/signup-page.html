@@ -94,8 +94,8 @@
     >
     }
 
-    <button class="btn btn-primary" (click)="join()" [disabled]="loading()">
-      @if (loading()) {
+    <button class="btn btn-primary" (click)="join()" [disabled]="isLoading()">
+      @if (isLoading()) {
       <span class="loading loading-dots loading-lg text-primary"></span>
       } @else { JOIN → }
     </button>

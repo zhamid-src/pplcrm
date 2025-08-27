@@ -1,10 +1,12 @@
 import type { getAllOptionsType } from '@common';
 import { AbstractAPIService } from '@services/api/abstract-api.service';
 import type { SearchService } from '@services/api/search-service';
+import { loadingGate } from '@uxcommon/loading-gate';
 
 import type { GridApi, IServerSideDatasource, IServerSideGetRowsParams } from 'ag-grid-community';
 
 export function createServerSideDatasource<T>(deps: {
+  _loading: loadingGate;
   api: GridApi;
   gridSvc: AbstractAPIService<any, any>;
   searchSvc: SearchService;
@@ -15,8 +17,8 @@ export function createServerSideDatasource<T>(deps: {
 
   return {
     getRows: async (params: IServerSideGetRowsParams) => {
+      const end = deps._loading.begin();
       try {
-        deps.api.setGridOption('loading', true);
         const { startRow, sortModel, filterModel } = params.request;
 
         const options: getAllOptionsType = {
@@ -34,7 +36,7 @@ export function createServerSideDatasource<T>(deps: {
         console.log('error', err);
         params.fail();
       } finally {
-        deps.api.setGridOption('loading', false);
+        end();
       }
     },
   };

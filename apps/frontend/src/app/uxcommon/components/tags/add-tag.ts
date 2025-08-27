@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, signal } from '@angular/core';
+import { Component, ViewChild, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -6,6 +6,7 @@ import { TRPCError } from '@trpc/server';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormInput } from '@uxcommon/components/form-input/formInput';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 /**
  * A component for adding new tags to the system.
@@ -31,7 +32,7 @@ import { FormInput } from '@uxcommon/components/form-input/formInput';
           />
         </div>
         <pc-form-input control="description" placeholder="Optional description" icon="hashtag" />
-        <pc-add-btn-row [loading]="loading()" (btn1Clicked)="add()"></pc-add-btn-row>
+        <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="add()"></pc-add-btn-row>
       </div>
     </form>
   </div>`,
@@ -42,6 +43,11 @@ export class AddTag {
   private readonly tagSvc = inject(TagsService);
 
   /**
+   * Signal to track form submission (used to show _loadings or disable form).
+   */
+  private _loading = createLoadingGate();
+
+  /**
    * Reactive form for tag creation.
    * - `name`: required tag name.
    * - `description`: optional description for the tag.
@@ -50,11 +56,7 @@ export class AddTag {
     name: ['', [Validators.required]],
     description: [''],
   });
-
-  /**
-   * Signal to track form submission (used to show spinners or disable form).
-   */
-  protected loading = signal(false);
+  protected isLoading = this._loading.visible;
 
   /**
    * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
@@ -69,9 +71,8 @@ export class AddTag {
    * If successful, resets the `AddBtnRow` component's state.
    */
   protected async add() {
-    this.loading.set(true);
     const formObj = this.form.getRawValue() as AddTagType;
-
+    const end = this._loading.begin();
     try {
       await this.tagSvc.add(formObj);
       this.alertSvc.showSuccess('Tag added successfully.');
@@ -83,7 +84,7 @@ export class AddTag {
         this.alertSvc.showError("We've hit an unknown error. Please try again.");
       }
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 }
