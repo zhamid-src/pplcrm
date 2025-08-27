@@ -1,8 +1,8 @@
 <!-- Template for household detail view -->
 <div class="flex min-h-full flex-col bg-base-100">
-  <progress class="progress w-full" [class.hidden]="!loading()"></progress>
+  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
   <form [formGroup]="form" class="mx-5 mt-10 sm:mx-10">
-    <fieldset [disabled]="loading()">
+    <fieldset [disabled]="isLoading()">
       <div class="flex flex-col gap-4">
         @if (!household()?.id) {
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
@@ -76,7 +76,7 @@
         }
 
         <pc-add-btn-row
-          [loading]="loading()"
+          [isLoading]="isLoading()"
           (btn1Clicked)="save()"
           [buttonsToShow]="household()?.id ? 'two' : 'three'"
         ></pc-add-btn-row>

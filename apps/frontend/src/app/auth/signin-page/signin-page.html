@@ -24,7 +24,11 @@
       <span class="label-text-alt text-error">Please enter a valid email</span>
       }
 
-      <pc-password-input [control]="password" autocomplete="current-password" placeholder="Enter your password"></pc-password-input>
+      <pc-password-input
+        [control]="password"
+        autocomplete="current-password"
+        placeholder="Enter your password"
+      ></pc-password-input>
 
       <div class="flex items-center justify-between pt-2">
         <div class="flex items-center">
@@ -47,9 +51,9 @@
           type="submit"
           class="btn btn-primary w-full"
           (click)="signIn()"
-          [disabled]="loading() || (form.dirty && form.invalid)"
+          [disabled]="isLoading() || (form.dirty && form.invalid)"
         >
-          @if (loading()) {
+          @if (isLoading()) {
           <span class="loading loading-dots loading-lg text-primary"></span>
           } @else { SIGN IN }
         </button>

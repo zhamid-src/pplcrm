@@ -6,6 +6,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -24,11 +25,13 @@ export class ResetPasswordPage {
   private fb = inject(FormBuilder);
   private router = inject(Router);
 
+  /** Signal indicating whether the form is loading */
+  private _loading = createLoadingGate();
+
+  protected readonly isLoading = this._loading.visible;
+
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
-
-  /** Signal indicating whether the form is loading */
-  protected loading = signal(false);
 
   /** Success message string */
   protected success: string | undefined;
@@ -55,7 +58,7 @@ export class ResetPasswordPage {
     if (!this.email?.valid || !this.email.value)
       return this.alertSvc.showError('Please check the email address and try again.');
 
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       await this.authService
         .sendPasswordResetEmail({ email: this.email.value })
@@ -66,7 +69,7 @@ export class ResetPasswordPage {
       );
       this.router.navigateByUrl('signin');
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 }

@@ -2,12 +2,13 @@
  * Component and form logic for user registration.
  */
 import { CommonModule } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -34,6 +35,9 @@ export class SignUpPage {
   private readonly authService = inject(AuthService);
   private readonly fb = inject(FormBuilder);
 
+  /** Signal indicating whether form submission is in progress */
+  private _loading = createLoadingGate();
+
   /** Reactive form with user registration fields */
   protected form = this.fb.group({
     organization: ['', [Validators.required]],
@@ -44,9 +48,7 @@ export class SignUpPage {
     last_name: [''],
     terms: [''],
   });
-
-  /** Signal indicating whether form submission is in progress */
-  protected loading = signal(false);
+  protected isLoading = this._loading.visible;
 
   /** Utilities for password breach checking */
   protected passwordBreachNumber = passwordBreachNumber;
@@ -91,7 +93,7 @@ export class SignUpPage {
   public async join() {
     if (this.form.invalid) return this.alertSvc.showError('Please enter all information before continuing.');
 
-    this.loading.set(true);
+    const end = this._loading.begin();
 
     // TODO: better error message
     return this.authService
@@ -105,6 +107,6 @@ export class SignUpPage {
         }
       })
       .catch((err) => this.alertSvc.showError(err.message))
-      .finally(() => this.loading.set(false));
+      .finally(() => end());
   }
 }

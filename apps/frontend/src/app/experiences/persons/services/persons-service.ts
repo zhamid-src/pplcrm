@@ -4,7 +4,7 @@
  * through type-safe tRPC communication with the backend.
  */
 import { Injectable } from '@angular/core';
-import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
+import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType, sleep } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -139,7 +139,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    *
    * @param options - Optional filters
    */
-  public getAllWithAddress(options?: getAllOptionsType) {
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    await sleep(2500);
     return this.api.persons.getAllWithAddress.query(options, {
       signal: this.ac.signal,
     });
