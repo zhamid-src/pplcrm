@@ -17,7 +17,25 @@ import type { EmailType } from 'common/src/lib/models';
   standalone: true,
   imports: [CommonModule, SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  templateUrl: './email-body.html',
+  template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
+    <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
+    @if (attachments().length > 0) {
+      <div class="mt-4 flex flex-wrap gap-2">
+        @for (att of attachments(); track att.id) {
+          <a
+            class="badge badge-outline no-underline hover:text-primary group"
+            [href]="getAttachmentUrl(att)"
+            target="_blank"
+            rel="noopener"
+          >
+            <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
+            <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
+            <span>{{ att.filename }} | {{ att.size_bytes | fileSize }}</span>
+          </a>
+        }
+      </div>
+    }
+  </div>`,
 })
 export class EmailBody {
   private readonly alerts = inject(AlertService);

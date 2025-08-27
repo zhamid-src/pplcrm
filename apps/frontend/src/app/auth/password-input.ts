@@ -1,5 +1,5 @@
-import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component, input } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { PasswordCheckerModule } from '@triangular/password-checker';
@@ -22,11 +22,11 @@ import { PasswordCheckerModule } from '@triangular/password-checker';
       <input
         class="input-pplcrm pl-11 pr-8 text-sm"
         [type]="getVisibility()"
-        [formControl]="control"
-        [attr.autocomplete]="autocomplete"
-        [attr.placeholder]="placeholder"
-        [attr.maxlength]="maxlength"
-        [pwnedPasswordValidator]="pwned"
+        [formControl]="control()"
+        [attr.autocomplete]="autocomplete()"
+        [attr.placeholder]="placeholder()"
+        [attr.maxlength]="maxlength()"
+        [attr.pwnedPasswordValidator]="pwned() ? '' : null"
       />
 
       <pc-icon
@@ -39,13 +39,13 @@ import { PasswordCheckerModule } from '@triangular/password-checker';
   `,
 })
 export class PasswordInputComponent {
-  @Input({ required: true }) control!: FormControl;
-  @Input() placeholder = 'Enter your password';
-  @Input() autocomplete = 'new-password';
-  @Input() maxlength?: number;
-  @Input() pwned = false;
-
   protected hidePassword = true;
+
+  public autocomplete = input<string>('new-password');
+  public control = input.required<FormControl>();
+  public maxlength = input<number>(72);
+  public placeholder = input<string>('Enter your password');
+  public pwned = input(false);
 
   /** Returns input type based on visibility state */
   public getVisibility() {

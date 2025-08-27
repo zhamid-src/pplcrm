@@ -2,21 +2,11 @@
  * @file Component handling comments for an email.
  */
 import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  Input,
-  computed,
-  effect,
-  inject,
-  input,
-  signal,
-  untracked,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { IAuthUser } from '@common';
-import { Icon } from '@uxcommon/components/icons/icon';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { AuthService } from '../../../../auth/auth-service';
@@ -64,7 +54,7 @@ export class EmailComments {
   public email = input<EmailType | null>(null);
 
   // in your component class
-  @Input() public myUserId!: string; // set this from parent; used for chat-start/chat-end and bubble color
+  public myUserId = input<string>(); // set this from parent; used for chat-start/chat-end and bubble color
 
   /** New comment input */
   public newComment = '';

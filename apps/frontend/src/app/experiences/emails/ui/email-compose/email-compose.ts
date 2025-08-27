@@ -1,12 +1,12 @@
 // pc-compose-email.component.ts
 import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, EventEmitter, Input, Output, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, Input, ViewChild, computed, inject, output, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { Swap } from '@uxcommon/components/swap/swap';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 
 import { QuillModule } from 'ngx-quill';
 import Quill from 'quill';
@@ -28,10 +28,11 @@ export class ComposeEmailComponent {
   private fb = inject(NonNullableFormBuilder);
   private quill!: Quill;
 
+  public readonly finished = output<void>();
+
   public attachments = signal<File[]>([]);
   public dragOver = signal(false);
   @ViewChild('fileInput', { static: false }) public fileInput?: ElementRef<HTMLInputElement>;
-  @Output() public finished = new EventEmitter<void>(); // notify parent to close
   public form = this.fb.group({
     to: [''],
     cc: [''],

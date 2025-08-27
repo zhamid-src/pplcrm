@@ -2,8 +2,8 @@
   @for (comment of comments(); track comment.id) {
   <div
     class="chat group"
-    [class.chat-start]="comment.author_id === myUserId"
-    [class.chat-end]="comment.author_id !== myUserId"
+    [class.chat-start]="comment.author_id === myUserId()"
+    [class.chat-end]="comment.author_id !== myUserId()"
   >
     <!-- avatar -->
     <div class="chat-image avatar">

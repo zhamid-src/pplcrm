@@ -17,7 +17,6 @@ import { Models } from 'common/src/lib/kysely.models';
 @Component({
   selector: 'pc-shortcut-cell-renderer',
   imports: [Icon],
-  templateUrl: './shortcut-cell-renderer.html',
   styles: [
     `
       .ag-row-hover {
@@ -27,6 +26,14 @@ import { Models } from 'common/src/lib/kysely.models';
       }
     `,
   ],
+  template: ` <div class="shortcut-cell invisible flex flex-row gap-1 pl-0 ml-0">
+    @if (showView()) {
+      <pc-icon name="arrow-top-right-on-square" [size]="4" class="hover:text-primary text-left" (click)="view()" />
+    }
+    @if (showDelete()) {
+      <pc-icon name="trash" [size]="4" class="hover:text-error text-left" (click)="delete()" />
+    }
+  </div>`,
   encapsulation: ViewEncapsulation.None,
 })
 export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRendererAngularComp {

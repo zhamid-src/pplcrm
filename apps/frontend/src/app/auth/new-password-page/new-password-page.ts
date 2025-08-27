@@ -3,23 +3,18 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
-import {
-  passwordControl,
-  passwordBreachNumber,
-  passwordInBreach,
-} from 'apps/frontend/src/app/auth/auth-utils';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordControl, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 @Component({
   selector: 'pc-new-password',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent, PasswordInputComponent],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, AuthLayoutComponent, PasswordInputComponent],
   templateUrl: './new-password-page.html',
 })
 /**
@@ -41,6 +36,10 @@ export class NewPasswordPage implements OnInit {
   /** loading state to disable UI and show loading indication */
   protected readonly loading = signal(false);
 
+  /** Utilities for password breach checking */
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
   /** Success message to show after successful password reset */
   protected success: string | undefined;
 
@@ -49,15 +48,11 @@ export class NewPasswordPage implements OnInit {
     password: passwordControl(this.fb),
   });
 
-  /** Utilities for password breach checking */
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
   /**
    * Get the password form control.
    */
-  public get password() {
-    return this.form.get('password');
+  public get password(): FormControl {
+    return this.form.get('password') as FormControl;
   }
 
   /**
@@ -100,5 +95,4 @@ export class NewPasswordPage implements OnInit {
       this.loading.set(false);
     }
   }
-
 }

@@ -3,13 +3,7 @@
  * Features reactive forms, validation, password visibility toggle, and token persistence options.
  */
 import { Component, effect, inject, signal } from '@angular/core';
-import {
-  AbstractControl,
-  FormControl,
-  NonNullableFormBuilder,
-  ReactiveFormsModule,
-  ValidatorFn,
-} from '@angular/forms';
+import { AbstractControl, FormControl, NonNullableFormBuilder, ReactiveFormsModule, ValidatorFn } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
@@ -18,9 +12,9 @@ import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
-import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-utils';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-utils';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 /**
  * Sign-in page component providing comprehensive user authentication interface.
@@ -78,11 +72,11 @@ export class SignInPage {
     });
   }
 
-  public get email(): FormControl<string> {
+  public get email(): FormControl<string | null> {
     return this.form.controls.email;
   }
 
-  public get password(): FormControl<string> {
+  public get password(): FormControl<string | null> {
     return this.form.controls.password;
   }
 
@@ -149,7 +143,6 @@ export class SignInPage {
     if (!target) return;
     this.tokenService.setPersistence((target as HTMLInputElement).checked);
   }
-
 }
 
 export function emailSafeValidator(): ValidatorFn {

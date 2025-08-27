@@ -7,7 +7,29 @@ import { TagItem } from './tagitem';
 @Component({
   selector: 'pc-tags',
   imports: [TagItem, AutoComplete],
-  templateUrl: './tags.html',
+  template: `@if (!readonly()) {
+      <pc-autocomplete
+        (valueChange)="add($event)"
+        [placeholder]="placeholder()"
+        [filterSvc]="enableAutoComplete() ? tagSvc : null"
+      ></pc-autocomplete>
+    }
+    @if (tags().length) {
+      <div class="contents" [class.mt-2]="!readonly()">
+        @if (!readonly()) {
+          <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
+        }
+        @for (tag of tags(); track tag) {
+          <pc-tagitem
+            class="mr-1"
+            [name]="tag"
+            [canDelete]="canDelete()"
+            (click)="clicked(tag)"
+            (close)="closed(tag)"
+          ></pc-tagitem>
+        }
+      </div>
+    } `,
 })
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];
