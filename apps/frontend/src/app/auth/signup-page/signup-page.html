@@ -2,103 +2,109 @@
 <pc-auth-layout>
   <form [formGroup]="form" class="flex flex-col gap-3">
     <label class="label text-base text-neutral-600">Enter basic info to create your account </label>
-        <label class="relative block">
-          <pc-icon
-            [size]="4"
-            class="pointer-events-none absolute left-3 top-1/3 h-2 w-4 -translate-y-1/2 transform text-sm text-gray-300"
-            name="user-circle"
-          />
+    <label class="relative block">
+      <pc-icon
+        [size]="4"
+        class="pointer-events-none absolute left-3 top-1/3 h-2 w-4 -translate-y-1/2 transform text-sm text-gray-300"
+        name="user-circle"
+      />
 
-          <input
-            type="name"
-            placeholder="Your first name"
-            formControlName="first_name"
-            aria-placeholder="email"
-            class="input-pplcrm pl-11 text-sm"
-            autocomplete="given-name"
-            required
-          />
-        </label>
-        @if (firstName?.dirty && firstName?.invalid) {
-        <span class="label-text-alt text-error -my-2 pb-2">First name is required</span>
-        }
+      <input
+        type="name"
+        placeholder="Your first name"
+        formControlName="first_name"
+        aria-placeholder="email"
+        class="input-pplcrm pl-11 text-sm"
+        autocomplete="given-name"
+        required
+      />
+    </label>
+    @if (firstName?.dirty && firstName?.invalid) {
+    <span class="label-text-alt text-error -my-2 pb-2">First name is required</span>
+    }
 
-        <label class="relative block">
-          <pc-icon
-            [size]="4"
-            class="pointer-events-none absolute left-3 top-1/3 h-2 w-4 -translate-y-1/2 transform text-sm text-gray-300"
-            name="briefcase"
-          />
+    <label class="relative block">
+      <pc-icon
+        [size]="4"
+        class="pointer-events-none absolute left-3 top-1/3 h-2 w-4 -translate-y-1/2 transform text-sm text-gray-300"
+        name="briefcase"
+      />
 
-          <input
-            type="text"
-            placeholder="Organization name (or self)"
-            formControlName="organization"
-            aria-placeholder="organization"
-            class="input-pplcrm pl-11 text-sm"
-            autocomplete="organization"
-            required
-          />
-        </label>
-        @if (organization?.dirty && organization?.invalid) {
-        <span class="label-text-alt text-error -my-2 pb-2"
-          >Organization name is required. If you are solo then you can simply write "Self". If you are trying to join an
-          existing organization then please ask them to send you an invitation.</span
-        >
-        }
+      <input
+        type="text"
+        placeholder="Organization name (or self)"
+        formControlName="organization"
+        aria-placeholder="organization"
+        class="input-pplcrm pl-11 text-sm"
+        autocomplete="organization"
+        required
+      />
+    </label>
+    @if (organization?.dirty && organization?.invalid) {
+    <span class="label-text-alt text-error -my-2 pb-2"
+      >Organization name is required. If you are solo then you can simply write "Self". If you are trying to join an
+      existing organization then please ask them to send you an invitation.</span
+    >
+    }
 
-        <label class="relative block">
-          <pc-icon
-            [size]="4"
-            class="pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform text-sm text-gray-300"
-            name="at-symbol"
-          />
+    <label class="relative block">
+      <pc-icon
+        [size]="4"
+        class="pointer-events-none absolute left-3 top-1/3 h-1 w-4 -translate-y-1/2 transform text-sm text-gray-300"
+        name="at-symbol"
+      />
 
-          <input
-            type="email"
-            placeholder="Enter your email"
-            formControlName="email"
-            aria-placeholder="email"
-            class="input-pplcrm pl-11 text-sm"
-            autocomplete="email"
-            required
-          />
-        </label>
+      <input
+        type="email"
+        placeholder="Enter your email"
+        formControlName="email"
+        aria-placeholder="email"
+        class="input-pplcrm pl-11 text-sm"
+        autocomplete="email"
+        required
+      />
+    </label>
 
-        @if (email?.dirty && email?.invalid) {
-        <span class="label-text-alt text-error -my-2 pb-2">Please enter a valid email</span>
-        }
+    @if (email?.dirty && email?.invalid) {
+    <span class="label-text-alt text-error -my-2 pb-2">Please enter a valid email</span>
+    }
 
-        <pc-password-input [control]="password" autocomplete="new-password" placeholder="Enter your password" maxlength="72" [pwned]="true"></pc-password-input>
+    <pc-password-input
+      [control]="password"
+      autocomplete="new-password"
+      placeholder="Enter your password"
+      [maxlength]="72"
+      [pwned]="true"
+    ></pc-password-input>
 
-        @if (passwordInBreach(password)) {
-        <span class="label-text-alt text-error -my-2 pb-2"
-          >This is not a safe password as it has been in
-          <span class="font-bold">{{ passwordBreachNumber(password) | number: '1.0-0' }}</span>
-          data breaches before. You should select a different password.</span
-        >
-        } @else {
-        <span
-          class="label-text-alt -my-2 pb-2 pr-1 text-right"
-          [class.text-error]="
-              (this.password?.value?.length || 0) > 0 && (this.password?.value?.length || 0) < 8
+    @if (passwordInBreach(password)) {
+    <span class="label-text-alt text-error -my-2 pb-2"
+      >This is not a safe password as it has been in
+      <span class="font-bold">{{ passwordBreachNumber(password) | number: '1.0-0' }}</span>
+      data breaches before. You should select a different password.</span
+    >
+    } @else {
+    <span
+      class="label-text-alt -my-2 pb-2 pr-1 text-right"
+      [class.text-error]="
+              (this.password.value.length || 0) > 0 && (this.password.value.length || 0) < 8
             "
-          [class.text-success]="(this.password?.value?.length || 0) >= 8"
-          >{{ this.password?.value?.length || 0 }}/8</span
-        >
-        }
+      [class.text-success]="(this.password.value.length || 0) >= 8"
+      >{{ this.password.value.length || 0 }}/8</span
+    >
+    }
 
-        <button class="btn btn-primary" (click)="join()" [disabled]="loading()">
-          @if (loading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { JOIN → }
-        </button>
-        <span class="label-text-alt -my-2 pb-2 text-center"
-          >By joining, you agree to the <a href="#" class="link">Terms & Conditions</a> and
-          <a href="#" class="link">Privacy Policy</a>.</span
-        >
-        </form>
-      <span class="label-text py-3 text-center"
-        >Already have an account? <a routerLink="/signin" class="link">Sign In</a>.</span
-      >
-  </pc-auth-layout>
+    <button class="btn btn-primary" (click)="join()" [disabled]="loading()">
+      @if (loading()) {
+      <span class="loading loading-dots loading-lg text-primary"></span>
+      } @else { JOIN → }
+    </button>
+    <span class="label-text-alt -my-2 pb-2 text-center"
+      >By joining, you agree to the <a href="#" class="link">Terms & Conditions</a> and
+      <a href="#" class="link">Privacy Policy</a>.</span
+    >
+  </form>
+  <span class="label-text py-3 text-center"
+    >Already have an account? <a routerLink="/signin" class="link">Sign In</a>.</span
+  >
+</pc-auth-layout>

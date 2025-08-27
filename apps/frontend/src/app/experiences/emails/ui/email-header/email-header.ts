@@ -2,7 +2,7 @@
  * @file Component displaying header information for an email.
  */
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, HostListener, Output, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, HostListener, computed, effect, inject, input, output, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
@@ -27,14 +27,15 @@ export class EmailHeader {
   protected isClosed = signal(false);
   protected isFavourite = signal(false);
 
+  public readonly forward = output<void>();
+  public readonly reply = output<void>();
+  public readonly replyAll = output<void>();
+
   /** Email to display */
   public email = input.required<EmailType>();
-  @Output() public forward = new EventEmitter<void>();
 
   /** Whether the email body is currently expanded to take over the window (except sidebar). */
   public isExpanded = this.store.isBodyExpanded;
-  @Output() public reply = new EventEmitter<void>();
-  @Output() public replyAll = new EventEmitter<void>();
 
   constructor() {
     effect(() => {

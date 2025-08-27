@@ -4,7 +4,20 @@ import { PPlCrmInput } from '@uxcommon/components/input/input';
 @Component({
   selector: 'pc-autocomplete',
   imports: [PPlCrmInput],
-  templateUrl: './autocomplete.html',
+  template: `<pc-input
+      (keyup)="onKey($event)"
+      (valueChange)="autoComplete($event)"
+      [placeholder]="placeholder()"
+      (gotFocus)="showAutoCompleteList()"
+      (lostFocus)="hideAutoCompleteList()"
+    />
+    @if (matches().length && !hideAutoComplete) {
+      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
+        @for (match of matches(); track match) {
+          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">{{ match }}</li>
+        }
+      </ul>
+    }`,
 })
 export class AutoComplete {
   /**

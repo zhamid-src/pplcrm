@@ -15,7 +15,26 @@ import { FormInput } from '@uxcommon/components/form-input/formInput';
 @Component({
   selector: 'pc-add-tag',
   imports: [ReactiveFormsModule, FormInput, AddBtnRow],
-  templateUrl: './add-tag.html',
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form [formGroup]="form" class="mx-5 my-10 sm:mx-10">
+      <div class="flex flex-col gap-2">
+        <label class="label text-base font-light">
+          Enter a unique tag name (and optionally, give it a description)
+        </label>
+        <div>
+          <pc-form-input
+            control="name"
+            placeholder="Tag Name"
+            icon="tag"
+            [disallowedChars]="[',']"
+            [debounceTime]="0"
+          />
+        </div>
+        <pc-form-input control="description" placeholder="Optional description" icon="hashtag" />
+        <pc-add-btn-row [loading]="loading()" (btn1Clicked)="add()"></pc-add-btn-row>
+      </div>
+    </form>
+  </div>`,
 })
 export class AddTag {
   private readonly alertSvc = inject(AlertService);

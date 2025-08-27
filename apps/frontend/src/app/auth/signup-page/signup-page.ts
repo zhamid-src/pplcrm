@@ -3,21 +3,21 @@
  */
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import {
   emailControl,
-  passwordControl,
   passwordBreachNumber,
+  passwordControl,
   passwordInBreach,
 } from 'apps/frontend/src/app/auth/auth-utils';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 /**
  * Component responsible for user sign-up.
@@ -45,12 +45,12 @@ export class SignUpPage {
     terms: [''],
   });
 
+  /** Signal indicating whether form submission is in progress */
+  protected loading = signal(false);
+
   /** Utilities for password breach checking */
   protected passwordBreachNumber = passwordBreachNumber;
   protected passwordInBreach = passwordInBreach;
-
-  /** Signal indicating whether form submission is in progress */
-  protected loading = signal(false);
 
   /**
    * Getter for the email form control.
@@ -80,8 +80,8 @@ export class SignUpPage {
    * Getter for the password form control.
    * @returns The password AbstractControl
    */
-  public get password() {
-    return this.form.get('password');
+  public get password(): FormControl {
+    return this.form.get('password') as FormControl;
   }
 
   /**
@@ -107,5 +107,4 @@ export class SignUpPage {
       .catch((err) => this.alertSvc.showError(err.message))
       .finally(() => this.loading.set(false));
   }
-
 }

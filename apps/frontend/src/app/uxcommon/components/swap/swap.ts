@@ -10,7 +10,16 @@ import { PcIconNameType } from '@icons/icons.index';
 @Component({
   selector: 'pc-swap',
   imports: [ReactiveFormsModule, Icon],
-  templateUrl: './swap.html',
+  template: `<label
+    class="swap ml-auto flex-none cursor-pointer p-2"
+    [class.swap-flip]="animation() === 'flip'"
+    [class.swap-rotate]="animation() === 'rotate'"
+    [class.swap-active]="checked()"
+    (click)="emitClick($event)"
+  >
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
+    <pc-icon [name]="swapOffIcon()!" class="swap-off" [size]="size()" />
+  </label> `,
 })
 export class Swap {
   /**

@@ -2,12 +2,12 @@
  * @fileoverview Unit tests for EmailAssign component.
  * Tests email assignment functionality and user interface.
  */
+import { Component, Input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Component, Input } from '@angular/core';
-import { signal } from '@angular/core';
+import { EmailsStore } from '@experiences/emails/services/store/emailstore';
+
 import { EmailAssign } from './email-assign';
-import { EmailsStore } from '../services/store/emailstore';
-import { EmailType } from 'common/src/lib/models/models';
+import { EmailType } from 'common/src/lib/models';
 
 // Mock child components
 @Component({
@@ -15,8 +15,8 @@ import { EmailType } from 'common/src/lib/models/models';
   template: '<span>{{name}}</span>',
 })
 class MockIcon {
-  @Input() name: string = '';
-  @Input() size: number = 4;
+  @Input() public name: string = '';
+  @Input() public size: number = 4;
 }
 
 describe('EmailAssign', () => {

@@ -5,12 +5,11 @@ import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
-  EventEmitter,
-  Output,
   computed,
   effect,
   inject,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -32,6 +31,10 @@ export class EmailDetails {
   protected readonly store = inject(EmailsStore);
   protected readonly isLoading = this.store.emailsLoading;
 
+  public readonly forward = output<EmailType>();
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+
   public email = input<EmailType | null>(null);
   public commentCount = computed(() => {
     const e = this.email();
@@ -40,9 +43,6 @@ export class EmailDetails {
     return (header as any)?.comments?.length ?? 0;
   });
   public commentsExpanded = signal(false);
-  @Output() public forward = new EventEmitter<EmailType>();
-  @Output() public reply = new EventEmitter<EmailType>();
-  @Output() public replyAll = new EventEmitter<EmailType>();
 
   constructor() {
     // Only fetch when header value is truly undefined (not when it's null/empty).

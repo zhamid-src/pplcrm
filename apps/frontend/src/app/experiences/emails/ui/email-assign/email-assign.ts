@@ -15,7 +15,23 @@ import { EmailType } from 'common/src/lib/models';
   selector: 'pc-email-assign',
   standalone: true,
   imports: [CommonModule, Icon],
-  templateUrl: 'email-assign.html',
+  template: `<div class="dropdown mt-1">
+    <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
+      <span>{{ getUserName(assignedTo()) }}</span>
+      <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
+    </div>
+
+    <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+      @for (user of users(); track user.id) {
+        <li>
+          <a (click)="assign(user.id); closeDropdown()"> {{ user.first_name }} </a>
+        </li>
+      }
+      @if (assignedTo()) {
+        <li><a (click)="assign(null); closeDropdown()"> Unassign </a></li>
+      }
+    </ul>
+  </div>`,
 })
 export class EmailAssign {
   private alertSvc = inject(AlertService);
