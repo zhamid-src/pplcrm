@@ -6,6 +6,21 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models } from 'common/src/lib/kysely.models';
 
+/** Columns available for filtering on households table. */
+const HOUSEHOLD_COLUMNS = [
+  'city',
+  'state',
+  'country',
+  'zip',
+  'street1',
+  'street2',
+  'street_num',
+  'apt',
+  'home_phone',
+  'type',
+  'notes',
+];
+
 /**
  * Repository for the `households` table.
  *
@@ -39,7 +54,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
-    const tags = input.tags;
+    const filterModel = options.filterModel || {};
+    const tags = input.tags ?? (filterModel['tags'] as string[] | undefined);
 
     // Shared where clause builder (for both queries)
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
@@ -59,6 +75,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
               LOWER(tags.name) LIKE ${text}
             )` as any,
           );
+        })
+        .$if(Object.keys(filterModel).length > 0, (qb) => {
+          let builder = qb;
+          for (const [key, value] of Object.entries(filterModel)) {
+            if (key === 'tags') continue;
+            if (HOUSEHOLD_COLUMNS.includes(key)) {
+              builder = builder.where(`households.${key}` as any, '=', value as any);
+            }
+          }
+          return builder;
         });
 
     // Count query

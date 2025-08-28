@@ -1,0 +1,25 @@
+<div class="flex min-h-full flex-col bg-base-100">
+  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+  <form [formGroup]="form" class="mx-5 mt-10 sm:mx-10">
+    <fieldset [disabled]="isLoading()">
+      <div class="flex flex-col gap-4">
+        <pc-form-input control="name" placeholder="List Name" />
+        <pc-textarea control="description" placeholder="Description"></pc-textarea>
+        <pc-form-input control="object" placeholder="Object (people or households)" />
+        <label class="label cursor-pointer">
+          <span class="label-text">Dynamic</span>
+          <input type="checkbox" class="toggle" formControlName="is_dynamic" />
+        </label>
+        <pc-tags
+          [tags]="tags()"
+          [enableAutoComplete]="true"
+          (tagAdded)="tagAdded($event)"
+          (tagRemoved)="tagRemoved($event)"
+        ></pc-tags>
+        <pc-form-input control="city" placeholder="City" />
+        <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="save()" [buttonsToShow]="list()?.id ? 'two' : 'three'"></pc-add-btn-row>
+      </div>
+    </fieldset>
+  </form>
+</div>
+

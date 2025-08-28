@@ -7,6 +7,37 @@ import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/bas
 import { Models } from 'common/src/lib/kysely.models';
 
 /**
+ * Columns available on the persons table. Used for dynamic filtering.
+ */
+const PERSON_COLUMNS = [
+  'id',
+  'household_id',
+  'email',
+  'email2',
+  'first_name',
+  'middle_names',
+  'last_name',
+  'home_phone',
+  'mobile',
+  'notes',
+  'json',
+];
+
+/** Columns available on the households table for joined filtering. */
+const HOUSEHOLD_COLUMNS = [
+  'city',
+  'state',
+  'country',
+  'zip',
+  'street1',
+  'street2',
+  'street_num',
+  'apt',
+  'home_phone',
+  'type',
+];
+
+/**
  * Repository for the `persons` table.
  *
  * Provides additional functionality for joining with `households`, `tags`, and `map_peoples_tags`.
@@ -39,7 +70,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
-    const tags = input.tags;
+    const filterModel = options.filterModel || {};
+    const tags = input.tags ?? (filterModel['tags'] as string[] | undefined);
 
     // Shared where clause builder
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
@@ -62,6 +94,18 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             LOWER(tags.name) LIKE ${text}
           )` as any,
           );
+        })
+        .$if(Object.keys(filterModel).length > 0, (qb) => {
+          let builder = qb;
+          for (const [key, value] of Object.entries(filterModel)) {
+            if (key === 'tags') continue;
+            if (PERSON_COLUMNS.includes(key)) {
+              builder = builder.where(`persons.${key}` as any, '=', value as any);
+            } else if (HOUSEHOLD_COLUMNS.includes(key)) {
+              builder = builder.where(`households.${key}` as any, '=', value as any);
+            }
+          }
+          return builder;
         });
 
     // Count query
