@@ -44,5 +44,8 @@
     [enableCellTextSelection]="true"
   >
   </ag-grid-angular>
-  }
+  @if (isLoading()) {
+  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
+  } }
 </div>
+''
