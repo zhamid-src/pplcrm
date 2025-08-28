@@ -1,22 +1,22 @@
 import type { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } from '@common';
 
-import type { QueryParams } from '../../lib/base.repo';
 import { BaseController } from '../../lib/base.controller';
-import type { OperationDataType } from 'common/src/lib/kysely.models';
-import { ListsRepo } from './repositories/lists.repo';
-import { PersonsController } from '../persons/controller';
+import type { QueryParams } from '../../lib/base.repo';
 import { HouseholdsController } from '../households/controller';
-import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import { PersonsController } from '../persons/controller';
+import { ListsRepo } from './repositories/lists.repo';
 import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
+import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import type { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Controller handling CRUD and reporting for lists of people or households.
  */
 export class ListsController extends BaseController<'lists', ListsRepo> {
-  private personsController = new PersonsController();
   private householdsController = new HouseholdsController();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
   private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private personsController = new PersonsController();
 
   constructor() {
     super(new ListsRepo());
@@ -42,14 +42,11 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     // For static lists, populate membership based on provided definition
     if (!row.is_dynamic && payload.definition) {
       if (payload.object === 'people') {
-        const result = await this.personsController.getAllWithAddress(
-          auth,
-          payload.definition as getAllOptionsType,
-        );
-        const rows = result.rows.map((p: { id: string }) => ({
+        const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
+        const rows = result.rows.map((p) => ({
           tenant_id: auth.tenant_id,
           list_id: list.id,
-          person_id: p.id,
+          person_id: p['id'],
           createdby_id: auth.user_id,
           updatedby_id: auth.user_id,
         }));
@@ -63,10 +60,10 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           auth,
           payload.definition as getAllOptionsType,
         );
-        const rows = result.rows.map((h: { id: string }) => ({
+        const rows = result.rows.map((h) => ({
           tenant_id: auth.tenant_id,
           list_id: list.id,
-          household_id: h.id,
+          household_id: h['id'],
           createdby_id: auth.user_id,
           updatedby_id: auth.user_id,
         }));

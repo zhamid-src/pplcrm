@@ -11,7 +11,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Component({
   selector: 'pc-lists-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false"></pc-datagrid>`,
+  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" plusIcon="add-list" addRoute="add"></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useClass: ListsService }],
 })
 export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
