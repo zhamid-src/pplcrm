@@ -116,6 +116,7 @@ export const icons = {
   document: 'assets/icons/document.svg',
   'document-check': 'assets/icons/document-check.svg',
   'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
   print: 'assets/icons/print.svg',
 
   /* -------------------- Time & Date -------------------- */

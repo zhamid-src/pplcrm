@@ -1,7 +1,7 @@
 <div class="flex min-h-full flex-col bg-base-100">
   <form [formGroup]="form" class="mx-5 my-10 flex flex-col gap-4 sm:mx-10">
-    <pc-form-input control="name" placeholder="List Name" icon="list-bullet" />
-    <pc-form-input control="description" placeholder="Description" icon="chat-bubble-left" />
+    <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
+    <pc-form-input control="description" placeholder="Description" icon="document-text" />
 
     <div class="flex flex-wrap items-center gap-4">
       <label class="form-control w-full max-w-xs">
@@ -19,9 +19,9 @@
 
     <div class="h-96">
       @if (form.get('object')?.value === 'people') {
-        <pc-people-filter-grid />
+      <pc-people-filter-grid />
       } @else {
-        <pc-household-filter-grid />
+      <pc-household-filter-grid />
       }
     </div>
 
