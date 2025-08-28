@@ -5,23 +5,29 @@ export { signInInputObj, signUpInputObj } from './lib/auth';
 export type {
   INow,
   AddTagType,
+  AddListType,
   PERSONINHOUSEHOLDTYPE,
   PersonsType,
+  ListsType,
   SettingsType,
   SortModelType,
   UpdateHouseholdsType,
   UpdatePersonsType,
   UpdateTagType,
+  UpdateListType,
   getAllOptionsType,
 } from './lib/models';
 
 export {
   AddTagObj,
+  AddListObj,
   PersonsObj,
+  ListsObj,
   SettingsObj,
   UpdateHouseholdsObj,
   UpdatePersonsObj,
   UpdateTagObj,
+  UpdateListObj,
   sortModelItem,
   getAllOptions,
 } from './lib/schema';
