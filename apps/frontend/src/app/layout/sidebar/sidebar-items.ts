@@ -107,8 +107,8 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'queue-list',
       },
       {
-        name: 'Emails',
-        route: '/emails',
+        name: 'Newsletters',
+        route: '/newsletter',
         icon: 'megaphone',
       },
       {
