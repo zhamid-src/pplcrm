@@ -36,6 +36,9 @@ export interface Models {
   map_households_tags: MapHouseholdsTags;
   map_peoples_tags: MapPeoplesTags;
   map_roles_users: MapRolesUsers;
+  lists: Lists;
+  map_lists_persons: MapListsPersons;
+  map_lists_households: MapListsHouseholds;
   persons: Persons;
   profiles: Profiles;
   roles: Roles;
@@ -200,6 +203,16 @@ interface MapRolesUsers extends RecordType {
   user_id: string;
 }
 
+export interface MapListsPersons extends RecordType {
+  list_id: string;
+  person_id: string;
+}
+
+interface MapListsHouseholds extends RecordType {
+  list_id: string;
+  household_id: string;
+}
+
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: string;
   household_id: string;
@@ -246,6 +259,14 @@ interface Sessions extends RecordType {
   refresh_token: Generated<string>;
   status: string;
   user_agent: string;
+}
+
+export interface Lists extends RecordType {
+  name: string;
+  description: string | null;
+  object: 'people' | 'households';
+  is_dynamic: boolean;
+  definition: Json | null;
 }
 
 export interface Tags extends RecordType {

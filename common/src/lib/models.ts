@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import type {
   AddTagObj,
+  AddListObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
@@ -11,6 +12,8 @@ import type {
   UpdateHouseholdsObj,
   UpdatePersonsObj,
   UpdateTagObj,
+  ListsObj,
+  UpdateListObj,
   getAllOptions,
   sortModelItem,
 } from './schema';
@@ -53,3 +56,9 @@ export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
 export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
