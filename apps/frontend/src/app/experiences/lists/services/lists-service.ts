@@ -59,4 +59,14 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   public update(id: string, data: UpdateListType) {
     return this.api.lists.update.mutate({ id, data });
   }
+
+  /** Get person members for a list */
+  public getMembersPersons(list_id: string) {
+    return this.api.lists.getMembersPersons.query(list_id);
+  }
+
+  /** Get household members for a list */
+  public getMembersHouseholds(list_id: string) {
+    return this.api.lists.getMembersHouseholds.query(list_id);
+  }
 }

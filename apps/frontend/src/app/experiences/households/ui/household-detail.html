@@ -70,7 +70,7 @@
 
         <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
 
-        @if (household()?.id) {
+        @if (id) {
         <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>
         <pc-people-in-household [householdId]="id"></pc-people-in-household>
         }

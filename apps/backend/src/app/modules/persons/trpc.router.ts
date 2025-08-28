@@ -122,6 +122,13 @@ function update() {
   );
 }
 
+/**
+ * Move a person to a new blank household to effectively clear address.
+ */
+function removeHousehold() {
+  return authProcedure.input(z.string()).mutation(({ input, ctx }) => persons.removeHousehold(input, ctx.auth));
+}
+
 const persons = new PersonsController();
 
 /**
@@ -132,6 +139,7 @@ export const PersonsRouter = router({
   count: count(),
   getAll: getAll(),
   update: update(),
+  removeHousehold: removeHousehold(),
   getTags: getTags(),
   getById: getById(),
   attachTag: attachTag(),

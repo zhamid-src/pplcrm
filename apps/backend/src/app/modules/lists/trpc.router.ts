@@ -35,6 +35,18 @@ function getById() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
+function getMembersPersons() {
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input));
+}
+
+function getMembersHouseholds() {
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input));
+}
+
 function update() {
   return authProcedure
     .input(z.object({ id: z.string(), data: UpdateListObj }))
@@ -49,6 +61,8 @@ export const ListsRouter = router({
   getAll: getAll(),
   getAllWithCounts: getAllWithCounts(),
   getById: getById(),
+  getMembersPersons: getMembersPersons(),
+  getMembersHouseholds: getMembersHouseholds(),
   update: update(),
   delete: deleteList(),
   deleteMany: deleteLists(),

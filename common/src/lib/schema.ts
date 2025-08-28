@@ -32,6 +32,8 @@ export const AddListObj = z.object({
   is_dynamic: z.boolean().optional(),
   /** Optional JSON definition for dynamic list filters */
   definition: z.lazy(() => getAllOptions).nullable().optional(),
+  /** Optional explicit member IDs to include on create (people or household IDs based on object) */
+  member_ids: z.array(z.string()).optional(),
 });
 export const EmailCommentObj = z.object({
   id: z.string(),

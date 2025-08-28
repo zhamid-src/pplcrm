@@ -1,13 +1,15 @@
 /**
  * @file Component for creating or updating individual person records.
  */
-import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdatePersonsType } from '@common';
+import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormInput } from '@uxcommon/components/form-input/formInput';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TextArea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -23,11 +25,12 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [FormInput, ReactiveFormsModule, Tags, AddBtnRow, TextArea, RouterModule, PeopleInHousehold],
+  imports: [FormInput, ReactiveFormsModule, Tags, AddBtnRow, TextArea, RouterModule, PeopleInHousehold, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
@@ -37,6 +40,13 @@ export class PersonDetail implements OnInit {
   private _loading = createLoadingGate();
 
   protected readonly addressString = signal<string | null>(null);
+
+  // Drawer state for assigning household
+  protected readonly assignDrawerOpen = signal(false);
+  protected readonly householdId = signal<string | null>(null);
+  protected readonly householdResults = signal<any[]>([]);
+  protected readonly householdSearch = signal('');
+  protected readonly householdsLoading = signal(false);
   protected readonly isLoading = this._loading.visible;
   protected readonly person = signal<Persons | null>(null);
 
@@ -73,6 +83,25 @@ export class PersonDetail implements OnInit {
     if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
     }
+
+    // Sync householdId from person without causing feedback loops
+    effect(() => {
+      const person = this.person();
+      const nextHouseholdId = person?.household_id ?? null;
+      if (this.householdId() !== nextHouseholdId) {
+        this.householdId.set(nextHouseholdId);
+      }
+    });
+
+    // React to householdId changes without writing back to person (avoid loop)
+    effect(async () => {
+      const householdId = this.householdId();
+
+      if (householdId) {
+        const address = (await this.householdsSvc.getById(householdId)) as AddressType;
+        this.addressString.set(this.getFormattedAddress(address));
+      }
+    });
   }
 
   /** Lifecycle hook to initialize the component and load person data */
@@ -102,15 +131,64 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /**
-   * Fetch and set a formatted address string for the person if they belong to a household.
-   */
-  protected async getAddressString() {
-    const household_id = this.person()?.household_id;
-    if (household_id) {
-      const address = (await this.householdsSvc.getById(household_id)) as AddressType;
-      this.addressString.set(this.getFormattedAddress(address));
+  /** Assign current person to the selected household */
+  protected async assignToHousehold(household_id: string) {
+    if (!this.id) return;
+
+    // Ask scope: just this person vs everyone in current household
+    const applyToAll = await this.confirmDlg.confirm({
+      title: 'Change household',
+      message: 'Apply to everyone in the current household, or just this person?',
+      variant: 'info',
+      confirmText: 'Everyone',
+      cancelText: 'Just this person',
+    });
+
+    const currentHousehold = this.householdId();
+
+    const end = this._loading.begin();
+    try {
+      if (applyToAll && currentHousehold) {
+        // Move all people from current household to the selected one
+        const people = (await this.personsSvc.getByHouseholdId(currentHousehold, { columns: ['id'] })) as {
+          id: string;
+        }[];
+        await Promise.all(people.map((p) => this.personsSvc.update(p.id, { household_id } as UpdatePersonsType)));
+      } else {
+        // Only move this person
+        await this.personsSvc.update(this.id, { household_id } as UpdatePersonsType);
+      }
+
+      // update local state for current person and UI
+      this.person.update((p) => (p ? { ...p, household_id } : p));
+
+      this.alertSvc.showSuccess('Assigned to selected household');
+      this.closeAssignDrawer();
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    } finally {
+      end();
     }
+  }
+
+  /** Close the assign household drawer */
+  protected closeAssignDrawer() {
+    this.assignDrawerOpen.set(false);
+  }
+
+  /** Format a household row to a single line address */
+  protected formatHouseholdRow(row: any) {
+    const address = {
+      apt: row.apt ?? null,
+      street_num: row.street_num ?? '',
+      street1: row.street1 ?? '',
+      street2: row.street2 ?? '',
+      city: row.city ?? '',
+      state: row.state ?? '',
+      zip: row.zip ?? '',
+      country: row.country ?? '',
+    } as AddressType;
+    return this.getFormattedAddress(address);
   }
 
   /** Returns the creation date of the person */
@@ -131,9 +209,51 @@ export class PersonDetail implements OnInit {
 
   /** Navigates to the household detail page if the person belongs to a household */
   protected navigateToHousehold() {
-    const household_id = this.person()?.household_id;
+    const household_id = this.householdId();
     if (household_id) {
       this.router.navigate(['households', household_id]);
+    }
+  }
+
+  /** Handle search input for households */
+  protected onHouseholdSearch(ev: Event) {
+    const target = ev.target as HTMLInputElement | null;
+    const val = target?.value ?? '';
+    this.householdSearch.set(val);
+    void this.fetchHouseholds();
+  }
+
+  /** Open the right-side drawer for assigning household */
+  protected openAssignDrawer() {
+    this.assignDrawerOpen.set(true);
+    // Initial fetch
+    void this.fetchHouseholds();
+  }
+
+  /**
+   * Remove the current address by moving the person to a new blank household.
+   * This preserves DB constraints (non-null household_id) while clearing address fields.
+   */
+  protected async removeAddress() {
+    if (!this.id || !this.person()) return;
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Remove Address',
+      message: 'This will move the person to a new blank household (clearing address). Continue?',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      this.person.update((p) => (p ? { ...p, householdId: null } : p));
+
+      this.alertSvc.showSuccess('Address removed');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    } finally {
+      end();
     }
   }
 
@@ -158,6 +278,25 @@ export class PersonDetail implements OnInit {
       .then(() => this.alertSvc.showSuccess('Person added'))
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => end());
+  }
+
+  /** Fetch households matching the current search */
+  private async fetchHouseholds() {
+    try {
+      this.householdsLoading.set(true);
+      const opts = {
+        searchStr: this.householdSearch(),
+        limit: 25,
+        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
+      };
+      const res = await this.householdsSvc.getAll(opts);
+      this.householdResults.set(res.rows || []);
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+      this.householdResults.set([]);
+    } finally {
+      this.householdsLoading.set(false);
+    }
   }
 
   /**
@@ -193,7 +332,6 @@ export class PersonDetail implements OnInit {
     try {
       this.person.set((await this.personsSvc.getById(this.id)) as Persons);
 
-      await this.getAddressString();
       await this.updateTags();
 
       this.refreshForm();

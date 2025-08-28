@@ -24,7 +24,6 @@
       <pc-household-filter-grid />
       }
     </div>
-
-    <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+    <pc-add-btn-row [isLoading]="isLoading()" [btn1Text]="btnLabel()" (btn1Clicked)="save($event)"></pc-add-btn-row>
   </form>
 </div>
