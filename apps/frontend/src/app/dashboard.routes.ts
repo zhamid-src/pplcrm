@@ -69,6 +69,10 @@ export const dashboardRoutes: Routes = [
         loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
         data: { shouldReuse: true, key: 'listsgridroot' },
       },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-detail').then((m) => m.ListDetail),
+      },
     ],
   },
 
