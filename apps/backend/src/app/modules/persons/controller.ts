@@ -1,12 +1,12 @@
 import { IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
+import { BaseController } from '../../lib/base.controller';
 import { QueryParams } from '../../lib/base.repo';
+import { SettingsController } from '../settings/controller';
+import { TagsRepo } from '../tags/repositories/tags.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { BaseController } from '../../lib/base.controller';
-import { SettingsController } from '../settings/controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
@@ -144,6 +144,20 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    */
   public getTags(person_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id });
+  }
+
+  /**
+   * Move a person to a new blank household to clear address while
+   * preserving non-null household_id constraint.
+   */
+  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    return this.getRepo().moveToNewHousehold({
+      tenant_id: auth.tenant_id,
+      person_id,
+      user_id: auth.user_id,
+      campaign_id,
+    });
   }
 
   /**

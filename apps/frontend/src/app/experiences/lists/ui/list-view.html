@@ -1,0 +1,63 @@
+<div class="flex min-h-full flex-col bg-base-100">
+  <form [formGroup]="form" class="mx-5 my-6 flex flex-col gap-4 sm:mx-10">
+    <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
+    <pc-form-input control="description" placeholder="Description" icon="document-text" />
+    <pc-add-btn-row [isLoading]="loading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+  </form>
+
+  <div class="px-5 sm:px-10 pb-10">
+    <h2 class="text-lg font-semibold mb-3">Members</h2>
+    @if (loading()) {
+      <div>Loading…</div>
+    } @else {
+      @if (isPeople()) {
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Mobile</th>
+                <th>Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (m of members(); track m.id) {
+                <tr>
+                  <td>{{ m.first_name }} {{ m.last_name }}</td>
+                  <td>{{ m.email }}</td>
+                  <td>{{ m.mobile }}</td>
+                  <td>{{ m.street_num }} {{ m.street1 }}, {{ m.city }}, {{ m.state }} {{ m.zip }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>City</th>
+                <th>State</th>
+                <th>Zip</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (m of members(); track m.id) {
+                <tr>
+                  <td>{{ m.street_num }} {{ m.street1 }}</td>
+                  <td>{{ m.city }}</td>
+                  <td>{{ m.state }}</td>
+                  <td>{{ m.zip }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  </div>
+</div>
+

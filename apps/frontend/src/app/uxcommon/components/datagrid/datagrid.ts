@@ -62,6 +62,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
+  protected readonly countRowSelected = signal(0);
   protected readonly distinctTags: string[] = [];
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
 
@@ -132,6 +133,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       mergedGridOptions: this.mergedGridOptions,
       config: this.config,
     });
+  }
+
+  public getCountRowSelected() {
+    return this.countRowSelected();
+  }
+
+  /** Expose current grid filters/sort to build a definition */
+  public getDefinition(): getAllOptionsType {
+    return {
+      filterModel: this.api?.getFilterModel?.(),
+    } as getAllOptionsType;
+  }
+
+  /** Utility: returns selected rows from grid */
+  public getSelectedRows() {
+    return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
   public async ngOnInit() {
@@ -213,7 +230,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Called when selection changes. Updates selected state. */
   public onSelectionChanged() {
-    this.isRowSelected.set(this.getSelectedRows().length > 0);
+    const count = this.getSelectedRows()?.length ?? 0;
+    this.isRowSelected.set(count > 0);
+    this.countRowSelected.set(count);
   }
 
   /** Opens edit form for row. */
@@ -272,11 +291,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Utility: sets ID for each row (keep it stringy for stability) */
   protected getRowId(row: GetRowIdParams) {
     return String(row.data.id);
-  }
-
-  /** Utility: returns selected rows from grid */
-  protected getSelectedRows() {
-    return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
   /** Utility: returns AG Grid theme class */

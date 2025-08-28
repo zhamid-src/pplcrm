@@ -91,4 +91,89 @@ export class ListsRepo extends BaseRepository<'lists'> {
 
     return { rows, count };
   }
+
+  /**
+   * Return households on a list with a minimal set of fields.
+   */
+  public async getHouseholdsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
+      .innerJoin('households', 'households.id', 'mlh.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
+
+    const [{ total }] = await qb.select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')]).execute();
+
+    const rows = await qb
+      .select([
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
+      ])
+      .groupBy([
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
+      ])
+      .execute();
+
+    return { rows, count: Number(total || 0) };
+  }
+
+  /**
+   * Return persons on a list with a minimal set of fields and household address.
+   */
+  public async getPersonsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
+      .innerJoin('persons', 'persons.id', 'mlp.person_id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
+
+    const [{ total }] = await qb.select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')]).execute();
+
+    const rows = await qb
+      .select([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .execute();
+
+    return { rows, count: Number(total || 0) };
+  }
 }

@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { Component, ViewChild, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddListType, UpdateHouseholdsType, UpdatePersonsType } from '@common';
 import { HouseholdsService } from '@experiences/households/services/households-service';
@@ -73,11 +74,15 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
 })
 export class ListDetail {
   private readonly alertSvc = inject(AlertService);
+  private readonly countRowSelected = signal(0);
   private readonly fb = inject(FormBuilder);
   private readonly listsSvc = inject(ListsService);
 
   private _loading = createLoadingGate();
+  @ViewChild(HouseholdFilterGrid) private householdGrid?: HouseholdFilterGrid;
+  @ViewChild(PeopleFilterGrid) private peopleGrid?: PeopleFilterGrid;
 
+  protected btnLabel = signal('SAVE');
   protected form = this.fb.group({
     name: ['', [Validators.required]],
     description: [''],
@@ -85,9 +90,25 @@ export class ListDetail {
     is_dynamic: [false],
   });
   protected isLoading = this._loading.visible;
+  protected listType = toSignal(this.form.get('object')!.valueChanges, {
+    initialValue: this.form.get('object')!.value,
+  });
 
-  /** Save the list using current filters */
-  // TODO: saving should happen using list service
+  constructor() {
+    effect(() => {
+      const type = this.listType();
+      console.log(type);
+      if (type === 'people') {
+        this.countRowSelected.set(this.peopleGrid?.getCountRowSelected() ?? 0);
+      } else {
+        this.countRowSelected.set(this.householdGrid?.getCountRowSelected() ?? 0);
+      }
+
+      this.btnLabel.set(this.countRowSelected() > 0 ? `SAVE (${this.countRowSelected()} selected)` : 'SAVE');
+    });
+  }
+
+  /** Save the list using selection for static, or filters for dynamic */
   protected save(done: () => void) {
     const formValue = this.form.getRawValue();
 
@@ -97,6 +118,22 @@ export class ListDetail {
       object: formValue.object as 'people' | 'households',
       is_dynamic: formValue.is_dynamic ?? false,
     };
+
+    if (payload.is_dynamic) {
+      // Dynamic lists: use current filters/search as definition
+      const def = payload.object === 'people' ? this.peopleGrid?.getDefinition() : this.householdGrid?.getDefinition();
+      if (def) payload.definition = def;
+    } else {
+      // Static lists: include only selected IDs
+      const selected =
+        payload.object === 'people' ? this.peopleGrid?.getSelectedRows() : this.householdGrid?.getSelectedRows();
+      const ids = (selected ?? []).map((r) => r.id).filter(Boolean);
+      if (!ids.length) {
+        this.alertSvc.showError('Please select at least one row');
+        return;
+      }
+      if (ids.length) (payload as any).member_ids = ids;
+    }
 
     const end = this._loading.begin();
     this.listsSvc

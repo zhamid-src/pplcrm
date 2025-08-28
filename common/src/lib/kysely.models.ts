@@ -155,6 +155,7 @@ export interface AddressType {
 interface AuthUsers extends RecordType {
   email: string;
   first_name: string;
+  last_name: string;
   password: string;
   password_reset_code: string | null;
   // TODO: move to Sessions

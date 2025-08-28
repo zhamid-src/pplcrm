@@ -92,7 +92,7 @@ export class AddBtnRow implements OnInit {
    * If stay is true, resets the form to allow adding another.
    * Otherwise, navigates away.
    */
-  public stayOrCancel() {
+  public stayOrCancel = () => {
     this.stay ? this.form.reset() : this.cancel();
-  }
+  };
 }

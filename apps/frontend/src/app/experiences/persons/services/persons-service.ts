@@ -224,6 +224,16 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public async update(id: string, data: UpdatePersonsType) {
     return this.api.persons.update.mutate({ id: id, data });
   }
+
+  /**
+   * Remove the current household/address by moving the person
+   * to a new blank household handled in the backend repo.
+   *
+   * @param id - Person ID
+   */
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
 }
 
 export type DATA_TYPE = 'persons' | 'households';

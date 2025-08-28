@@ -39,38 +39,62 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 
     const list = await this.add(row as OperationDataType<'lists', 'insert'>);
 
-    // For static lists, populate membership based on provided definition
-    if (!row.is_dynamic && payload.definition) {
-      if (payload.object === 'people') {
-        const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
-        const rows = result.rows.map((p) => ({
+    // For static lists, populate membership by explicit IDs if provided; otherwise by definition
+    if (!row.is_dynamic) {
+      const ids = payload.member_ids ?? [];
+
+      if (ids.length && payload.object === 'people') {
+        const rows = ids.map((person_id) => ({
           tenant_id: auth.tenant_id,
           list_id: list.id,
-          person_id: p['id'],
+          person_id,
           createdby_id: auth.user_id,
           updatedby_id: auth.user_id,
         }));
-        if (rows.length) {
-          await this.mapListsPersonsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-          });
-        }
-      } else if (payload.object === 'households') {
-        const result = await this.householdsController.getAllWithPeopleCount(
-          auth,
-          payload.definition as getAllOptionsType,
-        );
-        const rows = result.rows.map((h) => ({
+        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
+      } else if (ids.length && payload.object === 'households') {
+        const rows = ids.map((household_id) => ({
           tenant_id: auth.tenant_id,
           list_id: list.id,
-          household_id: h['id'],
+          household_id,
           createdby_id: auth.user_id,
           updatedby_id: auth.user_id,
         }));
-        if (rows.length) {
-          await this.mapListsHouseholdsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-          });
+        await this.mapListsHouseholdsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+        });
+      } else if (payload.definition) {
+        if (payload.object === 'people') {
+          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
+          const rows = result.rows.map((p) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            person_id: p['id'],
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsPersonsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+            });
+          }
+        } else if (payload.object === 'households') {
+          const result = await this.householdsController.getAllWithPeopleCount(
+            auth,
+            payload.definition as getAllOptionsType,
+          );
+          const rows = result.rows.map((h) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            household_id: h['id'],
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsHouseholdsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+            });
+          }
         }
       }
     }
@@ -101,5 +125,19 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       id,
       row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
     });
+  }
+
+  /**
+   * Get all person members of a list with basic address fields.
+   */
+  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  /**
+   * Get all household members of a list.
+   */
+  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
   }
 }

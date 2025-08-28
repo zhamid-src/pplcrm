@@ -5,6 +5,8 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models } from 'common/src/lib/kysely.models';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `persons` table.
@@ -17,6 +19,43 @@ export class PersonsRepo extends BaseRepository<'persons'> {
    */
   constructor() {
     super('persons');
+  }
+
+  /**
+   * Create a new blank household and reassign the person to it.
+   * Returns the new household_id.
+   */
+  public async moveToNewHousehold(input: {
+    tenant_id: string;
+    person_id: string;
+    user_id: string;
+    campaign_id: string;
+  }) {
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      const newHousehold = await households.add(
+        {
+          row: {
+            tenant_id: input.tenant_id,
+            campaign_id: input.campaign_id,
+            createdby_id: input.user_id,
+            updatedby_id: input.user_id,
+          } as OperationDataType<'households', 'insert'>,
+        },
+        trx,
+      );
+
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: newHousehold?.id, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
+
+      return { household_id: newHousehold?.id };
+    });
   }
 
   /**

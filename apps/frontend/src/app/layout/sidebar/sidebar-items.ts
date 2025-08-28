@@ -97,14 +97,14 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'house-modern',
       },
       {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
-      {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',
+      },
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
       },
       {
         name: 'Newsletters',
