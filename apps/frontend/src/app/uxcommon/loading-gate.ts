@@ -42,7 +42,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
       showTimer = null;
       if (pendingCount > 0 && !visible()) {
         visible.set(true);
-        shownAt = Date.now();
+        shownAt = performance.now();
       }
     }, delay);
   }
@@ -50,10 +50,9 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
   function scheduleHide() {
     clearHideTimer();
     if (!visible()) return; // never shown → nothing to hide
-    const elapsed = Date.now() - shownAt;
-    const remaining = Math.max(0, minDuration - elapsed);
+
+    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
     hideTimer = setTimeout(() => {
-      hideTimer = null;
       if (pendingCount === 0) visible.set(false);
     }, remaining);
   }

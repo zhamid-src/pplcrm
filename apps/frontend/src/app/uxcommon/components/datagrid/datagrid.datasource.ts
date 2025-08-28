@@ -17,7 +17,6 @@ export function createServerSideDatasource<T>(deps: {
 
   return {
     getRows: async (params: IServerSideGetRowsParams) => {
-      console.log('getrows');
       const end = deps._loading.begin();
       try {
         const { startRow, sortModel, filterModel } = params.request;
@@ -34,10 +33,8 @@ export function createServerSideDatasource<T>(deps: {
         const data = await deps.gridSvc.getAll(options);
         params.success({ rowData: data.rows as T[], rowCount: data.count });
       } catch (err) {
-        console.log('error', err);
         params.fail();
       } finally {
-        console.log('getrows finally');
         end();
       }
     },

@@ -86,6 +86,7 @@ export const SELECTION_COLUMN: ColDef = {
  * This is intended to be the common base for all grid instances in the app.
  */
 export const defaultGridOptions: GridOptions = {
+  suppressNoRowsOverlay: true,
   animateRows: true,
   autoSizeStrategy: { type: 'fitCellContents' },
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
@@ -107,5 +108,5 @@ export const defaultGridOptions: GridOptions = {
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
   undoRedoCellEditing: true,
-  overlayLoadingTemplate: '<img class="animate-wiggle w-25" src="assets/logo-sq.svg" />',
+  overlayLoadingTemplate: '<div class="hidden"></div>',
 };
