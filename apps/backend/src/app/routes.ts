@@ -1,9 +1,9 @@
 import { FastifyPluginCallback } from 'fastify';
 
 import authRoute from './modules/auth/routes/auth.route';
+import emailsRoute from './modules/emails/routes/emails.route';
 import householdsRoute from './modules/households/routes/households.route';
 import personsRoute from './modules/persons/routes/persons.route';
-import emailsRoute from './modules/emails/routes/emails.route';
 
 /**
  * Registers all REST API routes for the application.
@@ -21,12 +21,12 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register versioned /v1/households route module
   fastify.register(householdsRoute, { prefix: '/v1/households' });
-  
+
   // Register authentication routes under /auth
   fastify.register(authRoute, { prefix: '/auth/' });
 
   // Register email routes
-  fastify.register(emailsRoute, { prefix: '/v1/emails' });
+  fastify.register(emailsRoute, { prefix: '/v1/inbox' });
 
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
