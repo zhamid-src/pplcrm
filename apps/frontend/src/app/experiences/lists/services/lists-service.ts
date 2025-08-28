@@ -1,0 +1,62 @@
+import { Injectable } from '@angular/core';
+import { AddListType, UpdateListType, getAllOptionsType } from '@common';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+/** Service handling CRUD operations for list entities. */
+@Injectable({
+  providedIn: 'root',
+})
+export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
+  /** Add a new list */
+  public add(row: AddListType) {
+    return this.api.lists.add.mutate(row);
+  }
+
+  /** No-op batch add implementation */
+  public addMany(rows: AddListType[]) {
+    return Promise.resolve(rows);
+  }
+
+  /** Tags are not supported on lists */
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.lists.count.query();
+  }
+
+  public async delete(id: string): Promise<boolean> {
+    return (await this.api.lists.delete.mutate(id)) !== null;
+  }
+
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    return (await this.api.lists.deleteMany.mutate(ids)) !== null;
+  }
+
+  /** Tags are not supported on lists */
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts(options);
+  }
+
+  public getAllWithCounts(options?: getAllOptionsType) {
+    return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
+  }
+
+  public getById(id: string) {
+    return this.api.lists.getById.query(id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateListType) {
+    return this.api.lists.update.mutate({ id, data });
+  }
+}

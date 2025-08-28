@@ -16,6 +16,23 @@ export const AddTagObj = z.object({
    */
   description: z.string().nullable().optional(),
 });
+
+/**
+ * Object schema for creating a new list.
+ * Lists group people or households and can be static or dynamic.
+ */
+export const AddListObj = z.object({
+  /** Name of the list */
+  name: z.string(),
+  /** Optional description for the list */
+  description: z.string().nullable().optional(),
+  /** Target object type: people or households */
+  object: z.enum(['people', 'households']),
+  /** Indicates whether the list is dynamically generated */
+  is_dynamic: z.boolean().optional(),
+  /** Optional JSON definition for dynamic list filters */
+  definition: z.any().nullable().optional(),
+});
 export const EmailCommentObj = z.object({
   id: z.string(),
   email_id: z.string(),
@@ -126,6 +143,29 @@ export const UpdateTagObj = z.object({
    * The optional field that describes the tag.
    */
   description: z.string().nullable().optional(),
+});
+
+/**
+ * Schema representing a list record.
+ */
+export const ListsObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  object: z.enum(['people', 'households']),
+  is_dynamic: z.boolean().optional(),
+  definition: z.any().nullable().optional(),
+});
+
+/**
+ * Schema for updating an existing list.
+ */
+export const UpdateListObj = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  object: z.enum(['people', 'households']).optional(),
+  is_dynamic: z.boolean().optional(),
+  definition: z.any().nullable().optional(),
 });
 export const sortModelItem = z
   .object({

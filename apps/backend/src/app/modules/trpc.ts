@@ -9,6 +9,7 @@ import { PersonsRouter } from './persons/trpc.router';
 import { TagsRouter } from './tags/trpc.router';
 import { UserProfilesRouter } from './userprofiles/trpc.router';
 import { EmailsRouter } from './emails/trpc.router';
+import { ListsRouter } from './lists/trpc.router';
 
 /**
  * Registers and groups all tRPC routers for the application.
@@ -26,6 +27,7 @@ export const trpcRouter = router({
   households: HouseholdsRouter,
   persons: PersonsRouter,
   tags: TagsRouter,
+  lists: ListsRouter,
   emails: EmailsRouter,
 });
 
@@ -41,3 +43,4 @@ export { PersonsRouter } from './persons/trpc.router';
 export { TagsRouter } from './tags/trpc.router';
 export { UserProfilesRouter } from './userprofiles/trpc.router';
 export { EmailsRouter } from './emails/trpc.router';
+export { ListsRouter } from './lists/trpc.router';
