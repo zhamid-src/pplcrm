@@ -1,14 +1,23 @@
-import { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } from '@common';
+import type { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } from '@common';
 
-import { QueryParams } from '../../lib/base.repo';
+import type { QueryParams } from '../../lib/base.repo';
 import { BaseController } from '../../lib/base.controller';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import type { OperationDataType } from 'common/src/lib/kysely.models';
 import { ListsRepo } from './repositories/lists.repo';
+import { PersonsController } from '../persons/controller';
+import { HouseholdsController } from '../households/controller';
+import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
 
 /**
  * Controller handling CRUD and reporting for lists of people or households.
  */
 export class ListsController extends BaseController<'lists', ListsRepo> {
+  private personsController = new PersonsController();
+  private householdsController = new HouseholdsController();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
+
   constructor() {
     super(new ListsRepo());
   }
@@ -16,7 +25,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   /**
    * Create a new list for the authenticated tenant.
    */
-  public addList(payload: AddListType, auth: IAuthKeyPayload) {
+  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
       description: payload.description,
@@ -27,7 +36,49 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     };
-    return this.add(row as OperationDataType<'lists', 'insert'>);
+
+    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
+
+    // For static lists, populate membership based on provided definition
+    if (!row.is_dynamic && payload.definition) {
+      if (payload.object === 'people') {
+        const result = await this.personsController.getAllWithAddress(
+          auth,
+          payload.definition as getAllOptionsType,
+        );
+        const rows = result.rows.map((p: { id: string }) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          person_id: p.id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsPersonsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+          });
+        }
+      } else if (payload.object === 'households') {
+        const result = await this.householdsController.getAllWithPeopleCount(
+          auth,
+          payload.definition as getAllOptionsType,
+        );
+        const rows = result.rows.map((h: { id: string }) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          household_id: h.id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsHouseholdsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+          });
+        }
+      }
+    }
+
+    return list;
   }
 
   /**
