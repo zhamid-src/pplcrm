@@ -31,7 +31,7 @@ export const AddListObj = z.object({
   /** Indicates whether the list is dynamically generated */
   is_dynamic: z.boolean().optional(),
   /** Optional JSON definition for dynamic list filters */
-  definition: z.any().nullable().optional(),
+  definition: z.lazy(() => getAllOptions).nullable().optional(),
 });
 export const EmailCommentObj = z.object({
   id: z.string(),
@@ -154,7 +154,7 @@ export const ListsObj = z.object({
   description: z.string().nullable().optional(),
   object: z.enum(['people', 'households']),
   is_dynamic: z.boolean().optional(),
-  definition: z.any().nullable().optional(),
+  definition: z.lazy(() => getAllOptions).nullable().optional(),
 });
 
 /**
@@ -165,7 +165,7 @@ export const UpdateListObj = z.object({
   description: z.string().nullable().optional(),
   object: z.enum(['people', 'households']).optional(),
   is_dynamic: z.boolean().optional(),
-  definition: z.any().nullable().optional(),
+  definition: z.lazy(() => getAllOptions).nullable().optional(),
 });
 export const sortModelItem = z
   .object({
