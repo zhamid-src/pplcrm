@@ -1,0 +1,30 @@
+<div class="flex min-h-full flex-col bg-base-100">
+  <form [formGroup]="form" class="mx-5 my-10 flex flex-col gap-4 sm:mx-10">
+    <pc-form-input control="name" placeholder="List Name" icon="list-bullet" />
+    <pc-form-input control="description" placeholder="Description" icon="chat-bubble-left" />
+
+    <div class="flex flex-wrap items-center gap-4">
+      <label class="form-control w-full max-w-xs">
+        <span class="label-text">Object</span>
+        <select class="select select-bordered" formControlName="object">
+          <option value="people">People</option>
+          <option value="households">Households</option>
+        </select>
+      </label>
+      <label class="label cursor-pointer gap-2">
+        <span class="label-text">Dynamic</span>
+        <input type="checkbox" class="checkbox" formControlName="is_dynamic" />
+      </label>
+    </div>
+
+    <div class="h-96">
+      @if (form.get('object')?.value === 'people') {
+        <pc-people-filter-grid />
+      } @else {
+        <pc-household-filter-grid />
+      }
+    </div>
+
+    <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+  </form>
+</div>
