@@ -106,23 +106,10 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/lists',
         icon: 'queue-list',
       },
-    ],
-  },
-
-  {
-    name: `OUTREACH`,
-    type: 'subheading',
-    collapsed: true,
-    children: [
       {
-        name: 'Campaigns',
-        route: '/campaigns',
+        name: 'Emails',
+        route: '/emails',
         icon: 'megaphone',
-      },
-      {
-        name: 'Canvassing',
-        route: '/canvassing',
-        icon: 'map',
       },
       {
         name: 'Map',
