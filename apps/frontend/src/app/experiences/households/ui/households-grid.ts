@@ -18,7 +18,8 @@ interface ParamsType {
   selector: 'pc-households-grid',
   imports: [DataGrid],
   template: `
-    <pc-datagrid [colDefs]="col" [disableDelete]="true" [disableView]="false" addRoute="add"> </pc-datagrid>
+    <pc-datagrid [colDefs]="col" [disableDelete]="true" [disableView]="false" addRoute="add" plusIcon="add-home">
+    </pc-datagrid>
   `,
   providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
 })

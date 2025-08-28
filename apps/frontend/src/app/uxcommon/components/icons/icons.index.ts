@@ -76,6 +76,7 @@ export const icons = {
   loading: 'assets/icons/loading.svg',
 
   /* -------------------- UI Controls -------------------- */
+  'add-list': 'assets/icons/add-list.svg',
   'bars-3': 'assets/icons/bars-3.svg',
   'bars-4': 'assets/icons/bars-4.svg',
   bell: 'assets/icons/bell.svg',
@@ -123,6 +124,7 @@ export const icons = {
   /* -------------------- Home, Places & Maps -------------------- */
   home: 'assets/icons/home.svg',
   'house-modern': 'assets/icons/house-modern.svg',
+  'add-home': 'assets/icons/add-home.svg',
   map: 'assets/icons/map.svg',
   'map-pin': 'assets/icons/map-pin.svg',
 
