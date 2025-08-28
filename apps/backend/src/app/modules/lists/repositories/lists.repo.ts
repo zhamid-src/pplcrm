@@ -49,16 +49,16 @@ export class ListsRepo extends BaseRepository<'lists'> {
     const count = Number(countResult[0]?.['total'] || 0);
 
     const rowsRaw = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [
+      .select(() => [
         'lists.id',
         'lists.name',
         'lists.description',
         'lists.object',
         'lists.is_dynamic',
         'lists.updated_at',
-        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)` .as('people_count'),
-        sql<number>`COUNT(DISTINCT map_lists_households.household_id)` .as('household_count'),
-        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)` .as('created_by'),
+        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
+        sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
+        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
       ])
       .groupBy([
         'lists.id',
