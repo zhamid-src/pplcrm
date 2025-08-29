@@ -283,6 +283,9 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
+    if (Object.keys(input.row).length === 0) {
+      return 0; // or just return early, nothing to update
+    }
     return this.getUpdate(trx)
       .set(input.row)
       .where('id', '=', input.id as unknown as string)

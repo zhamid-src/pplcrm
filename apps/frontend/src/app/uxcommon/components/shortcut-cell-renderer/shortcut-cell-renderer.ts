@@ -30,9 +30,6 @@ import { Models } from 'common/src/lib/kysely.models';
     @if (showView()) {
       <pc-icon name="arrow-top-right-on-square" [size]="4" class="hover:text-primary text-left" (click)="view()" />
     }
-    @if (showDelete()) {
-      <pc-icon name="trash" [size]="4" class="hover:text-error text-left" (click)="delete()" />
-    }
   </div>`,
   encapsulation: ViewEncapsulation.None,
 })
@@ -50,28 +47,12 @@ export class ShortcutCellRenderer<T extends keyof Models, U> implements ICellRen
   }
 
   /**
-   * Triggers the delete confirmation flow in the parent grid.
-   */
-  public delete() {
-    this.parent?.confirmDelete();
-  }
-
-  /**
    * Called by AG Grid when it wants to refresh the cell.
    *
    * @returns False, since this cell does not support dynamic refresh.
    */
   public refresh(/*params: ICellRendererParams*/) {
     return false;
-  }
-
-  /**
-   * Determines whether the delete shortcut button should be shown.
-   *
-   * @returns True if delete is enabled in the parent grid.
-   */
-  public showDelete() {
-    return !this.parent?.disableDelete();
   }
 
   /**
