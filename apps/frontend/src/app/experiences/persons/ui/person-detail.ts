@@ -1,10 +1,11 @@
 /**
  * @file Component for creating or updating individual person records.
  */
+import { CommonModule } from '@angular/common';
 import { Component, OnInit, effect, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { UpdatePersonsType } from '@common';
+import { type IAuthUser, UpdatePersonsType } from '@common';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -14,6 +15,9 @@ import { Tags } from '@uxcommon/components/tags/tags';
 import { TextArea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { ColumnType } from 'kysely';
+
+import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { PeopleInHousehold } from './people-in-household';
@@ -25,11 +29,22 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [FormInput, ReactiveFormsModule, Tags, AddBtnRow, TextArea, RouterModule, PeopleInHousehold, Icon],
+  imports: [
+    CommonModule,
+    FormInput,
+    ReactiveFormsModule,
+    Tags,
+    AddBtnRow,
+    TextArea,
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+  ],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
@@ -38,6 +53,7 @@ export class PersonDetail implements OnInit {
   private readonly router = inject(Router);
 
   private _loading = createLoadingGate();
+  private usersById = new Map<string, IAuthUser>();
 
   protected readonly addressString = signal<string | null>(null);
 
@@ -49,6 +65,7 @@ export class PersonDetail implements OnInit {
   protected readonly householdsLoading = signal(false);
   protected readonly isLoading = this._loading.visible;
   protected readonly person = signal<Persons | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
 
   /** Reactive form group for person data */
   protected form = this.fb.group({
@@ -83,6 +100,15 @@ export class PersonDetail implements OnInit {
     if (this.mode() === 'edit') {
       this.id = this.route.snapshot.paramMap.get('id');
     }
+
+    // Load users once for display names
+    this.auth
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
 
     // Sync householdId from person without causing feedback loops
     effect(() => {
@@ -191,9 +217,9 @@ export class PersonDetail implements OnInit {
     return this.getFormattedAddress(address);
   }
 
-  /** Returns the creation date of the person */
-  protected getCreatedAt() {
-    return this.person()?.created_at;
+  /** Returns the creation date of the person as a Date (for pipes) */
+  protected getCreatedAt(): Date | null {
+    return this.getDateFrom(this.person()?.created_at);
   }
 
   /** Returns the full name of the person constructed from form inputs */
@@ -202,9 +228,15 @@ export class PersonDetail implements OnInit {
       ?.value}`;
   }
 
-  /** Returns the last updated date of the person */
+  /** Returns the last updated date of the person as a Date (for pipes) */
   protected getUpdatedAt() {
-    return this.person()?.updated_at;
+    return this.getDateFrom(this.person()?.updated_at);
+  }
+
+  /** Get the display name for a user id */
+  protected getUserName(id: string | null | undefined = null): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
   }
 
   /** Navigates to the household detail page if the person belongs to a household */
@@ -297,6 +329,15 @@ export class PersonDetail implements OnInit {
     } finally {
       this.householdsLoading.set(false);
     }
+  }
+
+  private getDateFrom(date: ColumnType<Date, string | Date | undefined, string | Date> | null | undefined) {
+    if (!date) return null;
+    if (date instanceof Date) return date;
+
+    // If date is a Kysely ColumnType, extract the value
+    const value = typeof date === 'object' && 'toString' in date ? date.toString() : (date as string);
+    return new Date(value);
   }
 
   /**
