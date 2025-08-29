@@ -228,6 +228,13 @@ export class PersonDetail implements OnInit {
       ?.value}`;
   }
 
+  protected getId() {
+    const id = this.person()?.id;
+    if (!id) return null;
+
+    return id as unknown as string;
+  }
+
   /** Returns the last updated date of the person as a Date (for pipes) */
   protected getUpdatedAt() {
     return this.getDateFrom(this.person()?.updated_at);

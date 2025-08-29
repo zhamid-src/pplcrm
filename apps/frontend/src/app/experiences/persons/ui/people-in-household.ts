@@ -28,6 +28,9 @@ export class PeopleInHousehold implements OnInit {
   /** List of people retrieved for the specified household. */
   protected peopleInHousehold = signal<PERSONINHOUSEHOLDTYPE[]>([]);
 
+  /** Optional person ID to exclude from the list (e.g., current person). */
+  public excludePersonId = input<string | null>(null);
+
   /** The ID of the household whose members should be listed. */
   public householdId = input.required<string>();
 
@@ -35,20 +38,25 @@ export class PeopleInHousehold implements OnInit {
     // React to input changes
     effect(async () => {
       const id = this.householdId();
+      const excludeId = this.excludePersonId();
       if (!id) return;
 
       const list = await this.personsSvc.getPeopleInHousehold(id);
-      this.peopleInHousehold.set(list);
+      const filtered = excludeId ? list.filter((p) => p.id !== excludeId) : list;
+      this.peopleInHousehold.set(filtered);
     });
   }
+
   /**
    * Load the list of people for the provided household ID on init.
    */
   public async ngOnInit() {
     // Initial load
     if (this.householdId) {
+      const excludeId = this.excludePersonId();
       const peopleInHouseholds = await this.personsSvc.getPeopleInHousehold(this.householdId());
-      this.peopleInHousehold.set(peopleInHouseholds);
+      const filtered = excludeId ? peopleInHouseholds.filter((p) => p.id !== excludeId) : peopleInHouseholds;
+      this.peopleInHousehold.set(filtered);
     }
   }
 }
