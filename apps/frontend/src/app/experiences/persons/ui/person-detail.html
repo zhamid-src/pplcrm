@@ -10,7 +10,10 @@
         <div>
           <div class="divider mb-1">{{ getFormName() }}</div>
           <div class="font-light text-xs text-center text-gray-500">
-            <span>(Added by Zeeshan Hamid on 12/21/2024. Last updated on blah by blah.)</span>
+            <span>
+              (Added by {{ getUserName(person()?.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}. Last
+              updated on {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(person()?.updatedby_id) }}.)
+            </span>
           </div>
         </div>
 
