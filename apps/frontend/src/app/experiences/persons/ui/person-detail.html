@@ -105,7 +105,7 @@
 
         @if (householdId()) {
         <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
-        <pc-people-in-household [householdId]="householdId()!"></pc-people-in-household>
+        <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="getId()"></pc-people-in-household>
         }
 
         <pc-add-btn-row
