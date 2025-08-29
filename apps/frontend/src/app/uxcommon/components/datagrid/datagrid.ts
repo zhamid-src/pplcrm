@@ -261,6 +261,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     navigateIfValid(this.router, this.route, this.addRoute());
   }
 
+  protected canMerge() {
+    return this.countRowSelected() > 1;
+  }
+
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
     await doExportCsv({
@@ -296,6 +300,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
     return this.themeSvc.getTheme() === 'light' ? themeQuartz : themeQuartz.withPart(colorSchemeDarkBlue);
+  }
+
+  protected merge() {
+    console.log('merged');
   }
 
   /** Called when row is double-clicked. */
