@@ -7,8 +7,7 @@ import { PcIconNameType } from '@icons/icons.index';
   standalone: true,
   template: `
     <li
-      class="tooltip-accent"
-      [class.tooltip]="enabled()"
+      class="tooltip tooltip-accent"
       [class.disabled]="!enabled()"
       [class.cursor-not-allowed]="!enabled()"
       [class.text-neutral-400]="!enabled()"
