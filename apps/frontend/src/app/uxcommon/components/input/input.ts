@@ -8,6 +8,7 @@ import { Component, ViewChild, WritableSignal, input, output, signal } from '@an
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
+import { InputShellComponent } from '../input-shell/input-shell';
 import { PcIconNameType } from '@icons/icons.index';
 
 /**
@@ -56,7 +57,7 @@ import { PcIconNameType } from '@icons/icons.index';
  */
 @Component({
   selector: 'pc-input',
-  imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule],
+  imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule, InputShellComponent],
   templateUrl: './input.html',
 })
 export class PPlCrmInput {
