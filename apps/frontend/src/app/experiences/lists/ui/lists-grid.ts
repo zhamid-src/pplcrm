@@ -24,7 +24,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   protected col = [
     { field: 'name', headerName: 'List Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
-    { field: 'object', headerName: 'Object', editable: true },
+    { field: 'object', headerName: 'Type' },
     { field: 'list_size', headerName: 'List Size' },
     { field: 'used_in', headerName: 'Used In' },
     { field: 'updated_at', headerName: 'Last Updated' },
