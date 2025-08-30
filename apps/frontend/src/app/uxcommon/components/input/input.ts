@@ -8,7 +8,6 @@ import { Component, ViewChild, WritableSignal, input, output, signal } from '@an
 import { FormControl, NgModel, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
-import { InputShellComponent } from '../input-shell/input-shell';
 import { PcIconNameType } from '@icons/icons.index';
 
 /**
@@ -57,7 +56,7 @@ import { PcIconNameType } from '@icons/icons.index';
  */
 @Component({
   selector: 'pc-input',
-  imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule, InputShellComponent],
+  imports: [Icon, ReactiveFormsModule, NgxGpAutocompleteModule],
   templateUrl: './input.html',
 })
 export class PPlCrmInput {
@@ -82,18 +81,6 @@ export class PPlCrmInput {
     }
   }, this.debounceTime());
 
-  /**
-   * Tailwind CSS classes for consistent input styling across the application.
-   * Includes focus states, validation states, and disabled states.
-   */
-  protected inputClass = `
-  peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px]
-  border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2
-  focus:border-t-transparent invalid:border-error invalid:border-t-transparent
-  disabled:bg-base-300 disabled:cursor-not-allowed transition-all
-  placeholder-shown:border placeholder-shown:border-blue-gray-200
-  placeholder-shown:border-t-blue-gray-200 border
-`.trim();
 
   /** Reactive signal for tracking current input value */
   protected inputValue: WritableSignal<string> = signal('');
@@ -156,13 +143,7 @@ export class PPlCrmInput {
   // PROTECTED GETTERS
   // =============================================================================
 
-  /**
-   * Gets the current length of the input value.
-   * Used for character counting and validation feedback.
-   */
-  protected get inputLength(): number {
-    return this.inputControl.value?.length ?? 0;
-  }
+  // (DaisyUI handles styling; no floating label length logic required.)
 
   // =============================================================================
   // PUBLIC METHODS

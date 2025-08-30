@@ -1,15 +1,16 @@
-<pc-input-shell [icon]="icon()" [placeholder]="placeholder()">
-  <div [formGroup]="form">
+<label class="input input-bordered items-center gap-2">
+  @if (icon() !== null) {
+  <pc-icon [name]="icon()!" class="opacity-25"></pc-icon>
+  }
+  <div [formGroup]="form" class="grow">
     <input
-      placeholder=" "
+      placeholder="{{ placeholder() }}"
       [type]="type()"
       [formControlName]="control()"
-      [attr.aria-placeholder]="placeholder()"
       (blur)="handleBlur()"
       [pattern]="pattern()"
-      [class.pl-8]="icon()"
-      [class.border-t-transparent]="getControlValue()?.length > 0"
-      class="peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px] focus:outline-0 focus:border-primary focus:border-2 focus:border-t-transparent invalid:border-error invalid:border-t-transparent disabled:bg-base-300 disabled:cursor-not-allowed transition-all placeholder-shown:border placeholder-shown:border-blue-gray-200 border"
+      class="w-full"
     />
   </div>
-</pc-input-shell>
+  <!-- <span class="badge badge-neutral badge-xs">Optional</span> -->
+</label>

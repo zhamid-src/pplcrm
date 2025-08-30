@@ -1,31 +1,30 @@
-<pc-input-shell [icon]="icon()" [placeholder]="placeholder()">
-  @if (googlePlaces()) {
-    <input
-      [disabled]="disabled()"
-      placeholder=" "
-      [formControl]="inputControl"
-      (focus)="handleFocus()"
-      (blur)="handleBlur()"
-      [type]="type()"
-      [attr.aria-placeholder]="placeholder()"
-      [class.pl-8]="icon() !== null"
-      [options]="options"
-      ngx-gp-autocomplete
-      (onAddressChange)="handleAddressChange($event)"
-      [class.border-t-transparent]="inputLength > 0"
-      class="peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px] border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2 focus:border-t-transparent invalid:border-error invalid:border-t-transparent disabled:bg-base-300 disabled:cursor-not-allowed transition-all placeholder-shown:border placeholder-shown:border-blue-gray-200 placeholder-shown:border-t-blue-gray-200 border"
-    />
+<label class="input input-bordered items-center gap-2">
+  @if (icon() !== null) {
+  <pc-icon [name]="icon()!" class="opacity-25"></pc-icon>
+  } @if (googlePlaces()) {
+  <input
+    [disabled]="disabled()"
+    placeholder="{{ placeholder() }}"
+    [formControl]="inputControl"
+    (focus)="handleFocus()"
+    (blur)="handleBlur()"
+    [type]="type()"
+    class="grow"
+    [options]="options"
+    ngx-gp-autocomplete
+    (onAddressChange)="handleAddressChange($event)"
+  />
   } @else {
-    <input
-      placeholder=" "
-      [formControl]="inputControl"
-      (focus)="handleFocus()"
-      (keyup)="debounceValueChange($event)"
-      (blur)="handleBlur()"
-      [type]="type()"
-      [attr.aria-placeholder]="placeholder()"
-      [class.pl-8]="icon() !== null"
-      class="peer w-full h-full bg-transparent text-sm px-3 py-2.5 rounded-[7px] border-blue-gray-200 focus:outline-0 focus:border-primary focus:border-2 focus:border-t-transparent invalid:border-error invalid:border-t-transparent disabled:bg-base-300 disabled:cursor-not-allowed transition-all placeholder-shown:border placeholder-shown:border-blue-gray-200 placeholder-shown:border-t-blue-gray-200 border"
-    />
+  <input
+    placeholder="{{ placeholder() }}"
+    [formControl]="inputControl"
+    (focus)="handleFocus()"
+    (keyup)="debounceValueChange($event)"
+    (blur)="handleBlur()"
+    [type]="type()"
+    class="grow"
+  />
   }
-</pc-input-shell>
+  <!-- Optional badge slot: add if needed -->
+  <!-- <span class="badge badge-neutral badge-xs">Optional</span> -->
+</label>

@@ -2,13 +2,12 @@ import { Component, OnInit, inject, input, output } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { debounce } from '@common';
 import { Icon } from '@icons/icon';
-import { InputShellComponent } from '../input-shell/input-shell';
 import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 @Component({
   selector: 'pc-form-input',
-  imports: [ReactiveFormsModule, Icon, InputShellComponent],
+  imports: [ReactiveFormsModule, Icon],
   templateUrl: './formInput.html',
 })
 export class FormInput implements OnInit {
