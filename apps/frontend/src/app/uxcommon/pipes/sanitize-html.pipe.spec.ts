@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { SanitizeHtmlPipe } from './sanitize-html.pipe';
+import DOMPurify from 'dompurify';
 
 describe('SanitizeHtmlPipe', () => {
   let pipe: SanitizeHtmlPipe;
@@ -29,6 +30,9 @@ describe('SanitizeHtmlPipe', () => {
 
     pipe = TestBed.inject(SanitizeHtmlPipe);
     mockDomSanitizer = TestBed.inject(DomSanitizer) as jest.Mocked<DomSanitizer>;
+
+    // By default, make DOMPurify a pass-through so expectations match input
+    jest.spyOn(DOMPurify, 'sanitize').mockImplementation((value: any) => value);
   });
 
   describe('Pipe Creation', () => {
@@ -62,9 +66,9 @@ describe('SanitizeHtmlPipe', () => {
           </ul>
         </div>
       `;
-
       const result = pipe.transform(complexHtml);
 
+      expect(DOMPurify.sanitize).toHaveBeenCalled();
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(complexHtml);
       expect(result).toEqual({ changingThisBreaksApplicationSecurity: complexHtml });
     });
@@ -101,22 +105,23 @@ describe('SanitizeHtmlPipe', () => {
     it('should handle empty string', () => {
       const result = pipe.transform('');
 
-      expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('');
-      expect(result).toEqual({ changingThisBreaksApplicationSecurity: '' });
+      // returns early without calling sanitizer
+      expect(mockDomSanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled();
+      expect(result).toEqual('');
     });
 
     it('should handle null input', () => {
       const result = pipe.transform(null as any);
 
-      expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(null);
-      expect(result).toEqual({ changingThisBreaksApplicationSecurity: null });
+      expect(mockDomSanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled();
+      expect(result).toEqual('');
     });
 
     it('should handle undefined input', () => {
       const result = pipe.transform(undefined as any);
 
-      expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(undefined);
-      expect(result).toEqual({ changingThisBreaksApplicationSecurity: undefined });
+      expect(mockDomSanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled();
+      expect(result).toEqual('');
     });
 
     it('should handle plain text without HTML tags', () => {
@@ -143,7 +148,8 @@ describe('SanitizeHtmlPipe', () => {
 
       const result = pipe.transform(dangerousHtml);
 
-      // The pipe passes through to DomSanitizer, which should handle the security
+      // The pipe delegates to DOMPurify and then trusts the sanitized HTML
+      expect(DOMPurify.sanitize).toHaveBeenCalledWith(dangerousHtml, expect.any(Object));
       expect(mockDomSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith(dangerousHtml);
       expect(result).toEqual({ changingThisBreaksApplicationSecurity: dangerousHtml });
     });

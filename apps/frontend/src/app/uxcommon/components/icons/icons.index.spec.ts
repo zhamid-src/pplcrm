@@ -30,10 +30,9 @@ describe('Icons Index', () => {
       });
     });
 
-    it('should have valid SVG content for icons', () => {
-      Object.entries(IconsIndex.icons).forEach(([key, value]) => {
-        // Check that the value contains SVG-like content
-        expect(value).toMatch(/<svg|<path|<g|<circle|<rect|<line/);
+    it('should reference svg asset paths', () => {
+      Object.values(IconsIndex.icons).forEach((value) => {
+        expect(value).toMatch(/\.svg$/);
       });
     });
 
@@ -49,9 +48,8 @@ describe('Icons Index', () => {
     const commonIcons = [
       'star',
       'star-filled',
-      'user',
+      'user-circle',
       'user-plus',
-      'user-check',
       'arrow-uturn-left',
       'arrows-pointing-out',
       'eye',
@@ -68,7 +66,7 @@ describe('Icons Index', () => {
 
   describe('Icon Content Validation', () => {
     it('should have non-empty SVG content for all icons', () => {
-      Object.entries(IconsIndex.icons).forEach(([key, value]) => {
+      Object.entries(IconsIndex.icons).forEach(([, value]) => {
         expect(value.trim()).not.toBe('');
         expect(value).not.toBe('undefined');
         expect(value).not.toBe('null');

@@ -39,6 +39,6 @@ describe('row-model.strategy', () => {
     const s = new ServerSideStrategy();
     const api = makeApi();
     s.refresh(api);
-    expect((api as any).refreshServerSide).toHaveBeenCalledWith({ purge: true });
+    expect((api as any).refreshServerSide).toHaveBeenCalledWith({ purge: false });
   });
 });

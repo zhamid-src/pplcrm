@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailHeader } from './email-header';
-import { EmailsStore } from '../services/store/emailstore';
+import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models/models';
 
 // Mock child components
@@ -81,22 +81,22 @@ describe('EmailHeader', () => {
 
   describe('Email Input Handling', () => {
     it('should update favorite state when email input changes', () => {
-      // Set up the input signal
-      component.email = signal(mockEmail);
+      // Set up the input via Angular setInput
+      fixture.componentRef.setInput('email', mockEmail);
       fixture.detectChanges();
 
       expect(component['isFavourite']()).toBe(false);
     });
 
     it('should handle favorite email input', () => {
-      component.email = signal(mockFavoriteEmail);
+      fixture.componentRef.setInput('email', mockFavoriteEmail);
       fixture.detectChanges();
 
       expect(component['isFavourite']()).toBe(true);
     });
 
     it('should handle null email input', () => {
-      component.email = signal(null as any);
+      fixture.componentRef.setInput('email', null as any);
       fixture.detectChanges();
 
       // Should not throw error
@@ -124,7 +124,7 @@ describe('EmailHeader', () => {
 
   describe('Favorite Toggle Functionality', () => {
     beforeEach(() => {
-      component.email = signal(mockEmail);
+      fixture.componentRef.setInput('email', mockEmail);
       fixture.detectChanges();
     });
 
@@ -156,7 +156,7 @@ describe('EmailHeader', () => {
 
   describe('Template Rendering', () => {
     beforeEach(() => {
-      component.email = signal(mockEmail);
+      fixture.componentRef.setInput('email', mockEmail);
       fixture.detectChanges();
     });
 
@@ -203,7 +203,7 @@ describe('EmailHeader', () => {
     });
 
     it('should show correct icon for favorite email', () => {
-      component.email = signal(mockFavoriteEmail);
+      fixture.componentRef.setInput('email', mockFavoriteEmail);
       component['isFavourite'].set(true);
       fixture.detectChanges();
 
@@ -228,7 +228,7 @@ describe('EmailHeader', () => {
 
   describe('User Interactions', () => {
     beforeEach(() => {
-      component.email = signal(mockEmail);
+      fixture.componentRef.setInput('email', mockEmail);
       fixture.detectChanges();
     });
 
