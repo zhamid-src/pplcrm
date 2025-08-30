@@ -1,29 +1,153 @@
 <div class="flex min-h-full flex-col bg-base-100">
-  <form [formGroup]="form" class="mx-5 my-10 flex flex-col gap-4 sm:mx-10">
-    <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
-    <pc-form-input control="description" placeholder="Description" icon="document-text" />
-
-    <div class="flex flex-wrap items-center gap-4">
-      <label class="form-control w-full max-w-xs">
-        <span class="label-text">Object</span>
-        <select class="select select-bordered" formControlName="object">
-          <option value="people">People</option>
-          <option value="households">Households</option>
-        </select>
-      </label>
-      <label class="label cursor-pointer gap-2">
-        <span class="label-text">Dynamic</span>
-        <input type="checkbox" class="checkbox" formControlName="is_dynamic" />
-      </label>
+  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
+    <!-- Stepper -->
+    <div class="w-full">
+      <ol class="flex items-center w-full text-sm">
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(1)">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center"
+               [class.bg-primary]="step() >= 1" [class.bg-base-300]="step() < 1">
+            <span class="text-base-100 font-bold">1</span>
+          </div>
+          <span class="font-medium">Type</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 1" [class.bg-base-300]="step() <= 1"></div>
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(2)">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center"
+               [class.bg-primary]="step() >= 2" [class.bg-base-300]="step() < 2">
+            <span class="text-base-100 font-bold">2</span>
+          </div>
+          <span class="font-medium">Mode</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 2" [class.bg-base-300]="step() <= 2"></div>
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(3)">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center"
+               [class.bg-primary]="step() >= 3" [class.bg-base-300]="step() < 3">
+            <span class="text-base-100 font-bold">3</span>
+          </div>
+          <span class="font-medium">Filters</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 3" [class.bg-base-300]="step() <= 3"></div>
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(4)">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center"
+               [class.bg-primary]="step() >= 4" [class.bg-base-300]="step() < 4">
+            <span class="text-base-100 font-bold">4</span>
+          </div>
+          <span class="font-medium">Preview</span>
+        </li>
+      </ol>
     </div>
 
-    <div class="h-96">
-      @if (form.get('object')?.value === 'people') {
-      <pc-people-filter-grid />
-      } @else {
-      <pc-household-filter-grid />
-      }
-    </div>
-    <pc-add-btn-row [isLoading]="isLoading()" [btn1Text]="btnLabel()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+    <!-- Step 1: Type selection -->
+    @if (step() === 1) {
+      <div class="grid gap-4 sm:grid-cols-2">
+        <button type="button" class="card border border-base-300 hover:border-primary p-6 text-left"
+                [class.bg-base-200]="form.get('object')?.value === 'people'"
+                (click)="form.get('object')?.setValue('people'); next()">
+          <div class="flex items-center gap-4">
+            <pc-icon name="users" class="w-10 h-10"></pc-icon>
+            <div>
+              <div class="font-semibold">People List</div>
+              <div class="text-sm text-base-content/70">Individuals with contact and tag data.</div>
+            </div>
+          </div>
+        </button>
+
+        <button type="button" class="card border border-base-300 hover:border-primary p-6 text-left"
+                [class.bg-base-200]="form.get('object')?.value === 'households'"
+                (click)="form.get('object')?.setValue('households'); next()">
+          <div class="flex items-center gap-4">
+            <pc-icon name="house-modern" class="w-10 h-10"></pc-icon>
+            <div>
+              <div class="font-semibold">Household List</div>
+              <div class="text-sm text-base-content/70">Households grouped by address.</div>
+            </div>
+          </div>
+        </button>
+      </div>
+    }
+
+    <!-- Step 2: Mode selection -->
+    @if (step() === 2) {
+      <div class="grid gap-4 sm:grid-cols-2">
+        <button type="button" class="card border border-base-300 hover:border-primary p-6 text-left"
+                [class.bg-base-200]="!form.get('is_dynamic')?.value"
+                (click)="form.get('is_dynamic')?.setValue(false)">
+          <div class="font-semibold mb-1">Static List</div>
+          <div class="text-sm text-base-content/70">A fixed snapshot. You select members now.</div>
+        </button>
+        <button type="button" class="card border border-base-300 hover:border-primary p-6 text-left"
+                [class.bg-base-200]="form.get('is_dynamic')?.value"
+                (click)="form.get('is_dynamic')?.setValue(true)">
+          <div class="font-semibold mb-1">Dynamic List</div>
+          <div class="text-sm text-base-content/70">Auto-updates using saved filters (e.g., Tags).</div>
+        </button>
+      </div>
+      <div class="flex items-center justify-between mt-4">
+        <button type="button" class="btn" (click)="back()">Back</button>
+        <button type="button" class="btn btn-primary" (click)="next()">Next</button>
+      </div>
+    }
+
+    <!-- Step 3: Filters -->
+    @if (step() === 3) {
+      <div class="grid gap-4">
+        <div class="grid gap-3">
+          <div class="label-text mb-1">Build Tag Rules</div>
+          <pc-tag-rule-builder
+            [group]="rulesRoot()"
+            [tagSvc]="tagSvc"
+            [objectType]="$any(form.get('object')?.value || 'people')"
+            [summaryMatches]="matchCount()"
+            [summaryCounting]="counting()"
+            [summaryError]="rulesError()"
+            (changed)="onRulesChanged()"
+          ></pc-tag-rule-builder>
+          <div class="text-xs text-base-content/70">
+            Use AND/OR and nested groups to combine Tag is / is not rules.
+          </div>
+        </div>
+        <!-- Matches are shown in the summary line above -->
+        <div class="flex items-center justify-between mt-2">
+          <button type="button" class="btn" (click)="back()">Back</button>
+          <button type="button" class="btn btn-primary" (click)="next()">Next</button>
+        </div>
+      </div>
+    }
+
+    <!-- Step 4: Preview -->
+    @if (step() === 4) {
+      <div class="grid gap-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
+          <pc-form-input control="description" placeholder="Description" icon="document-text" />
+        </div>
+        <div class="text-sm text-base-content/70">Preview (read-only). Go back to adjust filters.</div>
+        <div class="h-96 border border-base-300 rounded">
+          @if (form.get('object')?.value === 'people') {
+            <pc-people-filter-grid
+              [externalFilterFn]="externalRowFilter"
+              [forceClient]="true"
+              [showToolbar]="false"
+              [enableSelection]="false"
+              [disableView]="true"
+              [allowFilter]="false"
+            />
+          } @else {
+            <pc-household-filter-grid
+              [externalFilterFn]="externalRowFilter"
+              [forceClient]="true"
+              [showToolbar]="false"
+              [enableSelection]="false"
+              [disableView]="true"
+              [allowFilter]="false"
+            />
+          }
+        </div>
+        <div class="flex items-center justify-between">
+          <button type="button" class="btn" (click)="back()">Back</button>
+          <pc-add-btn-row [isLoading]="isLoading()" [btn1Text]="btnLabel()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+        </div>
+      </div>
+    }
   </form>
 </div>

@@ -14,5 +14,7 @@ export function buildGridCallbacks<T extends keyof Models, U = unknown>(ctx: Dat
     onRedoEnded: ctx.updateUndoSizes,
     onRowDataUpdated: ctx.updateUndoSizes,
     onRowValueChanged: ctx.updateUndoSizes,
+    isExternalFilterPresent: ctx.isExternalFilterPresent.bind(ctx),
+    doesExternalFilterPass: ctx.doesExternalFilterPass.bind(ctx),
   } as GridOptions;
 }

@@ -1,4 +1,5 @@
 import type { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } from '@common';
+import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
@@ -26,6 +27,13 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
    * Create a new list for the authenticated tenant.
    */
   public async addList(payload: AddListType, auth: IAuthKeyPayload) {
+    // Enforce unique list names per tenant
+    const existing = await this.getRepo().getOneBy('name', {
+      tenant_id: auth.tenant_id,
+      value: payload.name,
+    });
+    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
+
     const row = {
       name: payload.name,
       description: payload.description,
