@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Input } from '@angular/core';
 import { signal } from '@angular/core';
 import { EmailBody } from './email-body';
-import { EmailsStore } from '../services/store/emailstore';
+import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models/models';
 
 // Mock sanitize pipe
@@ -54,8 +54,8 @@ describe('EmailBody', () => {
     component = fixture.componentInstance;
     mockEmailsStore = TestBed.inject(EmailsStore) as jest.Mocked<EmailsStore>;
 
-    // Set required input
-    component.email = signal(mockEmail);
+    // Set required input via Angular setInput
+    fixture.componentRef.setInput('email', mockEmail);
   });
 
   describe('Component Initialization', () => {
@@ -121,7 +121,7 @@ describe('EmailBody', () => {
       fixture.detectChanges();
 
       // Change email
-      component.email = signal(newEmail);
+      fixture.componentRef.setInput('email', newEmail);
       fixture.detectChanges();
 
       // Wait for effect to run
@@ -131,7 +131,7 @@ describe('EmailBody', () => {
     });
 
     it('should not load when email is null', async () => {
-      component.email = signal(null as any);
+      fixture.componentRef.setInput('email', null as any);
       fixture.detectChanges();
 
       // Wait for effect to run
@@ -173,7 +173,7 @@ describe('EmailBody', () => {
     });
 
     it('should handle undefined email body', () => {
-      mockEmailsStore.getEmailBodyById.mockReturnValue(() => null);
+      mockEmailsStore.getEmailBodyById.mockReturnValue(() => undefined as any);
       fixture.detectChanges();
 
       const bodyContent = component['bodyHtml']();

@@ -1,7 +1,7 @@
 /**
  * @file Tests for {@link TagsCellRenderer} functionality.
  */
-import { TagsCellRenderer } from './components/tags-cell-renderer';
+import { TagsCellRenderer } from './tags-cell-renderer';
 
 jest.mock('@uxcommon/components/tags/tags', () => ({ Tags: class {} }), { virtual: true });
 
@@ -31,4 +31,3 @@ describe('TagsCellRenderer', () => {
     expect((renderer as any).tags).toEqual(['c']);
   });
 });
-

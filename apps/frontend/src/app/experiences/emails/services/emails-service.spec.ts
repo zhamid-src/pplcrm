@@ -2,13 +2,11 @@
  * @fileoverview Unit tests for EmailsService.
  * Tests the email API service functionality including CRUD operations and email management.
  */
-import { TestBed } from '@angular/core/testing';
 import { EmailsService } from './emails-service';
-import { TRPCService } from '@services/api/trpc-service';
 
 describe('EmailsService', () => {
   let service: EmailsService;
-  let mockTRPCService: jest.Mocked<TRPCService<'emails'>>;
+  let mockApi: any;
 
   const mockEmail = {
     id: '1',
@@ -37,36 +35,38 @@ describe('EmailsService', () => {
   };
 
   beforeEach(() => {
-    const mockApi = {
+    mockApi = {
       emails: {
-        getAll: { query: jest.fn() },
+        getEmails: { query: jest.fn() },
+        getFolders: { query: jest.fn() },
+        getFoldersWithCounts: { query: jest.fn() },
         getById: { query: jest.fn() },
         add: { mutate: jest.fn() },
         update: { mutate: jest.fn() },
         delete: { mutate: jest.fn() },
         setFavourite: { mutate: jest.fn() },
+        setStatus: { mutate: jest.fn() },
         assign: { mutate: jest.fn() },
         getEmailBody: { query: jest.fn() },
         getEmailHeader: { query: jest.fn() },
         getEmailWithHeaders: { query: jest.fn() },
-      },
-      emailFolders: {
-        getAll: { query: jest.fn() },
-      },
-      emailBodies: {
-        getById: { query: jest.fn() },
-      },
-      emailComments: {
-        add: { mutate: jest.fn() },
+        deleteMany: { mutate: jest.fn() },
+        addComment: { mutate: jest.fn() },
+        deleteComment: { mutate: jest.fn() },
+        getDraft: { query: jest.fn() },
+        deleteDraft: { mutate: jest.fn() },
+        getAllAttachments: { query: jest.fn() },
+        getAttachmentsByEmailId: { query: jest.fn() },
+        hasAttachment: { query: jest.fn() },
+        hasAttachmentByEmailIds: { query: jest.fn() },
+        restoreFromTrash: { mutate: jest.fn() },
       },
     };
 
-    TestBed.configureTestingModule({
-      providers: [EmailsService, { provide: TRPCService, useValue: { api: mockApi } }],
-    });
-
-    service = TestBed.inject(EmailsService);
-    mockTRPCService = TestBed.inject(TRPCService) as any;
+    // Create a bare instance without invoking Angular inject()s
+    service = Object.create(EmailsService.prototype) as EmailsService;
+    (service as any).api = mockApi;
+    (service as any).ac = new AbortController();
   });
 
   describe('Initialization', () => {
@@ -78,44 +78,44 @@ describe('EmailsService', () => {
   describe('Email Operations', () => {
     it('should get emails for a folder', async () => {
       const mockEmails = [mockEmail];
-      (mockTRPCService as any).api.emails.getAll.query.mockResolvedValue(mockEmails);
+      mockApi.emails.getEmails.query.mockResolvedValue(mockEmails);
 
       const result = await service.getEmails('folder1');
 
-      expect((mockTRPCService as any).api.emails.getAll.query).toHaveBeenCalledWith('folder1');
+      expect(mockApi.emails.getEmails.query).toHaveBeenCalledWith({ folderId: 'folder1' });
       expect(result).toEqual(mockEmails);
     });
 
     it('should set email as favourite', async () => {
-      (mockTRPCService as any).api.emails.setFavourite.mutate.mockResolvedValue(undefined);
+      mockApi.emails.setFavourite.mutate.mockResolvedValue(undefined);
 
       await service.setFavourite('1', true);
 
-      expect((mockTRPCService as any).api.emails.setFavourite.mutate).toHaveBeenCalledWith({
+      expect(mockApi.emails.setFavourite.mutate).toHaveBeenCalledWith({
         id: '1',
-        is_favourite: true,
+        favourite: true,
       });
     });
 
     it('should assign email to user', async () => {
-      (mockTRPCService as any).api.emails.assign.mutate.mockResolvedValue(undefined);
+      mockApi.emails.assign.mutate.mockResolvedValue(undefined);
 
       await service.assign('1', 'user123');
 
-      expect((mockTRPCService as any).api.emails.assign.mutate).toHaveBeenCalledWith({
+      expect(mockApi.emails.assign.mutate).toHaveBeenCalledWith({
         id: '1',
-        assigned_to: 'user123',
+        user_id: 'user123',
       });
     });
 
     it('should unassign email when userId is null', async () => {
-      (mockTRPCService as any).api.emails.assign.mutate.mockResolvedValue(undefined);
+      mockApi.emails.assign.mutate.mockResolvedValue(undefined);
 
       await service.assign('1', null);
 
-      expect((mockTRPCService as any).api.emails.assign.mutate).toHaveBeenCalledWith({
+      expect(mockApi.emails.assign.mutate).toHaveBeenCalledWith({
         id: '1',
-        assigned_to: null,
+        user_id: null,
       });
     });
 
@@ -131,11 +131,11 @@ describe('EmailsService', () => {
           comments: [],
         },
       };
-      (mockTRPCService as any).api.emails.getEmailWithHeaders.query.mockResolvedValue(mockResponse);
+      mockApi.emails.getEmailWithHeaders.query.mockResolvedValue(mockResponse);
 
       const result = await service.getEmailWithHeaders('1');
 
-      expect((mockTRPCService as any).api.emails.getEmailWithHeaders.query).toHaveBeenCalledWith('1');
+      expect(mockApi.emails.getEmailWithHeaders.query).toHaveBeenCalledWith('1');
       expect(result).toEqual(mockResponse);
     });
   });
@@ -143,27 +143,27 @@ describe('EmailsService', () => {
   describe('Folder Operations', () => {
     it('should get all folders', async () => {
       const mockFolders = [mockFolder];
-      (mockTRPCService as any).api.emailFolders.getAll.query.mockResolvedValue(mockFolders);
+      mockApi.emails.getFolders.query.mockResolvedValue(mockFolders);
 
       const result = await service.getFolders();
 
-      expect((mockTRPCService as any).api.emailFolders.getAll.query).toHaveBeenCalled();
+      expect(mockApi.emails.getFolders.query).toHaveBeenCalled();
       expect(result).toEqual(mockFolders);
     });
   });
 
   describe('Email Body Operations', () => {
     it('should get email body by id', async () => {
-      (mockTRPCService as any).api.emailBodies.getById.query.mockResolvedValue(mockEmailBody);
+      mockApi.emails.getEmailBody.query.mockResolvedValue(mockEmailBody);
 
       const result = await service.getEmailBody('1');
 
-      expect((mockTRPCService as any).api.emailBodies.getById.query).toHaveBeenCalledWith('1');
+      expect(mockApi.emails.getEmailBody.query).toHaveBeenCalledWith('1');
       expect(result).toEqual(mockEmailBody);
     });
 
     it('should handle missing email body', async () => {
-      (mockTRPCService as any).api.emailBodies.getById.query.mockResolvedValue(null);
+      mockApi.emails.getEmailBody.query.mockResolvedValue(null);
 
       const result = await service.getEmailBody('1');
 
@@ -180,12 +180,12 @@ describe('EmailsService', () => {
         comment: 'Test comment',
         created_at: new Date(),
       };
-      (mockTRPCService as any).api.emailComments.add.mutate.mockResolvedValue(mockComment);
+      mockApi.emails.addComment.mutate.mockResolvedValue(mockComment);
 
       const result = await service.addComment('1', 'user123', 'Test comment');
 
-      expect((mockTRPCService as any).api.emailComments.add.mutate).toHaveBeenCalledWith({
-        email_id: '1',
+      expect(mockApi.emails.addComment.mutate).toHaveBeenCalledWith({
+        id: '1',
         author_id: 'user123',
         comment: 'Test comment',
       });
@@ -196,14 +196,14 @@ describe('EmailsService', () => {
   describe('Error Handling', () => {
     it('should handle API errors gracefully', async () => {
       const error = new Error('API Error');
-      (mockTRPCService as any).api.emails.getAll.query.mockRejectedValue(error);
+      mockApi.emails.getEmails.query.mockRejectedValue(error);
 
       await expect(service.getEmails('folder1')).rejects.toThrow('API Error');
     });
 
     it('should handle network errors in favourite toggle', async () => {
       const error = new Error('Network Error');
-      (mockTRPCService as any).api.emails.setFavourite.mutate.mockRejectedValue(error);
+      mockApi.emails.setFavourite.mutate.mockRejectedValue(error);
 
       await expect(service.setFavourite('1', true)).rejects.toThrow('Network Error');
     });
