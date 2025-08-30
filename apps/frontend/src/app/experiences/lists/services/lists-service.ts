@@ -8,9 +8,9 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
   providedIn: 'root',
 })
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
-  /** Add a new list */
+  /** Add a new list (opt-out of global error toast to avoid duplicates) */
   public add(row: AddListType) {
-    return this.api.lists.add.mutate(row);
+    return (this.api.lists.add.mutate as any)(row, { meta: { skipErrorHandler: true } });
   }
 
   /** No-op batch add implementation */

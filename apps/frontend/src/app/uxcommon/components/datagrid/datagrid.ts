@@ -92,6 +92,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public gridOptions = input<GridOptions<Partial<T>>>({});
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
+  public externalFilterFn = input<((row: any) => boolean) | null>(null);
+  public forceClient = input<boolean>(false);
+  public showToolbar = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public allowFilter = input<boolean>(true);
 
   constructor() {
     effect(() => {
@@ -153,7 +158,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   public async ngOnInit() {
     const rowCount = await this.gridSvc.count();
-    this.rowModelType.set(rowCount < this.config.clientServerThreshold ? 'clientSide' : 'serverSide');
+    this.rowModelType.set(
+      this.forceClient() || rowCount < this.config.clientServerThreshold ? 'clientSide' : 'serverSide',
+    );
 
     // Choose strategy
     this.strategy = this.rowModelType() === 'clientSide' ? new ClientSideStrategy() : new ServerSideStrategy();
@@ -163,13 +170,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     const getRowIdFn = incoming.getRowId ?? ((p: GetRowIdParams) => String((p.data as any)?.id));
 
     // Merge defaults → incoming → callbacks → strategy-specific
+    const allowFilter = this.allowFilter();
     this.mergedGridOptions = this.strategy.configureGridOptions({
       rowModelType: this.rowModelType(),
       ...defaultGridOptions,
       defaultColDef: {
         ...defaultGridOptions.defaultColDef,
-        filter: this.rowModelType() === 'clientSide' ? 'agMultiColumnFilter' : null,
+        filter: allowFilter && this.rowModelType() === 'clientSide' ? 'agMultiColumnFilter' : null,
+        suppressHeaderMenuButton: !allowFilter,
       },
+      sideBar: allowFilter ? defaultGridOptions.sideBar : false,
       getRowId: getRowIdFn,
       ...incoming,
       ...buildGridCallbacks(this),
@@ -177,6 +187,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     // Render grid after model type is chosen
     this.gridVisible.set(true);
+  }
+
+  /** External filter integration */
+  public isExternalFilterPresent() {
+    return !!this.externalFilterFn();
+  }
+
+  public doesExternalFilterPass(node: any) {
+    const fn = this.externalFilterFn();
+    return fn ? fn(node.data) : true;
+  }
+
+  /** Trigger AG Grid filter recomputation */
+  public triggerFilterChanged() {
+    this.api?.onFilterChanged();
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -208,7 +233,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Called by AG Grid when ready. Sets up API, columns, and triggers refresh. */
   public onGridReady(params: GridReadyEvent) {
-    this.colDefsWithEdit = [...this.colDefsWithEdit, ...this.colDefs()];
+    const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
+    this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
     this.api = params.api;
 
     if (this.rowModelType() === 'serverSide') {
@@ -346,5 +372,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
     return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
+  }
+
+  /** Returns all currently displayed rows' data (after external filters). */
+  public getDisplayedRows(): Partial<T & { id: string }>[] {
+    const out: Partial<T & { id: string }>[] = [];
+    const api = this.api as any;
+    if (!api) return out;
+    const count = api.getDisplayedRowCount?.() ?? 0;
+    for (let i = 0; i < count; i++) {
+      const node = api.getDisplayedRowAtIndex?.(i);
+      if (node?.data) out.push(node.data);
+    }
+    return out;
   }
 }

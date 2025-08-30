@@ -93,6 +93,9 @@ body {
 
 .bg-image {
   background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
 }
 
 .input-pplcrm {
