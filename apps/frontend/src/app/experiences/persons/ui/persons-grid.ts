@@ -3,7 +3,8 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows in a high-performance AG-Grid interface.
  */
-import { Component, inject } from '@angular/core';
+import { Component, NgZone, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { TagsCellRenderer } from '@experiences/tags/ui/tags-cell-renderer';
@@ -62,16 +63,38 @@ interface ParamsType {
  */
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon],
+  imports: [DataGrid, Icon, FormsModule],
   templateUrl: './persons-grid.html',
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+  private readonly zone = inject(NgZone);
+
   /**
    * Stores the household ID when a user tries to change an address,
    * so it can be used in the confirmation dialog logic.
    */
   private addressChangeModalId: string | null = null;
+  private importProgressTimer: any;
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
 
   /**
    * Column definitions for the grid.
@@ -151,8 +174,20 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
+  // Import CSV state
+  protected csvHeaders: string[] = [];
+  protected csvRows: Array<Record<string, string>> = [];
+  protected importLoading = false;
+  protected importProgress = 0;
+  protected importProgressMax = 100;
+  protected importStatus = '';
+
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
+  protected mapping: string[] = [];
+  protected previewPage = 0;
+  protected previewPageSize = 5;
+  protected tagsInput = '';
 
   /**
    * Initializes the grid and retrieves tag filter data from the route.
@@ -161,6 +196,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     super();
     const route = inject(ActivatedRoute);
     this.limitTags = route.snapshot.data['tags'] ?? [];
+  }
+
+  protected canNextPage() {
+    return (this.previewPage + 1) * this.previewPageSize < this.csvRows.length;
+  }
+
+  protected canPrevPage() {
+    return this.previewPage > 0;
   }
 
   /**
@@ -172,6 +215,86 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
     this.addressChangeModalId = event.data.household_id;
     this.confirmAddressChange();
+  }
+
+  protected getPreviewRows() {
+    const start = this.previewPage * this.previewPageSize;
+    const end = start + this.previewPageSize;
+    return this.csvRows.slice(start, end);
+  }
+
+  protected nextPage() {
+    if (this.canNextPage()) this.previewPage++;
+  }
+
+  protected onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) {
+      this.importLoading = false;
+      return;
+    }
+    this.zone.run(() => {
+      this.importLoading = true;
+    });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = (reader.result as string) || '';
+      try {
+        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
+        const handle = (ev: MessageEvent) => {
+          const data: any = ev.data || {};
+          if (data.type === 'result') {
+            this.zone.run(() => {
+              this.csvHeaders = data.headers || [];
+              this.csvRows = data.rows || [];
+              this.mapping = this.csvHeaders.map((h: string) => this.autoMapHeader(h));
+              this.previewPage = 0;
+              this.importLoading = false;
+            });
+            worker.removeEventListener('message', handle as any);
+            worker.terminate();
+          } else if (data.type === 'error') {
+            this.zone.run(() => {
+              this.alertSvc.showError(data.message || 'Failed to parse CSV');
+              this.importLoading = false;
+            });
+            worker.removeEventListener('message', handle as any);
+            worker.terminate();
+          }
+        };
+        worker.addEventListener('message', handle as any);
+        worker.postMessage({ type: 'parse', text });
+      } catch {
+        this.zone.run(() => {
+          this.alertSvc.showError('Failed to parse CSV');
+          this.importLoading = false;
+        });
+      }
+    };
+    reader.onerror = () => this.zone.run(() => (this.importLoading = false));
+    reader.readAsText(file);
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    this.csvHeaders = [];
+    this.csvRows = [];
+    this.mapping = [];
+    this.tagsInput = '';
+    this.importLoading = false;
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    const dialog = document.querySelector('#importPersons') as HTMLDialogElement;
+    dialog?.showModal();
+  }
+
+  protected prevPage() {
+    if (this.canPrevPage()) this.previewPage--;
+  }
+
+  protected previewTotalPages() {
+    const total = Math.ceil((this.csvRows.length || 0) / this.previewPageSize);
+    return total || 1;
   }
 
   /**
@@ -187,6 +310,101 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     }
   }
 
+  protected async runImport() {
+    // Build mapped rows
+    const rows = this.csvRows.map((row) => {
+      const mapped: Record<string, string> = {};
+      this.csvHeaders.forEach((h, idx) => {
+        const field = this.mapping[idx];
+        if (!field) return; // skip
+        const val = (row[h] ?? '').toString();
+        if (val && !(field in mapped) && val.trim().length > 0) {
+          mapped[field] = val;
+        }
+      });
+      return mapped;
+    });
+
+    const tags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+
+    try {
+      const res = (await (this.gridSvc as PersonsService).import(rows, tags)) as any;
+      const inserted = res?.inserted ?? 0;
+      const errors = res?.errors ?? 0;
+      this.alertSvc.showSuccess(`Import complete: ${inserted} inserted`);
+      if (errors > 0) this.alertSvc.showWarn(`${errors} row(s) skipped due to errors`);
+      if (res?.tag) this.alertSvc.showInfo(`Applied tag: ${res.tag}`);
+      (document.querySelector('#importPersons') as HTMLDialogElement)?.close();
+      await this.refresh();
+    } catch (e) {
+      this.alertSvc.showError('Import failed');
+    }
+  }
+
+  private autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
   /**
    * Opens a modal dialog asking the user to confirm address redirection.
    */
@@ -194,4 +412,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.showModal();
   }
+
+  // worker-based parsing; old incremental parser removed
 }
