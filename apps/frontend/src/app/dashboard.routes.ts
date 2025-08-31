@@ -106,4 +106,8 @@ export const dashboardRoutes: Routes = [
     path: 'inbox',
     loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
   },
+  {
+    path: 'tasks',
+    loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+  },
 ];

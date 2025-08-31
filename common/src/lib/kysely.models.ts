@@ -39,6 +39,7 @@ export interface Models {
   lists: Lists;
   map_lists_persons: MapListsPersons;
   map_lists_households: MapListsHouseholds;
+  tasks: Tasks;
   persons: Persons;
   profiles: Profiles;
   roles: Roles;
@@ -275,6 +276,18 @@ export interface Tags extends RecordType {
   description: string | null;
   deletable: boolean;
 }
+
+export interface Tasks extends RecordType {
+  name: string;
+  details?: string;
+  due_at: Timestamp | null;
+  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
+  priority: 'low' | 'medium' | 'high' | 'urgent' | null;
+  completed_at: Timestamp | null;
+  position: number | null;
+  assigned_to: string | null;
+}
+
 
 interface Tenants extends RecordType, AddressType {
   name: string;
