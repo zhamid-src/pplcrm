@@ -1,0 +1,58 @@
+<div class="flex min-h-full flex-col bg-base-100">
+  <div class="mx-5 my-6 sm:mx-10 grid gap-4">
+    <div class="grid gap-3 sm:grid-cols-2">
+      <input class="input" placeholder="Task name" [value]="task()?.name || ''" (change)="update({ name: $any($event.target).value })" />
+      <div class="grid grid-cols-3 gap-2">
+        <select class="select select-bordered" [value]="task()?.status || ''" (change)="update({ status: $any($event.target).value })">
+          <option value="todo">Todo</option>
+          <option value="in_progress">In Progress</option>
+          <option value="blocked">Blocked</option>
+          <option value="done">Done</option>
+          <option value="canceled">Canceled</option>
+        </select>
+        <select class="select select-bordered" [value]="task()?.priority || ''" (change)="update({ priority: $any($event.target).value })">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+        <input class="input" type="date" [value]="dateOnly(task()?.due_at)" (change)="update({ due_at: $any($event.target).value })" />
+      </div>
+    </div>
+
+    <div class="grid gap-3 sm:grid-cols-2 items-start">
+      <select class="select select-bordered" [value]="task()?.assigned_to || ''" (change)="update({ assigned_to: $any($event.target).value })">
+        <option value="">Unassigned</option>
+        @for (u of users(); track u.id) {
+          <option [value]="u.id">{{ u.first_name }}</option>
+        }
+      </select>
+      <button class="btn btn-outline" (click)="assignToMe()">Assign to me</button>
+      <div class="text-sm text-base-content/60 flex items-center gap-3">
+        <div>Created by: <span class="font-medium">{{ userName(task()?.createdby_id) }}</span></div>
+        <div>On: {{ asDate(task()?.created_at) | date: 'y-MM-dd' }}</div>
+      </div>
+    </div>
+
+    <div class="grid gap-2">
+      <div class="label-text">Details</div>
+      <quill-editor [styles]="{ height: '220px' }" [ngModel]="task()?.details || ''" (ngModelChange)="update({ details: $event })"></quill-editor>
+    </div>
+
+    <div class="grid gap-2">
+      <div class="label-text">Comments</div>
+      <div class="grid gap-2">
+        @for (c of comments(); track c.id) {
+          <div class="p-3 border border-base-300 rounded">
+            <div class="text-xs text-base-content/60 mb-1">{{ userName(c.createdby_id || c.author_id) }} • {{ asDate(c.created_at) | date: 'y-MM-dd HH:mm' }}</div>
+            <div class="text-sm">{{ c.comment }}</div>
+          </div>
+        }
+      </div>
+      <div class="flex gap-2">
+        <input class="input grow" placeholder="Add a comment" [(ngModel)]="newComment" />
+        <button class="btn btn-primary" (click)="addComment()" [disabled]="!newComment || isLoading()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>

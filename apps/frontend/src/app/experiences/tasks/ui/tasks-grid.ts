@@ -8,7 +8,7 @@ import { AuthService } from '../../../auth/auth-service';
 @Component({
   selector: 'pc-tasks-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" [disableView]="true"></pc-datagrid>`,
+  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" [disableView]="false"></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useClass: TasksService }],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
@@ -24,7 +24,6 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   protected col = [
     { field: 'id', headerName: 'ID' },
     { field: 'name', headerName: 'Task', editable: true },
-    { field: 'details', headerName: 'Details', editable: true },
     {
       field: 'status',
       headerName: 'Status',
@@ -113,6 +112,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
       this.userIds = users.map((u) => String(u.id));
       this.userLabels = users.map((u) => `${u.first_name}`);
+      // Refresh to re-run valueFormatters so IDs turn into names
+      this.api?.refreshCells({ force: true, columns: ['assigned_to', 'createdby_id'] });
     } catch {
       // ignore; names just won't format
     }
@@ -121,7 +122,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   private userNameForId(id: string | number | null | undefined) {
     if (id === null || id === undefined || id === '') return '';
     const key = String(id);
-    return this.usersById.get(key) ?? key;
+    return this.usersById.get(key) ?? '';
   }
 
   private formatDate(value: any) {

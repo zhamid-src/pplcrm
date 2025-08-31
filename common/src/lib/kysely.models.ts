@@ -55,6 +55,9 @@ export interface Models {
   email_attachments: EmailAttachments;
   email_drafts: EmailDrafts;
   email_trash: EmailTrash;
+  task_comments: TaskComments;
+  task_subtasks: TaskSubtasks;
+  task_attachments: TaskAttachments;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -364,6 +367,26 @@ interface EmailTrash extends RecordType {
   email_id: string;
   from_folder_id: string;
   trashed_at: Timestamp;
+}
+
+export interface TaskComments extends RecordType {
+  task_id: string;
+  comment: string;
+}
+
+export interface TaskSubtasks extends RecordType {
+  task_id: string;
+  name: string;
+  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
+  position: number | null;
+}
+
+export interface TaskAttachments extends RecordType {
+  task_id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  url: string | null;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */

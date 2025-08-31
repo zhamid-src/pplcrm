@@ -110,4 +110,8 @@ export const dashboardRoutes: Routes = [
     path: 'tasks',
     loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
   },
+  {
+    path: 'tasks/:id',
+    loadComponent: () => import('./experiences/tasks/ui/task-detail').then((m) => m.TaskDetail),
+  },
 ];
