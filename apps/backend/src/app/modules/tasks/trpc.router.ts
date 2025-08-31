@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { TasksController } from './controller';
 import { TaskCommentsController } from './comments.controller';
+import { TaskAttachmentsController } from './attachments.controller';
 
 const tasks = new TasksController();
 
@@ -32,6 +33,31 @@ export const TasksRouter = router({
         task_id: input.task_id,
         author_id: ctx.auth.user_id,
         comment: input.comment,
+      }),
+    ),
+  getAttachments: authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input })),
+  addAttachment: authProcedure
+    .input(
+      z.object({
+        task_id: z.string(),
+        filename: z.string().min(1),
+        url: z.string().url().optional(),
+        content_type: z.string().optional(),
+        size_bytes: z.number().int().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      (new TaskAttachmentsController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        filename: input.filename,
+        url: input.url,
+        content_type: input.content_type,
+        size_bytes: (input.size_bytes as any) ?? null,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
       }),
     ),
 });

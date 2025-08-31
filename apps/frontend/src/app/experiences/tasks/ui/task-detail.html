@@ -54,5 +54,27 @@
         <button class="btn btn-primary" (click)="addComment()" [disabled]="!newComment || isLoading()">Add</button>
       </div>
     </div>
+
+    <div class="grid gap-2">
+      <div class="label-text">Attachments</div>
+      <div class="grid gap-2">
+        @for (a of attachments(); track a.id) {
+          <div class="p-3 border border-base-300 rounded flex items-center justify-between gap-3">
+            <div>
+              <div class="font-medium">{{ a.filename }}</div>
+              <div class="text-xs text-base-content/60">{{ a.content_type }} • {{ a.size_bytes || 0 | number }} bytes</div>
+            </div>
+            @if (a.url) {
+              <a class="btn btn-ghost btn-sm" [href]="a.url" target="_blank">Open</a>
+            }
+          </div>
+        }
+      </div>
+      <div class="flex gap-2">
+        <input class="input" placeholder="Filename" [(ngModel)]="attName" />
+        <input class="input grow" placeholder="URL (optional)" [(ngModel)]="attUrl" />
+        <button class="btn btn-primary" (click)="addAttachment()" [disabled]="!attName || isLoading()">Add</button>
+      </div>
+    </div>
   </div>
 </div>

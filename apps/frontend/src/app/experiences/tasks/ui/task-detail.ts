@@ -22,11 +22,14 @@ export class TaskDetail implements OnInit {
   private id = signal<string>('');
 
   protected readonly comments = signal<any[]>([]);
+  protected readonly attachments = signal<any[]>([]);
   protected readonly isLoading = signal(false);
   protected readonly task = signal<any | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
 
   protected newComment = '';
+  protected attName = '';
+  protected attUrl = '';
 
   public ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id') ?? '';
@@ -40,7 +43,7 @@ export class TaskDetail implements OnInit {
     try {
       await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: this.newComment.trim() });
       this.newComment = '';
-      await this.loadComments();
+      await Promise.all([this.loadComments(), this.loadAttachments()]);
     } finally {
       this.isLoading.set(false);
     }
@@ -95,5 +98,25 @@ export class TaskDetail implements OnInit {
   private async loadComments() {
     const list = await (this.tasks as any).api.tasks.getComments.query(this.id());
     this.comments.set(list as any[]);
+  }
+
+  private async loadAttachments() {
+    const list = await (this.tasks as any).api.tasks.getAttachments.query(this.id());
+    this.attachments.set(list as any[]);
+  }
+
+  protected async addAttachment() {
+    const name = this.attName.trim();
+    const url = this.attUrl.trim();
+    if (!name) return;
+    this.isLoading.set(true);
+    try {
+      await (this.tasks as any).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
+      this.attName = '';
+      this.attUrl = '';
+      await this.loadAttachments();
+    } finally {
+      this.isLoading.set(false);
+    }
   }
 }
