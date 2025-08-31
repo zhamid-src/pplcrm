@@ -156,9 +156,14 @@ export const SidebarItems: ISidebarItem[] = [
     collapsed: true,
     children: [
       {
-        name: 'Export',
+        name: 'Exports',
         route: '/export',
         icon: 'arrow-down-tray',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
       },
       {
         name: 'Tags',

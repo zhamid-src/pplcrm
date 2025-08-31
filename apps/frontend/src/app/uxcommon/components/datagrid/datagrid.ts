@@ -70,6 +70,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected readonly router = inject(Router);
   protected readonly undoMgr = new UndoManager();
 
+  // Select-all-across-results state
+  protected allSelected = signal(false);
+  protected allSelectedIds: string[] = [];
+  protected allSelectedCount = 0;
+
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
@@ -136,6 +141,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       mergedGridOptions: this.mergedGridOptions,
       config: this.config,
     });
+
+    // Always clear our select-all cache after a delete attempt
+    this.clearAllSelection();
   }
 
   public getCountRowSelected() {
@@ -151,6 +159,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Utility: returns selected rows from grid */
   public getSelectedRows() {
+    if (this.allSelected()) {
+      // Return synthetic rows with just IDs so downstream deleteMany works
+      return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
+    }
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
@@ -300,7 +312,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   }
 
   /** Triggers the import CSV flow (placeholder only). */
-  protected doImportCSV() {}
+  protected doImportCSV() {
+    // Emit a simple signal so consumers can open their import UI
+    this.importCSV.emit('open');
+  }
 
   /** Actually performs export via AG Grid. */
   protected exportToCSV() {
@@ -314,6 +329,38 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       this.api?.setSideBarVisible(true);
       this.api?.openToolPanel(this.config.filterToolPanelId);
     }
+  }
+
+  /** Select all rows that match current search/tags (server- or client-side). */
+  protected async selectAllMatching() {
+    try {
+      const options: any = {
+        searchStr: this.searchSvc.getFilterText(),
+        tags: this.limitToTags(),
+      };
+
+      const { rows, count } = await this.gridSvc.getAll(options);
+      const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
+      this.allSelectedIds = ids;
+      this.allSelectedCount = count ?? ids.length;
+      this.allSelected.set(ids.length > 0);
+      this.isRowSelected.set(ids.length > 0);
+      this.countRowSelected.set(this.allSelectedCount);
+      this.api?.deselectAll?.();
+      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} result(s)`);
+    } catch (e) {
+      this.alertSvc.showError('Failed to select all results');
+    }
+  }
+
+  /** Clear both grid selection and the select-all cache */
+  protected clearAllSelection() {
+    this.allSelected.set(false);
+    this.allSelectedIds = [];
+    this.allSelectedCount = 0;
+    this.api?.deselectAll?.();
+    this.isRowSelected.set(false);
+    this.countRowSelected.set(0);
   }
 
   /** Utility: sets ID for each row (keep it stringy for stability) */

@@ -1,0 +1,43 @@
+<div class="mx-5 my-6 sm:mx-10 grid gap-4">
+  <div class="flex items-center gap-2">
+    <pc-icon name="arrow-down-tray"></pc-icon>
+    <h2 class="text-lg font-semibold">Exports</h2>
+  </div>
+
+  @if (loading()) {
+  <progress class="progress w-full"></progress>
+  }
+
+  <div class="overflow-auto border rounded">
+    <table class="table table-zebra table-sm">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (j of jobs(); track j.id) {
+        <tr>
+          <td>{{ formatDate(j.created_at) }}</td>
+          <td>{{ j.name }}</td>
+          <td>
+            @if (j.status === 'in_progress') {
+            <span class="badge badge-info">In Progress</span>
+            } @else if (j.status === 'completed') {
+            <span class="badge badge-success">Completed</span>
+            } @else {
+            <span class="badge badge-error">Failed</span>
+            }
+          </td>
+          <td>{{ j.details || '' }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <div class="opacity-60 text-xs">This view lists recent export jobs. Hook it to backend when ready.</div>
+</div>
