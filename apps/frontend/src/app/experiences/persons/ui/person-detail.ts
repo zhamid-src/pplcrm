@@ -27,15 +27,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    Tags,
-    AddBtnRow,
-    RouterModule,
-    PeopleInHousehold,
-    Icon,
-  ],
+  imports: [CommonModule, ReactiveFormsModule, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
@@ -220,8 +212,9 @@ export class PersonDetail implements OnInit {
 
   /** Returns the full name of the person constructed from form inputs */
   protected getFormName() {
-    return `${this.form.get('first_name')?.value} ${this.form.get('middle_names')?.value}  ${this.form.get('last_name')
-      ?.value}`;
+    return `${this.form.get('first_name')?.value || ''} ${this.form.get('middle_names')?.value || ''} ${
+      this.form.get('last_name')?.value || ''
+    }`;
   }
 
   protected getId() {
