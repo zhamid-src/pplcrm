@@ -129,6 +129,33 @@ function removeHousehold() {
   return authProcedure.input(z.string()).mutation(({ input, ctx }) => persons.removeHousehold(input, ctx.auth));
 }
 
+/**
+ * Bulk import people with optional address data and common tags.
+ */
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().optional(),
+    last_name: z.string().optional(),
+    email: z.string().optional(),
+    mobile: z.string().optional(),
+    notes: z.string().optional(),
+    // address (household)
+    home_phone: z.string().optional(),
+    street_num: z.string().optional(),
+    street1: z.string().optional(),
+    street2: z.string().optional(),
+    apt: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    zip: z.string().optional(),
+    country: z.string().optional(),
+  });
+
+  const Input = z.object({ rows: z.array(ImportRow), tags: z.array(z.string()).optional() });
+
+  return authProcedure.input(Input).mutation(({ input, ctx }) => persons.importRows(input, ctx.auth));
+}
+
 const persons = new PersonsController();
 
 /**
@@ -140,6 +167,7 @@ export const PersonsRouter = router({
   getAll: getAll(),
   update: update(),
   removeHousehold: removeHousehold(),
+  import: importMany(),
   getTags: getTags(),
   getById: getById(),
   attachTag: attachTag(),
