@@ -122,6 +122,14 @@ export class Navbar {
   }
 
   /**
+   * Handles Enter key in the search input to trigger an immediate search
+   * (bypasses debounce).
+   */
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr);
+  }
+
+  /**
    * Triggers the search using the current value in the search bar.
    */
   protected search(): void {
