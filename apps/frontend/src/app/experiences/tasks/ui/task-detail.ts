@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { IAuthUser } from '@common';
@@ -8,10 +8,14 @@ import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { QuillModule } from 'ngx-quill';
 
 import { AuthService } from '../../../auth/auth-service';
+import { SanitizeHtmlPipe } from '../../../uxcommon/pipes/sanitize-html.pipe';
+import { MentionifyPipe } from '../../../uxcommon/pipes/mention.pipe';
+import { TimeAgoPipe } from '../../../uxcommon/pipes/timeago.pipe';
+import { MentionController, userDisplay } from '../../../uxcommon/mentions/mention-controller';
 
 @Component({
   selector: 'pc-task-detail',
-  imports: [CommonModule, FormsModule, QuillModule],
+  imports: [CommonModule, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
   templateUrl: './task-detail.html',
 })
 export class TaskDetail implements OnInit {
@@ -33,6 +37,15 @@ export class TaskDetail implements OnInit {
   protected attUrl = '';
   protected subtaskName = '';
 
+  // collapse states
+  protected showComments = signal(true);
+  protected showSubtasks = signal(true);
+  protected showAttachments = signal(true);
+
+  // mention autocomplete (shared controller)
+  @ViewChild('taskComposer') private taskComposer?: any;
+  public mc = new MentionController(() => this.users());
+
   public ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id') ?? '';
     this.id.set(id);
@@ -40,10 +53,11 @@ export class TaskDetail implements OnInit {
   }
 
   protected async addComment() {
-    if (!this.newComment.trim()) return;
+    const plain = this.newComment.trim();
+    if (!plain) return;
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: this.newComment.trim() });
+      await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
       this.newComment = '';
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } finally {
@@ -83,6 +97,10 @@ export class TaskDetail implements OnInit {
     const uid = String(id);
     const u = this.users().find((x) => String(x.id) === uid);
     return u?.first_name ?? '';
+  }
+
+  protected myUserId(): string | null {
+    return this.auth.getUser()?.id ?? null;
   }
 
   private async load() {
@@ -149,4 +167,45 @@ export class TaskDetail implements OnInit {
       this.isLoading.set(false);
     }
   }
+
+  // ===== Mention autocomplete handlers (textarea) =====
+  protected onComposerInput(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    this.newComment = el.value;
+    const caret = el.selectionStart ?? this.newComment.length;
+    this.mc.updateFromInput(this.newComment, caret);
+  }
+
+  protected onComposerClick(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    const caret = el.selectionStart ?? 0;
+    this.mc.updateFromInput(this.newComment, caret);
+  }
+
+  protected onComposerKeydown(ev: KeyboardEvent) {
+    // Submit on Cmd/Ctrl+Enter
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.addComment();
+      return;
+    }
+    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
+  }
+
+  protected selectMention(u: IAuthUser, ev?: Event) {
+    ev?.preventDefault();
+    const res = this.mc.select(u, this.newComment);
+    this.newComment = res.text;
+    const el = this.taskComposer?.nativeElement as HTMLTextAreaElement | undefined;
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(res.caret, res.caret);
+      }
+    });
+  }
+
+  // expose util for templates
+  protected userDisplay = userDisplay;
 }
