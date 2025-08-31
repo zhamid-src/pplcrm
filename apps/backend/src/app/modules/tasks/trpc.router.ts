@@ -5,6 +5,7 @@ import { authProcedure, router } from '../../../trpc';
 import { TasksController } from './controller';
 import { TaskCommentsController } from './comments.controller';
 import { TaskAttachmentsController } from './attachments.controller';
+import { TaskSubtasksController } from './subtasks.controller';
 
 const tasks = new TasksController();
 
@@ -60,4 +61,22 @@ export const TasksRouter = router({
         updatedby_id: ctx.auth.user_id,
       }),
     ),
+  getSubtasks: authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input })),
+  addSubtask: authProcedure
+    .input(z.object({ task_id: z.string(), name: z.string().min(1) }))
+    .mutation(({ input, ctx }) =>
+      (new TaskSubtasksController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        name: input.name,
+        status: 'todo',
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+  updateSubtask: authProcedure
+    .input(z.object({ id: z.string(), data: z.object({ name: z.string().optional(), status: z.string().optional(), position: z.number().int().optional() }) }))
+    .mutation(({ input, ctx }) => new TaskSubtasksController().updateSubtask({ tenant_id: ctx.auth.tenant_id, id: input.id, row: input.data as any })),
 });
