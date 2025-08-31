@@ -70,7 +70,7 @@ export class SignInPage {
    */
   constructor() {
     effect(() => {
-      if (this.authService.getUser()) this.router.navigate(['/console/summary']);
+      if (this.authService.getUser()) this.router.navigate(['summary']);
     });
   }
 
