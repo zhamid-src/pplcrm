@@ -2,21 +2,36 @@
  * @file Component handling comments for an email.
  */
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ViewChild,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { IAuthUser } from '@common';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
+ 
+
 import { AuthService } from '../../../../auth/auth-service';
+import { MentionController, userDisplay } from '../../../../uxcommon/mentions/mention-controller';
+import { MentionifyPipe } from '../../../../uxcommon/pipes/mention.pipe';
+import { SanitizeHtmlPipe } from '../../../../uxcommon/pipes/sanitize-html.pipe';
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailCommentType, EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-comments',
   standalone: true,
-  imports: [CommonModule, FormsModule, TimeAgoPipe, Icon],
+  imports: [CommonModule, FormsModule, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-comments.html',
 })
@@ -25,6 +40,9 @@ export class EmailComments {
   private readonly store = inject(EmailsStore);
 
   private dialogs = inject(ConfirmDialogService);
+
+  // mention autocomplete (shared controller)
+  @ViewChild('emailComposer') private emailComposer?: any;
 
   /** Track in-flight deletions: comment ids */
   protected readonly deleting = signal<Set<string>>(new Set());
@@ -52,6 +70,7 @@ export class EmailComments {
 
   /** Email to comment on (nullable to avoid early reads) */
   public email = input<EmailType | null>(null);
+  public mc = new MentionController(() => this.users());
 
   // in your component class
   public myUserId = input<string>(); // set this from parent; used for chat-start/chat-end and bubble color
@@ -61,6 +80,9 @@ export class EmailComments {
 
   /** Optional for *ngFor trackBy when not using new control flow */
   public trackByComment = (_: number, c: Partial<EmailCommentType>) => (c as any).id ?? _;
+
+  // expose util for templates
+  public userDisplay = userDisplay;
 
   constructor() {
     // Load users once
@@ -161,5 +183,42 @@ export class EmailComments {
         return n;
       });
     }
+  }
+
+  protected onComposerKeydown(ev: KeyboardEvent) {
+    // Submit on Cmd/Ctrl+Enter
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.addComment();
+      return;
+    }
+    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
+  }
+
+  // ===== Mention autocomplete handlers (textarea) =====
+  protected onComposerInput(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    this.newComment = el.value;
+    const caret = el.selectionStart ?? this.newComment.length;
+    this.mc.updateFromInput(this.newComment, caret);
+  }
+  protected onComposerClick(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    const caret = el.selectionStart ?? 0;
+    this.mc.updateFromInput(this.newComment, caret);
+  }
+
+  protected selectMention(u: IAuthUser, ev?: Event) {
+    ev?.preventDefault();
+    const res = this.mc.select(u, this.newComment);
+    this.newComment = res.text;
+    const el = this.emailComposer?.nativeElement as HTMLTextAreaElement | undefined;
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(res.caret, res.caret);
+      }
+    });
   }
 }

@@ -39,6 +39,8 @@ export class SanitizeHtmlPipe implements PipeTransform {
         'alt',
         'title',
         'style',
+        'class',
+        'data-mention',
         'width',
         'height',
         'colspan',
