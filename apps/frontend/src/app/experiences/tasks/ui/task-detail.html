@@ -65,7 +65,13 @@
     </div>
 
     <div class="grid gap-2">
-      <div class="divider">Subtasks</div>
+      <div class="flex items-center gap-2 select-none">
+        <div class="divider flex-1">Subtasks ({{ subtasks().length }})</div>
+        <button class="btn btn-ghost btn-xs" (click)="showSubtasks.set(!showSubtasks())">
+          @if (showSubtasks()) { Hide } @else { Show }
+        </button>
+      </div>
+      @if (showSubtasks()) {
       <div class="grid gap-2">
         @for (s of subtasks(); track s.id) {
         <label class="flex items-center gap-2">
@@ -83,28 +89,97 @@
         <input class="input grow" placeholder="Add a subtask" [(ngModel)]="subtaskName" />
         <button class="btn btn-primary" (click)="addSubtask()" [disabled]="!subtaskName || isLoading()">Add</button>
       </div>
+      }
     </div>
 
     <div class="grid gap-2">
-      <div class="divider">Comments</div>
-      <div class="grid gap-2">
+      <div class="flex items-center gap-2 select-none">
+        <div class="divider flex-1">Comments ({{ comments().length }})</div>
+        <button class="btn btn-ghost btn-xs" (click)="showComments.set(!showComments())">
+          @if (showComments()) { Hide } @else { Show }
+        </button>
+      </div>
+      @if (showComments()) {
+      <div class="p-2 space-y-3">
         @for (c of comments(); track c.id) {
-        <div class="p-3 border border-base-300 rounded">
-          <div class="text-xs text-base-content/60 mb-1">
-            {{ userName(c.createdby_id || c.author_id) }} • {{ asDate(c.created_at) | date: 'y-MM-dd HH:mm' }}
+        <div
+          class="chat group"
+          [class.chat-start]="(c.author_id || c.createdby_id) === myUserId()"
+          [class.chat-end]="(c.author_id || c.createdby_id) !== myUserId()"
+        >
+          <!-- avatar -->
+          <div class="chat-image avatar">
+            <div class="w-8 h-8 rounded-full bg-base-300 text-base-content !grid place-items-center leading-none">
+              <span class="text-xs font-medium uppercase">
+                {{ (userName(c.author_id || c.createdby_id) || '?') | slice: 0:1 }}
+              </span>
+            </div>
           </div>
-          <div class="text-sm">{{ c.comment }}</div>
+
+          <!-- header -->
+          <div class="chat-header flex items-center text-xs">
+            <span class="font-medium">{{ userName(c.author_id || c.createdby_id) }}</span>
+
+            @if (c.created_at) {
+            <span class="text-gray-500 tooltip cursor-pointer" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
+              {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+            </span>
+            }
+            <span class="flex-1"></span>
+          </div>
+
+          <!-- bubble -->
+          <div class="chat chat-bubble whitespace-pre-line" [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"></div>
         </div>
         }
+
+        <!-- Composer with mention autocomplete -->
+        <div class="mt-2 form-control relative">
+          <textarea
+            #taskComposer
+            [(ngModel)]="newComment"
+            placeholder="Add a comment"
+            class="textarea textarea-bordered w-full"
+            (input)="onComposerInput($event)"
+            (keydown)="onComposerKeydown($event)"
+            (click)="onComposerClick($event)"
+          ></textarea>
+          @if (mc.open() && mc.candidates().length) {
+          <div class="absolute left-0 right-0 mt-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded shadow z-20">
+            @for (u of mc.candidates(); track u.id; let i = $index) {
+            <div
+              class="px-3 py-2 cursor-pointer flex items-center gap-2"
+              [class.bg-base-200]="i === mc.index()"
+              (mousedown)="selectMention(u, $event)"
+            >
+              <div class="w-6 h-6 rounded-full bg-base-300 text-base-content grid place-items-center text-xs font-semibold">
+                {{ (u.first_name || u.email || '?') | slice:0:1 }}
+              </div>
+              <div class="truncate">
+                <div class="text-sm font-medium">{{ userDisplay(u) }}</div>
+                <div class="text-xs text-base-content/60">{{ u.email }}</div>
+              </div>
+            </div>
+            }
+          </div>
+          }
+          <div class="mt-2 flex items-center justify-end gap-2">
+            <button type="button" class="btn btn-sm" (click)="newComment = ''">Clear</button>
+            <button type="button" class="btn btn-sm btn-primary" (click)="addComment()" [disabled]="!newComment || isLoading()">Add Comment</button>
+          </div>
+        </div>
       </div>
-      <div class="flex gap-2">
-        <input class="input grow" placeholder="Add a comment" [(ngModel)]="newComment" />
-        <button class="btn btn-primary" (click)="addComment()" [disabled]="!newComment || isLoading()">Add</button>
-      </div>
+      }
     </div>
 
     <div class="grid gap-2">
-      <div class="divider">Attachments</div>
+      <div class="flex items-center gap-2 select-none">
+        <div class="divider flex-1">Attachments ({{ attachments().length }})</div>
+        <button class="btn btn-ghost btn-xs" (click)="showAttachments.set(!showAttachments())">
+          @if (showAttachments()) { Hide } @else { Show }
+        </button>
+      </div>
+      @if (showAttachments()) {
       <div class="grid gap-2">
         @for (a of attachments(); track a.id) {
         <div class="p-3 border border-base-300 rounded flex items-center justify-between gap-3">
@@ -125,6 +200,7 @@
         <input class="input grow" placeholder="URL (optional)" [(ngModel)]="attUrl" />
         <button class="btn btn-primary" (click)="addAttachment()" [disabled]="!attName || isLoading()">Add</button>
       </div>
+      }
     </div>
   </div>
 </div>
