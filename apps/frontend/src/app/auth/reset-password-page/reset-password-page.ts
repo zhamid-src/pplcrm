@@ -3,7 +3,7 @@
  */
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -16,7 +16,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-reset-password',
-  imports: [ReactiveFormsModule, Alerts, RouterLink],
+  imports: [ReactiveFormsModule, Alerts],
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
