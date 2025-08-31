@@ -15,6 +15,7 @@ import { TagItem } from './tagitem';
       ></pc-autocomplete>
     }
     @if (tags().length) {
+      <div class="my-1"></div>
       <div class="contents" [class.mt-2]="!readonly()">
         @if (!readonly()) {
           <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>

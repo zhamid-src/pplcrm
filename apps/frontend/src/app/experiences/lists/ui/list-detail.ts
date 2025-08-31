@@ -12,7 +12,6 @@ import { AbstractAPIService } from '@services/api/abstract-api.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { ColDef } from 'ag-grid-community';
@@ -102,7 +101,6 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
   selector: 'pc-list-detail',
   imports: [
     ReactiveFormsModule,
-    FormInput,
     AddBtnRow,
     PeopleFilterGrid,
     HouseholdFilterGrid,

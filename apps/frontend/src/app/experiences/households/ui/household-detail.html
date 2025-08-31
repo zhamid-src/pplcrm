@@ -37,29 +37,32 @@
         </div>
         }
 
-        <pc-input
+        <input
+          type="text"
+          class="input w-full"
           placeholder="Autocomplete Address"
-          [googlePlaces]="true"
-          (googlePlacesAddressChange)="handleAddressChange($event)"
+          [options]="options"
+          ngx-gp-autocomplete
+          (onAddressChange)="handleAddressChange($event)"
         />
         <div class="divider mb-1">OR</div>
 
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input control="street_num" placeholder="Street Number" />
-          <pc-form-input control="apt" placeholder="Unit" />
-          <pc-form-input class="basis-1/2" control="street1" placeholder="Street" />
+          <input class="input" placeholder="Unit" formControlName="apt" />
+          <input class="input" placeholder="Street Number" formControlName="street_num" />
+          <input class="input basis-1/2" placeholder="Street" formControlName="street1" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/2" control="city" placeholder="City" />
-          <pc-form-input class="basis-1/2" type="state" control="state" placeholder="State / Province" />
+          <input class="input" placeholder="City" formControlName="city" />
+          <input class="input" placeholder="State / Province" formControlName="state" />
+          <input class="input basis-1/2" placeholder="Country" formControlName="country" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/2" control="country" placeholder="Country" />
-          <pc-form-input class="basis-1/2" control="zip" placeholder="Zip / Postal Code" />
+          <input class="input" placeholder="Zip / Postal Code" formControlName="zip" />
+          <input class="input" type="tel" placeholder="Home Phone" formControlName="home_phone" />
+          <div class="basis-1/2"></div>
         </div>
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/2" control="home_phone" placeholder="Home Phone" />
-        </div>
+
         <div class="divider mb-1">ADDITIONAL</div>
         <pc-tags
           [tags]="tags"
@@ -68,7 +71,13 @@
           (tagRemoved)="tagRemoved($event)"
         ></pc-tags>
 
-        <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
+        <label class="form-control">
+          <textarea
+            class="textarea textarea-bordered h-24 w-full"
+            placeholder="Notes"
+            formControlName="notes"
+          ></textarea>
+        </label>
 
         @if (id) {
         <div class="divider mb-1">PEOPLE IN HOUSEHOLD</div>

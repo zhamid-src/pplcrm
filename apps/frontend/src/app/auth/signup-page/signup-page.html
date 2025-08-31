@@ -13,7 +13,6 @@
         type="name"
         placeholder="Your first name"
         formControlName="first_name"
-        aria-placeholder="email"
         class="input-pplcrm pl-11 text-sm"
         autocomplete="given-name"
         required
@@ -34,7 +33,6 @@
         type="text"
         placeholder="Organization name (or self)"
         formControlName="organization"
-        aria-placeholder="organization"
         class="input-pplcrm pl-11 text-sm"
         autocomplete="organization"
         required
@@ -58,7 +56,6 @@
         type="email"
         placeholder="Enter your email"
         formControlName="email"
-        aria-placeholder="email"
         class="input-pplcrm pl-11 text-sm"
         autocomplete="email"
         required
@@ -69,13 +66,16 @@
     <span class="label-text-alt text-warning -my-2 pb-2">Please enter a valid email</span>
     }
 
-    <pc-password-input
-      [control]="password"
-      autocomplete="new-password"
-      placeholder="Enter your password"
-      [maxlength]="72"
-      [pwned]="true"
-    ></pc-password-input>
+    <label class="input">
+      <pc-icon [size]="4" name="lock-closed" />
+      <input
+        type="password"
+        placeholder="Enter your password"
+        [formControl]="password"
+        autocomplete="new-password"
+        maxlength="72"
+      />
+    </label>
 
     @if (passwordInBreach(password)) {
     <span class="label-text-alt text-warning -my-2 pb-2"

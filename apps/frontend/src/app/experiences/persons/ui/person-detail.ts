@@ -9,10 +9,8 @@ import { type IAuthUser, UpdatePersonsType } from '@common';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
-import { TextArea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { ColumnType } from 'kysely';
@@ -31,11 +29,9 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
   selector: 'pc-person-detail',
   imports: [
     CommonModule,
-    FormInput,
     ReactiveFormsModule,
     Tags,
     AddBtnRow,
-    TextArea,
     RouterModule,
     PeopleInHousehold,
     Icon,

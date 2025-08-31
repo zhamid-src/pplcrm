@@ -37,4 +37,4 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * @see {@link authGuard} for the opposite behavior (protecting authenticated routes)
  */
 export const loginGuard: CanActivateFn = () =>
-  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
+  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/console/summary') : true;

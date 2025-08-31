@@ -15,7 +15,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-utils';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 /**
  * Sign-in page component providing comprehensive user authentication interface.
@@ -42,7 +41,7 @@ import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-inpu
  */
 @Component({
   selector: 'pc-login',
-  imports: [ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent, PasswordInputComponent],
+  imports: [ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
@@ -71,7 +70,7 @@ export class SignInPage {
    */
   constructor() {
     effect(() => {
-      if (this.authService.getUser()) this.router.navigate(['summary']);
+      if (this.authService.getUser()) this.router.navigate(['/console/summary']);
     });
   }
 

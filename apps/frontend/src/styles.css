@@ -98,17 +98,6 @@ body {
   background-repeat: no-repeat; /* prevent tiling */
 }
 
-.input-pplcrm {
-  @apply input focus:input-primary invalid:input-error caret-primary w-full border-gray-200 placeholder:text-sm;
-}
-
-.input-override:-webkit-autofill,
-.input-override:-webkit-autofill:hover,
-.input-override:-webkit-autofill:focus,
-.input-override:-webkit-autofill:active {
-  background: transparent;
-}
-
 .ag-theme-quartz {
   --ag-font-family: 'Roboto', sans-serif;
   --ag-modal-overlay-background-color: rgba(255, 255, 255, 0.9);

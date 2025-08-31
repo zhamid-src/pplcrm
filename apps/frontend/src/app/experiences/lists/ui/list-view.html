@@ -1,7 +1,7 @@
 <div class="flex min-h-full flex-col bg-base-100">
   <form [formGroup]="form" class="mx-5 my-6 flex flex-col gap-4 sm:mx-10">
-    <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
-    <pc-form-input control="description" placeholder="Description" icon="document-text" />
+    <input class="input" placeholder="List Name" formControlName="name" />
+    <input class="input" placeholder="Description" formControlName="description" />
     <pc-add-btn-row [isLoading]="loading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
   </form>
 
@@ -60,4 +60,3 @@
     }
   </div>
 </div>
-

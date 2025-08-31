@@ -73,13 +73,13 @@ export const SidebarItems: ISidebarItem[] = [
   },
   {
     name: `Summary`,
-    route: '/summary',
+    route: '/console/summary',
     icon: 'presentation-chart-line',
     pathMatchExact: true,
   },
   {
     name: `MyTasks`,
-    route: '/mytasks',
+    route: '/console/mytasks',
     icon: 'rectangle-stack',
   },
   {
@@ -88,32 +88,32 @@ export const SidebarItems: ISidebarItem[] = [
     children: [
       {
         name: `People`,
-        route: '/people',
+        route: '/console/people',
         icon: 'identification',
       },
       {
         name: `Households`,
-        route: '/households',
+        route: '/console/households',
         icon: 'house-modern',
       },
       {
         name: 'Lists',
-        route: '/lists',
+        route: '/console/lists',
         icon: 'queue-list',
       },
       {
         name: 'Inbox',
-        route: '/inbox',
+        route: '/console/inbox',
         icon: 'envelope',
       },
       {
         name: 'Newsletters',
-        route: '/newsletter',
+        route: '/console/newsletter',
         icon: 'megaphone',
       },
       {
         name: 'Map',
-        route: '/map',
+        route: '/console/map',
         icon: 'globe-americas',
       },
     ],
@@ -125,27 +125,27 @@ export const SidebarItems: ISidebarItem[] = [
     children: [
       {
         name: 'Volunteers',
-        route: '/volunteers',
+        route: '/console/volunteers',
         icon: 'briefcase',
       },
       {
         name: 'Teams',
-        route: '/teams',
+        route: '/console/teams',
         icon: 'user-group',
       },
       {
         name: 'Schedule',
-        route: '/schedule',
+        route: '/console/schedule',
         icon: 'clock',
       },
       {
         name: 'Donors',
-        route: '/donors',
+        route: '/console/donors',
         icon: 'banknotes',
       },
       {
         name: 'Donations',
-        route: '/donations',
+        route: '/console/donations',
         icon: 'currency-dollar',
       },
     ],
@@ -157,37 +157,37 @@ export const SidebarItems: ISidebarItem[] = [
     children: [
       {
         name: 'Export',
-        route: '/export',
+        route: '/console/export',
         icon: 'arrow-down-tray',
       },
       {
         name: `Tasks`,
-        route: '/tasks',
+        route: '/console/tasks',
         icon: 'square-3-stack-3d',
       },
       {
         name: 'Tags',
-        route: '/tags',
+        route: '/console/tags',
         icon: 'tag',
       },
       {
         name: 'Forms',
-        route: '/forms',
+        route: '/console/forms',
         icon: 'clipboard-document-list',
       },
       {
         name: 'Users',
-        route: '/users',
+        route: '/console/users',
         icon: 'users',
       },
       {
         name: 'Billing',
-        route: '/billing',
+        route: '/console/billing',
         icon: 'credit-card',
       },
       {
         name: 'Settings',
-        route: '/settings',
+        route: '/console/settings',
         icon: 'cog-6-tooth',
       },
     ],

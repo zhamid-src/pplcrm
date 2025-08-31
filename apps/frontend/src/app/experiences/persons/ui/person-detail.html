@@ -58,17 +58,25 @@
         </div>
         }
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/3" control="first_name" placeholder="First Name" />
-          <pc-form-input class="basis-1/3" control="middle_names" placeholder="Middle Name(s)" />
-          <pc-form-input class="basis-1/3" control="last_name" placeholder="Last Name" />
+          <input type="text" class="input basis-1/3" placeholder="First Name" formControlName="first_name" />
+          <input type="text" class="input basis-1/3" placeholder="Middle Name(s)" formControlName="middle_names" />
+          <input type="text" class="input basis-1/3" placeholder="Last Name" formControlName="last_name" />
         </div>
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/2" type="email" control="email" placeholder="Email" />
-          <pc-form-input class="basis-1/2" type="email" control="email2" placeholder="Email 2" />
+          <label class="input validator basis-1/2">
+            <input type="email" placeholder="Email" formControlName="email" />
+          </label>
+          <label class="input validator basis-1/2">
+            <input type="email" placeholder="Email 2" formControlName="email2" />
+          </label>
         </div>
         <div class="flex flex-col md:flex-row gap-2">
-          <pc-form-input class="basis-1/2" type="tel" control="mobile" placeholder="Mobile Phone" />
-          <pc-form-input class="basis-1/2" type="tel" control="home_phone" placeholder="Phone 2" />
+          <label class="input validator basis-1/2">
+            <input type="tel" placeholder="Mobile Phone" formControlName="mobile" />
+          </label>
+          <label class="input validator basis-1/2">
+            <input type="tel" placeholder="Home Phone" formControlName="home_phone" />
+          </label>
         </div>
 
         @if (person()?.household_id) {
@@ -100,7 +108,7 @@
           (tagRemoved)="tagRemoved($event)"
         ></pc-tags>
 
-        <pc-textarea control="notes" placeholder="Notes"></pc-textarea>
+        <textarea class="textarea textarea-bordered h-24 w-full" placeholder="Notes" formControlName="notes"></textarea>
 
         @if (householdId()) {
         <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
@@ -133,7 +141,7 @@
       <div class="p-4 flex flex-col gap-3">
         <input
           type="text"
-          class="input input-bordered w-full"
+          class="input w-full"
           placeholder="Search address, city, zip, tag..."
           [value]="householdSearch()"
           (input)="onHouseholdSearch($event)"

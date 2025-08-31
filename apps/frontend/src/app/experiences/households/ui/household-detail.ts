@@ -7,11 +7,9 @@ import { ActivatedRoute } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { FormInput } from '@uxcommon/components/form-input/formInput';
-import { PPlCrmInput } from '@uxcommon/components/input/input';
 import { Tags } from '@uxcommon/components/tags/tags';
-import { TextArea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
@@ -25,7 +23,7 @@ import { Households } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormInput, ReactiveFormsModule, PPlCrmInput, Tags, AddBtnRow, TextArea, PeopleInHousehold],
+  imports: [ReactiveFormsModule, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
@@ -46,6 +44,12 @@ export class HouseholdDetail implements OnInit {
 
   /** List of associated tag strings */
   protected tags: string[] = [];
+
+  /** Options for Google Places autocomplete (Canada, geocode) */
+  protected options: NgxGpAutocompleteOptions = {
+    componentRestrictions: { country: ['CA'] },
+    types: ['geocode'],
+  };
 
   /** Reactive form group to handle household data */
   protected form = this.fb.group({
