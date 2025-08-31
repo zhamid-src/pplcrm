@@ -25,6 +25,15 @@
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
 }
 
 @plugin "daisyui/theme" {
