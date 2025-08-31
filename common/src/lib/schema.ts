@@ -216,7 +216,7 @@ export const UpdateTaskObj = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: z.string().optional(),
+  assigned_to: z.string().nullable().optional(),
 });
 
 /**
