@@ -5,13 +5,12 @@ import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsType, getAllOptionsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 
 @Component({
   selector: 'pc-list-view',
-  imports: [ReactiveFormsModule, FormInput, AddBtnRow],
+  imports: [ReactiveFormsModule, AddBtnRow],
   templateUrl: './list-view.html',
 })
 export class ListView implements OnInit {

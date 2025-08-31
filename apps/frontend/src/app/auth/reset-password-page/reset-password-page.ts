@@ -3,7 +3,7 @@
  */
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -16,19 +16,18 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  */
 @Component({
   selector: 'pc-reset-password',
-  imports: [ReactiveFormsModule, Alerts],
+  imports: [ReactiveFormsModule, Alerts, RouterLink],
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
+  /** Signal indicating whether the form is loading */
+  private _loading = createLoadingGate();
   private alertSvc = inject(AlertService);
   private authService = inject(AuthService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
 
-  /** Signal indicating whether the form is loading */
-  private _loading = createLoadingGate();
-
-  protected readonly isLoading = this._loading.visible;
+  protected readonly isLoading = signal(true);
 
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);

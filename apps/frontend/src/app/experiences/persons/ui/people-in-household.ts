@@ -17,7 +17,7 @@ import { PersonsService } from '../services/persons-service';
   template: `<ul>
     @for (person of peopleInHousehold(); track person.id) {
       <li>
-        <a routerLink="/people/{{ person.id }}" class="link hover:no-underline">{{ person.full_name }}</a>
+        <a routerLink="/console/people/{{ person.id }}" class="link hover:no-underline">{{ person.full_name }}</a>
       </li>
     }
   </ul>`,

@@ -6,16 +6,16 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordControl, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 @Component({
   selector: 'pc-new-password',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, AuthLayoutComponent, PasswordInputComponent],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, AuthLayoutComponent, Icon],
   templateUrl: './new-password-page.html',
 })
 /**
@@ -28,11 +28,11 @@ export class NewPasswordPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  /** Reset code extracted from query params */
-  private code: string | null = null;
-
   /** loading state to disable UI and show loading indication */
   private _loading = createLoadingGate();
+
+  /** Reset code extracted from query params */
+  private code: string | null = null;
 
   /** Error state to control UI feedback */
   protected readonly error = signal(false);
@@ -62,6 +62,7 @@ export class NewPasswordPage implements OnInit {
    */
   public async ngOnInit() {
     const code = this.route.snapshot.queryParamMap.get('code');
+    console.log(code);
 
     if (!code) {
       this.error.set(true);

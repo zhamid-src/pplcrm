@@ -5,7 +5,6 @@ import { TagsService } from '@experiences/tags/services/tags-service';
 import { TRPCError } from '@trpc/server';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { FormInput } from '@uxcommon/components/form-input/formInput';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 /**
@@ -15,23 +14,15 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
  */
 @Component({
   selector: 'pc-add-tag',
-  imports: [ReactiveFormsModule, FormInput, AddBtnRow],
+  imports: [ReactiveFormsModule, AddBtnRow],
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form [formGroup]="form" class="mx-5 my-10 sm:mx-10">
       <div class="flex flex-col gap-2">
         <label class="label text-base font-light">
           Enter a unique tag name (and optionally, give it a description)
         </label>
-        <div>
-          <pc-form-input
-            control="name"
-            placeholder="Tag Name"
-            icon="tag"
-            [disallowedChars]="[',']"
-            [debounceTime]="0"
-          />
-        </div>
-        <pc-form-input control="description" placeholder="Optional description" icon="hashtag" />
+        <input class="input" placeholder="Tag Name" formControlName="name" />
+        <input class="input" placeholder="Optional description" formControlName="description" />
         <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="add()"></pc-add-btn-row>
       </div>
     </form>

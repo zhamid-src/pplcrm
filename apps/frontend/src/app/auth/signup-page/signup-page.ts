@@ -18,7 +18,6 @@ import {
   passwordControl,
   passwordInBreach,
 } from 'apps/frontend/src/app/auth/auth-utils';
-import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-input';
 
 /**
  * Component responsible for user sign-up.
@@ -27,7 +26,7 @@ import { PasswordInputComponent } from 'apps/frontend/src/app/auth/password-inpu
  */
 @Component({
   selector: 'pc-signup',
-  imports: [CommonModule, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent, PasswordInputComponent],
+  imports: [CommonModule, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {

@@ -140,8 +140,8 @@
     @if (step() === 4) {
     <div class="grid gap-4">
       <div class="grid sm:grid-cols-2 gap-4">
-        <pc-form-input control="name" placeholder="List Name" icon="queue-list" />
-        <pc-form-input control="description" placeholder="Description" icon="document-text" />
+        <input class="input w-full" placeholder="List Name" formControlName="name" />
+        <input class="input w-full" placeholder="Description" formControlName="description" />
       </div>
       <div class="text-sm text-base-content/70">Preview (read-only). Go back to adjust filters.</div>
       <div class="h-96 border border-base-300 rounded">

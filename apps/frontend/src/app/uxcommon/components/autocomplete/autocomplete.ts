@@ -1,15 +1,18 @@
-import { Component, ViewChild, input, output, signal } from '@angular/core';
-import { PPlCrmInput } from '@uxcommon/components/input/input';
+import { Component, ElementRef, ViewChild, input, output, signal } from '@angular/core';
+import { debounce } from '@common';
 
 @Component({
   selector: 'pc-autocomplete',
-  imports: [PPlCrmInput],
-  template: `<pc-input
-      (keyup)="onKey($event)"
-      (valueChange)="autoComplete($event)"
+  template: `
+    <input
+      #inputEl
+      type="text"
+      class="input w-full"
       [placeholder]="placeholder()"
-      (gotFocus)="showAutoCompleteList()"
-      (lostFocus)="hideAutoCompleteList()"
+      (keyup)="onKey($event)"
+      (input)="onInput($event)"
+      (focus)="showAutoCompleteList()"
+      (blur)="hideAutoCompleteList()"
     />
     @if (matches().length && !hideAutoComplete) {
       <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
@@ -40,7 +43,7 @@ export class AutoComplete {
    * Must implement a `filter()` method that returns a list of matches.
    */
   public filterSvc = input<TFILTER | null>(null);
-  @ViewChild(PPlCrmInput) public pcInput!: PPlCrmInput;
+  @ViewChild('inputEl') public inputRef!: ElementRef<HTMLInputElement>;
 
   /**
    * The placeholder text for the input element.
@@ -52,12 +55,19 @@ export class AutoComplete {
    *
    * @param key - The string to filter matches by
    */
-  protected async autoComplete(key: string) {
+  private readonly debouncedFilter = debounce(async (key: string) => {
     const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) return;
-
+    if (!filterSvc || !key?.length) {
+      this.matches.set([]);
+      return;
+    }
     const matches = await filterSvc.filter(key);
     this.matches.set(matches);
+  }, 250);
+
+  protected onInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.debouncedFilter(target.value || '');
   }
 
   /**
@@ -90,7 +100,9 @@ export class AutoComplete {
   protected reset(key: string) {
     this.valueChange.emit(key);
     this.matches.set([]);
-    this.pcInput.clearText();
+    if (this.inputRef?.nativeElement) {
+      this.inputRef.nativeElement.value = '';
+    }
   }
 
   /**
