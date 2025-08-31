@@ -3,8 +3,10 @@ import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
 import { QueryParams } from '../../lib/base.repo';
+import { HouseholdRepo } from '../households/repositories/households.repo';
 import { SettingsController } from '../settings/controller';
 import { TagsRepo } from '../tags/repositories/tags.repo';
+import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -14,6 +16,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
  */
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
   private settingsController = new SettingsController();
   private tagsRepo = new TagsRepo();
 
@@ -147,6 +150,137 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /**
+   * Import multiple rows, creating a household per row (using provided address if any),
+   * creating the person, and attaching common tags. Performs basic sanitation.
+   */
+  public async importRows(
+    input: {
+      rows: Array<{
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        mobile?: string;
+        notes?: string;
+        home_phone?: string;
+        street_num?: string;
+        street1?: string;
+        street2?: string;
+        apt?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+      }>;
+      tags?: string[];
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    const households = new HouseholdRepo();
+
+    // Add an automatic import tag with timestamp
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
+    const results = { inserted: 0, errors: 0 };
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        for (const raw of input.rows) {
+          try {
+            const sanitized = this.sanitizeRow(raw);
+
+            // Skip empty person rows
+            if (
+              !sanitized.first_name &&
+              !sanitized.last_name &&
+              !sanitized.email &&
+              !sanitized.mobile &&
+              !sanitized.notes
+            ) {
+              continue;
+            }
+
+            // Create household (with address if any present)
+            const hhRow = {
+              tenant_id: auth.tenant_id,
+              campaign_id,
+              createdby_id: auth.user_id,
+              home_phone: sanitized.home_phone ?? null,
+              street_num: sanitized.street_num ?? null,
+              street1: sanitized.street1 ?? null,
+              street2: sanitized.street2 ?? null,
+              apt: sanitized.apt ?? null,
+              city: sanitized.city ?? null,
+              state: sanitized.state ?? null,
+              zip: sanitized.zip ?? null,
+              country: sanitized.country ?? null,
+              notes: null,
+              json: null,
+            } as any;
+
+            const household = await households.add({ row: hhRow as OperationDataType<'households', 'insert'> }, trx);
+
+            // Create person
+            const personRow = {
+              tenant_id: auth.tenant_id,
+              campaign_id,
+              createdby_id: auth.user_id,
+              household_id: household?.id as string,
+              first_name: sanitized.first_name ?? null,
+              middle_names: null,
+              last_name: sanitized.last_name ?? null,
+              email: sanitized.email ?? null,
+              email2: null,
+              mobile: sanitized.mobile ?? null,
+              home_phone: null,
+              file_id: null,
+              notes: sanitized.notes ?? null,
+              json: null,
+            };
+
+            const person = await this.add(personRow as OperationDataType<'persons', 'insert'>, trx);
+
+            // Attach common tags
+            for (const name of tags) {
+              const row = {
+                name,
+                tenant_id: auth.tenant_id,
+                createdby_id: auth.user_id,
+                updatedby_id: auth.user_id,
+              } as OperationDataType<'tags', 'insert'>;
+
+              const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
+
+              await this.mapPersonsTagRepo.add(
+                {
+                  row: {
+                    tenant_id: auth.tenant_id,
+                    person_id: person?.id as string,
+                    tag_id: tag?.id as unknown as string,
+                    createdby_id: auth.user_id,
+                    updatedby_id: auth.user_id,
+                  } as OperationDataType<'map_peoples_tags', 'insert'>,
+                },
+                trx,
+              );
+            }
+
+            results.inserted++;
+          } catch (e) {
+            results.errors++;
+            // continue with next row
+          }
+        }
+      });
+
+    return { ...results, tag: autoTag };
+  }
+
+  /**
    * Move a person to a new blank household to clear address while
    * preserving non-null household_id constraint.
    */
@@ -184,5 +318,118 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return await this.mapPersonsTagRepo.add({
       row: row as OperationDataType<'map_peoples_tags', 'insert'>,
     });
+  }
+
+  /** Override deleteMany to clear dependent mappings before deleting persons */
+  public override async deleteMany(tenant_id: string, idsToDelete: string[]): Promise<boolean> {
+    if (!idsToDelete?.length) return false;
+    return await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Delete tag mappings
+        await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete list mappings
+        await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete persons within the same transaction
+        return this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
+      });
+  }
+
+  /** Override delete to reuse deleteMany path */
+  public override async delete(tenant_id: string, idToDelete: string): Promise<boolean> {
+    return this.deleteMany(tenant_id, [idToDelete]);
+  }
+
+  private sanitizePhone(v?: string) {
+    if (!v) return undefined;
+    const digits = v.replace(/[^0-9+]/g, '');
+    // If starts with + keep it, else digits only
+    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
+    return digits.replace(/[^0-9]/g, '');
+  }
+
+  private sanitizeRow(row: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    mobile?: string;
+    notes?: string;
+    home_phone?: string;
+    street_num?: string;
+    street1?: string;
+    street2?: string;
+    apt?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  }) {
+    const trim = (v?: string) => (v ? v.trim() : undefined);
+
+    // Extract email/phone even if jammed into other fields
+    let first_name = trim(row.first_name);
+    let last_name = trim(row.last_name);
+    let email = (trim(row.email) || '').toLowerCase();
+    let mobile = this.sanitizePhone(row.mobile);
+    const home_phone = this.sanitizePhone(row.home_phone);
+    let notes = trim(row.notes);
+
+    // If email was not provided in its field, try to find it in name fields
+    if (!email) {
+      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
+    }
+    if (email && !/.+@.+\..+/.test(email)) email = '';
+
+    // Try to discover a phone in the name fields if mobile not provided
+    if (!mobile) {
+      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
+      mobile = this.sanitizePhone(possiblePhone);
+    }
+
+    // Clean noisy tokens from first_name (emails/phones/commas)
+    if (first_name) first_name = this.stripNoise(first_name);
+    if (!first_name && email) first_name = this.nameFromEmail(email);
+
+    return {
+      first_name,
+      last_name,
+      email: email || undefined,
+      mobile,
+      notes,
+      home_phone,
+      street_num: trim(row.street_num),
+      street1: trim(row.street1),
+      street2: trim(row.street2),
+      apt: trim(row.apt),
+      city: trim(row.city),
+      state: trim(row.state),
+      zip: trim(row.zip),
+      country: trim(row.country),
+    };
+  }
+
+  private findEmail(text: string): string | undefined {
+    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return m?.[0];
+  }
+
+  private findPhone(text?: string): string | undefined {
+    if (!text) return undefined;
+    const m = text.match(/\+?\d[\d\s\-]{7,}\d/);
+    return m?.[0];
+  }
+
+  private stripNoise(text: string): string | undefined {
+    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s\-]{7,}\d/g, ' ');
+    const cleaned = noPhone.replace(/[,]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    return cleaned || undefined;
+  }
+
+  private nameFromEmail(email: string): string | undefined {
+    const local = (email || '').split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || '';
+    if (!token) return undefined;
+    return token.charAt(0).toUpperCase() + token.slice(1);
   }
 }

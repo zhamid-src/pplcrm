@@ -114,4 +114,8 @@ export const dashboardRoutes: Routes = [
     path: 'tasks/:id',
     loadComponent: () => import('./experiences/tasks/ui/task-detail').then((m) => m.TaskDetail),
   },
+  {
+    path: 'export',
+    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
 ];

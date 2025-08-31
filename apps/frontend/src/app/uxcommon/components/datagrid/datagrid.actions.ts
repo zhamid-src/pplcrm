@@ -6,6 +6,7 @@ import type { loadingGate } from '@uxcommon/loading-gate';
 import type { GridApi } from 'ag-grid-community';
 
 import { DataGridConfig } from './datagrid.tokens';
+import { get, set } from 'idb-keyval';
 import { bucketByRoute } from './datagrid.utils';
 
 type DeleteCtx = {
@@ -24,9 +25,14 @@ type DeleteCtx = {
 export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
   const { messages } = ctx.config;
 
+  const selectedCount = ctx.getSelectedRows()?.length ?? 0;
+  const dynamicMessage = selectedCount
+    ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+    : ctx.config.messages.deleteConfirmMessage;
+
   const ok = await ctx.dialogs.confirm({
     title: messages.deleteConfirmTitle,
-    message: messages.deleteConfirmMessage,
+    message: dynamicMessage,
     variant: messages.deleteConfirmVariant,
     icon: messages.deleteConfirmIcon,
     confirmText: messages.deleteConfirmText,
@@ -121,10 +127,33 @@ export async function doExportCsv(deps: {
   if (!ok) return;
 
   try {
+    // Track export job in IndexedDB (lightweight client-side history)
+    const jobs = ((await get('pc_export_jobs')) as any[]) || [];
+    const job = { id: crypto.randomUUID(), name: 'Grid CSV Export', status: 'in_progress', created_at: Date.now() };
+    jobs.push(job);
+    await set('pc_export_jobs', jobs);
+
     deps.api?.exportDataAsCsv();
+
+    // Mark as completed
+    const jobs2 = ((await get('pc_export_jobs')) as any[]) || [];
+    const idx = jobs2.findIndex((j) => j.id === job.id);
+    if (idx >= 0) {
+      jobs2[idx] = { ...jobs2[idx], status: 'completed' };
+      await set('pc_export_jobs', jobs2);
+    }
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
     deps.alertSvc.showError(messages.exportFailed);
+    // Best-effort: mark last job as failed
+    try {
+      const jobs = ((await get('pc_export_jobs')) as any[]) || [];
+      const last = jobs[jobs.length - 1];
+      if (last && last.status === 'in_progress') {
+        last.status = 'failed';
+        await set('pc_export_jobs', jobs);
+      }
+    } catch {}
   }
 }

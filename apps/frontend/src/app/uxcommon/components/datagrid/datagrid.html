@@ -12,6 +12,13 @@
       icon="cloud-arrow-up"
       (action)="doImportCSV()"
     />
+    <pc-grid-action [enabled]="true" [tip]="'Select all results'" icon="check-circle" (action)="selectAllMatching()" />
+    <pc-grid-action
+      [enabled]="allSelected() || isRowSelected()"
+      [tip]="'Clear selection'"
+      icon="x-circle"
+      (action)="clearAllSelection()"
+    />
     <pc-grid-action
       [enabled]="!disableExport()"
       [tip]="'Download as CSV'"
@@ -31,9 +38,7 @@
       </a>
     </li>
   </ul>
-  }
-
-  @if (isLoading()) {
+  } @if (isLoading()) {
   <progress class="progress h-1"></progress>
   } @if (gridVisible()) {
   <ag-grid-angular

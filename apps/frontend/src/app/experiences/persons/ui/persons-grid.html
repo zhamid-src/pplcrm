@@ -5,6 +5,8 @@
   addRoute="add"
   [disableView]="false"
   [limitToTags]="limitTags"
+  [disableImport]="false"
+  (importCSV)="openImportDialog()"
   plusIcon="user-plus"
 ></pc-datagrid>
 
@@ -25,5 +27,103 @@
         Cancel
       </button>
     </form>
+  </div>
+</dialog>
+
+<!-- Import Persons Modal -->
+<dialog id="importPersons" class="modal">
+  <div class="modal-box max-w-5xl">
+    <h3 class="text-lg font-bold mb-3">Import People from CSV</h3>
+    <div class="grid gap-4">
+      <!-- Step 1: File input -->
+      <div class="grid gap-2">
+        <label class="font-semibold">1) Choose CSV file</label>
+        <input type="file" accept=".csv,text/csv" (change)="onFileSelected($event)" class="file-input file-input-bordered" />
+        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
+      </div>
+
+      @if (importLoading) {
+      <div class="grid gap-2">
+        <progress class="progress w-full"></progress>
+        <span class="text-xs opacity-70" aria-live="polite"
+          >Reading and parsing the file will take a few moments ...</span
+        >
+      </div>
+      }
+
+      <!-- Step 2: Mapping UI -->
+      @if (csvHeaders.length) {
+      <div class="grid gap-2">
+        <label class="font-semibold">2) Map CSV columns</label>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          @for (i of csvHeaders; track i; let idx = $index) {
+            <div class="grid grid-cols-2 gap-2 items-center">
+              <div class="truncate" title="{{ i }}">{{ i }}</div>
+              <select class="select select-bordered select-sm" [(ngModel)]="mapping[idx]">
+                <option value="">Skip</option>
+                @for (f of mappableFields; track f) {
+                <option [value]="f">{{ f }}</option>
+                }
+              </select>
+            </div>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Step 3: Tags -->
+      <div class="grid gap-2">
+        <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
+      </div>
+
+      <!-- Preview sample rows -->
+      @if (csvRows.length) {
+      <div class="grid gap-2">
+        <label class="font-semibold">Preview (first 5 rows)</label>
+        <div class="overflow-auto border rounded relative">
+          @if (importLoading) {
+          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
+            <progress class="progress w-64"></progress>
+          </div>
+          }
+          <table class="table table-zebra table-xs">
+            <thead>
+              <tr>
+                @for (h of csvHeaders; track h) {
+                <th>{{ h }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of getPreviewRows(); track r) {
+              <tr>
+                @for (h of csvHeaders; track h) {
+                <td>{{ r[h] }}</td>
+                }
+              </tr>
+              }
+            </tbody>
+          </table>
+          <div class="flex items-center justify-end gap-2 p-2">
+            <button class="btn btn-xs" [disabled]="!canPrevPage()" (click)="prevPage()">Prev</button>
+            <span class="text-xs opacity-70">Page {{ previewPage + 1 }} of {{ previewTotalPages() }}</span>
+            <button class="btn btn-xs" [disabled]="!canNextPage()" (click)="nextPage()">Next</button>
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-2 mt-2">
+        <form method="dialog">
+          <button class="btn">Cancel</button>
+        </form>
+        <button class="btn btn-primary" [disabled]="!csvRows.length" (click)="runImport()">
+          <pc-icon name="cloud-arrow-up" />
+          Import
+        </button>
+      </div>
+    </div>
   </div>
 </dialog>

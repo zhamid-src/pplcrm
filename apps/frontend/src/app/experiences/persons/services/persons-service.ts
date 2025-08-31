@@ -78,6 +78,14 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
+   * Import multiple people with optional common tags.
+   * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
+   */
+  public import(rows: any[], tags: string[] = []) {
+    return this.api.persons.import.mutate({ rows, tags });
+  }
+
+  /**
    * Attach a tag to a person.
    *
    * @param id - Person ID
@@ -112,7 +120,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @returns True if deletion was successful
    */
   public async deleteMany(ids: string[]): Promise<boolean> {
-    return (await this.api.persons.deleteMany.mutate(ids)) !== null;
+    return await this.api.persons.deleteMany.mutate(ids);
   }
 
   /**
