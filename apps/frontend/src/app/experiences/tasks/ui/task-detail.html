@@ -129,7 +129,7 @@
           </div>
 
           <!-- bubble -->
-          <div class="chat chat-bubble whitespace-pre-line" [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"></div>
+          <div class="chat-bubble" [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"></div>
         </div>
         }
 

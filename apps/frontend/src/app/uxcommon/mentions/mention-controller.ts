@@ -71,8 +71,8 @@ export class MentionController {
     if (this.start < 0) return { text, caret: this.caretPos };
     const display = user.first_name || user.email.split('@')[0];
     let before = text.slice(0, this.start);
-    // If stray newline(s) immediately before '@', collapse them to a single space to keep inline
-    before = before.replace(/[\r\n]+$/g, ' ');
+    // Collapse any trailing whitespace/newlines immediately before '@' into a single space to keep inline
+    before = before.replace(/\s+$/g, ' ');
     const after = text.slice(this.caretPos);
     const inserted = `@${display} `;
     const newText = before + inserted + after;

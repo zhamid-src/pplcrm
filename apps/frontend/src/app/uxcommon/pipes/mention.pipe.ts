@@ -33,8 +33,14 @@ export class MentionifyPipe implements PipeTransform {
       }
     }
 
-    // Normalize Windows newlines and collapse a single newline directly before a mention into a space
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\n(?=@[A-Za-z0-9._-]+)/g, ' ');
+    // Normalize Windows newlines and collapse any whitespace/newlines immediately before a mention into a single space
+    // This prevents mentions from starting on a new line when users select from autocomplete
+    const normalized = text
+      .replace(/\r\n?/g, '\n')
+      // collapse runs like "  \n   @john" -> " @john"
+      .replace(/[^\S\r\n]*\n+[^\S\r\n]*(?=@[A-Za-z0-9._-]+)/g, ' ')
+      // also collapse leading newlines before a mention at the very start
+      .replace(/^\s*\n+\s*(?=@[A-Za-z0-9._-]+)/, '');
 
     // Replace @mentions while preserving preceding character (so we don't match email domains)
     const replaced = normalized.replace(/(^|[^\w@])@([A-Za-z0-9._-]+)/g, (_m, pre: string, token: string) => {
