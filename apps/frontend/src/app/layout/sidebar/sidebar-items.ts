@@ -78,8 +78,8 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `MyTasks`,
-    route: '/mytasks',
+    name: `Tasks`,
+    route: '/tasks',
     icon: 'rectangle-stack',
   },
   {
@@ -159,11 +159,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Export',
         route: '/export',
         icon: 'arrow-down-tray',
-      },
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'square-3-stack-3d',
       },
       {
         name: 'Tags',
