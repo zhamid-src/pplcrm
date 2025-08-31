@@ -15,7 +15,7 @@ import { PersonsService } from '../services/persons-service';
   selector: 'pc-people-in-household',
   imports: [RouterModule],
   template: `<ul>
-    @if (!peopleInHousehold()?.length) {
+    @if (!peopleInHousehold().length) {
       <span> No one else </span>
     }
     @for (person of peopleInHousehold(); track person.id) {
