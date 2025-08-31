@@ -4,6 +4,7 @@
  * using Angular signals for cross-component search coordination.
  */
 import { Injectable, Signal, signal } from '@angular/core';
+import { debounce } from '@common';
 
 /**
  * Centralized search state management service for application-wide search functionality.
@@ -82,7 +83,10 @@ export class SearchService {
    * Clears the current search term by setting it to an empty string.
    */
   public clearSearch(): void {
-    this.search.set('');
+    if (this.lastNormalized !== '') {
+      this.lastNormalized = '';
+      this.search.set('');
+    }
   }
 
   /**
@@ -91,7 +95,10 @@ export class SearchService {
    * @param value - The new search term to set.
    */
   public doSearch(value: string): void {
-    this.search.set(value);
+    const norm = this.normalize(value);
+    if (norm === this.lastNormalized) return;
+    this.lastNormalized = norm;
+    this.setSearchDebounced(norm);
   }
 
   /**
@@ -101,5 +108,29 @@ export class SearchService {
    */
   public getFilterText(): string {
     return this.search();
+  }
+
+  // Debounced setter for global search; keeps callers simple and consistent.
+  private readonly setSearchDebounced = debounce((value: string) => this.search.set(value), 300);
+
+  /**
+   * Optional: immediate search update (bypasses debounce), e.g., on Enter key.
+   */
+  public doSearchImmediate(value: string): void {
+    const norm = this.normalize(value);
+    if (norm === this.lastNormalized) return;
+    this.lastNormalized = norm;
+    this.search.set(norm);
+  }
+
+  // Keep the last normalized value to suppress no-op updates
+  private lastNormalized = '';
+
+  // Simple normalization to avoid redraws caused by cosmetic changes
+  private normalize(v: string): string {
+    return String(v ?? '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }

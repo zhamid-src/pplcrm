@@ -17,6 +17,7 @@
           (blur)="onBlurSearchBar()"
           [value]="searchStr"
           (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
         />
         <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
         <kbd class="kbd kbd-sm hidden sm:block">K</kbd>

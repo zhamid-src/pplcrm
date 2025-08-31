@@ -88,6 +88,8 @@ export const SELECTION_COLUMN: ColDef = {
 export const defaultGridOptions: GridOptions = {
   suppressNoRowsOverlay: true,
   animateRows: true,
+  // Reduce perceived flicker while server-side blocks are loading
+  blockLoadDebounceMillis: 100,
   autoSizeStrategy: { type: 'fitCellContents' },
   defaultColDef: BASE_GRID_CONFIG.defaultColDef,
   initialState: BASE_GRID_CONFIG.initialState,

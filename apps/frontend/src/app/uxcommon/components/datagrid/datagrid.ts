@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, effect, inject, input, output, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { debounce, getAllOptionsType } from '@common';
+import { getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { AbstractAPIService } from '@services/api/abstract-api.service';
@@ -50,7 +50,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   private readonly themeSvc = inject(ThemeService);
 
   private _loading = createLoadingGate();
-  private debouncedFilter = debounce(() => this.api?.onFilterChanged());
 
   // Other State
   private lastRowHovered: string | undefined;
@@ -103,7 +102,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       const loading = this.isLoading();
       this.api?.setGridOption('loading', loading);
     });
-
     // React to global search
     effect(() => {
       const quickFilterText = this.searchSvc.getFilterText();
@@ -114,7 +112,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         if (this.rowModelType() === 'clientSide') {
           this.api?.updateGridOptions({ quickFilterText });
         } else {
-          this.debouncedFilter();
+          this.api?.onFilterChanged();
         }
       }
     });
@@ -363,7 +361,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     const end = this._loading.begin();
     try {
       const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
-      this.api?.setGridOption('rowData', rowData.rows as Partial<T>[]);
+      const nextRows = (rowData.rows as Partial<T>[]) ?? [];
+      if (this.isSameAsCurrentlyDisplayed(nextRows)) return;
+      this.api?.setGridOption('rowData', nextRows);
     } finally {
       end();
     }
@@ -374,16 +374,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
   }
 
-  /** Returns all currently displayed rows' data (after external filters). */
-  public getDisplayedRows(): Partial<T & { id: string }>[] {
-    const out: Partial<T & { id: string }>[] = [];
-    const api = this.api as any;
-    if (!api) return out;
-    const count = api.getDisplayedRowCount?.() ?? 0;
-    for (let i = 0; i < count; i++) {
+  /** Lightweight check to avoid no-op redraws for identical client-side results */
+  private isSameAsCurrentlyDisplayed(next: Partial<T>[]): boolean {
+    const api: any = this.api;
+    if (!api) return false;
+    const currentCount: number = api.getDisplayedRowCount?.() ?? 0;
+    if (currentCount !== next.length) return false;
+
+    const sample = Math.min(50, next.length);
+    for (let i = 0; i < sample; i++) {
       const node = api.getDisplayedRowAtIndex?.(i);
-      if (node?.data) out.push(node.data);
+      const currId = String(node?.data?.id ?? '');
+      const nextId = String((next[i] as any)?.id ?? '');
+      if (currId !== nextId) return false;
     }
-    return out;
+    return true;
   }
 }
