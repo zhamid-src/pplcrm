@@ -40,6 +40,22 @@
     </div>
 
     <div class="grid gap-2">
+      <div class="label-text">Subtasks</div>
+      <div class="grid gap-2">
+        @for (s of subtasks(); track s.id) {
+          <label class="flex items-center gap-2">
+            <input type="checkbox" class="checkbox checkbox-sm" [checked]="s.status === 'done'" (change)="toggleSubtask(s, $any($event.target).checked)" />
+            <span [class.line-through]="s.status === 'done'">{{ s.name }}</span>
+          </label>
+        }
+      </div>
+      <div class="flex gap-2">
+        <input class="input grow" placeholder="Add a subtask" [(ngModel)]="subtaskName" />
+        <button class="btn btn-primary" (click)="addSubtask()" [disabled]="!subtaskName || isLoading()">Add</button>
+      </div>
+    </div>
+
+    <div class="grid gap-2">
       <div class="label-text">Comments</div>
       <div class="grid gap-2">
         @for (c of comments(); track c.id) {

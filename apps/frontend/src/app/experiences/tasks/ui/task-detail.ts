@@ -23,6 +23,7 @@ export class TaskDetail implements OnInit {
 
   protected readonly comments = signal<any[]>([]);
   protected readonly attachments = signal<any[]>([]);
+  protected readonly subtasks = signal<any[]>([]);
   protected readonly isLoading = signal(false);
   protected readonly task = signal<any | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
@@ -30,6 +31,7 @@ export class TaskDetail implements OnInit {
   protected newComment = '';
   protected attName = '';
   protected attUrl = '';
+  protected subtaskName = '';
 
   public ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id') ?? '';
@@ -43,7 +45,7 @@ export class TaskDetail implements OnInit {
     try {
       await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: this.newComment.trim() });
       this.newComment = '';
-      await Promise.all([this.loadComments(), this.loadAttachments()]);
+      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } finally {
       this.isLoading.set(false);
     }
@@ -115,6 +117,34 @@ export class TaskDetail implements OnInit {
       this.attName = '';
       this.attUrl = '';
       await this.loadAttachments();
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  private async loadSubtasks() {
+    const list = await (this.tasks as any).api.tasks.getSubtasks.query(this.id());
+    this.subtasks.set(list as any[]);
+  }
+
+  protected async addSubtask() {
+    const name = this.subtaskName.trim();
+    if (!name) return;
+    this.isLoading.set(true);
+    try {
+      await (this.tasks as any).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
+      this.subtaskName = '';
+      await this.loadSubtasks();
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected async toggleSubtask(s: any, isDone: boolean) {
+    this.isLoading.set(true);
+    try {
+      await (this.tasks as any).api.tasks.updateSubtask.mutate({ id: String(s.id), data: { status: isDone ? 'done' : 'todo' } });
+      await this.loadSubtasks();
     } finally {
       this.isLoading.set(false);
     }
