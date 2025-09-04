@@ -186,6 +186,8 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   home_phone: string | null;
   json: Json | null;
   notes: string | null;
+  address_fp_street: string | null;
+  address_fp_full: string | null;
 }
 
 interface MapCampaignsUsers extends RecordType {

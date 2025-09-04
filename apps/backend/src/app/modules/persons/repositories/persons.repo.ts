@@ -33,28 +33,38 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }) {
     const households = new HouseholdRepo();
     return this.transaction().execute(async (trx) => {
-      const newHousehold = await households.add(
-        {
-          row: {
-            tenant_id: input.tenant_id,
-            campaign_id: input.campaign_id,
-            createdby_id: input.user_id,
-            updatedby_id: input.user_id,
-          } as OperationDataType<'households', 'insert'>,
-        },
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
         trx,
       );
+      let targetId = existingBlank?.id as string | undefined;
+
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
+          },
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
+      }
 
       await this.update(
         {
           tenant_id: input.tenant_id,
           id: input.person_id,
-          row: { household_id: newHousehold?.id, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
         },
         trx,
       );
 
-      return { household_id: newHousehold?.id };
+      return { household_id: targetId };
     });
   }
 

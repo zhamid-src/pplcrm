@@ -18,6 +18,7 @@
         "generatePackageJson": false,
         "esbuildOptions": {
           "packages": "external",
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
           "loader": { ".html": "text" },
           "sourcemap": "inline",
           "outExtension": { ".js": ".js" }
@@ -31,6 +32,7 @@
           "bundle": true,
           "esbuildOptions": {
             "sourcemap": false,
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
             "loader": { ".html": "text" },
             "outExtension": { ".js": ".js" }
           }

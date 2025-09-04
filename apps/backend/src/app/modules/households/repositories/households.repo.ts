@@ -20,6 +20,67 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   /**
+   * Find a "blank" household for a tenant/campaign. A blank household is one with
+   * no address-related fields or home_phone set (all null) and no file/notes/json.
+   * Returns the first match or undefined.
+   */
+  public async getBlankHousehold(
+    input: { tenant_id: string; campaign_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id)
+      .where('home_phone', 'is', null)
+      .where('apt', 'is', null)
+      .where('street_num', 'is', null)
+      .where('street1', 'is', null)
+      .where('street2', 'is', null)
+      .where('city', 'is', null)
+      .where('state', 'is', null)
+      .where('zip', 'is', null)
+      .where('country', 'is', null)
+      .where('file_id', 'is', null)
+      .where('notes', 'is', null)
+      .where('json', 'is', null)
+      .selectAll()
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Find a household by address fingerprints. Prefers full fingerprint when provided,
+   * otherwise matches on street-level fingerprint.
+   */
+  public async findByFingerprint(
+    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
+    trx?: Transaction<Models>,
+  ) {
+    const sel = this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id);
+
+    if (input.fp_full) {
+      const full = await sel
+        .where('address_fp_full', '=', input.fp_full)
+        .selectAll()
+        .limit(1)
+        .executeTakeFirst();
+      if (full) return full;
+    }
+    if (input.fp_street) {
+      return await this.getSelect(trx)
+        .where('tenant_id', '=', input.tenant_id)
+        .where('campaign_id', '=', input.campaign_id)
+        .where('address_fp_street', '=', input.fp_street)
+        .selectAll()
+        .limit(1)
+        .executeTakeFirst();
+    }
+    return undefined;
+  }
+
+  /**
    * Get all households with person count and associated tags, supporting filter/search/pagination.
    *
    * @param input.tenant_id - The tenant ID to scope the query
