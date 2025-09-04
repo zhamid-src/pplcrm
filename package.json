@@ -5,7 +5,8 @@
   "scripts": {
     "preinstall": "npx npm-force-resolutions",
     "lint": "eslint . --ext .ts,.html",
-    "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts"
+    "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts",
+    "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts"
   },
   "private": true,
   "type": "module",

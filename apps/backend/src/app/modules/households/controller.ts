@@ -2,6 +2,7 @@ import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType 
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../../lib/base.repo';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
@@ -31,13 +32,69 @@ export class HouseholdsController extends BaseController<'households', Household
   public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
     const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as SettingsType;
 
+    const fp_street = fingerprintStreet({
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: payload.apt,
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+      city: payload.city,
+      state: payload.state,
+      zip: payload.zip,
+      country: payload.country,
+    });
+
+    // Try to dedupe: find existing by fingerprint
+    if (fp_street || fp_full) {
+      const existing = await this.getRepo().findByFingerprint(
+        { tenant_id: auth.tenant_id, campaign_id: String(campaign_id), fp_street: fp_street, fp_full: fp_full },
+      );
+      if (existing?.id) return { id: String(existing.id) } as any;
+    }
+
     const row = {
       ...payload,
+      address_fp_street: fp_street,
+      address_fp_full: fp_full,
       campaign_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
     };
     return this.add(row as OperationDataType<'households', 'insert'>);
+  }
+
+  /**
+   * Override update to recompute address fingerprints when address fields change.
+   */
+  public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'households', 'update'> }) {
+    const keys = Object.keys(input.row || {});
+    const affectsAddress = keys.some((k) =>
+      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    );
+    if (affectsAddress) {
+      const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+      const merged = { ...current, ...(input.row as any) };
+      (input.row as any).address_fp_street = fingerprintStreet({
+        street_num: merged.street_num,
+        street1: merged.street1,
+        street2: merged.street2,
+      });
+      (input.row as any).address_fp_full = fingerprintFull({
+        apt: merged.apt,
+        street_num: merged.street_num,
+        street1: merged.street1,
+        street2: merged.street2,
+        city: merged.city,
+        state: merged.state,
+        zip: merged.zip,
+        country: merged.country,
+      });
+    }
+    return super.update(input);
   }
 
   /**
