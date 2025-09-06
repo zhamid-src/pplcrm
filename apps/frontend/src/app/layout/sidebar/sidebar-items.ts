@@ -83,6 +83,11 @@ export const SidebarItems: ISidebarItem[] = [
     icon: 'rectangle-stack',
   },
   {
+    name: `Board`,
+    route: '/board',
+    icon: 'view-kanban',
+  },
+  {
     name: `PEOPLE`,
     type: 'subheading',
     children: [
@@ -126,7 +131,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Volunteers',
         route: '/volunteers',
-        icon: 'briefcase',
+        icon: 'volunteer',
       },
       {
         name: 'Teams',

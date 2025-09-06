@@ -109,6 +109,11 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return this.getAllWithCounts(options);
   }
 
+  // We don't support archives
+  public getAllArchived() {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
   /**
    * Gets all tags along with metadata like usage count.
    *

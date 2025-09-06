@@ -286,7 +286,7 @@ export interface Tasks extends RecordType {
   name: string;
   details?: string;
   due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
+  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
   priority: 'low' | 'medium' | 'high' | 'urgent' | null;
   completed_at: Timestamp | null;
   position: number | null;

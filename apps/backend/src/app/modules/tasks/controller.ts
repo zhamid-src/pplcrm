@@ -1,9 +1,9 @@
 import type { AddTaskType, UpdateTaskType, getAllOptionsType } from '@common';
 
-import { BaseController } from '../../lib/base.controller';
-import type { OperationDataType } from 'common/src/lib/kysely.models';
-import { TasksRepo } from './repositories/tasks.repo';
 import type { IAuthKeyPayload } from '../../../../../../common/src/lib/auth';
+import { BaseController } from '../../lib/base.controller';
+import { TasksRepo } from './repositories/tasks.repo';
+import type { OperationDataType } from 'common/src/lib/kysely.models';
 
 export class TasksController extends BaseController<'tasks', TasksRepo> {
   constructor() {
@@ -27,14 +27,16 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     return this.add(row);
   }
 
+  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as any);
+  }
+
+  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as any);
+  }
+
   public updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
     return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-  }
-
-  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const rows = await this.getAll(auth.tenant_id, options as any);
-    const count = await this.getCount(auth.tenant_id);
-    return { rows, count } as { rows: any[]; count: number };
   }
 }

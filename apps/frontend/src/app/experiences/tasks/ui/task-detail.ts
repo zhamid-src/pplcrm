@@ -31,6 +31,7 @@ export class TaskDetail implements OnInit {
   protected readonly isLoading = signal(false);
   protected readonly task = signal<any | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly assignedTo = signal<string>('');
 
   protected newComment = '';
   protected attName = '';
@@ -87,6 +88,10 @@ export class TaskDetail implements OnInit {
     try {
       await this.tasks.update(id, patch);
       this.task.update((t) => ({ ...(t ?? {}), ...patch }));
+      if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
+        const v = patch.assigned_to;
+        this.assignedTo.set(v == null || v === '' ? '' : String(v));
+      }
     } catch {
       // ignore for now
     }
@@ -109,6 +114,8 @@ export class TaskDetail implements OnInit {
       const [t, us] = await Promise.all([this.tasks.getById(this.id()), this.auth.getUsers()]);
       this.task.set(t as any);
       this.users.set(us);
+      const assigned = (t as any)?.assigned_to;
+      this.assignedTo.set(assigned == null ? '' : String(assigned));
       await this.loadComments();
     } finally {
       this.isLoading.set(false);
@@ -158,6 +165,11 @@ export class TaskDetail implements OnInit {
     }
   }
 
+  protected onAssignedChange(v: string) {
+    this.assignedTo.set(v);
+    void this.update({ assigned_to: v || null });
+  }
+
   protected async toggleSubtask(s: any, isDone: boolean) {
     this.isLoading.set(true);
     try {
@@ -166,6 +178,21 @@ export class TaskDetail implements OnInit {
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  // Archive helpers
+  protected isArchived() {
+    return (this.task()?.status || '') === 'archived';
+  }
+
+  protected async archiveTask() {
+    await this.update({ status: 'archived' });
+  }
+
+  protected async unarchiveTask() {
+    // Restore to a default active state. If you want to remember prior status,
+    // we can persist it in json later and restore from there.
+    await this.update({ status: 'todo' });
   }
 
   // ===== Mention autocomplete handlers (textarea) =====

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
@@ -9,7 +9,12 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Component({
   selector: 'pc-tasks-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" [disableView]="false"></pc-datagrid>`,
+  template: `<pc-datagrid
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableView]="false"
+    [showArchiveIcon]="true"
+  ></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useClass: TasksService }],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
@@ -18,6 +23,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
   private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
   private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  //private readonly tasksSvc = inject(TasksService);
   private readonly unassignedLabel = 'Not Assigned';
 
   // Users for Assigned To (populated via AuthService on init)
@@ -74,6 +81,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       valueFormatter: (p: any) => this.userNameForId(p.value),
     },
   ];
+  protected isArchiveMode = signal(false);
 
   constructor() {
     super();

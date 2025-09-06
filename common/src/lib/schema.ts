@@ -184,7 +184,7 @@ export const AddTaskObj = z.object({
   name: z.string(),
   details: z.string().optional(),
   due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled']).default('todo').optional(),
+  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
@@ -199,7 +199,7 @@ export const TasksObj = z.object({
   name: z.string(),
   details: z.string().optional(),
   due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled']).nullable().optional(),
+  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
@@ -213,7 +213,7 @@ export const UpdateTaskObj = z.object({
   name: z.string().optional(),
   details: z.string().optional(),
   due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled']).optional(),
+  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
@@ -234,6 +234,8 @@ export const getAllOptions = z
     endRow: z.number().optional(),
     sortModel: z.array(sortModelItem).optional(),
     filterModel: z.record(z.string(), z.any()).optional(),
+    // custom flags understood by specific endpoints
+    includeArchived: z.boolean().optional(),
     /**
      * The list of columns to return. If not given then return all columns.
      */

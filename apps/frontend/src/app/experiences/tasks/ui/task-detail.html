@@ -41,15 +41,22 @@
     <div class="grid gap-3 sm:grid-cols-2 items-start">
       <select
         class="select select-bordered"
-        [value]="task()?.assigned_to || ''"
-        (change)="update({ assigned_to: $any($event.target).value })"
+        [ngModel]="assignedTo()"
+        (ngModelChange)="onAssignedChange($event)"
       >
         <option value="">Unassigned</option>
         @for (u of users(); track u.id) {
-        <option [value]="u.id">{{ u.first_name }}</option>
+        <option [value]="'' + u.id">{{ u.first_name }}</option>
         }
       </select>
-      <button class="btn btn-outline" (click)="assignToMe()">Assign to me</button>
+      <div class="flex gap-2">
+        <button class="btn btn-outline" (click)="assignToMe()">Assign to me</button>
+        @if (!isArchived()) {
+        <button class="btn btn-outline btn-error" (click)="archiveTask()">Archive</button>
+        } @else {
+        <button class="btn btn-outline" (click)="unarchiveTask()">Unarchive</button>
+        }
+      </div>
       <div class="text-sm text-base-content/60 flex items-center gap-3">
         <div>Created by: <span class="font-medium">{{ userName(task()?.createdby_id) }}</span></div>
         <div>On: {{ asDate(task()?.created_at) | date: 'y-MM-dd' }}</div>
