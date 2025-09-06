@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { getAllOptionsType } from '@common';
-
 import { TRPCService } from '@services/api/trpc-service';
+
 import { Models } from 'common/src/lib/kysely.models';
 
 /**
@@ -126,6 +126,8 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * ```
    */
   public abstract getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+
+  public abstract getAllArchived(): Promise<{ rows: { [x: string]: any }[]; count: number }>;
 
   /**
    * Retrieves a single record by its unique identifier.

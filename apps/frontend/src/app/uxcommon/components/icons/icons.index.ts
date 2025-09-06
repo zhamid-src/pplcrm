@@ -38,6 +38,8 @@ const _cache = new Map<PcIconNameType, Promise<string>>();
 export const icons = {
   'add-home': 'assets/icons/add-home.svg',
   'add-list': 'assets/icons/add-list.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
   'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
   'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
   'arrow-path': 'assets/icons/arrow-path.svg',
@@ -136,6 +138,7 @@ export const icons = {
   star: 'assets/icons/star.svg',
   'star-filled': 'assets/icons/star-filled.svg',
   sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
   tag: 'assets/icons/tag.svg',
   trash: 'assets/icons/trash.svg',
   'trash-forever': 'assets/icons/trash-forever.svg',
@@ -145,6 +148,8 @@ export const icons = {
   'user-group': 'assets/icons/user-group.svg',
   'user-plus': 'assets/icons/user-plus.svg',
   users: 'assets/icons/users.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
   'x-circle': 'assets/icons/x-circle.svg',
   'x-mark': 'assets/icons/x-mark.svg',
 } as const;

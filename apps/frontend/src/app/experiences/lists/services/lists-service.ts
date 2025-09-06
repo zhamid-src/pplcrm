@@ -44,6 +44,11 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.getAllWithCounts(options);
   }
 
+  // We don't support archives
+  public getAllArchived() {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
   public getAllWithCounts(options?: getAllOptionsType) {
     return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
   }
@@ -52,12 +57,9 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.getById.query(id);
   }
 
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateListType) {
-    return this.api.lists.update.mutate({ id, data });
+  /** Get household members for a list */
+  public getMembersHouseholds(list_id: string) {
+    return this.api.lists.getMembersHouseholds.query(list_id);
   }
 
   /** Get person members for a list */
@@ -65,8 +67,11 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.getMembersPersons.query(list_id);
   }
 
-  /** Get household members for a list */
-  public getMembersHouseholds(list_id: string) {
-    return this.api.lists.getMembersHouseholds.query(list_id);
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateListType) {
+    return this.api.lists.update.mutate({ id, data });
   }
 }

@@ -88,6 +88,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.getAllWithPeopleCount(options);
   }
 
+  // We don't support archives
+  public getAllArchived() {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
   /**
    * Get a single household by ID.
    * @param id Household ID.

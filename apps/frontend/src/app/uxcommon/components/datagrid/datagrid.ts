@@ -72,35 +72,37 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   // Select-all-across-results state
   protected allSelected = signal(false);
-  protected allSelectedIds: string[] = [];
   protected allSelectedCount = 0;
+  protected allSelectedIds: string[] = [];
 
   // AG Grid
   protected api: GridApi<Partial<T>> | undefined;
+  protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
   protected gridVisible = signal(false);
   protected isLoading = this._loading.visible;
   protected mergedGridOptions: Partial<GridOptions> = {};
 
   public readonly importCSV = output<string>();
+  public readonly showArchiveIcon = input<boolean>(false);
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
+  public allowFilter = input<boolean>(true);
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
   public disableExport = input<boolean>(false);
   public disableImport = input<boolean>(true);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public externalFilterFn = input<((row: any) => boolean) | null>(null);
+  public forceClient = input<boolean>(false);
   public gridOptions = input<GridOptions<Partial<T>>>({});
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
-  public externalFilterFn = input<((row: any) => boolean) | null>(null);
-  public forceClient = input<boolean>(false);
   public showToolbar = input<boolean>(true);
-  public enableSelection = input<boolean>(true);
-  public allowFilter = input<boolean>(true);
 
   constructor() {
     effect(() => {
@@ -145,7 +147,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
   }
-
   public getCountRowSelected() {
     return this.countRowSelected();
   }
@@ -301,6 +302,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     return this.countRowSelected() > 1;
   }
 
+  /** Clear both grid selection and the select-all cache */
+  protected clearAllSelection() {
+    this.allSelected.set(false);
+    this.allSelectedIds = [];
+    this.allSelectedCount = 0;
+    this.api?.deselectAll?.();
+    this.isRowSelected.set(false);
+    this.countRowSelected.set(0);
+  }
+
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
     await doExportCsv({
@@ -331,38 +342,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     }
   }
 
-  /** Select all rows that match current search/tags (server- or client-side). */
-  protected async selectAllMatching() {
-    try {
-      const options: any = {
-        searchStr: this.searchSvc.getFilterText(),
-        tags: this.limitToTags(),
-      };
-
-      const { rows, count } = await this.gridSvc.getAll(options);
-      const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
-      this.allSelectedIds = ids;
-      this.allSelectedCount = count ?? ids.length;
-      this.allSelected.set(ids.length > 0);
-      this.isRowSelected.set(ids.length > 0);
-      this.countRowSelected.set(this.allSelectedCount);
-      this.api?.deselectAll?.();
-      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} result(s)`);
-    } catch (e) {
-      this.alertSvc.showError('Failed to select all results');
-    }
-  }
-
-  /** Clear both grid selection and the select-all cache */
-  protected clearAllSelection() {
-    this.allSelected.set(false);
-    this.allSelectedIds = [];
-    this.allSelectedCount = 0;
-    this.api?.deselectAll?.();
-    this.isRowSelected.set(false);
-    this.countRowSelected.set(0);
-  }
-
   /** Utility: sets ID for each row (keep it stringy for stability) */
   protected getRowId(row: GetRowIdParams) {
     return String(row.data.id);
@@ -388,12 +367,40 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       if (this.rowModelType() === 'clientSide') {
         this.refreshClientSide();
       } else {
-        console.log('refresh');
         this.api?.refreshServerSide({ purge: false });
       }
     } catch (error) {
       this.alertSvc.showError(this.config.messages.loadFailed);
     }
+  }
+
+  /** Select all rows that match current search/tags (server- or client-side). */
+  protected async selectAllMatching() {
+    try {
+      const options: any = {
+        searchStr: this.searchSvc.getFilterText(),
+        tags: this.limitToTags(),
+      };
+
+      const { rows, count } = await this.gridSvc.getAll(options);
+      const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
+      this.allSelectedIds = ids;
+      this.allSelectedCount = count ?? ids.length;
+      this.allSelected.set(ids.length > 0);
+      this.isRowSelected.set(ids.length > 0);
+      this.countRowSelected.set(this.allSelectedCount);
+      this.api?.deselectAll?.();
+      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} result(s)`);
+    } catch (e) {
+      this.alertSvc.showError('Failed to select all results');
+    }
+  }
+
+  /** Toggle archive mode and refresh/filter accordingly */
+  protected toggleArchiveMode() {
+    this.archiveMode.set(!this.archiveMode());
+    this.refresh();
+    this.api?.onFilterChanged();
   }
 
   /** Helper: applies single-field patch */
@@ -402,23 +409,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       .update(id, data as U)
       .then(() => true)
       .catch(() => false);
-  }
-
-  private async refreshClientSide() {
-    const end = this._loading.begin();
-    try {
-      const rowData = await this.gridSvc.getAll({ tags: this.limitToTags() } as Partial<getAllOptionsType>);
-      const nextRows = (rowData.rows as Partial<T>[]) ?? [];
-      if (this.isSameAsCurrentlyDisplayed(nextRows)) return;
-      this.api?.setGridOption('rowData', nextRows);
-    } finally {
-      end();
-    }
-  }
-
-  /** Helper: prevents editing specific fields */
-  private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
-    return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
   }
 
   /** Lightweight check to avoid no-op redraws for identical client-side results */
@@ -436,5 +426,26 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       if (currId !== nextId) return false;
     }
     return true;
+  }
+
+  private async refreshClientSide() {
+    const end = this._loading.begin();
+    try {
+      const rowData = this.archiveMode()
+        ? await this.gridSvc.getAllArchived()
+        : await this.gridSvc.getAll({
+            tags: this.limitToTags(),
+          } as Partial<getAllOptionsType>);
+      const nextRows = (rowData.rows as Partial<T>[]) ?? [];
+      if (this.isSameAsCurrentlyDisplayed(nextRows)) return;
+      this.api?.setGridOption('rowData', nextRows);
+    } finally {
+      end();
+    }
+  }
+
+  /** Helper: prevents editing specific fields */
+  private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
+    return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
   }
 }

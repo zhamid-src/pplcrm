@@ -17,6 +17,7 @@ export const TasksRouter = router({
     .input(z.array(z.string()))
     .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
   getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
+  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
   getById: authProcedure
     .input(z.string())
     .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),

@@ -34,7 +34,14 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.api.tasks.getAll.query(options, { signal: this.ac.signal }) as unknown as Promise<{
+    return this.api.tasks.getAll.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: { [x: string]: any }[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(options?: getAllOptionsType) {
+    return this.api.tasks.getArchived.query(options, { signal: this.ac.signal }) as Promise<{
       rows: { [x: string]: any }[];
       count: number;
     }>;

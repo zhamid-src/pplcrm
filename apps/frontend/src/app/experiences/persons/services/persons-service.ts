@@ -78,14 +78,6 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
-   * Import multiple people with optional common tags.
-   * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
-   */
-  public import(rows: any[], tags: string[] = []) {
-    return this.api.persons.import.mutate({ rows, tags });
-  }
-
-  /**
    * Attach a tag to a person.
    *
    * @param id - Person ID
@@ -140,6 +132,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    */
   public getAll(options?: getAllOptionsType) {
     return this.getAllWithAddress(options);
+  }
+
+  // We don't support archives
+  public getAllArchived() {
+    return Promise.resolve({ rows: [], count: 0 });
   }
 
   /**
@@ -221,6 +218,14 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public async getTags(id: string) {
     const tags = await this.api.persons.getTags.query(id);
     return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  /**
+   * Import multiple people with optional common tags.
+   * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
+   */
+  public import(rows: any[], tags: string[] = []) {
+    return this.api.persons.import.mutate({ rows, tags });
   }
 
   /**
