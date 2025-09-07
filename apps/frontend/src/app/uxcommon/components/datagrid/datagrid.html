@@ -75,7 +75,7 @@
       </thead>
       <tbody>
         @for (row of rows(); track toId(row)) {
-        <tr (dblclick)="openEditOnDoubleClick(row)" (mouseover)="onCellMouseOver(row)">
+        <tr (mouseover)="onCellMouseOver(row)">
           @if (enableSelection()) {
           <td>
             <input
@@ -86,7 +86,7 @@
             />
           </td>
           } @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
-          <td>
+          <td (dblclick)="handleCellDblClick(row, col)">
             @if (hasCellRenderer(col)) {
             <span [innerHTML]="callCellRenderer(row, col)"></span>
             } @else if (col.valueFormatter) {
