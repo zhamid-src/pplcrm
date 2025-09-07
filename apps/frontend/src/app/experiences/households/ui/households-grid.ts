@@ -3,7 +3,7 @@
  */
 import { Component } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
-import { TagsCellRenderer } from '@experiences/tags/ui/tags-cell-renderer';
+// Removed AG Grid cell renderer usage
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { tagArrayEquals, tagsToString } from '@uxcommon/components/datagrid/datagrid.utils';
 
@@ -57,7 +57,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
         obj: UpdateHouseholdsObj,
         service: this.gridSvc,
       },
-      cellRenderer: TagsCellRenderer,
+      // cellRenderer removed; valueFormatter renders tags
       onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
       /**
        * Compares two tag arrays for equality.

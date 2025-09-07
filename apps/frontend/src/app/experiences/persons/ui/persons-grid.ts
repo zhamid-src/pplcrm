@@ -7,12 +7,12 @@ import { Component, NgZone, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
-import { TagsCellRenderer } from '@experiences/tags/ui/tags-cell-renderer';
+// Removed AG Grid cell renderer usage
 import { Icon } from '@icons/icon';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { tagArrayEquals, tagsToString } from '@uxcommon/components/datagrid/datagrid.utils';
 
-import { CellDoubleClickedEvent, ColDef } from 'ag-grid-community';
+import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
@@ -58,7 +58,7 @@ interface ParamsType {
  *
  * @extends DataGrid<DATA_TYPE, UpdatePersonsType>
  * @see {@link DataGrid} for base grid functionality
- * @see {@link TagsCellRenderer} for tag display and management
+ * @see tag valueFormatter in column defs for tag display
  * @see {@link PersonsService} for data operations
  */
 @Component({
@@ -117,7 +117,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         obj: UpdatePersonsObj,
         service: this.gridSvc,
       },
-      cellRenderer: TagsCellRenderer,
+      // cellRenderer removed; valueFormatter renders tags
       onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
       equals: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB) === 0,
       valueFormatter: (params: ParamsType) => tagsToString(params.value),
@@ -212,8 +212,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    *
    * @param event - The ag-Grid cell event
    */
-  protected confirmOpenEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.addressChangeModalId = event.data.household_id;
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
     this.confirmAddressChange();
   }
 
@@ -223,7 +223,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     return this.csvRows.slice(start, end);
   }
 
-  protected nextPage() {
+  protected nextPreviewPage() {
     if (this.canNextPage()) this.previewPage++;
   }
 
@@ -288,7 +288,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     dialog?.showModal();
   }
 
-  protected prevPage() {
+  protected prevPreviewPage() {
     if (this.canPrevPage()) this.previewPage--;
   }
 

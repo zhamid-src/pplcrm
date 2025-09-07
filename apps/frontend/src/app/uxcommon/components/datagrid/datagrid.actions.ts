@@ -3,7 +3,7 @@ import type { ConfirmDialogService } from '@services/shared-dialog.service';
 import type { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { loadingGate } from '@uxcommon/loading-gate';
 
-import type { GridApi } from 'ag-grid-community';
+// GridApi removed (AG Grid no longer used)
 
 import { DataGridConfig } from './datagrid.tokens';
 import { get, set } from 'idb-keyval';
@@ -11,7 +11,7 @@ import { bucketByRoute } from './datagrid.utils';
 
 type DeleteCtx = {
   alertSvc: AlertService;
-  api: GridApi | undefined;
+  api: any;
   config: DataGridConfig;
   dialogs: ConfirmDialogService;
   gridSvc: AbstractAPIService<any, any>;
@@ -41,8 +41,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
   });
   if (!ok) return;
 
-  const api = ctx.api;
-  if (!api) return;
+  const api: any = ctx.api;
 
   const rows = ctx.getSelectedRows();
   if (!rows.length) {
@@ -69,21 +68,21 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     const idSet = new Set(ids.map(String));
     const hasGetRowId = !!ctx.mergedGridOptions?.getRowId;
 
-    if (isClient) {
+    if (api && isClient) {
       if (hasGetRowId) {
         api.applyTransaction({ remove: ids.map((id) => ({ id })) as any[] });
       } else {
-        const nodes = api.getSelectedNodes().filter((n) => n.data && idSet.has(String((n.data as any).id)));
-        const removeRows = nodes.map((n) => n.data!).filter(Boolean) as any[];
+        const nodes = api.getSelectedNodes().filter((n: any) => n.data && idSet.has(String((n.data as any).id)));
+        const removeRows = nodes.map((n: any) => n.data!).filter(Boolean) as any[];
         api.applyTransaction({ remove: removeRows });
       }
-    } else {
+    } else if (api) {
       const storeType = ctx.mergedGridOptions?.serverSideStoreType ?? 'partial';
       const isFullStore = storeType === 'full';
       const canTx = isFullStore && typeof (api as any).applyServerSideTransaction === 'function';
 
       if (canTx && hasGetRowId) {
-        const selectedNodes = api.getSelectedNodes().filter((n) => n.data && idSet.has(String((n.data as any).id)));
+        const selectedNodes = api.getSelectedNodes().filter((n: any) => n.data && idSet.has(String((n.data as any).id)));
         const buckets = bucketByRoute(selectedNodes);
 
         if (buckets.size) {
@@ -101,7 +100,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
       }
     }
 
-    api.deselectAll?.();
+    api?.deselectAll?.();
     ctx.alertSvc.showSuccess(messages.deleteSuccess);
   } finally {
     end();
@@ -110,7 +109,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
 
 export async function doExportCsv(deps: {
   dialogs: ConfirmDialogService;
-  api: GridApi | undefined;
+  api: any;
   alertSvc: AlertService;
   config: DataGridConfig;
   getRowsForExport?: () => Array<Record<string, any>>;

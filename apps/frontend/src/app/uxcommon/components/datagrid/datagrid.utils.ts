@@ -1,4 +1,3 @@
-import type { GetRowIdParams } from 'ag-grid-community';
 
 /** SSRM helper: bucket selected nodes by their route (for grouped stores) */
 export function bucketByRoute(nodes: any[]): Map<string, any[]> {
@@ -19,9 +18,7 @@ export function createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
 }
 
 /** Utility: sets ID for each row (keep it stringy for stability) */
-export function getRowId(row: GetRowIdParams) {
-  return String((row.data as any).id);
-}
+// getRowId removed (AG Grid)
 
 /** Turns tag array into string */
 export function tagsToString(tags: string[]): string {

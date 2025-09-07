@@ -15,7 +15,7 @@ jest.mock('@uxcommon/components/datagrid/datagrid', () => {
   };
 });
 
-jest.mock('../../components/tags/ui/components/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
+// TagsCellRenderer removed
 
 import { HouseholdsGrid } from './households-grid';
 
@@ -31,4 +31,3 @@ describe('HouseholdsGrid', () => {
     expect(hasPersonsCount).toBe(true);
   });
 });
-

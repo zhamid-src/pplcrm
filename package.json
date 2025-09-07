@@ -26,9 +26,6 @@
     "@trpc/react-query": "^11.4.4",
     "@types/dompurify": "^3.0.5",
     "@types/google.maps": "^3.54.10",
-    "ag-grid-angular": "^34.1.0",
-    "ag-grid-community": "^34.1.0",
-    "ag-grid-enterprise": "^34.1.0",
     "bcrypt": "^5.1.1",
     "dompurify": "^3.2.6",
     "fast-jwt": "^6.0.2",
@@ -101,9 +98,7 @@
     "typescript": "^5.7.2",
     "zone.js": "^0.15.1"
   },
-  "resolutions": {
-    "@ag-grid-community": "34.1.0"
-  },
+  "resolutions": {},
   "overrides": {
     "stylus": "github:stylus/stylus#0.54.4"
   }

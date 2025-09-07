@@ -106,9 +106,9 @@
             </tbody>
           </table>
           <div class="flex items-center justify-end gap-2 p-2">
-            <button class="btn btn-xs" [disabled]="!canPrevPage()" (click)="prevPage()">Prev</button>
+            <button class="btn btn-xs" [disabled]="!canPrevPage()" (click)="prevPreviewPage()">Prev</button>
             <span class="text-xs opacity-70">Page {{ previewPage + 1 }} of {{ previewTotalPages() }}</span>
-            <button class="btn btn-xs" [disabled]="!canNextPage()" (click)="nextPage()">Next</button>
+            <button class="btn btn-xs" [disabled]="!canNextPage()" (click)="nextPreviewPage()">Next</button>
           </div>
         </div>
       </div>
