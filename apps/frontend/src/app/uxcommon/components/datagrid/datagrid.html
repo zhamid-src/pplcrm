@@ -52,7 +52,7 @@
     <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
   </div>
   }
-  <div class="flex-1 overflow-auto border border-base-300 rounded">
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
     <table class="table table-zebra w-full">
       <thead>
         <tr>
@@ -74,7 +74,13 @@
         </tr>
       </thead>
       <tbody>
-        @for (row of rows(); track toId(row)) {
+        <!-- top spacer -->
+        <tr>
+          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding:0">
+            <div [style.height.px]="topPadHeight()"></div>
+          </td>
+        </tr>
+        @for (row of visibleRows(); track toId(row)) {
         <tr (mouseover)="onCellMouseOver(row)">
           @if (enableSelection()) {
           <td>
@@ -98,6 +104,12 @@
           } }
         </tr>
         }
+        <!-- bottom spacer -->
+        <tr>
+          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding:0">
+            <div [style.height.px]="bottomPadHeight()"></div>
+          </td>
+        </tr>
       </tbody>
     </table>
   </div>
