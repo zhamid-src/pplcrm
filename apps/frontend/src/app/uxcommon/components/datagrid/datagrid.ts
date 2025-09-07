@@ -9,23 +9,10 @@ import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { AgGridModule } from 'ag-grid-angular';
-import {
-  CellDoubleClickedEvent,
-  CellMouseOverEvent,
-  CellValueChangedEvent,
-  ColDef,
-  GetRowIdParams,
-  GridApi,
-  GridOptions,
-  GridReadyEvent,
-  colorSchemeDarkBlue,
-  themeQuartz,
-} from 'ag-grid-community';
+import { ColDef, colorSchemeDarkBlue, themeQuartz } from 'ag-grid-community';
 
 import { confirmDeleteAndRun, doExportCsv } from './datagrid.actions';
-import { buildGridCallbacks } from './datagrid.callbacks';
-import { createServerSideDatasource } from './datagrid.datasource';
+// AG Grid callbacks/datasource removed in TanStack swap
 import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { createPayload } from './datagrid.utils';
@@ -37,7 +24,7 @@ import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [AgGridModule, Icon, GridActionComponent],
+  imports: [Icon, GridActionComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
 })
@@ -71,13 +58,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected allSelectedIdSet: Set<string> = new Set();
   protected allSelectedIds: string[] = [];
 
-  // AG Grid
-  protected api: GridApi<Partial<T>> | undefined;
+  // Table state (TanStack-like minimal state)
+  protected rows = signal<Partial<T>[]>([]);
   protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
   protected isLoading = this._loading.visible;
-  protected mergedGridOptions: Partial<GridOptions> = {};
+  protected mergedGridOptions: any = {};
   protected totalCountAll = 0;
+  protected pageIndex = signal(0);
+  protected pageSelected = signal<Set<string>>(new Set());
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -93,15 +82,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
-  public gridOptions = input<GridOptions<Partial<T>>>({});
+  public gridOptions = input<any>({});
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
 
   constructor() {
     effect(() => {
-      const loading = this.isLoading();
-      this.api?.setGridOption('loading', loading);
+      // no-op; AG Grid api removed
     });
     // React to global search (SSRM: trigger server-side filter)
     effect(() => {
@@ -110,7 +98,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       // Keep track of the old filter text to avoid unnecessary roundtrip
       if (quickFilterText != this.oldFilterText) {
         this.oldFilterText = quickFilterText;
-        this.api?.onFilterChanged();
+        this.loadPage(0);
       }
     });
   }
@@ -126,7 +114,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       _loading: this._loading,
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
-      api: this.api,
+      api: undefined as any,
       getSelectedRows: () => this.getSelectedRows(),
       gridSvc: this.gridSvc,
       rowModelType: 'serverSide',
@@ -136,6 +124,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
+    await this.refresh();
   }
 
   public getCountRowSelected() {
@@ -144,28 +133,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Expose current grid filters/sort to build a definition */
   public getDefinition(): getAllOptionsType {
-    return {
-      filterModel: this.api?.getFilterModel?.(),
-    } as getAllOptionsType;
+    return { filterModel: {} } as getAllOptionsType;
   }
 
   /** Utility: returns selected rows from grid */
   public getSelectedRows() {
     if (this.allSelected()) {
-      // Return synthetic rows with just IDs so downstream deleteMany works
       return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
     }
-    return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
+    const ids = this.pageSelected();
+    return this.rows().filter((r: any) => ids.has(String(r.id))) as (Partial<T> & { id: string })[];
   }
 
 
 
   public async ngOnInit() {
-    // Ensure getRowId is available (stringify to avoid number/string mismatches)
-    const incoming = this.gridOptions();
-    const getRowIdFn = incoming.getRowId ?? ((p: GetRowIdParams) => String((p.data as any)?.id));
-
-    // Merge defaults → incoming → callbacks for SSRM only
     const allowFilter = this.allowFilter();
     this.mergedGridOptions = {
       ...defaultGridOptions,
@@ -176,21 +158,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         suppressHeaderMenuButton: !allowFilter,
       },
       sideBar: allowFilter ? defaultGridOptions.sideBar : false,
-      getRowId: getRowIdFn,
-      ...incoming,
-      ...buildGridCallbacks(this),
+      ...this.gridOptions(),
     };
+    const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
+    this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
+    await this.loadPage(0);
   }
 
   /** Called when a row is hovered. Used to track row ID. */
-  public onCellMouseOver(event: CellMouseOverEvent) {
-    this.lastRowHovered = event?.data?.id;
+  public onCellMouseOver(row: any) {
+    this.lastRowHovered = row?.id;
   }
 
   /** Called when a cell changes. Persists changes via backend and manages undo. */
-  public async onCellValueChanged(event: CellValueChangedEvent<Partial<T>>) {
-    const key = event.colDef.field as keyof T;
-    const row = event.data as Partial<T> & { id: string };
+  public async onCellValueChanged(row: Partial<T> & { id: string }, field: keyof T) {
+    const key = field;
 
     if (this.shouldBlockEdit(row, key)) {
       this.undoMgr.undo();
@@ -205,31 +187,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       return this.alertSvc.showError(this.config.messages.editFailed);
     }
 
-    this.api?.flashCells({ rowNodes: [event.node], columns: [event.column] });
     this.undoMgr.updateSizes();
   }
-
-  /** Called by AG Grid when ready. Sets up API, columns, and triggers refresh. */
-  public onGridReady(params: GridReadyEvent) {
-    const selectionCols = this.enableSelection() ? [{ ...SELECTION_COLUMN, checkboxSelection: true }] : [];
-    this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
-    this.api = params.api;
-    const ds = createServerSideDatasource({
-      _loading: this._loading,
-      api: this.api!,
-      gridSvc: this.gridSvc,
-      searchSvc: this.searchSvc,
-      limitToTags: () => this.limitToTags(),
-      pageSize: this.config.pageSize,
-      isArchiveMode: () => this.archiveMode(),
-      onResult: ({ rowCount }) => {
-        this.totalCountAll = rowCount ?? 0;
-      },
-    });
-    this.api.setGridOption('serverSideDatasource', ds);
-
-    this.undoMgr.initialize(this.api);
-  }
+  // AG Grid lifecycle removed
 
   /** Called when selection changes. Updates selected state. */
   public onSelectionChanged() {
@@ -245,26 +205,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Ensure visible rows are selected if part of global selection */
   public reapplySelectionToVisible() {
-    const api: any = this.api;
-    if (!api) return;
-    if (!this.allSelected()) return;
-    api.forEachNodeAfterFilterAndSort?.((node: any) => {
-      const id = String(node?.data?.id ?? '');
-      if (id && this.allSelectedIdSet.has(id) && !node.isSelected?.()) {
-        node.setSelected?.(true);
-      }
-    });
+    // selection handled via signals
   }
 
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
     this.gridSvc.abort();
-    this.api?.hideOverlay();
   }
 
   /** Trigger AG Grid filter recomputation */
   public triggerFilterChanged() {
-    this.api?.onFilterChanged();
+    this.loadPage(0);
   }
 
   /** Navigates to view route for given ID or last hovered ID. */
@@ -292,7 +243,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.allSelectedIds = [];
     this.allSelectedIdSet = new Set();
     this.allSelectedCount = 0;
-    this.api?.deselectAll?.();
     this.isRowSelected.set(false);
     this.countRowSelected.set(0);
   }
@@ -301,9 +251,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected async confirmExport(): Promise<void> {
     await doExportCsv({
       dialogs: this.dialogs,
-      api: this.api,
+      api: undefined as any,
       alertSvc: this.alertSvc,
       config: this.config,
+      getRowsForExport: () => this.rows().map((r) => ({ ...r } as any)),
     });
   }
 
@@ -315,38 +266,55 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Actually performs export via AG Grid. */
   protected exportToCSV() {
-    this.api?.exportDataAsCsv();
+    // Delegated to confirmExport -> doExportCsv
   }
 
   protected filter() {
-    if (this.api?.isSideBarVisible()) {
-      this.api?.setSideBarVisible(false);
-    } else {
-      this.api?.setSideBarVisible(true);
-      this.api?.openToolPanel(this.config.filterToolPanelId);
-    }
+    // No side panel in TanStack swap (no-op for now)
   }
 
   /** Number of rows displayed on the current page */
   protected getDisplayedCount(): number {
-    const pageSize = this.api?.paginationGetPageSize() ?? 0;
-    const page = this.api?.paginationGetCurrentPage() ?? 0;
-    const total = this.api?.paginationGetRowCount() ?? 0;
-
-    const start = page * pageSize;
-    const end = Math.min(start + pageSize, total);
-
-    return end - start;
+    return this.rows().length;
   }
 
   /** Utility: sets ID for each row (keep it stringy for stability) */
-  protected getRowId(row: GetRowIdParams) {
-    return String(row.data.id);
-  }
+  // no-op (AG Grid only)
 
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
     return this.themeSvc.getTheme() === 'light' ? themeQuartz : themeQuartz.withPart(colorSchemeDarkBlue);
+  }
+
+  // Helpers for template-safe access to dynamic fields/formatters/renderers
+  protected getCellValue(row: any, col: ColDef): any {
+    const field = (col.field as string) || '';
+    return field ? (row as any)?.[field] : undefined;
+  }
+
+  protected hasCellRenderer(col: ColDef): boolean {
+    return !!(col as any)?.cellRenderer;
+  }
+
+  protected callValueFormatter(row: any, col: ColDef): any {
+    const fn: any = (col as any).valueFormatter;
+    if (typeof fn === 'function') {
+      return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
+    }
+    return this.getCellValue(row, col);
+  }
+
+  protected callCellRenderer(row: any, col: ColDef): string {
+    const fn: any = (col as any).cellRenderer;
+    if (typeof fn === 'function') {
+      return String(fn({ data: row, value: this.getCellValue(row, col), colDef: col }));
+    }
+    return '';
+  }
+
+  protected toId(row: any): string {
+    const id = (row as any)?.id;
+    return id == null ? '' : String(id);
   }
 
   /** Whether the current page (displayed rows) is fully selected */
@@ -356,7 +324,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     const rowsOnCurrentPage = this.getDisplayedCount();
     if (rowsOnCurrentPage === 0) return false;
 
-    const selectedOnPage = this.api?.getSelectedRows?.()?.length ?? 0;
+    const selectedOnPage = this.getSelectedRows()?.length ?? 0;
     return selectedOnPage > 0 && selectedOnPage === rowsOnCurrentPage;
   }
 
@@ -365,17 +333,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   }
 
   /** Called when row is double-clicked. */
-  protected openEditOnDoubleClick(event: CellDoubleClickedEvent) {
-    this.openEdit(event.data.id);
+  protected openEditOnDoubleClick(row: any) {
+    this.openEdit(row?.id);
   }
 
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
-    try {
-      this.api?.refreshServerSide({ purge: false });
-    } catch (error) {
-      this.alertSvc.showError(this.config.messages.loadFailed);
-    }
+    await this.loadPage(this.pageIndex());
   }
 
   /** Select all rows that match current search/tags (server- or client-side). */
@@ -408,9 +372,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.archiveMode.set(!this.archiveMode());
     // Clear any prior selection context when switching datasets
     this.clearAllSelection();
-    // Purge caches so datasource re-queries the correct endpoint
-    this.api?.refreshServerSide({ purge: true });
-    this.api?.onFilterChanged();
+    // Reload first page
+    this.loadPage(0);
   }
 
   /** Helper: applies single-field patch */
@@ -421,7 +384,60 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       .catch(() => false);
   }
 
-  // Client-side refresh removed (SSRM only)
+  private async loadPage(index: number) {
+    const end = this._loading.begin();
+    try {
+      const pageSize = this.config.pageSize;
+      const startRow = index * pageSize;
+      const endRow = startRow + pageSize;
+      const options: any = {
+        searchStr: this.searchSvc.getFilterText(),
+        startRow,
+        endRow,
+        tags: this.limitToTags(),
+      } as Partial<getAllOptionsType>;
+      const data = this.archiveMode()
+        ? await (this.gridSvc as any).getAllArchived(options)
+        : await this.gridSvc.getAll(options as any);
+      this.rows.set((data.rows as Partial<T>[]) ?? []);
+      this.totalCountAll = data.count ?? this.rows().length;
+      this.pageIndex.set(index);
+    } catch (e) {
+      this.alertSvc.showError(this.config.messages.loadFailed);
+    } finally {
+      end();
+    }
+  }
+
+  protected isRowChecked(id: string): boolean {
+    return this.allSelected() ? this.allSelectedIdSet.has(id) : this.pageSelected().has(id);
+  }
+
+  protected toggleRowChecked(id: string, checked: boolean) {
+    if (this.allSelected()) {
+      if (!checked) this.allSelectedIdSet.delete(id);
+      else this.allSelectedIdSet.add(id);
+    } else {
+      const set = new Set(this.pageSelected());
+      if (checked) set.add(id);
+      else set.delete(id);
+      this.pageSelected.set(set);
+    }
+    this.onSelectionChanged();
+  }
+
+  protected togglePageChecked(checked: boolean) {
+    if (this.allSelected()) this.allSelected.set(false);
+    const set = new Set<string>();
+    if (checked) {
+      for (const r of this.rows()) {
+        const id = String((r as any)?.id ?? '');
+        if (id) set.add(id);
+      }
+    }
+    this.pageSelected.set(set);
+    this.onSelectionChanged();
+  }
 
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {

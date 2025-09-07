@@ -52,17 +52,52 @@
     <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
   </div>
   }
-  <ag-grid-angular
-    class="flex-1 font-light"
-    [theme]="getTheme()"
-    [columnDefs]="colDefsWithEdit"
-    (gridReady)="onGridReady($event)"
-    [gridOptions]="mergedGridOptions"
-    [getRowId]="getRowId"
-    [cellSelection]="true"
-    [enableCellTextSelection]="true"
-  >
-  </ag-grid-angular>
+  <div class="flex-1 overflow-auto border border-base-300 rounded">
+    <table class="table table-zebra w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th class="w-12">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="isPageFullySelected()"
+              (change)="togglePageChecked($any($event.target).checked)"
+            />
+          </th>
+          } @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
+          <th>{{ col.headerName || col.field }}</th>
+          } }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track toId(row)) {
+        <tr (dblclick)="openEditOnDoubleClick(row)" (mouseover)="onCellMouseOver(row)">
+          @if (enableSelection()) {
+          <td>
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="isRowChecked(toId(row))"
+              (change)="toggleRowChecked(toId(row), $any($event.target).checked)"
+            />
+          </td>
+          } @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
+          <td>
+            @if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(row, col)"></span>
+            } @else if (col.valueFormatter) {
+            {{ callValueFormatter(row, col) }}
+            } @else {
+            {{ getCellValue(row, col) }}
+            }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
   @if (isLoading()) {
   <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
   }
