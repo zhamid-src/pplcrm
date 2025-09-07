@@ -298,9 +298,23 @@ export class BaseRepository<T extends keyof Models> {
    * Apply filtering, selection, and pagination options to a query.
    */
   protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
+    const opts: any = options ?? {};
     query = options?.columns ? query.select(options.columns as SelectExpression<Models, T>[]) : query.selectAll();
-    query = options?.limit ? query.limit(options.limit) : query;
-    query = options?.offset ? query.offset(options.offset) : query;
+
+    // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
+    const hasLimit = typeof options?.limit === 'number';
+    const hasOffset = typeof options?.offset === 'number';
+    const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
+    const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
+    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, (endRow - (startRow ?? 0))) : undefined;
+    const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
+
+    const finalLimit = hasLimit ? options!.limit : derivedLimit;
+    const finalOffset = hasOffset ? options!.offset : derivedOffset;
+
+    query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
+    query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
+
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
     query = options?.groupBy ? query.groupBy(options.groupBy as GroupByArg<Models, T, unknown>) : query;
     return query;

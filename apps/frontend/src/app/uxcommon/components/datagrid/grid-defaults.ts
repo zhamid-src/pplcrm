@@ -106,6 +106,7 @@ export const defaultGridOptions: GridOptions = {
   rowSelection: {
     mode: 'multiRow',
     checkboxes: true,
+    selectAll: 'currentPage',
   },
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,

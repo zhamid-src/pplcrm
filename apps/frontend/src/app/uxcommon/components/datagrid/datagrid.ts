@@ -73,6 +73,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   // Select-all-across-results state
   protected allSelected = signal(false);
   protected allSelectedCount = 0;
+  protected allSelectedIdSet: Set<string> = new Set();
   protected allSelectedIds: string[] = [];
 
   // AG Grid
@@ -82,6 +83,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected gridVisible = signal(false);
   protected isLoading = this._loading.visible;
   protected mergedGridOptions: Partial<GridOptions> = {};
+  protected totalCountAll = 0;
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -147,6 +149,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
   }
+
+  public doesExternalFilterPass(node: any) {
+    const fn = this.externalFilterFn();
+    return fn ? fn(node.data) : true;
+  }
+
   public getCountRowSelected() {
     return this.countRowSelected();
   }
@@ -165,6 +173,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
     }
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
+  }
+
+  /** External filter integration */
+  public isExternalFilterPresent() {
+    return !!this.externalFilterFn();
   }
 
   public async ngOnInit() {
@@ -198,21 +211,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
     // Render grid after model type is chosen
     this.gridVisible.set(true);
-  }
-
-  /** External filter integration */
-  public isExternalFilterPresent() {
-    return !!this.externalFilterFn();
-  }
-
-  public doesExternalFilterPass(node: any) {
-    const fn = this.externalFilterFn();
-    return fn ? fn(node.data) : true;
-  }
-
-  /** Trigger AG Grid filter recomputation */
-  public triggerFilterChanged() {
-    this.api?.onFilterChanged();
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -256,6 +254,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         searchSvc: this.searchSvc,
         limitToTags: () => this.limitToTags(),
         pageSize: this.config.pageSize,
+        onResult: ({ rowCount }) => {
+          this.totalCountAll = rowCount ?? 0;
+        },
       });
       this.api.setGridOption('serverSideDatasource', ds);
     } else {
@@ -277,10 +278,28 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     return this.view(id);
   }
 
+  /** Ensure visible rows are selected if part of global selection */
+  public reapplySelectionToVisible() {
+    const api: any = this.api;
+    if (!api) return;
+    if (!this.allSelected()) return;
+    api.forEachNodeAfterFilterAndSort?.((node: any) => {
+      const id = String(node?.data?.id ?? '');
+      if (id && this.allSelectedIdSet.has(id) && !node.isSelected?.()) {
+        node.setSelected?.(true);
+      }
+    });
+  }
+
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
     this.gridSvc.abort();
     this.api?.hideOverlay();
+  }
+
+  /** Trigger AG Grid filter recomputation */
+  public triggerFilterChanged() {
+    this.api?.onFilterChanged();
   }
 
   /** Navigates to view route for given ID or last hovered ID. */
@@ -306,6 +325,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected clearAllSelection() {
     this.allSelected.set(false);
     this.allSelectedIds = [];
+    this.allSelectedIdSet = new Set();
     this.allSelectedCount = 0;
     this.api?.deselectAll?.();
     this.isRowSelected.set(false);
@@ -342,6 +362,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     }
   }
 
+  /** Number of rows displayed on the current page */
+  protected getDisplayedCount(): number {
+    const pageSize = this.api?.paginationGetPageSize() ?? 0;
+    const page = this.api?.paginationGetCurrentPage() ?? 0;
+    const total = this.api?.paginationGetRowCount() ?? 0;
+
+    const start = page * pageSize;
+    const end = Math.min(start + pageSize, total);
+
+    return end - start;
+  }
+
   /** Utility: sets ID for each row (keep it stringy for stability) */
   protected getRowId(row: GetRowIdParams) {
     return String(row.data.id);
@@ -350,6 +382,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Utility: returns AG Grid theme class */
   protected getTheme() {
     return this.themeSvc.getTheme() === 'light' ? themeQuartz : themeQuartz.withPart(colorSchemeDarkBlue);
+  }
+
+  /** Whether the current page (displayed rows) is fully selected */
+  protected isPageFullySelected(): boolean {
+    if (this.allSelected()) return false; // already globally selected
+
+    const rowsOnCurrentPage = this.getDisplayedCount();
+    if (rowsOnCurrentPage === 0) return false;
+
+    const selectedOnPage = this.api?.getSelectedRows?.()?.length ?? 0;
+    return selectedOnPage > 0 && selectedOnPage === rowsOnCurrentPage;
   }
 
   protected merge() {
@@ -385,14 +428,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       const { rows, count } = await this.gridSvc.getAll(options);
       const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
       this.allSelectedIds = ids;
+      this.allSelectedIdSet = new Set(ids);
       this.allSelectedCount = count ?? ids.length;
       this.allSelected.set(ids.length > 0);
       this.isRowSelected.set(ids.length > 0);
       this.countRowSelected.set(this.allSelectedCount);
-      this.api?.deselectAll?.();
-      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} result(s)`);
+      // Reflect selection in the grid for currently rendered rows
+      this.reapplySelectionToVisible();
+      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} row(s)`);
     } catch (e) {
-      this.alertSvc.showError('Failed to select all results');
+      this.alertSvc.showError('Failed to select all rows');
     }
   }
 
@@ -437,8 +482,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
             tags: this.limitToTags(),
           } as Partial<getAllOptionsType>);
       const nextRows = (rowData.rows as Partial<T>[]) ?? [];
+      // Track total count for client-side mode
+      this.totalCountAll = rowData.count ?? nextRows.length;
       if (this.isSameAsCurrentlyDisplayed(nextRows)) return;
       this.api?.setGridOption('rowData', nextRows);
+      // Re-apply selection for visible rows if globally selected
+      this.reapplySelectionToVisible();
     } finally {
       end();
     }
