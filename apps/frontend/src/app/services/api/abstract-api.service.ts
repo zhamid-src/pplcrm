@@ -127,7 +127,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    */
   public abstract getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
 
-  public abstract getAllArchived(): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+  public abstract getAllArchived(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
 
   /**
    * Retrieves a single record by its unique identifier.

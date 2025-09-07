@@ -45,7 +45,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   }
 
   // We don't support archives
-  public getAllArchived() {
+  public getAllArchived(_options?: getAllOptionsType) {
     return Promise.resolve({ rows: [], count: 0 });
   }
 

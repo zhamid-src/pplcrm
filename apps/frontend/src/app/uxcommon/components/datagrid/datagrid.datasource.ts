@@ -13,6 +13,8 @@ export function createServerSideDatasource<T>(deps: {
   limitToTags: () => string[];
   pageSize: number; // required now so caller decides
   onResult?: (info: { rowCount: number }) => void;
+  // whether we should query the archived dataset instead
+  isArchiveMode?: () => boolean;
 }): IServerSideDatasource {
   const pageSize = deps.pageSize;
 
@@ -30,8 +32,8 @@ export function createServerSideDatasource<T>(deps: {
           filterModel,
           tags: deps.limitToTags(),
         } as getAllOptionsType;
-
-        const data = await deps.gridSvc.getAll(options);
+        const useArchive = deps.isArchiveMode?.() === true;
+        const data = useArchive ? await (deps.gridSvc as any).getAllArchived(options) : await deps.gridSvc.getAll(options);
         params.success({ rowData: data.rows as T[], rowCount: data.count });
         deps.onResult?.({ rowCount: data.count ?? 0 });
       } catch (err) {

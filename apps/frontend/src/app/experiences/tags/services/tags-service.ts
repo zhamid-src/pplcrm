@@ -110,7 +110,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   }
 
   // We don't support archives
-  public getAllArchived() {
+  public getAllArchived(_options?: getAllOptionsType) {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
