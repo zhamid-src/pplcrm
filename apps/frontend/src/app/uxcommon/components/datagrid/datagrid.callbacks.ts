@@ -17,6 +17,5 @@ export function buildGridCallbacks<T extends keyof Models, U = unknown>(ctx: Dat
       ctx.reapplySelectionToVisible();
     },
     onRowValueChanged: ctx.updateUndoSizes,
-    isExternalFilterPresent: ctx.isExternalFilterPresent.bind(ctx),
   } as GridOptions;
 }

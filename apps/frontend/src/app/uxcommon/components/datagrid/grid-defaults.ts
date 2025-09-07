@@ -1,7 +1,6 @@
-import { ShortcutCellRenderer } from '@uxcommon/components/shortcut-cell-renderer/shortcut-cell-renderer';
-
 import { ColDef, GridOptions, GridState, NewFiltersToolPanelState, SideBarDef } from 'ag-grid-community';
 
+import { ShortcutCellRenderer } from '../shortcut-cell-renderer/shortcut-cell-renderer';
 import { DEFAULT_DATA_GRID_CONFIG } from './datagrid.tokens';
 
 /**
@@ -105,8 +104,6 @@ export const defaultGridOptions: GridOptions = {
   cacheBlockSize: DEFAULT_DATA_GRID_CONFIG.pageSize,
   rowSelection: {
     mode: 'multiRow',
-    checkboxes: true,
-    selectAll: 'currentPage',
   },
   rowStyle: { cursor: 'pointer' },
   stopEditingWhenCellsLoseFocus: true,
