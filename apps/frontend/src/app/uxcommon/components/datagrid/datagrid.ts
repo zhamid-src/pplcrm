@@ -240,7 +240,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected callCellRenderer(row: any, col: ColDef): string {
     const fn: any = (col as any).cellRenderer;
     if (typeof fn === 'function') {
-      return String(fn({ data: row, value: this.getCellValue(row, col), colDef: col }));
+      const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+      return String(fn({ data: row, value, colDef: col }));
     }
     return '';
   }
@@ -305,6 +306,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected getCellValue(row: any, col: ColDef): any {
     const field = (col.field as string) || '';
     return field ? (row as any)?.[field] : undefined;
+  }
+
+  protected hasValueFormatter(col: ColDef): boolean {
+    return typeof (col as any)?.valueFormatter === 'function';
   }
 
   /** Number of rows displayed on the current page */
