@@ -113,6 +113,7 @@ export async function doExportCsv(deps: {
   api: GridApi | undefined;
   alertSvc: AlertService;
   config: DataGridConfig;
+  getRowsForExport?: () => Array<Record<string, any>>;
 }) {
   const { messages } = deps.config;
 
@@ -133,7 +134,29 @@ export async function doExportCsv(deps: {
     jobs.push(job);
     await set('pc_export_jobs', jobs);
 
-    deps.api?.exportDataAsCsv();
+    if (deps.api?.exportDataAsCsv) {
+      deps.api.exportDataAsCsv();
+    } else if (deps.getRowsForExport) {
+      const rows = deps.getRowsForExport() || [];
+      if (!rows.length) return;
+      const headers = Object.keys(rows[0]);
+      const escape = (v: any) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')]
+        .concat(rows.map((r) => headers.map((h) => escape((r as any)[h])).join(',')))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'export.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
 
     // Mark as completed
     const jobs2 = ((await get('pc_export_jobs')) as any[]) || [];
