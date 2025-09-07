@@ -12,7 +12,10 @@ export function buildGridCallbacks<T extends keyof Models, U = unknown>(ctx: Dat
     onSelectionChanged: ctx.onSelectionChanged.bind(ctx),
     onUndoEnded: ctx.updateUndoSizes,
     onRedoEnded: ctx.updateUndoSizes,
-    onRowDataUpdated: ctx.updateUndoSizes,
+    onRowDataUpdated: () => {
+      ctx.updateUndoSizes();
+      ctx.reapplySelectionToVisible();
+    },
     onRowValueChanged: ctx.updateUndoSizes,
     isExternalFilterPresent: ctx.isExternalFilterPresent.bind(ctx),
   } as GridOptions;

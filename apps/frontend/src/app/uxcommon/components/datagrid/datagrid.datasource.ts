@@ -12,6 +12,7 @@ export function createServerSideDatasource<T>(deps: {
   searchSvc: SearchService;
   limitToTags: () => string[];
   pageSize: number; // required now so caller decides
+  onResult?: (info: { rowCount: number }) => void;
 }): IServerSideDatasource {
   const pageSize = deps.pageSize;
 
@@ -32,6 +33,7 @@ export function createServerSideDatasource<T>(deps: {
 
         const data = await deps.gridSvc.getAll(options);
         params.success({ rowData: data.rows as T[], rowCount: data.count });
+        deps.onResult?.({ rowCount: data.count ?? 0 });
       } catch (err) {
         params.fail();
       } finally {

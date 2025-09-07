@@ -12,13 +12,7 @@
       icon="cloud-arrow-up"
       (action)="doImportCSV()"
     />
-    <pc-grid-action [enabled]="true" [tip]="'Select all results'" icon="check-circle" (action)="selectAllMatching()" />
-    <pc-grid-action
-      [enabled]="allSelected() || isRowSelected()"
-      [tip]="'Clear selection'"
-      icon="x-circle"
-      (action)="clearAllSelection()"
-    />
+
     <pc-grid-action
       [enabled]="!disableExport()"
       [tip]="'Download as CSV'"
@@ -47,7 +41,17 @@
   </ul>
   } @if (isLoading()) {
   <progress class="progress h-1"></progress>
-  } @if (gridVisible()) {
+  } @if (gridVisible()) { @if (isPageFullySelected() && getDisplayedCount() < totalCountAll) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span>All {{ getDisplayedCount() }} rows on this page are selected.</span>
+    <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll }} rows</a>
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span>All {{ allSelectedCount || totalCountAll }} rows are selected.</span>
+    <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
+  </div>
+  }
   <ag-grid-angular
     class="flex-1 font-light"
     [theme]="getTheme()"

@@ -28,17 +28,41 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   }
 
   public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const text = searchStr ? `%${searchStr}%` : undefined;
     return this.getSelectWithColumns(options)
       .where('tenant_id', '=', tenant_id as any)
       .where('status', '=', 'archived' as any)
+      .$if(!!text, (qb) =>
+        qb.where(
+          sql`(
+            LOWER(tasks.name) LIKE ${text} OR
+            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.priority, '')) LIKE ${text}
+          )` as any,
+        ),
+      )
       .execute();
   }
 
   public async getAllArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const text = searchStr ? `%${searchStr}%` : undefined;
     const rows = await this.getSelectWithColumns(options)
       .select(() => [sql<number>`count(*) over()`.as('total')])
       .where('tenant_id', '=', tenant_id as any)
       .where('status', '=', 'archived' as any)
+      .$if(!!text, (qb) =>
+        qb.where(
+          sql`(
+            LOWER(tasks.name) LIKE ${text} OR
+            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.priority, '')) LIKE ${text}
+          )` as any,
+        ),
+      )
       .execute();
 
     const count = Number((rows as any)?.[0]?.total ?? 0);
@@ -47,17 +71,41 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   }
 
   public async getAllExcludingArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const text = searchStr ? `%${searchStr}%` : undefined;
     return this.getSelectWithColumns(options)
       .where('tenant_id', '=', tenant_id as any)
       .where('status', '!=', 'archived' as any)
+      .$if(!!text, (qb) =>
+        qb.where(
+          sql`(
+            LOWER(tasks.name) LIKE ${text} OR
+            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.priority, '')) LIKE ${text}
+          )` as any,
+        ),
+      )
       .execute();
   }
 
   public async getAllExcludingArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const text = searchStr ? `%${searchStr}%` : undefined;
     const rows = await this.getSelectWithColumns(options)
       .select(() => [sql<number>`count(*) over()`.as('total')])
       .where('tenant_id', '=', tenant_id as any)
       .where('status', '!=', 'archived' as any)
+      .$if(!!text, (qb) =>
+        qb.where(
+          sql`(
+            LOWER(tasks.name) LIKE ${text} OR
+            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.priority, '')) LIKE ${text}
+          )` as any,
+        ),
+      )
       .execute();
 
     const count = Number((rows as any)?.[0]?.total ?? 0);
