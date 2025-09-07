@@ -30,8 +30,6 @@ import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-build
     [disableRefresh]="true"
     [disableView]="true"
     [limitToTags]="tags"
-    [externalFilterFn]="externalFilterFn()"
-    [forceClient]="forceClient()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
@@ -51,8 +49,6 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
   public override allowFilter = input<boolean>(true);
   public override showToolbar = input<boolean>(true);
   public override enableSelection = input<boolean>(true);
-  public override externalFilterFn = input<((row: any) => boolean) | null>(null);
-  public override forceClient = input<boolean>(false);
   public tags: string[] = [];
 }
 
@@ -68,8 +64,6 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
     [disableRefresh]="true"
     [disableView]="true"
     [limitToTags]="tags"
-    [externalFilterFn]="externalFilterFn()"
-    [forceClient]="forceClient()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
@@ -91,8 +85,6 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
   public override allowFilter = input<boolean>(true);
   public override showToolbar = input<boolean>(true);
   public override enableSelection = input<boolean>(true);
-  public override externalFilterFn = input<((row: any) => boolean) | null>(null);
-  public override forceClient = input<boolean>(false);
   public tags: string[] = [];
 }
 

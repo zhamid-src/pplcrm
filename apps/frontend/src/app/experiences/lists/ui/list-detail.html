@@ -147,8 +147,6 @@
       <div class="h-96 border border-base-300 rounded">
         @if (form.get('object')?.value === 'people') {
         <pc-people-filter-grid
-          [externalFilterFn]="externalRowFilter"
-          [forceClient]="true"
           [showToolbar]="false"
           [enableSelection]="false"
           [disableView]="true"
@@ -156,8 +154,6 @@
         />
         } @else {
         <pc-household-filter-grid
-          [externalFilterFn]="externalRowFilter"
-          [forceClient]="true"
           [showToolbar]="false"
           [enableSelection]="false"
           [disableView]="true"

@@ -41,7 +41,7 @@
   </ul>
   } @if (isLoading()) {
   <progress class="progress h-1"></progress>
-  } @if (gridVisible()) { @if (isPageFullySelected() && getDisplayedCount() < totalCountAll) {
+  } @if (isPageFullySelected() && getDisplayedCount() < totalCountAll) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
     <span>All {{ getDisplayedCount() }} rows on this page are selected.</span>
     <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll }} rows</a>
@@ -65,5 +65,5 @@
   </ag-grid-angular>
   @if (isLoading()) {
   <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  } }
+  }
 </div>

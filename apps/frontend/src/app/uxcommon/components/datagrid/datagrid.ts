@@ -30,7 +30,6 @@ import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { createPayload } from './datagrid.utils';
 import { SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
-import { ClientSideStrategy, RowModelStrategy, ServerSideStrategy } from './row-model.strategy';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
@@ -54,10 +53,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   // Other State
   private lastRowHovered: string | undefined;
   private oldFilterText = '';
-  private rowModelType = signal<'clientSide' | 'serverSide'>('clientSide');
-
-  // Row model strategy
-  private strategy!: RowModelStrategy;
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
@@ -80,7 +75,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected api: GridApi<Partial<T>> | undefined;
   protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
-  protected gridVisible = signal(false);
   protected isLoading = this._loading.visible;
   protected mergedGridOptions: Partial<GridOptions> = {};
   protected totalCountAll = 0;
@@ -99,8 +93,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
-  public externalFilterFn = input<((row: any) => boolean) | null>(null);
-  public forceClient = input<boolean>(false);
   public gridOptions = input<GridOptions<Partial<T>>>({});
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
@@ -111,18 +103,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       const loading = this.isLoading();
       this.api?.setGridOption('loading', loading);
     });
-    // React to global search
+    // React to global search (SSRM: trigger server-side filter)
     effect(() => {
       const quickFilterText = this.searchSvc.getFilterText();
 
       // Keep track of the old filter text to avoid unnecessary roundtrip
       if (quickFilterText != this.oldFilterText) {
         this.oldFilterText = quickFilterText;
-        if (this.rowModelType() === 'clientSide') {
-          this.api?.updateGridOptions({ quickFilterText });
-        } else {
-          this.api?.onFilterChanged();
-        }
+        this.api?.onFilterChanged();
       }
     });
   }
@@ -141,18 +129,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       api: this.api,
       getSelectedRows: () => this.getSelectedRows(),
       gridSvc: this.gridSvc,
-      rowModelType: this.rowModelType(),
+      rowModelType: 'serverSide',
       mergedGridOptions: this.mergedGridOptions,
       config: this.config,
     });
 
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
-  }
-
-  public doesExternalFilterPass(node: any) {
-    const fn = this.externalFilterFn();
-    return fn ? fn(node.data) : true;
   }
 
   public getCountRowSelected() {
@@ -175,42 +158,28 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     return this.api?.getSelectedRows() as (Partial<T> & { id: string })[];
   }
 
-  /** External filter integration */
-  public isExternalFilterPresent() {
-    return !!this.externalFilterFn();
-  }
+
 
   public async ngOnInit() {
-    const rowCount = await this.gridSvc.count();
-    this.rowModelType.set(
-      this.forceClient() || rowCount < this.config.clientServerThreshold ? 'clientSide' : 'serverSide',
-    );
-
-    // Choose strategy
-    this.strategy = this.rowModelType() === 'clientSide' ? new ClientSideStrategy() : new ServerSideStrategy();
-
     // Ensure getRowId is available (stringify to avoid number/string mismatches)
     const incoming = this.gridOptions();
     const getRowIdFn = incoming.getRowId ?? ((p: GetRowIdParams) => String((p.data as any)?.id));
 
-    // Merge defaults → incoming → callbacks → strategy-specific
+    // Merge defaults → incoming → callbacks for SSRM only
     const allowFilter = this.allowFilter();
-    this.mergedGridOptions = this.strategy.configureGridOptions({
-      rowModelType: this.rowModelType(),
+    this.mergedGridOptions = {
       ...defaultGridOptions,
+      rowModelType: 'serverSide',
       defaultColDef: {
         ...defaultGridOptions.defaultColDef,
-        filter: allowFilter && this.rowModelType() === 'clientSide' ? 'agMultiColumnFilter' : null,
+        filter: null as any,
         suppressHeaderMenuButton: !allowFilter,
       },
       sideBar: allowFilter ? defaultGridOptions.sideBar : false,
       getRowId: getRowIdFn,
       ...incoming,
       ...buildGridCallbacks(this),
-    });
-
-    // Render grid after model type is chosen
-    this.gridVisible.set(true);
+    };
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -242,27 +211,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   /** Called by AG Grid when ready. Sets up API, columns, and triggers refresh. */
   public onGridReady(params: GridReadyEvent) {
-    const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
+    const selectionCols = this.enableSelection() ? [{ ...SELECTION_COLUMN, checkboxSelection: true }] : [];
     this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
     this.api = params.api;
-
-    if (this.rowModelType() === 'serverSide') {
-      const ds = createServerSideDatasource({
-        _loading: this._loading,
-        api: this.api!,
-        gridSvc: this.gridSvc,
-        searchSvc: this.searchSvc,
-        limitToTags: () => this.limitToTags(),
-        pageSize: this.config.pageSize,
-        isArchiveMode: () => this.archiveMode(),
-        onResult: ({ rowCount }) => {
-          this.totalCountAll = rowCount ?? 0;
-        },
-      });
-      this.api.setGridOption('serverSideDatasource', ds);
-    } else {
-      this.refresh(); // get data for the client side row model
-    }
+    const ds = createServerSideDatasource({
+      _loading: this._loading,
+      api: this.api!,
+      gridSvc: this.gridSvc,
+      searchSvc: this.searchSvc,
+      limitToTags: () => this.limitToTags(),
+      pageSize: this.config.pageSize,
+      isArchiveMode: () => this.archiveMode(),
+      onResult: ({ rowCount }) => {
+        this.totalCountAll = rowCount ?? 0;
+      },
+    });
+    this.api.setGridOption('serverSideDatasource', ds);
 
     this.undoMgr.initialize(this.api);
   }
@@ -408,11 +372,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Triggers a full grid refresh via backend. */
   protected async refresh(): Promise<void> {
     try {
-      if (this.rowModelType() === 'clientSide') {
-        this.refreshClientSide();
-      } else {
-        this.api?.refreshServerSide({ purge: false });
-      }
+      this.api?.refreshServerSide({ purge: false });
     } catch (error) {
       this.alertSvc.showError(this.config.messages.loadFailed);
     }
@@ -448,12 +408,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     this.archiveMode.set(!this.archiveMode());
     // Clear any prior selection context when switching datasets
     this.clearAllSelection();
-    if (this.rowModelType() === 'serverSide') {
-      // Purge caches so datasource re-queries the correct endpoint
-      this.api?.refreshServerSide({ purge: true });
-    } else {
-      this.refresh();
-    }
+    // Purge caches so datasource re-queries the correct endpoint
+    this.api?.refreshServerSide({ purge: true });
     this.api?.onFilterChanged();
   }
 
@@ -465,42 +421,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       .catch(() => false);
   }
 
-  /** Lightweight check to avoid no-op redraws for identical client-side results */
-  private isSameAsCurrentlyDisplayed(next: Partial<T>[]): boolean {
-    const api: any = this.api;
-    if (!api) return false;
-    const currentCount: number = api.getDisplayedRowCount?.() ?? 0;
-    if (currentCount !== next.length) return false;
-
-    const sample = Math.min(50, next.length);
-    for (let i = 0; i < sample; i++) {
-      const node = api.getDisplayedRowAtIndex?.(i);
-      const currId = String(node?.data?.id ?? '');
-      const nextId = String((next[i] as any)?.id ?? '');
-      if (currId !== nextId) return false;
-    }
-    return true;
-  }
-
-  private async refreshClientSide() {
-    const end = this._loading.begin();
-    try {
-      const rowData = this.archiveMode()
-        ? await this.gridSvc.getAllArchived()
-        : await this.gridSvc.getAll({
-            tags: this.limitToTags(),
-          } as Partial<getAllOptionsType>);
-      const nextRows = (rowData.rows as Partial<T>[]) ?? [];
-      // Track total count for client-side mode
-      this.totalCountAll = rowData.count ?? nextRows.length;
-      if (this.isSameAsCurrentlyDisplayed(nextRows)) return;
-      this.api?.setGridOption('rowData', nextRows);
-      // Re-apply selection for visible rows if globally selected
-      this.reapplySelectionToVisible();
-    } finally {
-      end();
-    }
-  }
+  // Client-side refresh removed (SSRM only)
 
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
