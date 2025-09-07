@@ -14,6 +14,12 @@ export interface ColumnDef {
   comparator?: (a: any, b: any) => number;
   equals?: (a: any, b: any) => boolean;
   onCellDoubleClicked?: (event: any) => void;
+  // Compatibility props (ignored by current table but kept for typing)
+  valueGetter?: (p: any) => any;
+  valueSetter?: (p: any) => boolean;
+  cellClass?: string | ((p: any) => string | undefined);
+  cellEditor?: any;
+  cellEditorParams?: any;
 }
 
 export const SELECTION_COLUMN: ColumnDef = {};

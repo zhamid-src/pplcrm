@@ -60,7 +60,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected isLoading = this._loading.visible;
   protected mergedGridOptions: any = {};
   protected pageIndex = signal(0);
-  protected pageSelected = signal<Set<string>>(new Set());
+  protected selectedIdSet = signal<Set<string>>(new Set());
 
   // Table state (TanStack-like minimal state)
   protected rows = signal<Partial<T>[]>([]);
@@ -141,8 +141,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
     if (this.allSelected()) {
       return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
     }
-    const ids = this.pageSelected();
-    return this.rows().filter((r: any) => ids.has(String(r.id))) as (Partial<T> & { id: string })[];
+    const ids = this.selectedIdSet();
+    return Array.from(ids).map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
   }
 
   public async ngOnInit() {
@@ -336,7 +336,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   }
 
   protected isRowChecked(id: string): boolean {
-    return this.allSelected() ? this.allSelectedIdSet.has(id) : this.pageSelected().has(id);
+    return this.allSelected() ? this.allSelectedIdSet.has(id) : this.selectedIdSet().has(id);
   }
 
   /** Utility: sets ID for each row (keep it stringy for stability) */
@@ -361,6 +361,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Called when row is double-clicked. */
   protected openEditOnDoubleClick(row: any) {
     this.openEdit(row?.id);
+  }
+
+  /** Bridge for column-level double-click handlers */
+  protected handleCellDblClick(row: any, col: ColDef) {
+    if (typeof (col as any).onCellDoubleClicked === 'function') {
+      (col as any).onCellDoubleClicked({ data: row, colDef: col });
+    } else {
+      this.openEditOnDoubleClick(row);
+    }
   }
 
   protected async prevPage() {
@@ -420,14 +429,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
 
   protected togglePageChecked(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
-    const set = new Set<string>();
+    const set = new Set<string>(this.selectedIdSet());
     if (checked) {
       for (const r of this.rows()) {
         const id = String((r as any)?.id ?? '');
         if (id) set.add(id);
       }
+    } else {
+      for (const r of this.rows()) {
+        const id = String((r as any)?.id ?? '');
+        if (id) set.delete(id);
+      }
     }
-    this.pageSelected.set(set);
+    this.selectedIdSet.set(set);
     this.onSelectionChanged();
   }
 
@@ -436,10 +450,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
       if (!checked) this.allSelectedIdSet.delete(id);
       else this.allSelectedIdSet.add(id);
     } else {
-      const set = new Set(this.pageSelected());
+      const set = new Set(this.selectedIdSet());
       if (checked) set.add(id);
       else set.delete(id);
-      this.pageSelected.set(set);
+      this.selectedIdSet.set(set);
     }
     this.onSelectionChanged();
   }
