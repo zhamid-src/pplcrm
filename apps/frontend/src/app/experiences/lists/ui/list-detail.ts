@@ -14,7 +14,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { ColDef } from 'ag-grid-community';
+import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
 import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-builder';
 

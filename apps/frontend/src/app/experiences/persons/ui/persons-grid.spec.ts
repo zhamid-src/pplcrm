@@ -26,7 +26,7 @@ jest.mock('@uxcommon/components/datagrid/datagrid', () => {
   };
 });
 
-jest.mock('../../components/tags/ui/components/tags-cell-renderer', () => ({ TagsCellRenderer: class {} }), { virtual: true });
+// TagsCellRenderer removed
 
 jest.mock('@icons/icon', () => ({ Icon: class {} }), { virtual: true });
 
