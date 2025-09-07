@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, effect, inject, input, output, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnInit, AfterViewInit, ViewChild, ElementRef, effect, inject, input, output, signal } from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { Icon } from "@icons/icon";
@@ -26,7 +26,7 @@ import { Models } from "common/src/lib/kysely.models";
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
 })
-export class DataGrid<T extends keyof Models, U> implements OnInit {
+export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit {
   private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly route = inject(ActivatedRoute);
@@ -67,6 +67,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   protected sortCol = signal<string | null>(null);
   protected sortDir = signal<'asc' | 'desc' | null>(null);
   protected totalCountAll = 0;
+  protected rowHeight = 36;
+  protected viewportH = signal(0);
+  protected scrollTop = signal(0);
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -101,6 +104,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         this.loadPage(0);
       }
     });
+  }
+
+  @ViewChild('scroller', { static: false }) private scroller?: ElementRef<HTMLDivElement>;
+
+  public ngAfterViewInit() {
+    const el = this.scroller?.nativeElement;
+    if (el) this.viewportH.set(el.clientHeight || 0);
   }
 
   /** Confirm and then delete selected rows */
@@ -300,6 +310,40 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Number of rows displayed on the current page */
   protected getDisplayedCount(): number {
     return this.rows().length;
+  }
+
+  // Virtualization helpers
+  protected onScroll(event: Event) {
+    const el = event.target as HTMLElement;
+    this.scrollTop.set(el.scrollTop || 0);
+    this.viewportH.set(el.clientHeight || this.viewportH());
+  }
+
+  protected startIndex(): number {
+    return Math.max(0, Math.floor((this.scrollTop() || 0) / this.rowHeight));
+  }
+
+  protected visibleCount(): number {
+    const vp = this.viewportH() || 0;
+    return Math.max(1, Math.ceil(vp / this.rowHeight) + 5);
+  }
+
+  protected endIndex(): number {
+    return Math.min(this.rows().length, this.startIndex() + this.visibleCount());
+  }
+
+  protected topPadHeight(): number {
+    return this.startIndex() * this.rowHeight;
+  }
+
+  protected bottomPadHeight(): number {
+    const total = this.rows().length * this.rowHeight;
+    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
+    return Math.max(0, total - rendered);
+  }
+
+  protected visibleRows(): Partial<T>[] {
+    return this.rows().slice(this.startIndex(), this.endIndex());
   }
 
   protected hasCellRenderer(col: ColDef): boolean {

@@ -7,16 +7,16 @@ import type { loadingGate } from '@uxcommon/loading-gate';
 
 import { DataGridConfig } from './datagrid.tokens';
 import { get, set } from 'idb-keyval';
-import { bucketByRoute } from './datagrid.utils';
+// AG-specific helpers removed
 
 type DeleteCtx = {
   alertSvc: AlertService;
-  api: any;
+  api?: any; // ignored (AG Grid removed)
   config: DataGridConfig;
   dialogs: ConfirmDialogService;
   gridSvc: AbstractAPIService<any, any>;
-  mergedGridOptions: any;
-  rowModelType: 'clientSide' | 'serverSide';
+  mergedGridOptions?: any; // ignored
+  rowModelType?: 'clientSide' | 'serverSide'; // ignored
   _loading: loadingGate;
 
   getSelectedRows: () => (Partial<any> & { id: string })[];
@@ -41,8 +41,6 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
   });
   if (!ok) return;
 
-  const api: any = ctx.api;
-
   const rows = ctx.getSelectedRows();
   if (!rows.length) {
     ctx.alertSvc.showError(messages.deleteNoneSelected);
@@ -64,43 +62,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
       return;
     }
 
-    const isClient = ctx.rowModelType === 'clientSide';
-    const idSet = new Set(ids.map(String));
-    const hasGetRowId = !!ctx.mergedGridOptions?.getRowId;
-
-    if (api && isClient) {
-      if (hasGetRowId) {
-        api.applyTransaction({ remove: ids.map((id) => ({ id })) as any[] });
-      } else {
-        const nodes = api.getSelectedNodes().filter((n: any) => n.data && idSet.has(String((n.data as any).id)));
-        const removeRows = nodes.map((n: any) => n.data!).filter(Boolean) as any[];
-        api.applyTransaction({ remove: removeRows });
-      }
-    } else if (api) {
-      const storeType = ctx.mergedGridOptions?.serverSideStoreType ?? 'partial';
-      const isFullStore = storeType === 'full';
-      const canTx = isFullStore && typeof (api as any).applyServerSideTransaction === 'function';
-
-      if (canTx && hasGetRowId) {
-        const selectedNodes = api.getSelectedNodes().filter((n: any) => n.data && idSet.has(String((n.data as any).id)));
-        const buckets = bucketByRoute(selectedNodes);
-
-        if (buckets.size) {
-          for (const [routeStr, list] of buckets) {
-            (api as any).applyServerSideTransaction({
-              route: JSON.parse(routeStr),
-              remove: list.map((d) => ({ id: (d as any).id })),
-            });
-          }
-        } else {
-          (api as any).applyServerSideTransaction({ remove: ids.map((id) => ({ id })) });
-        }
-      } else {
-        (api as any).refreshServerSide?.({ purge: true });
-      }
-    }
-
-    api?.deselectAll?.();
+    // With AG Grid removed, UI refresh is handled by caller
     ctx.alertSvc.showSuccess(messages.deleteSuccess);
   } finally {
     end();
