@@ -315,6 +315,13 @@ export class BaseRepository<T extends keyof Models> {
     query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
     query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
 
+    // Map generic sortModel (from UI) to orderBy clauses when provided
+    if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
+      query = opts.sortModel.reduce(
+        (acc: any, sort: any) => acc.orderBy(sort.colId as any, sort.sort),
+        query as any,
+      ) as typeof query;
+    }
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
     query = options?.groupBy ? query.groupBy(options.groupBy as GroupByArg<Models, T, unknown>) : query;
     return query;
