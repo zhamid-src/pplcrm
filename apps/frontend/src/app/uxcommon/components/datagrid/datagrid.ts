@@ -254,6 +254,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         searchSvc: this.searchSvc,
         limitToTags: () => this.limitToTags(),
         pageSize: this.config.pageSize,
+        isArchiveMode: () => this.archiveMode(),
         onResult: ({ rowCount }) => {
           this.totalCountAll = rowCount ?? 0;
         },
@@ -424,8 +425,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
         searchStr: this.searchSvc.getFilterText(),
         tags: this.limitToTags(),
       };
-
-      const { rows, count } = await this.gridSvc.getAll(options);
+      const { rows, count } = this.archiveMode()
+        ? await (this.gridSvc as any).getAllArchived(options)
+        : await this.gridSvc.getAll(options);
       const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
       this.allSelectedIds = ids;
       this.allSelectedIdSet = new Set(ids);
@@ -444,7 +446,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit {
   /** Toggle archive mode and refresh/filter accordingly */
   protected toggleArchiveMode() {
     this.archiveMode.set(!this.archiveMode());
-    this.refresh();
+    // Clear any prior selection context when switching datasets
+    this.clearAllSelection();
+    if (this.rowModelType() === 'serverSide') {
+      // Purge caches so datasource re-queries the correct endpoint
+      this.api?.refreshServerSide({ purge: true });
+    } else {
+      this.refresh();
+    }
     this.api?.onFilterChanged();
   }
 

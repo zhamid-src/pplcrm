@@ -89,7 +89,7 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   }
 
   // We don't support archives
-  public getAllArchived() {
+  public getAllArchived(_options?: getAllOptionsType) {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
