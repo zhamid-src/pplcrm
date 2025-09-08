@@ -64,7 +64,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected pageIndex = signal(0);
   protected selectedIdSet = signal<Set<string>>(new Set());
   protected showFilters = signal(false);
+  protected showFilterPanel = signal(false);
   protected filterValues = signal<Record<string, any>>({});
+  protected panelFilters = signal<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
 
   // Table state (TanStack-like minimal state)
   protected rows = signal<Partial<T>[]>([]);
@@ -374,8 +376,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected filter() {
-    // Toggle a simple inline filters row
-    this.showFilters.set(!this.showFilters());
+    // Open right-side filter panel and seed with current filters
+    const current = this.filterValues();
+    const panel: Record<string, { op: 'contains' | 'equals'; value: any }> = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (v && typeof v === 'object' && 'op' in (v as any) && 'value' in (v as any)) panel[k] = v as any;
+      else panel[k] = { op: 'contains', value: v } as any;
+    }
+    this.panelFilters.set(panel);
+    this.showFilterPanel.set(true);
   }
 
   // Helpers for template-safe access to dynamic fields/formatters/renderers
@@ -405,6 +414,57 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Number of rows displayed on the current page */
   protected getDisplayedCount(): number {
     return this.rows().length;
+  }
+
+  // Filter panel actions
+  protected panelFields(): string[] {
+    return this.colDefsWithEdit.filter((c) => !!c.field).map((c) => c.field!) as string[];
+  }
+
+  protected panelLabelFor(field: string): string {
+    const col = this.colDefsWithEdit.find((c) => c.field === field);
+    return col?.headerName || field;
+  }
+
+  protected panelOptionsFor(field: string): string[] | null {
+    const col = this.colDefsWithEdit.find((c) => c.field === field);
+    if (!col) return null;
+    return this.getFilterOptionsForCol(col);
+  }
+
+  protected onPanelOpChange(field: string, op: 'contains' | 'equals') {
+    const next = { ...this.panelFilters() };
+    const prev = next[field] || { op: 'contains', value: '' };
+    next[field] = { ...prev, op };
+    this.panelFilters.set(next);
+  }
+
+  protected onPanelValueChange(field: string, value: any) {
+    const next = { ...this.panelFilters() };
+    const prev = next[field] || { op: 'contains', value: '' };
+    next[field] = { ...prev, value };
+    this.panelFilters.set(next);
+  }
+
+  protected applyPanelFilters() {
+    const raw = this.panelFilters();
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const sv = String((v as any)?.value ?? '').trim();
+      if (!sv) continue;
+      cleaned[k] = { op: (v as any)?.op ?? 'contains', value: sv };
+    }
+    this.filterValues.set(cleaned);
+    this.showFilterPanel.set(false);
+    this.loadPage(0);
+  }
+
+  protected clearPanelFilters() {
+    this.panelFilters.set({});
+  }
+
+  protected closePanel() {
+    this.showFilterPanel.set(false);
   }
 
   // Virtualization helpers
@@ -673,9 +733,16 @@ protected bottomPadHeight(): number {
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(raw)) {
       if (v === undefined || v === null) continue;
-      const sv = String(v).trim();
-      if (!sv) continue;
-      out[k] = { type: 'text', op: 'contains', value: sv };
+      if (typeof v === 'object' && v && 'value' in (v as any)) {
+        const op = ((v as any).op as any) ?? 'contains';
+        const sv = String((v as any).value ?? '').trim();
+        if (!sv) continue;
+        out[k] = { type: 'text', op, value: sv };
+      } else {
+        const sv = String(v).trim();
+        if (!sv) continue;
+        out[k] = { type: 'text', op: 'contains', value: sv };
+      }
     }
     return out;
   }
