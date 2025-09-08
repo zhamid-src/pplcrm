@@ -85,14 +85,15 @@
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
-              [checked]="isPageFullySelected()"
-              (change)="togglePageChecked($any($event.target).checked)"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
             />
           </th>
           }
           @for (h of leafHeaders(); track h.id) {
           @if (h && h.column?.getIsVisible?.()) {
-          <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none" role="columnheader" [attr.aria-sort]="ariaSortHeader(h)"
+          <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none relative" role="columnheader" [attr.aria-sort]="ariaSortHeader(h)"
               [class.sticky]="pinState(h) !== false"
               [style.left.px]="pinState(h) === 'left' ? leftOffsetPx(h.column.id) : null"
               [style.right.px]="pinState(h) === 'right' ? rightOffsetPx(h.column.id) : null"
@@ -169,6 +170,9 @@
                 </ul>
               </div>
             </div>
+            <span class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none"
+              (mousedown)="onHeaderResizeMouseDown(h, $event)"
+              (touchstart)="onHeaderResizeTouchStart(h, $event)"></span>
           </th>
           }
           }
@@ -220,8 +224,8 @@
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
-              [checked]="isRowChecked(toId(r.original))"
-              (change)="toggleRowChecked(toId(r.original), $any($event.target).checked)"
+              [checked]="allSelected() ? allSelectedIdSet.has(toId(r.original)) : r.getIsSelected()"
+              (change)="onRowCheckboxChange(r, $any($event.target).checked)"
             />
           </td>
           }

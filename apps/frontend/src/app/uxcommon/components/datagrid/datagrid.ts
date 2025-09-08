@@ -231,9 +231,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         rowSelection: this.buildRowSelectionForCurrentData(),
         // Provide defaults expected by some table features
         columnPinning: { left: [], right: [] },
+        columnSizing: {},
       },
       initialState: {
         columnPinning: { left: [], right: [] },
+        columnSizing: {},
       } as any,
       onStateChange: () => this.syncSignalsFromTable(),
       renderFallbackValue: null as any,
@@ -259,6 +261,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         }
         this.selectedIdSet.set(set);
         this.onSelectionChanged();
+      },
+      columnResizeMode: 'onChange',
+      onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
+        const current = (this.tsTable!.getState() as any).columnSizing || {};
+        const next = typeof updater === 'function' ? (updater as any)(current) : (updater as any);
+        this.colWidths.set({ ...(next || {}) });
+        // Apply into table state so getSize() reflects
+        this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
+        // Recompute sticky offsets after sizing change
+        queueMicrotask(() => this.updatePinOffsets());
       },
     });
     await this.loadPage(0);
@@ -599,6 +611,9 @@ protected bottomPadHeight(): number {
   }
 
   protected getColWidth(id: string): number | null {
+    const col = (this.tsTable as any)?.getColumn?.(id);
+    const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
+    if (size && size > 0) return size;
     return this.colWidths()[id] ?? null;
   }
 
@@ -641,6 +656,33 @@ protected bottomPadHeight(): number {
   protected unpin(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, false);
+  }
+
+  // Row selection helpers (TanStack-driven)
+  protected tableAllPageSelected(): boolean {
+    return !!(this.tsTable as any)?.getIsAllPageRowsSelected?.();
+  }
+
+  protected tableSomePageSelected(): boolean {
+    return !!(this.tsTable as any)?.getIsSomePageRowsSelected?.();
+  }
+
+  protected onHeaderCheckbox(checked: boolean) {
+    if (this.allSelected()) this.allSelected.set(false);
+    const api: any = this.tsTable as any;
+    if (typeof api?.toggleAllRowsSelected === 'function') api.toggleAllRowsSelected(checked);
+  }
+
+  protected onRowCheckboxChange(row: any, checked: boolean) {
+    if (this.allSelected()) {
+      const id = this.toId(row.original ?? row);
+      if (!id) return;
+      if (!checked) this.allSelectedIdSet.delete(id);
+      else this.allSelectedIdSet.add(id);
+      this.onSelectionChanged();
+      return;
+    }
+    if (typeof row?.toggleSelected === 'function') row.toggleSelected(checked);
   }
 
   // Header menu actions
@@ -738,18 +780,33 @@ protected bottomPadHeight(): number {
     const left: Record<string, number> = {};
     let acc = 0;
     for (const id of leftIds) {
+      const w = this.getColWidth(id) || this.headerWidthMap.get(id) || 0;
       left[id] = acc;
-      acc += this.headerWidthMap.get(id) || 0;
+      acc += w;
     }
     const right: Record<string, number> = {};
     let racc = 0;
     for (let i = rightIds.length - 1; i >= 0; i--) {
       const id = rightIds[i];
+      const w = this.getColWidth(id) || this.headerWidthMap.get(id) || 0;
       right[id] = racc;
-      racc += this.headerWidthMap.get(id) || 0;
+      racc += w;
     }
     this.pinnedLeftOffsets.set(left);
     this.pinnedRightOffsets.set(right);
+  }
+
+  // Column resize handlers (bridge to TanStack handlers)
+  protected onHeaderResizeMouseDown(h: any, ev: MouseEvent) {
+    ev.stopPropagation();
+    const handler = h?.column?.getResizeHandler?.();
+    if (typeof handler === 'function') handler(ev as any);
+  }
+
+  protected onHeaderResizeTouchStart(h: any, ev: TouchEvent) {
+    ev.stopPropagation();
+    const handler = h?.column?.getResizeHandler?.();
+    if (typeof handler === 'function') handler(ev as any);
   }
 
   // Column visibility bulk actions
