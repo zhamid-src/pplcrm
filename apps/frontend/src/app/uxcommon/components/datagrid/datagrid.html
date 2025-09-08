@@ -149,25 +149,27 @@
                   <li class="dropdown dropdown-right">
                     <label tabindex="0" class="flex w-full items-center justify-between"><span>Filter</span><span class="pl-2">▸</span></label>
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2">
+                      @if (col && getFilterOptionsForCol(col)?.length) {
+                      @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1" (click)="$event.stopPropagation()">
+                          <input type="checkbox" class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)" />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      } @else {
                       <li class="px-2 py-1">
-                        @if (col && getFilterOptionsForCol(col)?.length) {
-                        <select class="select select-bordered select-xs w-full"
-                          [value]="getFilterValue(h.column.id)"
-                          (change)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                          (click)="$event.stopPropagation()">
-                          <option value="">All</option>
-                          @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-                            <option [value]="opt">{{ opt }}</option>
-                          }
-                        </select>
-                        } @else {
                         <input class="input input-bordered input-xs w-full" type="text" placeholder="Filter value"
                           [value]="getFilterValue(h.column.id)"
                           (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
                           (click)="$event.stopPropagation()" />
-                        }
                       </li>
-                      <li class="px-2 pb-1"><button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button></li>
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      }
                     </ul>
                   </li>
                   <!-- Sort submenu as nested dropdown -->
@@ -241,16 +243,25 @@
           getColDefById(h.column.id);
           <th class="border-r border-base-300">
             @if (col && getFilterOptionsForCol(col)?.length) {
-            <select
-              class="select select-bordered select-xs w-full"
-              [value]="filterValues()[col!.field!] || ''"
-              (change)="onFilterInput(col!.field!, $any($event.target).value)"
-            >
-              <option value="">All</option>
-              @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-              <option [value]="opt">{{ opt }}</option>
-              }
-            </select>
+            <div class="dropdown dropdown-bottom w-full">
+              <label tabindex="0" class="btn btn-ghost btn-xs w-full justify-between">
+                <span>{{ inlineFilterLabel(col!.field!) }}</span>
+                <span>▾</span>
+              </label>
+              <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 shadow">
+                @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+                <li>
+                  <label class="label cursor-pointer justify-start gap-2 px-2 py-1" (click)="$event.stopPropagation()">
+                    <input type="checkbox" class="checkbox checkbox-xs"
+                      [checked]="isOptionChecked(col!.field!, opt)"
+                      (change)="onToggleFilterOption(col!.field!, opt, $any($event.target).checked)" />
+                    <span class="label-text">{{ opt }}</span>
+                  </label>
+                </li>
+                }
+                <li class="px-2 pt-1"><a (click)="clearHeaderFilter(col!.field!)">Clear</a></li>
+              </ul>
+            </div>
             } @else {
             <input
               type="text"
