@@ -82,6 +82,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private tsTable: ReturnType<typeof createTable> | undefined;
   private tsColumns: TSColumnDef<any, any>[] = [];
   private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
+  private dragColId: string | null = null;
+  private fetchingNext = false;
+  protected suppressHeaderDrag = false;
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -223,12 +226,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         header: c.headerName || (c.field as string),
         accessorFn: (row: any) => row?.[c.field as string],
         enableSorting: true,
+        enableResizing: true,
       })) as TSColumnDef<any, any>[];
     this.tsTable = createTable({
       data: this.rows() as any[],
       columns: this.tsColumns,
       getCoreRowModel: getCoreRowModel(),
       getRowId: (row: any) => this.toId(row),
+      enableColumnResizing: true as any,
       state: {
         sorting: this.sorting(),
         columnVisibility: this.colVisibility(),
@@ -530,6 +535,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.scrollTop.set(el.scrollTop || 0);
     this.viewportH.set(el.clientHeight || this.viewportH());
     this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
+    // Infinite append: when near bottom, fetch next page if available
+    try {
+      if (this.canNext() && !this.isLoading() && !this.fetchingNext) {
+        const nearBottom = this.endIndex() > this.rows().length - 10;
+        if (nearBottom) {
+          this.fetchingNext = true;
+          this.nextPage().finally(() => (this.fetchingNext = false));
+        }
+      }
+    } catch {}
   }
 
   protected startIndex(): number {
@@ -848,6 +863,12 @@ protected bottomPadHeight(): number {
     window.addEventListener('touchend', up);
   }
 
+  // Prevent drag-reorder when grabbing selection resizer
+  protected onSelectionResizeDragStart(ev: DragEvent) {
+    try { ev.preventDefault(); } catch {}
+    ev.stopPropagation();
+  }
+
   private _selStartX = 0;
   private _selStartW = 48;
   private continueSelectionResize(clientX: number) {
@@ -917,19 +938,65 @@ protected bottomPadHeight(): number {
   // Column resize handlers (bridge to TanStack handlers)
   protected onHeaderResizeMouseDown(h: any, ev: MouseEvent) {
     ev.stopPropagation();
-    const handler = h?.column?.getResizeHandler?.();
-    if (typeof handler === 'function') handler(ev as any);
+    // suppress header drag until mouseup
+    this.suppressHeaderDrag = true;
+    const end = () => {
+      this.suppressHeaderDrag = false;
+      window.removeEventListener('mouseup', end);
+    };
+    window.addEventListener('mouseup', end);
+    // Always use manual handler for consistent behavior
+    this.manualColumnResizeStart(h, ev.clientX);
   }
 
   protected onHeaderResizeTouchStart(h: any, ev: TouchEvent) {
     ev.stopPropagation();
-    const handler = h?.column?.getResizeHandler?.();
-    if (typeof handler === 'function') handler(ev as any);
+    this.suppressHeaderDrag = true;
+    const end = () => {
+      this.suppressHeaderDrag = false;
+      window.removeEventListener('touchend', end);
+    };
+    window.addEventListener('touchend', end);
+    // Always use manual handler for consistent behavior
+    this.manualColumnResizeStart(h, ev.touches?.[0]?.clientX ?? 0);
   }
 
   protected onHeaderResizeDblClick(h: any, ev: MouseEvent) {
     ev.stopPropagation();
     this.autoSizeColumn(h);
+  }
+
+  // Manual fallback for column resizing when core handler isn't available
+  private _colStartX = 0;
+  private _colStartW = 0;
+  private manualColumnResizeStart(h: any, clientX: number) {
+    const col = h?.column;
+    if (!col) return;
+    const id = String(col.id || '');
+    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || this.getColWidth(id) || 100);
+    this._colStartX = clientX;
+    this._colStartW = startW;
+    const move = (e: MouseEvent) => this.manualColumnResizeMove(col, e.clientX);
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      this.saveState();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+  private manualColumnResizeMove(col: any, clientX: number) {
+    const dx = clientX - this._colStartX;
+    const w = Math.max(40, Math.floor(this._colStartW + dx));
+    if (typeof col.setSize === 'function') col.setSize(w);
+    else this.setColWidth(String(col.id || ''), w);
+    this.updatePinOffsets();
+  }
+
+  // Prevent header drag-reorder when grabbing resizer
+  protected onHeaderResizeDragStart(ev: DragEvent) {
+    try { ev.preventDefault(); } catch {}
+    ev.stopPropagation();
   }
 
   protected resetColWidth(h: any) {
@@ -1016,7 +1083,7 @@ protected bottomPadHeight(): number {
 
   protected async nextPage() {
     if (!this.canNext()) return;
-    await this.loadPage(this.pageIndex() + 1);
+    await this.loadPage(this.pageIndex() + 1, true);
   }
 
   /** Called when row is double-clicked. */
@@ -1138,7 +1205,7 @@ protected bottomPadHeight(): number {
       .catch(() => false);
   }
 
-  private async loadPage(index: number) {
+  private async loadPage(index: number, append = false) {
     const end = this._loading.begin();
     try {
       const pageSize = this.config.pageSize;
@@ -1160,7 +1227,12 @@ protected bottomPadHeight(): number {
       const data = this.archiveMode()
         ? await (this.gridSvc as any).getAllArchived(options)
         : await this.gridSvc.getAll(options as any);
-      this.rows.set((data.rows as Partial<T>[]) ?? []);
+      const incoming = (data.rows as Partial<T>[]) ?? [];
+      if (append && this.rows().length > 0) {
+        this.rows.update((curr) => [...curr, ...incoming]);
+      } else {
+        this.rows.set(incoming);
+      }
       // Update virtualizer and table data
       if (this.virtualizer) {
         this.virtualizer.setOptions({
@@ -1185,6 +1257,76 @@ protected bottomPadHeight(): number {
       this.alertSvc.showError(this.config.messages.loadFailed);
     } finally {
       end();
+    }
+  }
+
+  // Column reordering (drag-and-drop)
+  protected onHeaderDragStart(h: any, ev: DragEvent) {
+    // If a resize gesture initiated, cancel drag reorder
+    if (this.suppressHeaderDrag) {
+      try { ev.preventDefault(); } catch {}
+      ev.stopPropagation();
+      return;
+    }
+    const id = String(h?.column?.id || '');
+    this.dragColId = id;
+    try {
+      ev.dataTransfer?.setData('text/plain', id);
+      ev.dataTransfer!.effectAllowed = 'move';
+    } catch {}
+  }
+
+  protected onHeaderDragOver(_h: any, ev: DragEvent) {
+    ev.preventDefault();
+    try { ev.dataTransfer!.dropEffect = 'move'; } catch {}
+  }
+
+  protected onHeaderDrop(h: any, ev: DragEvent) {
+    ev.preventDefault();
+    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
+    const tgt = String(h?.column?.id || '');
+    if (!src || !tgt || src === tgt) return;
+    const table: any = this.tsTable;
+    const leaves: any[] = table?.getAllLeafColumns?.() || [];
+    const order: string[] = leaves.map((c: any) => String(c.id));
+    const from = order.indexOf(String(src));
+    const to = order.indexOf(String(tgt));
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, ...order.splice(from, 1));
+    table?.setOptions?.((prev: any) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
+    this.saveState();
+  }
+
+  // Keyboard navigation between cells
+  protected onCellKeydown(ev: KeyboardEvent) {
+    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
+    if (!td) return;
+    const tr = td.parentElement as HTMLElement | null;
+    if (!tr) return;
+    const colId = td.getAttribute('data-col-id') || '';
+    if (!colId) return;
+    const key = ev.key;
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    ev.preventDefault();
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const dir = key === 'ArrowDown' ? 1 : -1;
+      let row: HTMLElement | null = tr;
+      while (row) {
+        row = dir > 0 ? (row.nextElementSibling as HTMLElement | null) : (row.previousElementSibling as HTMLElement | null);
+        if (!row) break;
+        const nextTd = row.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
+        if (nextTd) {
+          nextTd.focus({ preventScroll: false });
+          break;
+        }
+      }
+    } else {
+      // Left/Right within row
+      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
+      const idx = cells.findIndex((c) => c === td);
+      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
+      const nextTd = cells[nextIdx];
+      if (nextTd) nextTd.focus({ preventScroll: false });
     }
   }
 
