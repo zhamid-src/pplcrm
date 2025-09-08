@@ -40,7 +40,15 @@ export class ListsRepo extends BaseRepository<'lists'> {
         .where('lists.tenant_id', '=', tenantId)
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
-          return qb.where(sql`(LOWER(lists.name) LIKE ${text} OR LOWER(lists.description) LIKE ${text})` as any);
+          return qb.where(
+            sql`(
+              LOWER(lists.name) LIKE ${text} OR
+              LOWER(lists.description) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
+            )` as any,
+          );
         });
 
     const countResult = await applyFilters(this.getSelect(trx))
@@ -70,9 +78,21 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'authusers.first_name',
         'authusers.last_name',
       ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
-      )
+      .$if(!!options.sortModel?.length, (qb) => {
+        const sorts = options.sortModel ?? [];
+        // If sorting by created_by alias, order by authusers full name
+        const createdSort = sorts.find((s) => s.colId === 'created_by');
+        const others = sorts.filter((s) => s.colId !== 'created_by');
+        let acc: any = qb;
+        if (createdSort) {
+          acc = acc.orderBy(
+            sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`,
+            (createdSort as any).sort,
+          );
+        }
+        for (const s of others) acc = acc.orderBy(s.colId as any, (s as any).sort);
+        return acc;
+      })
       .offset(startRow)
       .limit(endRow - startRow)
       .execute();
