@@ -48,50 +48,59 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
-          return q.where('tasks.status', '=', sv as any);
+          const raw = (filterModel['status'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+          return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const pv = String(filterModel['priority'].value).trim().toLowerCase();
-          return q.where('tasks.priority', '=', pv as any);
+          const raw = (filterModel['priority'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+          return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
         .$if(!!hasAssignedFilter, (q) => {
           const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const low = val.toLowerCase();
-          const isNull = low === 'not assigned' || low === 'unassigned';
-          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.assigned_to = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const low = val.toLowerCase();
+              const isNull = low === 'not assigned' || low === 'unassigned';
+              if (isNull) return sql`tasks.assigned_to IS NULL` as any;
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.assigned_to = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          // OR them together
+          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr})` as any);
         })
         .$if(!!hasCreatedFilter, (q) => {
           const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.createdby_id = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.createdby_id = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr2 = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr2})` as any);
         })
     return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
@@ -145,50 +154,58 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
-          return q.where('tasks.status', '=', sv as any);
+          const raw = (filterModel['status'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+          return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const pv = String(filterModel['priority'].value).trim().toLowerCase();
-          return q.where('tasks.priority', '=', pv as any);
+          const raw = (filterModel['priority'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+          return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
         .$if(!!hasAssignedFilter, (q) => {
           const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const low = val.toLowerCase();
-          const isNull = low === 'not assigned' || low === 'unassigned';
-          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.assigned_to = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const low = val.toLowerCase();
+              const isNull = low === 'not assigned' || low === 'unassigned';
+              if (isNull) return sql`tasks.assigned_to IS NULL` as any;
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.assigned_to = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr3 = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr3})` as any);
         })
         .$if(!!hasCreatedFilter, (q) => {
           const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.createdby_id = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.createdby_id = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr4 = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr4})` as any);
         })
     const rows = await applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign2, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
@@ -244,50 +261,58 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
-          return q.where('tasks.status', '=', sv as any);
+          const raw = (filterModel['status'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+          return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const pv = String(filterModel['priority'].value).trim().toLowerCase();
-          return q.where('tasks.priority', '=', pv as any);
+          const raw = (filterModel['priority'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+          return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
         .$if(!!hasAssignedFilter, (q) => {
           const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const low = val.toLowerCase();
-          const isNull = low === 'not assigned' || low === 'unassigned';
-          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.assigned_to = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const low = val.toLowerCase();
+              const isNull = low === 'not assigned' || low === 'unassigned';
+              if (isNull) return sql`tasks.assigned_to IS NULL` as any;
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.assigned_to = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr})` as any);
         })
         .$if(!!hasCreatedFilter, (q) => {
           const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.createdby_id = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.createdby_id = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr})` as any);
         })
     return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign3, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
@@ -338,50 +363,58 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
-          return q.where('tasks.status', '=', sv as any);
+          const raw = (filterModel['status'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+          return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const pv = String(filterModel['priority'].value).trim().toLowerCase();
-          return q.where('tasks.priority', '=', pv as any);
+          const raw = (filterModel['priority'].value) as any;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+          return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
         .$if(!!hasAssignedFilter, (q) => {
           const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const low = val.toLowerCase();
-          const isNull = low === 'not assigned' || low === 'unassigned';
-          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.assigned_to = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const low = val.toLowerCase();
+              const isNull = low === 'not assigned' || low === 'unassigned';
+              if (isNull) return sql`tasks.assigned_to IS NULL` as any;
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.assigned_to = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr})` as any);
         })
         .$if(!!hasCreatedFilter, (q) => {
           const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql`(
-                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
-                tasks.createdby_id = ${Number(val)}
-              )` as any,
-            );
-          }
-          return q.where(
-            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
-          );
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val) => {
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql`(
+                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.createdby_id = ${Number(val)}
+                )` as any;
+              return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
+            });
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          return q.where(sql`(${orExpr})` as any);
         })
     const rows = await applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign4, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))

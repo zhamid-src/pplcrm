@@ -689,6 +689,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return typeof id === 'string' ? id : null;
   }
 
+  protected getFilterArray(field: string): string[] {
+    const fv: any = this.filterValues()[field];
+    if (fv && typeof fv === 'object' && Array.isArray(fv.value)) return fv.value as string[];
+    const single = this.getFilterValue(field);
+    return single ? [single] : [];
+  }
+
   // Helper to derive filter select options from a column definition
   protected getFilterOptionsForCol(col: ColDef): string[] | null {
     const cep: any = (col as any)?.cellEditorParams;
@@ -776,6 +783,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (typeof h?.column?.toggleVisibility === 'function') h.column.toggleVisibility(false);
   }
 
+  // Inline filter row helpers for multi-select label
+  protected inlineFilterLabel(field: string): string {
+    const arr = this.getFilterArray(field);
+    if (!arr.length) return 'All';
+    if (arr.length === 1) return arr[0];
+    return `${arr.length} selected`;
+  }
+
   protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' {
     const t = String((col as any)?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') return 'number';
@@ -792,6 +807,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Inline edit helpers
   protected isEditable(col: ColDef): boolean {
     return !!(col as any)?.editable;
+  }
+
+  protected isOptionChecked(field: string, option: string): boolean {
+    return this.getFilterArray(field).includes(option);
   }
 
   /** Whether the current page (displayed rows) is fully selected */
@@ -1071,6 +1090,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     };
     window.addEventListener('touchmove', move);
     window.addEventListener('touchend', up);
+  }
+
+  protected onToggleFilterOption(field: string, option: string, checked: boolean) {
+    const current = this.getFilterArray(field);
+    let nextArr: string[] = current.slice();
+    if (checked && !nextArr.includes(option)) nextArr.push(option);
+    if (!checked) nextArr = nextArr.filter((o) => o !== option);
+    const next = { ...this.filterValues() } as any;
+    if (nextArr.length === 0) delete next[field];
+    else next[field] = { op: 'in', value: nextArr };
+    this.filterValues.set(next);
+    this.loadPage(0);
+    this.saveState?.();
   }
 
   /** Called when row is double-clicked. */
