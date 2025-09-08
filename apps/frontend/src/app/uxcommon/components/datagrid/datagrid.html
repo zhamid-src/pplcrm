@@ -143,89 +143,76 @@
                 >
                   <pc-icon name="ellipsis-vertical"></pc-icon>
                 </label>
-                <ul
-                  tabindex="0"
-                  class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0"
-                >
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0">
                   @let col = getColDefById(h.column.id);
-                  <li>
-                    <details>
-                      <summary>Filter</summary>
-                      <div class="px-2 py-2 space-y-2">
+                  <!-- Filter submenu as nested dropdown -->
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Filter</span><span class="pl-2">▸</span></label>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2">
+                      <li class="px-2 py-1">
                         @if (col && getFilterOptionsForCol(col)?.length) {
-                        <select
-                          class="select select-bordered select-xs w-full"
+                        <select class="select select-bordered select-xs w-full"
                           [value]="getFilterValue(h.column.id)"
                           (change)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        >
+                          (click)="$event.stopPropagation()">
                           <option value="">All</option>
                           @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-                          <option [value]="opt">{{ opt }}</option>
+                            <option [value]="opt">{{ opt }}</option>
                           }
                         </select>
                         } @else {
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
+                        <input class="input input-bordered input-xs w-full" type="text" placeholder="Filter value"
                           [value]="getFilterValue(h.column.id)"
                           (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
+                          (click)="$event.stopPropagation()" />
                         }
-                        <div>
-                          <button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button>
-                        </div>
-                      </div>
-                    </details>
+                      </li>
+                      <li class="px-2 pb-1"><button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button></li>
+                    </ul>
                   </li>
-                  <li>
-                    <details>
-                      <summary>Sort</summary>
-                      <ul>
-                        <li><a (click)="sortAsc(h)">Sort asc</a></li>
-                        <li><a (click)="sortDesc(h)">Sort desc</a></li>
-                        <li><a (click)="clearSort(h)">Clear sort</a></li>
-                      </ul>
-                    </details>
+                  <!-- Sort submenu as nested dropdown -->
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Sort</span><span class="pl-2">▸</span></label>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2">
+                      <li><a (click)="sortAsc(h)">Sort asc</a></li>
+                      <li><a (click)="sortDesc(h)">Sort desc</a></li>
+                      <li><a (click)="clearSort(h)">Clear sort</a></li>
+                    </ul>
                   </li>
-                  <li>
-                    <details>
-                      <summary>Stickiness</summary>
-                      <ul>
-                        <li><a (click)="pinLeft(h)">Pin left</a></li>
-                        <li><a (click)="pinRight(h)">Pin right</a></li>
-                        <li><a (click)="unpin(h)">Unpin</a></li>
-                      </ul>
-                    </details>
+                  <!-- Stickiness submenu as nested dropdown -->
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Stickiness</span><span class="pl-2">▸</span></label>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2">
+                      <li><a (click)="pinLeft(h)">Pin left</a></li>
+                      <li><a (click)="pinRight(h)">Pin right</a></li>
+                      <li><a (click)="unpin(h)">Unpin</a></li>
+                    </ul>
                   </li>
-                  <li>
-                    <details>
-                      <summary>Size</summary>
-                      <ul>
-                        <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
-                        <li><a (click)="resetColWidth(h)">Reset width</a></li>
-                      </ul>
-                    </details>
+                  <!-- Size submenu as nested dropdown -->
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Size</span><span class="pl-2">▸</span></label>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-56 p-2 shadow transform -translate-x-2">
+                      <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
+                      <li><a (click)="resetColWidth(h)">Reset width</a></li>
+                    </ul>
                   </li>
-                  <li>
-                    <details>
-                      <summary>Column</summary>
-                      <ul>
-                        <li><a (click)="hideColumn(h)">Hide</a></li>
-                        <li>
-                          <details>
-                            <summary>Columns</summary>
-                            <ul>
-                              @for (cid of hiddenColumns(); track cid) {
-                              <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
-                              } @if (!hiddenColumns().length) {
-                              <li class="opacity-60 px-2 py-1">None hidden</li>
-                              }
-                            </ul>
-                          </details>
-                        </li>
-                      </ul>
-                    </details>
+                  <!-- Column submenu as nested dropdown -->
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Column</span><span class="pl-2">▸</span></label>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2">
+                      <li><a (click)="hideColumn(h)">Hide</a></li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"><span>Columns</span><span class="pl-2">▸</span></label>
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[120] w-64 p-2 shadow transform -translate-x-2">
+                          @for (cid of hiddenColumns(); track cid) {
+                            <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                          }
+                          @if (!hiddenColumns().length) {
+                            <li class="opacity-60 px-2 py-1">None hidden</li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
                   </li>
                 </ul>
               </div>
