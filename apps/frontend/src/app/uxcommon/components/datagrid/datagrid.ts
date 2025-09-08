@@ -11,6 +11,7 @@ import {
   input,
   output,
   signal,
+  computed,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -148,6 +149,27 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected suppressHeaderDrag = false;
   protected totalCountAll = 0;
   protected viewportH = signal(0);
+  // Computed derivations
+  protected readonly totalPages = computed(() => computeTotalPages(this.totalCountAll, this.config.pageSize));
+  protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
+  protected readonly canPrev = computed(() => this.pageIndex() > 0);
+  protected readonly displayedCount = computed(() => this.rows().length);
+  protected readonly selectedOnPageCount = computed(() => {
+    if (this.allSelected()) return 0;
+    const set = this.selectedIdSet();
+    let cnt = 0;
+    for (const r of this.rows()) {
+      const id = this.toId(r);
+      if (id && set.has(id)) cnt++;
+    }
+    return cnt;
+  });
+  protected readonly isPageFullySelected = computed(() =>
+    isPageFullySelected(this.allSelected(), this.displayedCount(), this.selectedOnPageCount()),
+  );
+  protected readonly hasSelection = computed(() =>
+    this.allSelected() ? this.allSelectedCount > 0 : this.selectedIdSet().size > 0,
+  );
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -377,11 +399,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // AG Grid lifecycle removed
 
   /** Called when selection changes. Updates selected state. */
-  public onSelectionChanged() {
-    const count = this.getSelectedRows()?.length ?? 0;
-    this.isRowSelected.set(count > 0);
-    this.countRowSelected.set(count);
-  }
+  public onSelectionChanged() {}
 
   /** Opens edit form for row. */
   public openEdit(id: string) {
@@ -490,13 +508,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.countRowSelected() > 1;
   }
 
-  protected canNext(): boolean {
-    return this.pageIndex() + 1 < this.totalPages();
-  }
-
-  protected canPrev(): boolean {
-    return this.pageIndex() > 0;
-  }
+  // canNext/canPrev are computed
 
   protected cancelEdit() {
     this.editingCell.set(null);
@@ -643,10 +655,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.colWidths()[id] ?? null;
   }
 
-  /** Number of rows displayed on the current page */
-  protected getDisplayedCount(): number {
-    return this.rows().length;
-  }
+  // displayedCount is computed
 
   protected getFieldFromHeader(h: any): string | null {
     const id = h?.column?.id;
@@ -761,9 +770,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Whether the current page (displayed rows) is fully selected */
-  protected isPageFullySelected(): boolean {
-    return isPageFullySelected(this.allSelected(), this.getDisplayedCount(), this.getSelectedRows()?.length ?? 0);
-  }
+  // isPageFullySelected is computed
 
   protected isRowChecked(id: string): boolean {
     return this.allSelected() ? this.allSelectedIdSet.has(id) : this.selectedIdSet().has(id);
@@ -1279,9 +1286,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Pagination
-  protected totalPages(): number {
-    return computeTotalPages(this.totalCountAll, this.config.pageSize);
-  }
+  // totalPages is computed
 
   protected unpin(h: any) {
     const pin = h?.column?.pin;
