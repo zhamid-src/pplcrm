@@ -34,6 +34,7 @@
         <li class="px-2 py-1 flex gap-2">
           <button class="btn btn-ghost btn-xs" (click)="showAllCols()">Show all</button>
           <button class="btn btn-ghost btn-xs" (click)="hideAllCols()">Hide all</button>
+          <button class="btn btn-ghost btn-xs" (click)="resetAllWidths()">Reset widths</button>
         </li>
         @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
         <li>
@@ -81,7 +82,7 @@
       <thead class="sticky top-0 bg-base-100 z-10">
         <tr>
           @if (enableSelection()) {
-          <th class="w-12 selection-col sticky left-0 z-30 bg-base-100">
+          <th class="w-12 selection-col sticky left-0 z-30 bg-base-100 relative" [style.width.px]="selectionStickyWidth()">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -89,6 +90,9 @@
               [indeterminate]="!allSelected() && tableSomePageSelected()"
               (change)="onHeaderCheckbox($any($event.target).checked)"
             />
+            <span class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none"
+              (mousedown)="onSelectionResizeMouseDown($event)"
+              (touchstart)="onSelectionResizeTouchStart($event)"></span>
           </th>
           }
           @for (h of leafHeaders(); track h.id) {
@@ -222,7 +226,7 @@
         @for (r of visibleTableRows(); track r.id) {
         <tr (mouseover)="onCellMouseOver(r.original)">
           @if (enableSelection()) {
-          <td class="sticky left-0 z-20 bg-base-100">
+          <td class="sticky left-0 z-20 bg-base-100" [style.width.px]="selectionStickyWidth()">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"

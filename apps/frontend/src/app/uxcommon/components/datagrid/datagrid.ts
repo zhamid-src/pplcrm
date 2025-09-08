@@ -98,6 +98,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
   public gridOptions = input<any>({});
+  public storageKey = input<string>('');
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
@@ -198,6 +199,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public async ngOnInit() {
+    // Initialize persistence key
+    const urlKey = typeof window !== 'undefined' ? (window.location?.pathname || '') : '';
+    this._persistKey = this.storageKey() ? this.storageKey()! : `pcdg:${urlKey}`;
     const allowFilter = this.allowFilter();
     this.mergedGridOptions = {
       ...defaultGridOptions,
@@ -248,6 +252,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.sortCol.set(first?.id ?? null);
         this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
         this.loadPage(0);
+        this.saveState();
       },
       onRowSelectionChange: (updater: Updater<any>) => {
         const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
@@ -271,8 +276,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
         // Recompute sticky offsets after sizing change
         queueMicrotask(() => this.updatePinOffsets());
+        this.saveState();
       },
     });
+    // Load persisted state and apply to table before first load
+    this.loadState();
     await this.loadPage(0);
   }
 
@@ -282,6 +290,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
     // Recompute pin offsets when pinning state changes
     this.updatePinOffsets();
+    this.saveState();
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -641,21 +650,25 @@ protected bottomPadHeight(): number {
     const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, next as any);
+    this.saveState();
   }
 
   protected pinLeft(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'left');
+    this.saveState();
   }
 
   protected pinRight(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'right');
+    this.saveState();
   }
 
   protected unpin(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, false);
+    this.saveState();
   }
 
   // Row selection helpers (TanStack-driven)
@@ -736,6 +749,7 @@ protected bottomPadHeight(): number {
     else next[field] = { op: 'contains', value: v } as any;
     this.filterValues.set(next);
     this.loadPage(0);
+    this.saveState();
   }
 
   protected clearHeaderFilter(field: string) {
@@ -743,13 +757,14 @@ protected bottomPadHeight(): number {
     delete next[field];
     this.filterValues.set(next);
     this.loadPage(0);
+    this.saveState();
   }
 
   // Sticky pin offsets
   private headerWidthMap = new Map<string, number>();
   private pinnedLeftOffsets = signal<Record<string, number>>({});
   private pinnedRightOffsets = signal<Record<string, number>>({});
-  private selectionStickyWidth = signal<number>(48);
+  protected selectionStickyWidth = signal<number>(48);
 
   protected leftOffsetPx(colId: string): number {
     return this.pinnedLeftOffsets()[colId] || 0;
@@ -801,6 +816,102 @@ protected bottomPadHeight(): number {
     }
     this.pinnedLeftOffsets.set(left);
     this.pinnedRightOffsets.set(right);
+  }
+
+  // Selection column resize
+  protected onSelectionResizeMouseDown(ev: MouseEvent) {
+    ev.stopPropagation();
+    this._selStartX = ev.clientX;
+    this._selStartW = this.selectionStickyWidth();
+    const move = (e: MouseEvent) => this.continueSelectionResize(e.clientX);
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      this.endSelectionResize();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  protected onSelectionResizeTouchStart(ev: TouchEvent) {
+    ev.stopPropagation();
+    const x = ev.touches?.[0]?.clientX ?? 0;
+    this._selStartX = x;
+    this._selStartW = this.selectionStickyWidth();
+    const move = (e: TouchEvent) => this.continueSelectionResize(e.touches?.[0]?.clientX ?? 0);
+    const up = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      this.endSelectionResize();
+    };
+    window.addEventListener('touchmove', move);
+    window.addEventListener('touchend', up);
+  }
+
+  private _selStartX = 0;
+  private _selStartW = 48;
+  private continueSelectionResize(clientX: number) {
+    const dx = clientX - this._selStartX;
+    const w = Math.max(32, this._selStartW + dx);
+    this.selectionStickyWidth.set(Math.round(w));
+    this.updatePinOffsets();
+  }
+  private endSelectionResize() {
+    this.saveState();
+  }
+
+  // Persistence
+  private _persistKey = 'pcdg';
+  private saveState() {
+    try {
+      const st: any = this.tsTable?.getState?.() ?? {};
+      const data = {
+        sorting: st.sorting || [],
+        visibility: st.columnVisibility || {},
+        pinning: st.columnPinning || { left: [], right: [] },
+        sizing: st.columnSizing || {},
+        order: st.columnOrder || [],
+        filters: this.filterValues() || {},
+        selectionWidth: this.selectionStickyWidth(),
+      };
+      localStorage.setItem(this._persistKey, JSON.stringify(data));
+    } catch {}
+  }
+
+  private loadState() {
+    try {
+      const raw = localStorage.getItem(this._persistKey);
+      if (!raw) return;
+      const data = JSON.parse(raw || '{}');
+      if (data.sorting) this.sorting.set(data.sorting);
+      if (data.visibility) this.colVisibility.set(data.visibility);
+      if (data.filters) this.filterValues.set(data.filters);
+      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      queueMicrotask(() => {
+        if (!this.tsTable) return;
+        this.tsTable.setOptions((prev: any) => ({
+          ...prev,
+          state: {
+            ...prev.state,
+            sorting: data.sorting || prev.state.sorting,
+            columnVisibility: data.visibility || prev.state.columnVisibility,
+            columnPinning: data.pinning || prev.state.columnPinning,
+            columnSizing: data.sizing || prev.state.columnSizing,
+            columnOrder: data.order || prev.state.columnOrder,
+          },
+        }));
+        this.colWidths.set({ ...(data.sizing || {}) });
+        this.updatePinOffsets();
+      });
+    } catch {}
+  }
+
+  protected resetAllWidths() {
+    this.colWidths.set({});
+    const sizing: Record<string, number> = {};
+    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+    queueMicrotask(() => this.updatePinOffsets());
+    this.saveState();
   }
 
   // Column resize handlers (bridge to TanStack handlers)
@@ -865,6 +976,7 @@ protected bottomPadHeight(): number {
       if (w > max) max = w;
     });
     if (max > 0) this.setColWidth(id, max);
+    this.saveState();
   }
 
   protected hasCellRenderer(col: ColDef): boolean {
@@ -1146,6 +1258,7 @@ protected bottomPadHeight(): number {
         state: { ...prev.state, columnVisibility: v },
       }));
     }
+    this.saveState();
   }
 
   // Build TanStack rowSelection snapshot for current data from our global selected set
