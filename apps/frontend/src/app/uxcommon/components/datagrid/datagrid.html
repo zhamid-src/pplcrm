@@ -80,11 +80,14 @@
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
     <table #gridTable class="table table-zebra table-fixed w-full">
       <thead class="sticky top-0 bg-base-100 z-10">
-        @let groups = headerGroups();
-        @for (grp of groups; track grp.id; let i = $index) {
+        @let groups = headerGroups(); @for (grp of groups; track grp.id; let i = $index) {
         <tr>
           @if (enableSelection() && i === 0) {
-          <th class="selection-col sticky left-0 z-10 bg-base-100 relative overflow-hidden" [attr.rowspan]="groups.length" [style.width.px]="selectionStickyWidth()">
+          <th
+            class="selection-col sticky left-0 z-10 bg-base-100 relative overflow-hidden"
+            [attr.rowspan]="groups.length"
+            [style.width.px]="selectionStickyWidth()"
+          >
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -95,92 +98,115 @@
             <!-- Always-visible visual divider -->
             <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[15]"></span>
             <!-- Interactive resizer handle -->
-            <span class="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none z-[20] hover:bg-base-300/50"
+            <span
+              class="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none z-[20] hover:bg-base-300/50"
               (mousedown)="onSelectionResizeMouseDown($event)"
               (touchstart)="onSelectionResizeTouchStart($event)"
               (dragstart)="onSelectionResizeDragStart($event)"
-              draggable="false"></span>
+              draggable="false"
+            ></span>
           </th>
-          }
-          @for (h of grp.headers; track h.id) {
-            @if (h?.isPlaceholder) {
-            <th [attr.colspan]="h.colSpan"></th>
-            } @else {
-            <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none relative overflow-visible min-w-0"
-                draggable="true"
-                (dragstart)="onHeaderDragStart(h, $event)"
-                (dragover)="onHeaderDragOver(h, $event)"
-                (drop)="onHeaderDrop(h, $event)"
-                role="columnheader"
-                [attr.aria-sort]="ariaSortHeader(h)"
-                [attr.colspan]="h.colSpan"
-                [class.sticky]="pinState(h) !== false"
-                [style.left.px]="pinState(h) === 'left' ? leftOffsetPx(h.column.id) : null"
-                [style.right.px]="pinState(h) === 'right' ? rightOffsetPx(h.column.id) : null"
-                [style.zIndex]="pinState(h) !== false ? 20 : 40"
-                [style.width.px]="getColWidth(h.column.id) || null"
-                [attr.data-col-id]="h.column.id">
-              <div class="flex items-center gap-2 pr-10">
-                <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
-                <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
-                <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
-                <div tabindex="0" class="ml-auto mr-4 dropdown dropdown-end relative z-[100]" (click)="$event.stopPropagation()">
-                  <label tabindex="0" class="btn btn-ghost btn-xs pointer-events-auto" title="Column options" (click)="$event.stopPropagation()">
-                    <pc-icon name="ellipsis-vertical"></pc-icon>
-                  </label>
-                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 mt-1 shadow right-0">
-                    @let col = getColDefById(h.column.id);
-                    <li>
-                      <details>
-                        <summary>Filter</summary>
-                        <div class="px-2 py-2 space-y-2">
-                          @if (col && getFilterOptionsForCol(col)?.length) {
-                          <select class="select select-bordered select-xs w-full"
-                            [value]="getFilterValue(h.column.id)"
-                            (change)="onHeaderFilterInput(h.column.id, $any($event.target).value)">
-                            <option value="">All</option>
-                            @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-                              <option [value]="opt">{{ opt }}</option>
-                            }
-                          </select>
-                          } @else {
-                          <input class="input input-bordered input-xs w-full" type="text" placeholder="Filter value"
-                            [value]="getFilterValue(h.column.id)"
-                            (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)" />
+          } @for (h of grp.headers; track h.id) { @if (h?.isPlaceholder) {
+          <th [attr.colspan]="h.colSpan"></th>
+          } @else {
+          <th
+            (click)="toggleHeaderSort(h, $event)"
+            class="cursor-pointer select-none relative overflow-visible min-w-0"
+            draggable="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            role="columnheader"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [attr.colspan]="h.colSpan"
+            [class.sticky]="pinState(h) !== false"
+            [style.left.px]="pinState(h) === 'left' ? leftOffsetPx(h.column.id) : null"
+            [style.right.px]="pinState(h) === 'right' ? rightOffsetPx(h.column.id) : null"
+            [style.zIndex]="pinState(h) !== false ? 20 : 40"
+            [style.width.px]="getColWidth(h.column.id) || null"
+            [attr.data-col-id]="h.column.id"
+          >
+            <div class="flex items-center gap-2 pr-10">
+              <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
+              <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
+              <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
+              <div
+                tabindex="0"
+                class="ml-auto mr-4 dropdown dropdown-end relative z-[100]"
+                (click)="$event.stopPropagation()"
+              >
+                <label
+                  tabindex="0"
+                  class="btn btn-ghost btn-xs pointer-events-auto"
+                  title="Column options"
+                  (click)="$event.stopPropagation()"
+                >
+                  <pc-icon name="ellipsis-vertical"></pc-icon>
+                </label>
+                <ul
+                  tabindex="0"
+                  class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0"
+                >
+                  @let col = getColDefById(h.column.id);
+                  <li>
+                    <details>
+                      <summary>Filter</summary>
+                      <div class="px-2 py-2 space-y-2">
+                        @if (col && getFilterOptionsForCol(col)?.length) {
+                        <select
+                          class="select select-bordered select-xs w-full"
+                          [value]="getFilterValue(h.column.id)"
+                          (change)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        >
+                          <option value="">All</option>
+                          @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+                          <option [value]="opt">{{ opt }}</option>
                           }
-                          <div><button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button></div>
+                        </select>
+                        } @else {
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                        }
+                        <div>
+                          <button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button>
                         </div>
-                      </details>
-                    </li>
-                    <li>
-                      <details>
-                        <summary>Sort</summary>
-                        <ul>
-                          <li><a (click)="sortAsc(h)">Sort asc</a></li>
-                          <li><a (click)="sortDesc(h)">Sort desc</a></li>
-                          <li><a (click)="clearSort(h)">Clear sort</a></li>
-                        </ul>
-                      </details>
-                    </li>
-                    <li>
-                      <details>
-                        <summary>Stickiness</summary>
-                        <ul>
-                          <li><a (click)="pinLeft(h)">Pin left</a></li>
-                          <li><a (click)="pinRight(h)">Pin right</a></li>
-                          <li><a (click)="unpin(h)">Unpin</a></li>
-                        </ul>
-                      </details>
-                    </li>
-                    <li>
-                      <details>
-                        <summary>Size</summary>
-                        <ul>
-                          <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
-                          <li><a (click)="resetColWidth(h)">Reset width</a></li>
-                        </ul>
-                      </details>
-                    </li>
+                      </div>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Sort</summary>
+                      <ul>
+                        <li><a (click)="sortAsc(h)">Sort asc</a></li>
+                        <li><a (click)="sortDesc(h)">Sort desc</a></li>
+                        <li><a (click)="clearSort(h)">Clear sort</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Stickiness</summary>
+                      <ul>
+                        <li><a (click)="pinLeft(h)">Pin left</a></li>
+                        <li><a (click)="pinRight(h)">Pin right</a></li>
+                        <li><a (click)="unpin(h)">Unpin</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Size</summary>
+                      <ul>
+                        <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
+                        <li><a (click)="resetColWidth(h)">Reset width</a></li>
+                      </ul>
+                    </details>
+                  </li>
                   <li>
                     <details>
                       <summary>Column</summary>
@@ -191,10 +217,9 @@
                             <summary>Columns</summary>
                             <ul>
                               @for (cid of hiddenColumns(); track cid) {
-                                <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
-                              }
-                              @if (!hiddenColumns().length) {
-                                <li class="opacity-60 px-2 py-1">None hidden</li>
+                              <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                              } @if (!hiddenColumns().length) {
+                              <li class="opacity-60 px-2 py-1">None hidden</li>
                               }
                             </ul>
                           </details>
@@ -202,55 +227,54 @@
                       </ul>
                     </details>
                   </li>
-                  </ul>
-                </div>
+                </ul>
               </div>
-              @if (i === groups.length - 1) {
-              <!-- Always-visible visual divider -->
-              <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
-              <!-- Interactive resizer handle (kept narrow) -->
-              <span class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
-                (mousedown)="onHeaderResizeMouseDown(h, $event)"
-                (touchstart)="onHeaderResizeTouchStart(h, $event)"
-                (dblclick)="onHeaderResizeDblClick(h, $event)"
-                (dragstart)="onHeaderResizeDragStart($event)"
-                draggable="false"></span>
-              }
-            </th>
+            </div>
+            @if (i === groups.length - 1) {
+            <!-- Always-visible visual divider -->
+            <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
+            <!-- Interactive resizer handle (kept narrow) -->
+            <span
+              class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
+              (mousedown)="onHeaderResizeMouseDown(h, $event)"
+              (touchstart)="onHeaderResizeTouchStart(h, $event)"
+              (dblclick)="onHeaderResizeDblClick(h, $event)"
+              (dragstart)="onHeaderResizeDragStart($event)"
+              draggable="false"
+            ></span>
             }
-          }
+          </th>
+          } }
         </tr>
-        }
-        @if (showFilters()) {
+        } @if (showFilters()) {
         <tr>
-          @if (enableSelection()) {<th class="selection-col sticky left-0 z-30 bg-base-100" [style.width.px]="selectionStickyWidth()"></th>}
-          @for (h of leafHeaders(); track h.id) {
-            @if (h && h.column?.getIsVisible?.()) {
-            @let col = getColDefById(h.column.id);
-            <th class="border-r border-base-300">
-              @if (col && getFilterOptionsForCol(col)?.length) {
-              <select
-                class="select select-bordered select-xs w-full"
-                [value]="filterValues()[col!.field!] || ''"
-                (change)="onFilterInput(col!.field!, $any($event.target).value)"
-              >
-                <option value="">All</option>
-                @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-                <option [value]="opt">{{ opt }}</option>
-                }
-              </select>
-              } @else {
-              <input
-                type="text"
-                class="input input-bordered input-xs w-full"
-                placeholder="Filter..."
-                [value]="$any(filterValues())[col!.field!] || ''"
-                (input)="onFilterInput(col!.field!, $any($event.target).value)"
-              />
+          @if (enableSelection()) {
+          <th class="selection-col sticky left-0 z-30 bg-base-100" [style.width.px]="selectionStickyWidth()"></th>
+          } @for (h of leafHeaders(); track h.id) { @if (h && h.column?.getIsVisible?.()) { @let col =
+          getColDefById(h.column.id);
+          <th class="border-r border-base-300">
+            @if (col && getFilterOptionsForCol(col)?.length) {
+            <select
+              class="select select-bordered select-xs w-full"
+              [value]="filterValues()[col!.field!] || ''"
+              (change)="onFilterInput(col!.field!, $any($event.target).value)"
+            >
+              <option value="">All</option>
+              @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+              <option [value]="opt">{{ opt }}</option>
               }
-            </th>
+            </select>
+            } @else {
+            <input
+              type="text"
+              class="input input-bordered input-xs w-full"
+              placeholder="Filter..."
+              [value]="$any(filterValues())[col!.field!] || ''"
+              (input)="onFilterInput(col!.field!, $any($event.target).value)"
+            />
             }
-          }
+          </th>
+          } }
         </tr>
         }
       </thead>
@@ -262,7 +286,7 @@
           </td>
         </tr>
         @for (r of visibleTableRows(); track r.id) {
-        <tr (mouseover)="onCellMouseOver(r.original)">
+        <tr (mouseover)="onCellMouseOver(r.original)" [attr.data-row-id]="toId(r.original)">
           @if (enableSelection()) {
           <td class="sticky left-0 z-20 bg-base-100" [style.width.px]="selectionStickyWidth()">
             <input
@@ -272,27 +296,53 @@
               (change)="onRowCheckboxChange(r, $any($event.target).checked)"
             />
           </td>
-          }
-          @for (cell of r.getVisibleCells(); track cell.id) {
-            @let col = getColDefById(cell.column.id);
-            @if (col && isColVisible(col)) {
-            <td (dblclick)="handleCellDblClick(r.original, col)"
-                tabindex="0"
-                (keydown)="onCellKeydown($event)"
-                [class.sticky]="pinState(cell) !== false"
-                [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-                [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-                [style.background]="pinState(cell) !== false ? 'var(--fallback-b1,oklch(var(--b1)))' : null"
-                [style.zIndex]="pinState(cell) !== false ? 10 : null"
-                [style.width.px]="getColWidth(cell.column.id) || null"
-                class="overflow-hidden min-w-0"
-                [attr.data-col-id]="cell.column.id">
-              @if (hasCellRenderer(col)) {
-              <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-              } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{ getCellValue(r.original, col) }} }
-            </td>
-            }
-          }
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) {
+          <td
+            (dblclick)="handleCellDblClick(r.original, col)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? 'var(--fallback-b1,oklch(var(--b1)))' : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [style.width.px]="getColWidth(cell.column.id) || null"
+            class="overflow-hidden min-w-0"
+            [attr.data-col-id]="cell.column.id"
+          >
+            @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let opts =
+            getFilterOptionsForCol(col); @if (opts?.length) {
+            <select
+              class="select select-bordered select-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              (blur)="commitEdit(r.original, col)"
+              (keydown.enter)="commitEdit(r.original, col)"
+              (keydown.esc)="cancelEdit()"
+              autofocus
+            >
+              @for (o of opts; track o) {
+              <option [value]="o">{{ o }}</option>
+              }
+            </select>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              (blur)="commitEdit(r.original, col)"
+              (keydown.enter)="commitEdit(r.original, col)"
+              (keydown.esc)="cancelEdit()"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{
+            getCellValue(r.original, col) }} }
+          </td>
+          } }
         </tr>
         }
         <!-- bottom spacer -->
@@ -318,48 +368,58 @@
 
 <!-- Right-side Filter Panel -->
 @if (showFilterPanel()) {
-  <div class="fixed inset-0 z-40">
-    <div class="absolute inset-0 bg-black/30" (click)="closePanel()"></div>
-    <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 overflow-auto">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-lg font-semibold">Advanced Filters</h3>
-        <button class="btn btn-ghost btn-sm" (click)="closePanel()">
-          <pc-icon name="chevron-right"></pc-icon>
-        </button>
+<div class="fixed inset-0 z-40">
+  <div class="absolute inset-0 bg-black/30" (click)="closePanel()"></div>
+  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 overflow-auto">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-lg font-semibold">Advanced Filters</h3>
+      <button class="btn btn-ghost btn-sm" (click)="closePanel()">
+        <pc-icon name="chevron-right"></pc-icon>
+      </button>
+    </div>
+    <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
+    <div class="space-y-3">
+      @for (field of panelFields(); track field) {
+      <div class="form-control">
+        <label class="label py-0"><span class="label-text">{{ panelLabelFor(field) }}</span></label>
+        <div class="flex gap-2">
+          <select
+            class="select select-bordered select-xs w-28"
+            (change)="onPanelOpChange(field, $any($event.target).value)"
+            [value]="$any(panelFilters())[field]?.op || 'contains'"
+          >
+            <option value="contains">contains</option>
+            <option value="equals">equals</option>
+          </select>
+          @if (panelOptionsFor(field)?.length) {
+          <select
+            class="select select-bordered select-xs flex-1"
+            (change)="onPanelValueChange(field, $any($event.target).value)"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          >
+            <option value="">Any</option>
+            @for (opt of panelOptionsFor(field)!; track opt) {
+            <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+          } @else {
+          <input
+            class="input input-bordered input-xs flex-1"
+            type="text"
+            placeholder="Value"
+            (input)="onPanelValueChange(field, $any($event.target).value)"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          />
+          }
+        </div>
       </div>
-      <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
-      <div class="space-y-3">
-        @for (field of panelFields(); track field) {
-          <div class="form-control">
-            <label class="label py-0"><span class="label-text">{{ panelLabelFor(field) }}</span></label>
-            <div class="flex gap-2">
-              <select class="select select-bordered select-xs w-28" (change)="onPanelOpChange(field, $any($event.target).value)"
-                [value]="$any(panelFilters())[field]?.op || 'contains'">
-                <option value="contains">contains</option>
-                <option value="equals">equals</option>
-              </select>
-              @if (panelOptionsFor(field)?.length) {
-                <select class="select select-bordered select-xs flex-1" (change)="onPanelValueChange(field, $any($event.target).value)"
-                  [value]="$any(panelFilters())[field]?.value || ''">
-                  <option value="">Any</option>
-                  @for (opt of panelOptionsFor(field)!; track opt) {
-                    <option [value]="opt">{{ opt }}</option>
-                  }
-                </select>
-              } @else {
-                <input class="input input-bordered input-xs flex-1" type="text" placeholder="Value"
-                  (input)="onPanelValueChange(field, $any($event.target).value)"
-                  [value]="$any(panelFilters())[field]?.value || ''" />
-              }
-            </div>
-          </div>
-        }
-      </div>
-      <div class="divider my-3"></div>
-      <div class="flex gap-2">
-        <button class="btn btn-primary btn-sm" (click)="applyPanelFilters()">Apply</button>
-        <button class="btn btn-ghost btn-sm" (click)="clearPanelFilters()">Clear</button>
-      </div>
-    </aside>
-  </div>
+      }
+    </div>
+    <div class="divider my-3"></div>
+    <div class="flex gap-2">
+      <button class="btn btn-primary btn-sm" (click)="applyPanelFilters()">Apply</button>
+      <button class="btn btn-ghost btn-sm" (click)="clearPanelFilters()">Clear</button>
+    </div>
+  </aside>
+</div>
 }
