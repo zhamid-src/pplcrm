@@ -757,6 +757,23 @@ protected bottomPadHeight(): number {
     return fv ? String(fv) : '';
   }
 
+  // Hidden columns list for header menu
+  protected hiddenColumns(): string[] {
+    const v = this.colVisibility();
+    return this.colDefsWithEdit
+      .map((c) => c.field as string)
+      .filter((f) => !!f && v[f] === false) as string[];
+  }
+  protected columnLabelFor(id: string): string {
+    const c = this.colDefsWithEdit.find((x) => x.field === id);
+    return c?.headerName || id;
+  }
+  protected showColumnById(id: string) {
+    this.toggleCol(id, true);
+    const col = (this.tsTable as any)?.getColumn?.(id);
+    if (col?.toggleVisibility) col.toggleVisibility(true);
+  }
+
   protected onHeaderFilterInput(field: string, value: any) {
     const v = String(value ?? '').trim();
     const next = { ...this.filterValues() };
