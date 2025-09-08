@@ -64,6 +64,7 @@ export const icons = {
   'chevron-double-left': 'assets/icons/chevron-double-left.svg',
   'chevron-double-right': 'assets/icons/chevron-double-right.svg',
   'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
   'chevron-up': 'assets/icons/chevron-up.svg',
   'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
   clock: 'assets/icons/clock.svg',
