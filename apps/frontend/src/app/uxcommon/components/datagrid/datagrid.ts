@@ -36,6 +36,15 @@ import { confirmDeleteAndRun, doExportCsv } from './datagrid.actions';
 import { navigateIfValid, viewIfAllowed } from './datagrid.nav';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { createPayload } from './datagrid.utils';
+import {
+  buildFilterModel as _buildFilterModel,
+  getFilterOptionsForCol as _getFilterOptionsForCol,
+  getFilterArray as _getFilterArray,
+  getFilterValue as _getFilterValue,
+  inlineFilterLabel as _inlineFilterLabel,
+  preparePanelFilters,
+} from './datagrid-filters';
+import { computeAutoSizeWidth, computePinOffsets, measureHeaderWidths } from './datagrid-columns';
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
@@ -85,19 +94,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateHeaderWidths = () => {
     const table = this.gridTable?.nativeElement;
     if (!table) return;
-    // Measure selection column width
-    const sel = table.querySelector('thead th.selection-col') as HTMLElement | null;
-    if (sel) {
-      const srect = sel.getBoundingClientRect();
-      if (srect.width > 0) this.selectionStickyWidth.set(Math.round(srect.width));
-    }
-    const nodes = table.querySelectorAll('thead th[data-col-id]');
-    nodes.forEach((el) => {
-      const id = (el as HTMLElement).getAttribute('data-col-id') || '';
-      if (!id) return;
-      const rect = (el as HTMLElement).getBoundingClientRect();
-      if (rect.width > 0) this.headerWidthMap.set(id, rect.width);
-    });
+    const measured = measureHeaderWidths(table);
+    if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
+    this.headerWidthMap = measured.headerMap;
     this.updatePinOffsets();
   };
   private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
@@ -443,15 +442,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!id) return;
     const table = this.gridTable?.nativeElement;
     if (!table) return;
-    let max = 0;
-    const head = table.querySelector(`thead th[data-col-id="${id}"]`) as HTMLElement | null;
-    if (head) max = Math.max(max, head.scrollWidth + 16);
-    const cells = table.querySelectorAll(`tbody td[data-col-id="${id}"]`);
-    cells.forEach((el) => {
-      const w = (el as HTMLElement).scrollWidth + 16;
-      if (w > max) max = w;
-    });
-    if (max > 0) this.setColWidth(id, max);
+    const px = computeAutoSizeWidth(table, id);
+    if (px > 0) this.setColWidth(id, px);
     this.saveState();
   }
 
@@ -470,22 +462,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Build a compact filter model from current UI filter values
   protected buildFilterModel(): Record<string, any> {
-    const raw = this.filterValues();
-    const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(raw)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v === 'object' && v && 'value' in (v as any)) {
-        const op = ((v as any).op as any) ?? 'contains';
-        const sv = String((v as any).value ?? '').trim();
-        if (!sv) continue;
-        out[k] = { type: 'text', op, value: sv };
-      } else {
-        const sv = String(v).trim();
-        if (!sv) continue;
-        out[k] = { type: 'text', op: 'contains', value: sv };
-      }
-    }
-    return out;
+    return _buildFilterModel(this.filterValues());
   }
 
   protected callCellRenderer(row: any, col: ColDef): string {
@@ -632,13 +609,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected filter() {
     // Open right-side filter panel and seed with current filters
     const current = this.filterValues();
-    const panel: Record<string, { op: 'contains' | 'equals'; value: any }> = {};
-    for (const [k, v] of Object.entries(current)) {
-      const entry = v as any;
-      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry) panel[k] = entry;
-      else panel[k] = { op: 'contains', value: v };
-    }
-    this.panelFilters.set(panel);
+    this.panelFilters.set(preparePanelFilters(current));
     this.showFilterPanel.set(true);
   }
 
@@ -679,30 +650,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected getFilterArray(field: string): string[] {
-    const fv: any = this.filterValues()[field];
-    if (fv && typeof fv === 'object' && Array.isArray(fv.value)) return fv.value as string[];
-    const single = this.getFilterValue(field);
-    return single ? [single] : [];
+    return _getFilterArray(this.filterValues(), field);
   }
 
   // Helper to derive filter select options from a column definition
   protected getFilterOptionsForCol(col: ColDef): string[] | null {
-    const cep: any = (col as any)?.cellEditorParams;
-    let cfg: any = null;
-    if (!cep) return null;
-    try {
-      cfg = typeof cep === 'function' ? cep() : cep;
-    } catch {
-      cfg = null;
-    }
-    const vals = cfg?.values;
-    return Array.isArray(vals) && vals.length ? (vals as string[]) : null;
+    return _getFilterOptionsForCol(col);
   }
 
   protected getFilterValue(field: string): string {
-    const fv: any = this.filterValues()[field];
-    if (fv && typeof fv === 'object' && 'value' in fv) return String(fv.value ?? '');
-    return fv ? String(fv) : '';
+    return _getFilterValue(this.filterValues(), field);
   }
 
   /** Bridge for column-level double-click handlers */
@@ -774,10 +731,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Inline filter row helpers for multi-select label
   protected inlineFilterLabel(field: string): string {
-    const arr = this.getFilterArray(field);
-    if (!arr.length) return 'All';
-    if (arr.length === 1) return arr[0];
-    return `${arr.length} selected`;
+    return _inlineFilterLabel(this.filterValues(), field);
   }
 
   protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' {
@@ -1563,24 +1517,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updatePinOffsets() {
     const tbl: any = this.tsTable;
     const pin = tbl?.getState?.().columnPinning || { left: [], right: [] };
-    const leftIds: string[] = Array.isArray(pin.left) ? pin.left : [];
-    const rightIds: string[] = Array.isArray(pin.right) ? pin.right : [];
-
-    const left: Record<string, number> = {};
-    let acc = this.selectionStickyWidth();
-    for (const id of leftIds) {
-      const w = this.getColWidth(id) || this.headerWidthMap.get(id) || 0;
-      left[id] = acc;
-      acc += w;
-    }
-    const right: Record<string, number> = {};
-    let racc = 0;
-    for (let i = rightIds.length - 1; i >= 0; i--) {
-      const id = rightIds[i];
-      const w = this.getColWidth(id) || this.headerWidthMap.get(id) || 0;
-      right[id] = racc;
-      racc += w;
-    }
+    const { left, right } = computePinOffsets({
+      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
+      getColWidth: (id) => this.getColWidth(id),
+      headerWidthMap: this.headerWidthMap,
+      selectionStickyWidth: this.selectionStickyWidth(),
+    });
     this.pinnedLeftOffsets.set(left);
     this.pinnedRightOffsets.set(right);
   }
