@@ -63,6 +63,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected mergedGridOptions: any = {};
   protected pageIndex = signal(0);
   protected selectedIdSet = signal<Set<string>>(new Set());
+  protected showFilters = signal(false);
+  protected filterValues = signal<Record<string, any>>({});
 
   // Table state (TanStack-like minimal state)
   protected rows = signal<Partial<T>[]>([]);
@@ -162,7 +164,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Expose current grid filters/sort to build a definition */
   public getDefinition(): getAllOptionsType {
-    return { filterModel: {} } as getAllOptionsType;
+    return {
+      searchStr: this.searchSvc.getFilterText(),
+      sortModel: this.sorting().map((s: any) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
+      filterModel: this.buildFilterModel(),
+      tags: this.limitToTags(),
+    } as getAllOptionsType;
   }
 
   /** Utility: returns selected rows from grid */
@@ -367,7 +374,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected filter() {
-    // No side panel in TanStack swap (no-op for now)
+    // Toggle a simple inline filters row
+    this.showFilters.set(!this.showFilters());
   }
 
   // Helpers for template-safe access to dynamic fields/formatters/renderers
@@ -378,6 +386,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected hasValueFormatter(col: ColDef): boolean {
     return typeof (col as any)?.valueFormatter === 'function';
+  }
+
+  // Helper to derive filter select options from a column definition
+  protected getFilterOptionsForCol(col: ColDef): string[] | null {
+    const cep: any = (col as any)?.cellEditorParams;
+    let cfg: any = null;
+    if (!cep) return null;
+    try {
+      cfg = typeof cep === 'function' ? cep() : cep;
+    } catch {
+      cfg = null;
+    }
+    const vals = cfg?.values;
+    return Array.isArray(vals) && vals.length ? (vals as string[]) : null;
   }
 
   /** Number of rows displayed on the current page */
@@ -602,6 +624,7 @@ protected bottomPadHeight(): number {
         startRow,
         endRow,
         tags: this.limitToTags(),
+        filterModel: this.buildFilterModel(),
         sortModel: (sortState && (sortState as any[]).length)
           ? (sortState as any[]).map((s: any) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
           : (this.sortCol() && this.sortDir())
@@ -642,6 +665,28 @@ protected bottomPadHeight(): number {
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
     return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
+  }
+
+  // Build a compact filter model from current UI filter values
+  protected buildFilterModel(): Record<string, any> {
+    const raw = this.filterValues();
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === undefined || v === null) continue;
+      const sv = String(v).trim();
+      if (!sv) continue;
+      out[k] = { type: 'text', op: 'contains', value: sv };
+    }
+    return out;
+  }
+
+  // Handle filter input changes
+  protected onFilterInput(field: string, value: any) {
+    const next = { ...this.filterValues() };
+    if (value === undefined || value === null || String(value).trim() === '') delete next[field];
+    else next[field] = value;
+    this.filterValues.set(next);
+    this.loadPage(0);
   }
 
   protected headerClick(col: ColDef, ev?: MouseEvent) {

@@ -29,6 +29,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
     const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
     const text = searchStr ? `%${searchStr}%` : undefined;
     // Extract priority sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
@@ -39,9 +40,60 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
 
-    const joinAssign = !!ass || !!text;
-    const joinCreator = !!text;
-    return this.getSelectWithColumns(rest)
+    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
+    const hasCreatedFilter = !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const joinAssign = !!ass || !!text || hasAssignedFilter;
+    const joinCreator = !!text || hasCreatedFilter;
+    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
+      qb
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['status']?.value, (q) => {
+          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
+          return q.where('tasks.status', '=', sv as any);
+        })
+        .$if(!!filterModel?.['priority']?.value, (q) => {
+          const pv = String(filterModel['priority'].value).trim().toLowerCase();
+          return q.where('tasks.priority', '=', pv as any);
+        })
+        .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
+        .$if(!!hasAssignedFilter, (q) => {
+          const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const low = val.toLowerCase();
+          const isNull = low === 'not assigned' || low === 'unassigned';
+          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.assigned_to = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+        .$if(!!hasCreatedFilter, (q) => {
+          const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.createdby_id = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+    return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
       .$if(joinCreator, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
       .where('tasks.tenant_id', '=', tenant_id as any)
@@ -76,6 +128,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   public async getAllArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
     const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
     const text = searchStr ? `%${searchStr}%` : undefined;
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
@@ -84,9 +137,60 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
 
-    const joinAssign2 = !!ass || !!text;
-    const joinCreator2 = !!text;
-    const rows = await this.getSelectWithColumns(rest)
+    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
+    const hasCreatedFilter = !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const joinAssign2 = !!ass || !!text || hasAssignedFilter;
+    const joinCreator2 = !!text || hasCreatedFilter;
+    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
+      qb
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['status']?.value, (q) => {
+          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
+          return q.where('tasks.status', '=', sv as any);
+        })
+        .$if(!!filterModel?.['priority']?.value, (q) => {
+          const pv = String(filterModel['priority'].value).trim().toLowerCase();
+          return q.where('tasks.priority', '=', pv as any);
+        })
+        .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
+        .$if(!!hasAssignedFilter, (q) => {
+          const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const low = val.toLowerCase();
+          const isNull = low === 'not assigned' || low === 'unassigned';
+          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.assigned_to = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+        .$if(!!hasCreatedFilter, (q) => {
+          const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.createdby_id = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+    const rows = await applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign2, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
       .$if(joinCreator2, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
       .select(() => [sql<number>`count(*) over()`.as('total')])
@@ -124,6 +228,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   public async getAllExcludingArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
     const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
     const text = searchStr ? `%${searchStr}%` : undefined;
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
@@ -131,9 +236,60 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       ...(options || {}),
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
-    const joinAssign3 = !!ass || !!text;
-    const joinCreator3 = !!text;
-    return this.getSelectWithColumns(rest)
+    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
+    const hasCreatedFilter = !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const joinAssign3 = !!ass || !!text || hasAssignedFilter;
+    const joinCreator3 = !!text || hasCreatedFilter;
+    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
+      qb
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['status']?.value, (q) => {
+          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
+          return q.where('tasks.status', '=', sv as any);
+        })
+        .$if(!!filterModel?.['priority']?.value, (q) => {
+          const pv = String(filterModel['priority'].value).trim().toLowerCase();
+          return q.where('tasks.priority', '=', pv as any);
+        })
+        .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
+        .$if(!!hasAssignedFilter, (q) => {
+          const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const low = val.toLowerCase();
+          const isNull = low === 'not assigned' || low === 'unassigned';
+          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.assigned_to = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+        .$if(!!hasCreatedFilter, (q) => {
+          const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.createdby_id = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+    return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign3, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
       .$if(joinCreator3, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
       .where('tasks.tenant_id', '=', tenant_id as any)
@@ -166,6 +322,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   public async getAllExcludingArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
     const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
     const text = searchStr ? `%${searchStr}%` : undefined;
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
@@ -173,9 +330,60 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       ...(options || {}),
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
-    const joinAssign4 = !!ass || !!text;
-    const joinCreator4 = !!text;
-    const rows = await this.getSelectWithColumns(rest)
+    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
+    const hasCreatedFilter = !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const joinAssign4 = !!ass || !!text || hasAssignedFilter;
+    const joinCreator4 = !!text || hasCreatedFilter;
+    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
+      qb
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['status']?.value, (q) => {
+          const sv = String(filterModel['status'].value).trim().toLowerCase().replace(/\s+/g, '_');
+          return q.where('tasks.status', '=', sv as any);
+        })
+        .$if(!!filterModel?.['priority']?.value, (q) => {
+          const pv = String(filterModel['priority'].value).trim().toLowerCase();
+          return q.where('tasks.priority', '=', pv as any);
+        })
+        .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
+        .$if(!!hasAssignedFilter, (q) => {
+          const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const low = val.toLowerCase();
+          const isNull = low === 'not assigned' || low === 'unassigned';
+          if (isNull) return q.where(sql`tasks.assigned_to IS NULL` as any);
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.assigned_to = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+        .$if(!!hasCreatedFilter, (q) => {
+          const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                tasks.createdby_id = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+    const rows = await applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign4, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
       .$if(joinCreator4, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
       .select(() => [sql<number>`count(*) over()`.as('total')])
