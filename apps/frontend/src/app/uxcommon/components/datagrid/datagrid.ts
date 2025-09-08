@@ -749,6 +749,7 @@ protected bottomPadHeight(): number {
   private headerWidthMap = new Map<string, number>();
   private pinnedLeftOffsets = signal<Record<string, number>>({});
   private pinnedRightOffsets = signal<Record<string, number>>({});
+  private selectionStickyWidth = signal<number>(48);
 
   protected leftOffsetPx(colId: string): number {
     return this.pinnedLeftOffsets()[colId] || 0;
@@ -761,6 +762,12 @@ protected bottomPadHeight(): number {
   private updateHeaderWidths = () => {
     const table = this.gridTable?.nativeElement;
     if (!table) return;
+    // Measure selection column width
+    const sel = table.querySelector('thead th.selection-col') as HTMLElement | null;
+    if (sel) {
+      const srect = sel.getBoundingClientRect();
+      if (srect.width > 0) this.selectionStickyWidth.set(Math.round(srect.width));
+    }
     const nodes = table.querySelectorAll('thead th[data-col-id]');
     nodes.forEach((el) => {
       const id = (el as HTMLElement).getAttribute('data-col-id') || '';
@@ -778,7 +785,7 @@ protected bottomPadHeight(): number {
     const rightIds: string[] = Array.isArray(pin.right) ? pin.right : [];
 
     const left: Record<string, number> = {};
-    let acc = 0;
+    let acc = this.selectionStickyWidth();
     for (const id of leftIds) {
       const w = this.getColWidth(id) || this.headerWidthMap.get(id) || 0;
       left[id] = acc;
@@ -807,6 +814,25 @@ protected bottomPadHeight(): number {
     ev.stopPropagation();
     const handler = h?.column?.getResizeHandler?.();
     if (typeof handler === 'function') handler(ev as any);
+  }
+
+  protected onHeaderResizeDblClick(h: any, ev: MouseEvent) {
+    ev.stopPropagation();
+    this.autoSizeColumn(h);
+  }
+
+  protected resetColWidth(h: any) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const sizing = { ...((this.tsTable!.getState() as any).columnSizing || {}) };
+    if (id in sizing) delete sizing[id];
+    this.colWidths.update((m) => {
+      const next = { ...(m || {}) };
+      delete next[id!];
+      return next;
+    });
+    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+    queueMicrotask(() => this.updatePinOffsets());
   }
 
   // Column visibility bulk actions

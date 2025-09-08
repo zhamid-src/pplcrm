@@ -81,7 +81,7 @@
       <thead class="sticky top-0 bg-base-100 z-10">
         <tr>
           @if (enableSelection()) {
-          <th class="w-12">
+          <th class="w-12 selection-col sticky left-0 z-30 bg-base-100">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -156,6 +156,7 @@
                       <summary>Size</summary>
                       <ul>
                         <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
+                        <li><a (click)="resetColWidth(h)">Reset width</a></li>
                       </ul>
                     </details>
                   </li>
@@ -172,7 +173,8 @@
             </div>
             <span class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none"
               (mousedown)="onHeaderResizeMouseDown(h, $event)"
-              (touchstart)="onHeaderResizeTouchStart(h, $event)"></span>
+              (touchstart)="onHeaderResizeTouchStart(h, $event)"
+              (dblclick)="onHeaderResizeDblClick(h, $event)"></span>
           </th>
           }
           }
@@ -220,7 +222,7 @@
         @for (r of visibleTableRows(); track r.id) {
         <tr (mouseover)="onCellMouseOver(r.original)">
           @if (enableSelection()) {
-          <td>
+          <td class="sticky left-0 z-20 bg-base-100">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
