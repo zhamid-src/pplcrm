@@ -39,7 +39,6 @@ import { createPayload } from './datagrid.utils';
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
-//import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
@@ -79,12 +78,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private pinnedLeftOffsets = signal<Record<string, number>>({});
   private pinnedRightOffsets = signal<Record<string, number>>({});
 
-  // Optional cache placeholder (for future true windowing)
-  // Exists to satisfy references when updating edited rows
-  private rowCache: Map<number, any> | undefined;
+  // Optional cache placeholder removed (unused in current implementation)
   @ViewChild('scroller', { static: false }) private scroller?: ElementRef<HTMLDivElement>;
   private tsColumns: TSColumnDef<any, any>[] = [];
-  private tsTable: ReturnType<typeof createTable> | undefined;
+  private tsTable: any;
   private updateHeaderWidths = () => {
     const table = this.gridTable?.nativeElement;
     if (!table) return;
@@ -108,7 +105,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
   protected readonly countRowSelected = signal(0);
-  protected readonly distinctTags: string[] = [];
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
 
   // State & UI Signals
@@ -197,7 +193,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       _loading: this._loading,
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
-      api: undefined as any,
       getSelectedRows: () => this.getSelectedRows(),
       gridSvc: this.gridSvc,
       rowModelType: 'serverSide',
@@ -292,11 +287,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         enableResizing: true,
       })) as TSColumnDef<any, any>[];
     this.tsTable = createTable({
-      data: this.rows() as any[],
+      data: this.rows(),
       columns: this.tsColumns,
       getCoreRowModel: getCoreRowModel(),
       getRowId: (row: any) => this.toId(row),
-      enableColumnResizing: true as any,
+      // not in the formal type, supported by our usage
+      enableColumnResizing: true as unknown as boolean,
       state: {
         sorting: this.sorting(),
         columnVisibility: this.colVisibility(),
@@ -308,21 +304,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       initialState: {
         columnPinning: { left: [], right: [] },
         columnSizing: {},
-      } as any,
+      } as unknown as any,
       onStateChange: () => this.syncSignalsFromTable(),
-      renderFallbackValue: null as any,
+      renderFallbackValue: null as unknown,
       onSortingChange: (updater: Updater<SortingState>) => {
-        const next =
-          typeof updater === 'function' ? updater(this.tsTable!.getState().sorting) : (updater as SortingState);
+        const next = typeof updater === 'function' ? updater(this.tsTable!.getState().sorting) : updater;
         this.sorting.set(next);
-        const first = (next as any[])?.[0];
+        const first = next?.[0];
         this.sortCol.set(first?.id ?? null);
         this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
         this.loadPage(0);
         this.saveState();
       },
       onRowSelectionChange: (updater: Updater<any>) => {
-        const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
+    const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
         const next: any = typeof updater === 'function' ? updater(current) : updater;
         const set = new Set(this.selectedIdSet());
         for (const row of this.rows()) {
@@ -390,10 +385,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.view(id);
   }
 
-  /** Ensure visible rows are selected if part of global selection */
-  public reapplySelectionToVisible() {
-    // selection handled via signals
-  }
+  // reapplySelectionToVisible removed (selection handled via signals)
 
   /** Cancels the fetch call and hides loader. */
   public sendAbort() {
@@ -559,7 +551,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Fallback: remove from sorting state
     const id = this.getFieldFromHeader(h);
     if (!id) return;
-    const next = (this.sorting() as any[]).filter((s) => s.id !== id);
+    const next = this.sorting().filter((s) => s.id !== id);
     this.sorting.set(next);
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: next } }));
     this.loadPage(0);
@@ -609,10 +601,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected async confirmExport(): Promise<void> {
     await doExportCsv({
       dialogs: this.dialogs,
-      api: undefined as any,
       alertSvc: this.alertSvc,
       config: this.config,
-      getRowsForExport: () => this.rows().map((r) => ({ ...r }) as any),
+      getRowsForExport: () => this.rows().map((r) => ({ ...r })),
     });
   }
 
@@ -636,18 +627,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Math.min(this.rows().length, this.startIndex() + this.visibleCount());
   }
 
-  /** Actually performs export via AG Grid. */
-  protected exportToCSV() {
-    // Delegated to confirmExport -> doExportCsv
-  }
+  // exportToCSV removed (legacy AG Grid path)
 
   protected filter() {
     // Open right-side filter panel and seed with current filters
     const current = this.filterValues();
     const panel: Record<string, { op: 'contains' | 'equals'; value: any }> = {};
     for (const [k, v] of Object.entries(current)) {
-      if (v && typeof v === 'object' && 'op' in (v as any) && 'value' in (v as any)) panel[k] = v as any;
-      else panel[k] = { op: 'contains', value: v } as any;
+      const entry = v as any;
+      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry) panel[k] = entry;
+      else panel[k] = { op: 'contains', value: v };
     }
     this.panelFilters.set(panel);
     this.showFilterPanel.set(true);
@@ -673,7 +662,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected getColWidth(id: string): number | null {
-    const col = (this.tsTable as any)?.getColumn?.(id);
+    const col = this.tsTable?.getColumn?.(id);
     const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
     if (size && size > 0) return size;
     return this.colWidths()[id] ?? null;
@@ -741,17 +730,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!this.isSortable(col) || !col.field) return;
     const id = col.field as string;
     const multi = !!ev?.shiftKey;
-    const colObj = (this.tsTable as any)?.getColumn?.(id);
+    const colObj = this.tsTable?.getColumn?.(id);
     if (colObj?.toggleSorting) {
       colObj.toggleSorting(undefined, multi);
       return;
     }
     // Fallback: minimal multi-sort
     const current = [...this.sorting()];
-    let next = multi ? current : [];
+    let next: SortingState = multi ? current : [];
     const idx = next.findIndex((s) => s.id === id);
-    if (idx === -1) next.push({ id, desc: false } as any);
-    else if (!next[idx].desc) next[idx] = { id, desc: true } as any;
+    if (idx === -1) next.push({ id, desc: false });
+    else if (!next[idx].desc) next[idx] = { id, desc: true };
     else next.splice(idx, 1);
     this.sorting.set(next);
     this.loadPage(0);
@@ -916,7 +905,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected onHeaderCheckbox(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
-    const api: any = this.tsTable as any;
+    const api: any = this.tsTable;
     if (typeof api?.toggleAllRowsSelected === 'function') api.toggleAllRowsSelected(checked);
   }
 
@@ -965,7 +954,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const v = String(value ?? '').trim();
     const next = { ...this.filterValues() };
     if (!v) delete next[field];
-    else next[field] = { op: 'contains', value: v } as any;
+    else next[field] = { op: 'contains', value: v };
     this.filterValues.set(next);
     this.loadPage(0);
     this.saveState();
@@ -1097,12 +1086,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     let nextArr: string[] = current.slice();
     if (checked && !nextArr.includes(option)) nextArr.push(option);
     if (!checked) nextArr = nextArr.filter((o) => o !== option);
-    const next = { ...this.filterValues() } as any;
+    const next: Record<string, any> = { ...this.filterValues() };
     if (nextArr.length === 0) delete next[field];
     else next[field] = { op: 'in', value: nextArr };
     this.filterValues.set(next);
     this.loadPage(0);
-    this.saveState?.();
+    this.saveState();
   }
 
   /** Called when row is double-clicked. */
@@ -1197,8 +1186,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.allSelected.set(ids.length > 0);
       this.isRowSelected.set(ids.length > 0);
       this.countRowSelected.set(this.allSelectedCount);
-      // Reflect selection in the grid for currently rendered rows
-      this.reapplySelectionToVisible();
       this.alertSvc.showInfo(`Selected ${this.allSelectedCount} row(s)`);
     } catch (e) {
       this.alertSvc.showError('Failed to select all rows');
@@ -1275,11 +1262,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Row selection helpers (TanStack-driven)
   protected tableAllPageSelected(): boolean {
-    return !!(this.tsTable as any)?.getIsAllPageRowsSelected?.();
+    return !!this.tsTable?.getIsAllPageRowsSelected?.();
   }
 
   protected tableSomePageSelected(): boolean {
-    return !!(this.tsTable as any)?.getIsSomePageRowsSelected?.();
+    return !!this.tsTable?.getIsSomePageRowsSelected?.();
   }
 
   protected toId(row: any): string {
@@ -1440,15 +1427,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         tags: this.limitToTags(),
         filterModel: this.buildFilterModel(),
         sortModel:
-          sortState && (sortState as any[]).length
-            ? (sortState as any[]).map((s: any) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
+          sortState && sortState.length
+            ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
             : this.sortCol() && this.sortDir()
               ? [{ colId: this.sortCol(), sort: this.sortDir() }]
               : [],
       } as Partial<getAllOptionsType>;
       const data = this.archiveMode()
         ? await (this.gridSvc as any).getAllArchived(options)
-        : await this.gridSvc.getAll(options as any);
+        : await this.gridSvc.getAll(options as getAllOptionsType);
       const incoming = (data.rows as Partial<T>[]) ?? [];
       if (append && this.rows().length > 0) {
         this.rows.update((curr) => [...curr, ...incoming]);
@@ -1465,7 +1452,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       if (this.tsTable) {
         this.tsTable.setOptions((prev: any) => ({
           ...prev,
-          data: this.rows() as any[],
+          data: this.rows(),
           state: {
             ...prev.state,
             rowSelection: this.buildRowSelectionForCurrentData(),
@@ -1571,17 +1558,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!field) return;
     // Update visible rows array
     this.rows.update((curr) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any);
-    // Update sparse cache
-    try {
-      const cache = this.rowCache;
-      if (cache) {
-        const keys = Array.from(cache.keys());
-        for (const k of keys) {
-          const r = cache.get(k);
-          if (r && String(r.id) === id) cache.set(k, { ...r, [field]: value });
-        }
-      }
-    } catch {}
   }
 
   private updatePinOffsets() {
