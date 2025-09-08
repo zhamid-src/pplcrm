@@ -106,7 +106,7 @@
             @if (h?.isPlaceholder) {
             <th [attr.colspan]="h.colSpan"></th>
             } @else {
-            <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none relative overflow-hidden min-w-0"
+            <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none relative overflow-visible min-w-0"
                 draggable="true"
                 (dragstart)="onHeaderDragStart(h, $event)"
                 (dragover)="onHeaderDragOver(h, $event)"
@@ -120,14 +120,15 @@
                 [style.zIndex]="pinState(h) !== false ? 20 : 40"
                 [style.width.px]="getColWidth(h.column.id) || null"
                 [attr.data-col-id]="h.column.id">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 pr-10">
                 <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
                 <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
-                <div class="ml-auto dropdown dropdown-end" (click)="$event.stopPropagation()">
-                  <label tabindex="0" class="btn btn-ghost btn-xs" title="Column options">
+                <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
+                <div tabindex="0" class="ml-auto mr-4 dropdown dropdown-end relative z-[100]" (click)="$event.stopPropagation()">
+                  <label tabindex="0" class="btn btn-ghost btn-xs pointer-events-auto" title="Column options" (click)="$event.stopPropagation()">
                     <pc-icon name="ellipsis-vertical"></pc-icon>
                   </label>
-                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[30] w-60 p-2 shadow">
+                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 mt-1 shadow right-0">
                     @let col = getColDefById(h.column.id);
                     <li>
                       <details>
@@ -180,22 +181,35 @@
                         </ul>
                       </details>
                     </li>
-                    <li>
-                      <details>
-                        <summary>Column</summary>
-                        <ul>
-                          <li><a (click)="hideColumn(h)">Hide</a></li>
-                        </ul>
-                      </details>
-                    </li>
+                  <li>
+                    <details>
+                      <summary>Column</summary>
+                      <ul>
+                        <li><a (click)="hideColumn(h)">Hide</a></li>
+                        <li>
+                          <details>
+                            <summary>Columns</summary>
+                            <ul>
+                              @for (cid of hiddenColumns(); track cid) {
+                                <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                              }
+                              @if (!hiddenColumns().length) {
+                                <li class="opacity-60 px-2 py-1">None hidden</li>
+                              }
+                            </ul>
+                          </details>
+                        </li>
+                      </ul>
+                    </details>
+                  </li>
                   </ul>
                 </div>
               </div>
               @if (i === groups.length - 1) {
               <!-- Always-visible visual divider -->
-              <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[35]"></span>
-              <!-- Interactive resizer handle -->
-              <span class="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none z-50 hover:bg-base-300/50"
+              <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
+              <!-- Interactive resizer handle (kept narrow) -->
+              <span class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
                 (mousedown)="onHeaderResizeMouseDown(h, $event)"
                 (touchstart)="onHeaderResizeTouchStart(h, $event)"
                 (dblclick)="onHeaderResizeDblClick(h, $event)"
