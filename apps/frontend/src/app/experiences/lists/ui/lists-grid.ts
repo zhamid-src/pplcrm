@@ -30,7 +30,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
     { field: 'id', headerName: 'ID' },
     { field: 'name', headerName: 'List Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
-    { field: 'object', headerName: 'Type' },
+    { field: 'object', headerName: 'Type', cellEditorParams: { values: ['people', 'households'] } },
     {
       field: 'list_size',
       headerName: 'List Size',

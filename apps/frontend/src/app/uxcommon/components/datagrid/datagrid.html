@@ -25,7 +25,7 @@
       icon="arrow-down-tray"
       (action)="confirmExport()"
     />
-    <pc-grid-action icon="funnel" tip="Filter the grid" (action)="filter()" />
+    <pc-grid-action icon="funnel" tip="Filter the grid" [active]="showFilters()" (action)="filter()" />
     <li class="dropdown dropdown-end">
       <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">
         <pc-icon name="view-column"></pc-icon>
@@ -92,6 +92,37 @@
           </th>
           } }
         </tr>
+        @if (showFilters()) {
+        <tr>
+          @if (enableSelection()) {<th class="w-12"></th>}
+          @for (col of colDefsWithEdit; track col.field) {
+            @if (col.field && isColVisible(col)) {
+            <th>
+              @if (getFilterOptionsForCol(col)?.length) {
+              <select
+                class="select select-bordered select-xs w-full"
+                [value]="filterValues()[col.field!] || ''"
+                (change)="onFilterInput(col.field!, $any($event.target).value)"
+              >
+                <option value="">All</option>
+                @for (opt of getFilterOptionsForCol(col)!; track opt) {
+                <option [value]="opt">{{ opt }}</option>
+                }
+              </select>
+              } @else {
+              <input
+                type="text"
+                class="input input-bordered input-xs w-full"
+                placeholder="Filter..."
+                [value]="$any(filterValues())[col.field!] || ''"
+                (input)="onFilterInput(col.field!, $any($event.target).value)"
+              />
+              }
+            </th>
+            }
+          }
+        </tr>
+        }
       </thead>
       <tbody>
         <!-- top spacer -->

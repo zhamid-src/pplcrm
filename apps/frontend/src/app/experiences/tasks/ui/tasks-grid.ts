@@ -79,6 +79,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       headerName: 'Created By',
       editable: false,
       valueFormatter: (p: any) => this.userNameForId(p.value),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
     },
   ];
   protected isArchiveMode = signal(false);

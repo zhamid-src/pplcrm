@@ -66,6 +66,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     // Pagination defaults
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
@@ -85,6 +86,17 @@ export class TagsRepo extends BaseRepository<'tags'> {
             LOWER(tags.description) LIKE ${text}
           )` as any,
           );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('tags.description', 'ilike', `%${filterModel['description'].value}%`),
+        )
+        .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
+          const raw = (filterModel['deletable']?.value ?? filterModel['deletable']) as any;
+          const v = String(raw || '').trim().toLowerCase();
+          if (v === 'true' || v === '1' || v === 'yes') return q.where('tags.deletable', '=', true);
+          if (v === 'false' || v === '0' || v === 'no') return q.where('tags.deletable', '=', false);
+          return q;
         });
 
     // Count query (with filters/search)

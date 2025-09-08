@@ -28,6 +28,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
@@ -49,7 +50,39 @@ export class ListsRepo extends BaseRepository<'lists'> {
               LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
             )` as any,
           );
-        });
+        })
+        // Column filters
+        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
+        )
+        .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
+          const raw = (filterModel['object']?.value ?? filterModel['object']) as any;
+          const v = String(raw || '').trim().toLowerCase();
+          if (!v) return q;
+          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as any);
+          return q.where('lists.object', '=', v as any);
+        })
+        .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
+          const raw = (filterModel['created_by']?.value ?? filterModel['created_by']) as any;
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql`(
+                COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
+                lists.createdby_id = ${Number(val)}
+              )` as any,
+            );
+          }
+          return q.where(
+            sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+          );
+        })
+        .$if(!!filterModel['updated_at']?.value, (q) =>
+          q.where(sql`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}` as any),
+        );
 
     const countResult = await applyFilters(this.getSelect(trx))
       .select(({ fn }) => [fn.count(sql`DISTINCT lists.id`).as('total')])

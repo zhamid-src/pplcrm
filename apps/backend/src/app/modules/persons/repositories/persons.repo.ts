@@ -89,6 +89,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
     const tags = input.tags;
+    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
@@ -111,7 +112,26 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             LOWER(tags.name) LIKE ${text}
           )` as any,
           );
-        });
+        })
+        // Column filters (contains semantics)
+        .$if(!!filterModel['first_name']?.value, (q) =>
+          q.where('persons.first_name', 'ilike', `%${filterModel['first_name'].value}%`),
+        )
+        .$if(!!filterModel['last_name']?.value, (q) =>
+          q.where('persons.last_name', 'ilike', `%${filterModel['last_name'].value}%`),
+        )
+        .$if(!!filterModel['email']?.value, (q) => q.where('persons.email', 'ilike', `%${filterModel['email'].value}%`))
+        .$if(!!filterModel['mobile']?.value, (q) => q.where('persons.mobile', 'ilike', `%${filterModel['mobile'].value}%`))
+        .$if(!!filterModel['city']?.value, (q) => q.where('households.city', 'ilike', `%${filterModel['city'].value}%`))
+        .$if(!!filterModel['state']?.value, (q) => q.where('households.state', 'ilike', `%${filterModel['state'].value}%`))
+        .$if(!!filterModel['street1']?.value, (q) =>
+          q.where('households.street1', 'ilike', `%${filterModel['street1'].value}%`),
+        )
+        .$if(!!filterModel['street_num']?.value, (q) =>
+          q.where(sql`CAST(households.street_num AS TEXT) ILIKE ${'%' + filterModel['street_num'].value + '%'}` as any),
+        )
+        .$if(!!filterModel['zip']?.value, (q) => q.where('households.zip', 'ilike', `%${filterModel['zip'].value}%`))
+        .$if(!!filterModel['tags']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['tags'].value}%`));
 
     // Count query
     const countResult = await applyFilters(this.getSelect(trx))
