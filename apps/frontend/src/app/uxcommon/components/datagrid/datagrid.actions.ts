@@ -71,7 +71,7 @@ export async function confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
 
 export async function doExportCsv(deps: {
   dialogs: ConfirmDialogService;
-  api: any;
+  api?: any;
   alertSvc: AlertService;
   config: DataGridConfig;
   getRowsForExport?: () => Array<Record<string, any>>;
