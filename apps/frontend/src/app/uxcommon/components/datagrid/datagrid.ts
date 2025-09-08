@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, AfterViewInit, ViewChild, ElementRef, effect, inject, input, output, signal } from "@angular/core";
+import { createTable, ColumnDef as TSColumnDef, getCoreRowModel, type SortingState, type Updater } from '@tanstack/table-core';
+import { Virtualizer, elementScroll, observeElementRect, observeElementOffset } from '@tanstack/virtual-core';
 import { ActivatedRoute, Router } from "@angular/router";
 import { getAllOptionsType } from "@common";
 import { Icon } from "@icons/icon";
@@ -66,10 +68,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected rows = signal<Partial<T>[]>([]);
   protected sortCol = signal<string | null>(null);
   protected sortDir = signal<'asc' | 'desc' | null>(null);
+  protected sorting = signal<SortingState>([]);
+  protected colVisibility = signal<Record<string, boolean>>({});
   protected totalCountAll = 0;
   protected rowHeight = 36;
   protected viewportH = signal(0);
   protected scrollTop = signal(0);
+  private tsTable: ReturnType<typeof createTable> | undefined;
+  private tsColumns: TSColumnDef<any, any>[] = [];
+  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -111,6 +118,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public ngAfterViewInit() {
     const el = this.scroller?.nativeElement;
     if (el) this.viewportH.set(el.clientHeight || 0);
+    if (el) {
+      this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
+        count: this.rows().length,
+        getScrollElement: () => el,
+        estimateSize: () => this.rowHeight,
+        overscan: 6,
+        // required observers + scroller for DOM elements
+        scrollToFn: elementScroll,
+        observeElementRect,
+        observeElementOffset,
+      });
+    }
   }
 
   /** Confirm and then delete selected rows */
@@ -165,6 +184,55 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     };
     const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
     this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
+    // Initialize column visibility defaults
+    const vis: Record<string, boolean> = {};
+    for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = true;
+    this.colVisibility.set(vis);
+    // Build TanStack columns
+    this.tsColumns = this.colDefsWithEdit
+      .filter((c) => !!c.field)
+      .map((c) => ({
+        id: c.field as string,
+        header: c.headerName || (c.field as string),
+        accessorFn: (row: any) => row?.[c.field as string],
+        enableSorting: true,
+      })) as TSColumnDef<any, any>[];
+    this.tsTable = createTable({
+      data: this.rows() as any[],
+      columns: this.tsColumns,
+      getCoreRowModel: getCoreRowModel(),
+      getRowId: (row: any) => this.toId(row),
+      state: {
+        sorting: this.sorting(),
+        columnVisibility: this.colVisibility(),
+        rowSelection: this.buildRowSelectionForCurrentData(),
+      },
+      onStateChange: () => {},
+      renderFallbackValue: null as any,
+      onSortingChange: (updater: Updater<SortingState>) => {
+        const next = typeof updater === 'function'
+          ? updater(this.tsTable!.getState().sorting)
+          : (updater as SortingState);
+        this.sorting.set(next);
+        const first = (next as any[])?.[0];
+        this.sortCol.set(first?.id ?? null);
+        this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
+        this.loadPage(0);
+      },
+      onRowSelectionChange: (updater: Updater<any>) => {
+        const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
+        const next: any = typeof updater === 'function' ? updater(current) : updater;
+        const set = new Set(this.selectedIdSet());
+        for (const row of this.rows()) {
+          const id = this.toId(row);
+          if (!id) continue;
+          if (next[id]) set.add(id);
+          else set.delete(id);
+        }
+        this.selectedIdSet.set(set);
+        this.onSelectionChanged();
+      },
+    });
     await this.loadPage(0);
   }
 
@@ -322,26 +390,43 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const el = event.target as HTMLElement;
     this.scrollTop.set(el.scrollTop || 0);
     this.viewportH.set(el.clientHeight || this.viewportH());
+    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
   }
 
   protected startIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items[0].index;
+    // Fallback before virtualizer initializes
     return Math.max(0, Math.floor((this.scrollTop() || 0) / this.rowHeight));
   }
 
   protected visibleCount(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items.length;
     const vp = this.viewportH() || 0;
-    return Math.max(1, Math.ceil(vp / this.rowHeight) + 5);
+    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
   }
 
   protected endIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items[items.length - 1].index + 1;
     return Math.min(this.rows().length, this.startIndex() + this.visibleCount());
   }
 
   protected topPadHeight(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items[0].start;
     return this.startIndex() * this.rowHeight;
   }
 
-  protected bottomPadHeight(): number {
+protected bottomPadHeight(): number {
+    const v = this.virtualizer;
+    if (v) {
+      const items = v.getVirtualItems();
+      const total = v.getTotalSize();
+      const renderedEnd = items.length ? items[items.length - 1].end : 0;
+      return Math.max(0, total - renderedEnd);
+    }
     const total = this.rows().length * this.rowHeight;
     const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
     return Math.max(0, total - rendered);
@@ -355,23 +440,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!(col as any)?.cellRenderer;
   }
 
-  protected headerClick(col: ColDef) {
-    if (!this.isSortable(col) || !col.field) return;
-    const currentCol = this.sortCol();
-    const currentDir = this.sortDir();
-    if (currentCol !== col.field) {
-      this.sortCol.set(col.field);
-      this.sortDir.set('asc');
-    } else {
-      // cycle asc -> desc -> none
-      if (currentDir === 'asc') this.sortDir.set('desc');
-      else if (currentDir === 'desc') {
-        this.sortCol.set(null);
-        this.sortDir.set(null);
-      } else this.sortDir.set('asc');
-    }
-    this.loadPage(0);
-  }
+  
 
   /** Whether the current page (displayed rows) is fully selected */
   protected isPageFullySelected(): boolean {
@@ -527,13 +596,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const pageSize = this.config.pageSize;
       const startRow = index * pageSize;
       const endRow = startRow + pageSize;
+      const sortState = this.sorting();
       const options: any = {
         searchStr: this.searchSvc.getFilterText(),
         startRow,
         endRow,
         tags: this.limitToTags(),
-        sortModel:
-          this.sortCol() && this.sortDir()
+        sortModel: (sortState && (sortState as any[]).length)
+          ? (sortState as any[]).map((s: any) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
+          : (this.sortCol() && this.sortDir())
             ? [{ colId: this.sortCol(), sort: this.sortDir() }]
             : [],
       } as Partial<getAllOptionsType>;
@@ -541,6 +612,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         ? await (this.gridSvc as any).getAllArchived(options)
         : await this.gridSvc.getAll(options as any);
       this.rows.set((data.rows as Partial<T>[]) ?? []);
+      // Update virtualizer and table data
+      if (this.virtualizer) {
+        this.virtualizer.setOptions({
+          ...this.virtualizer.options,
+          count: this.rows().length,
+        });
+      }
+      if (this.tsTable) {
+        this.tsTable.setOptions((prev: any) => ({
+          ...prev,
+          data: this.rows() as any[],
+          state: {
+            ...prev.state,
+            rowSelection: this.buildRowSelectionForCurrentData(),
+            sorting: this.sortCol() && this.sortDir() ? [{ id: this.sortCol()!, desc: this.sortDir() === 'desc' }] : [],
+          },
+        }));
+      }
       this.totalCountAll = data.count ?? this.rows().length;
       this.pageIndex.set(index);
     } catch (e) {
@@ -553,5 +642,54 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
     return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
+  }
+
+  protected headerClick(col: ColDef, ev?: MouseEvent) {
+    if (!this.isSortable(col) || !col.field) return;
+    const id = col.field as string;
+    const multi = !!ev?.shiftKey;
+    const colObj = (this.tsTable as any)?.getColumn?.(id);
+    if (colObj?.toggleSorting) {
+      colObj.toggleSorting(undefined, multi);
+      return;
+    }
+    // Fallback: minimal multi-sort
+    const current = [...this.sorting()];
+    let next = multi ? current : [];
+    const idx = next.findIndex((s) => s.id === id);
+    if (idx === -1) next.push({ id, desc: false } as any);
+    else if (!next[idx].desc) next[idx] = { id, desc: true } as any;
+    else next.splice(idx, 1);
+    this.sorting.set(next);
+    this.loadPage(0);
+  }
+
+  protected isColVisible(c: ColDef): boolean {
+    const v = this.colVisibility();
+    if (!c.field) return true;
+    return v[c.field] !== false;
+  }
+
+  protected toggleCol(field: string, checked: boolean) {
+    const v = { ...this.colVisibility() };
+    v[field] = checked;
+    this.colVisibility.set(v);
+    if (this.tsTable) {
+      this.tsTable.setOptions((prev: any) => ({
+        ...prev,
+        state: { ...prev.state, columnVisibility: v },
+      }));
+    }
+  }
+
+  // Build TanStack rowSelection snapshot for current data from our global selected set
+  private buildRowSelectionForCurrentData(): Record<string, boolean> {
+    const ids = this.selectedIdSet();
+    const map: Record<string, boolean> = {};
+    for (const r of this.rows()) {
+      const id = this.toId(r);
+      if (id && ids.has(id)) map[id] = true;
+    }
+    return map;
   }
 }

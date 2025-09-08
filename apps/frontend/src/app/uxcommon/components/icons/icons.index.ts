@@ -148,6 +148,7 @@ export const icons = {
   'user-group': 'assets/icons/user-group.svg',
   'user-plus': 'assets/icons/user-plus.svg',
   users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
   'view-kanban': 'assets/icons/view-kanban.svg',
   volunteer: 'assets/icons/volunteer.svg',
   'x-circle': 'assets/icons/x-circle.svg',

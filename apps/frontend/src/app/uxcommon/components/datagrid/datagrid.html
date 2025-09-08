@@ -5,11 +5,17 @@
     <pc-grid-action [enabled]="!disableRefresh()" [tip]="'Refresh the grid'" icon="arrow-path" (action)="refresh()" />
     <pc-grid-action [enabled]="!!undoMgr.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="undoMgr.undo()" />
     <pc-grid-action [enabled]="!!undoMgr.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="undoMgr.redo()" />
+    <pc-grid-action
+      [enabled]="!disableDelete() && isRowSelected()"
+      [tip]="'Deleted selected row(s)'"
+      icon="trash"
+      (action)="confirmDelete()"
+    />
     <pc-grid-action [enabled]="canMerge()" [tip]="'Merge'" icon="merge" (action)="merge()"></pc-grid-action>
     <pc-grid-action
       [enabled]="!disableImport()"
       [tip]="'Import data from CSV'"
-      icon="cloud-arrow-up"
+      icon="arrow-up-tray"
       (action)="doImportCSV()"
     />
 
@@ -19,13 +25,27 @@
       icon="arrow-down-tray"
       (action)="confirmExport()"
     />
-    <pc-grid-action
-      [enabled]="!disableDelete() && isRowSelected()"
-      [tip]="'Deleted selected row(s)'"
-      icon="trash"
-      (action)="confirmDelete()"
-    />
     <pc-grid-action icon="funnel" tip="Filter the grid" (action)="filter()" />
+    <li class="dropdown dropdown-end">
+      <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">
+        <pc-icon name="view-column"></pc-icon>
+      </label>
+      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow">
+        @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
+        <li>
+          <label class="label cursor-pointer justify-start gap-2">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="isColVisible(col)"
+              (change)="toggleCol(col.field!, $any($event.target).checked)"
+            />
+            <span class="label-text">{{ col.headerName || col.field }}</span>
+          </label>
+        </li>
+        } }
+      </ul>
+    </li>
     <pc-grid-action
       icon="archive-box"
       tip="See archived tasks"
@@ -65,8 +85,8 @@
               (change)="togglePageChecked($any($event.target).checked)"
             />
           </th>
-          } @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
-          <th (click)="headerClick(col)" class="cursor-pointer select-none">
+          } @for (col of colDefsWithEdit; track col.field) { @if (col.field && isColVisible(col)) {
+          <th (click)="headerClick(col, $event)" class="cursor-pointer select-none">
             {{ col.headerName || col.field }}
             <span class="ml-1 text-xs opacity-70">{{ sortIndicator(col) }}</span>
           </th>
@@ -76,7 +96,7 @@
       <tbody>
         <!-- top spacer -->
         <tr>
-          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding:0">
+          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding: 0">
             <div [style.height.px]="topPadHeight()"></div>
           </td>
         </tr>
@@ -91,14 +111,11 @@
               (change)="toggleRowChecked(toId(row), $any($event.target).checked)"
             />
           </td>
-          } @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
+          } @for (col of colDefsWithEdit; track col.field) { @if (col.field && isColVisible(col)) {
           <td (dblclick)="handleCellDblClick(row, col)">
             @if (hasCellRenderer(col)) {
             <span [innerHTML]="callCellRenderer(row, col)"></span>
-            } @else if (col.valueFormatter) {
-            {{ callValueFormatter(row, col) }}
-            } @else {
-            {{ getCellValue(row, col) }}
+            } @else if (col.valueFormatter) { {{ callValueFormatter(row, col) }} } @else { {{ getCellValue(row, col) }}
             }
           </td>
           } }
@@ -106,7 +123,7 @@
         }
         <!-- bottom spacer -->
         <tr>
-          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding:0">
+          <td [attr.colspan]="(enableSelection() ? 1 : 0) + colDefsWithEdit.length" style="padding: 0">
             <div [style.height.px]="bottomPadHeight()"></div>
           </td>
         </tr>
