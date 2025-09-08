@@ -6,7 +6,7 @@
     <pc-grid-action [enabled]="!!undoMgr.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="undoMgr.undo()" />
     <pc-grid-action [enabled]="!!undoMgr.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="undoMgr.redo()" />
     <pc-grid-action
-      [enabled]="!disableDelete() && isRowSelected()"
+      [enabled]="!disableDelete() && hasSelection()"
       [tip]="'Deleted selected row(s)'"
       icon="trash"
       (action)="confirmDelete()"
@@ -66,9 +66,9 @@
   </ul>
   } @if (isLoading()) {
   <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && getDisplayedCount() < totalCountAll) {
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span>All {{ getDisplayedCount() }} rows on this page are selected.</span>
+    <span>All {{ displayedCount() }} rows on this page are selected.</span>
     <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll }} rows</a>
   </div>
   } @if (allSelected()) {
