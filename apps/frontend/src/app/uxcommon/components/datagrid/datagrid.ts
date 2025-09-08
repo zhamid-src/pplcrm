@@ -46,6 +46,9 @@ import {
 } from './datagrid-filters';
 import { computeAutoSizeWidth, computePinOffsets, measureHeaderWidths } from './datagrid-columns';
 import { isPageFullySelected, togglePageSelectionSet, updateAllSelectedIdSet } from './datagrid-selection';
+import { buildGetAllOptions, computeTotalPages, makePersistState, parsePersistState } from './datagrid-data';
+import { setTableData, updateTableWindow as applyTableWindow } from './datagrid-table';
+type RowOf<K extends keyof Models> = Models[K];
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
@@ -133,7 +136,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected rowHeight = 36;
 
   // Table state (TanStack-like minimal state)
-  protected rows = signal<Partial<T>[]>([]);
+  protected rows = signal<Partial<RowOf<T>>[]>([]);
   protected scrollTop = signal(0);
   protected selectedIdSet = signal<Set<string>>(new Set());
   protected selectionStickyWidth = signal<number>(48);
@@ -222,10 +225,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Utility: returns selected rows from grid */
   public getSelectedRows() {
     if (this.allSelected()) {
-      return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
+      return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
     }
     const ids = this.selectedIdSet();
-    return Array.from(ids).map((id) => ({ id })) as unknown as (Partial<T> & { id: string })[];
+    return Array.from(ids).map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
   public ngAfterViewInit() {
@@ -352,7 +355,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Called when a cell changes. Persists changes via backend and manages undo. */
-  public async onCellValueChanged(row: Partial<T> & { id: string }, field: keyof T) {
+  public async onCellValueChanged(row: Partial<RowOf<T>> & { id: string }, field: any) {
     const key = field;
 
     if (this.shouldBlockEdit(row, key)) {
@@ -1277,8 +1280,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Pagination
   protected totalPages(): number {
-    const size = this.config.pageSize || 1;
-    return Math.max(1, Math.ceil((this.totalCountAll || 0) / size));
+    return computeTotalPages(this.totalCountAll, this.config.pageSize);
   }
 
   protected unpin(h: any) {
@@ -1294,7 +1296,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
   }
 
-  protected visibleRows(): Partial<T>[] {
+  protected visibleRows(): Partial<RowOf<T>>[] {
     return this.rows().slice(this.startIndex(), this.endIndex());
   }
 
@@ -1307,7 +1309,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Helper: applies single-field patch */
-  private async applyEdit(id: string, data: Partial<T>): Promise<boolean> {
+  private async applyEdit(id: string, data: any): Promise<boolean> {
     return this.gridSvc
       .update(id, data as U)
       .then(() => true)
@@ -1357,23 +1359,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const startRow = index * pageSize;
       const endRow = startRow + pageSize;
       const sortState = this.sorting();
-      const options: any = {
+      const options = buildGetAllOptions({
         searchStr: this.searchSvc.getFilterText(),
         startRow,
         endRow,
         tags: this.limitToTags(),
         filterModel: this.buildFilterModel(),
-        sortModel:
-          sortState && sortState.length
-            ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
-            : this.sortCol() && this.sortDir()
-              ? [{ colId: this.sortCol(), sort: this.sortDir() }]
-              : [],
-      } as Partial<getAllOptionsType>;
+        sortState: sortState as any,
+        sortCol: this.sortCol(),
+        sortDir: this.sortDir(),
+      });
       const data = this.archiveMode()
         ? await this.gridSvc.getAllArchived(options as getAllOptionsType)
         : await this.gridSvc.getAll(options as getAllOptionsType);
-      const incoming = (data.rows as Partial<T>[]) ?? [];
+      const incoming = (data.rows as Partial<RowOf<T>>[]) ?? [];
       if (append && this.rows().length > 0) {
         this.rows.update((curr) => [...curr, ...incoming]);
       } else {
@@ -1386,17 +1385,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           count: this.rows().length,
         });
       }
-      if (this.tsTable) {
-        this.tsTable.setOptions((prev: any) => ({
-          ...prev,
-          data: this.rows(),
-          state: {
-            ...prev.state,
-            rowSelection: this.buildRowSelectionForCurrentData(),
-            sorting: this.sortCol() && this.sortDir() ? [{ id: this.sortCol()!, desc: this.sortDir() === 'desc' }] : [],
-          },
-        }));
-      }
+      setTableData(
+        this.tsTable,
+        this.rows() as any[],
+        this.buildRowSelectionForCurrentData(),
+        this.sortCol(),
+        this.sortDir(),
+      );
       this.totalCountAll = data.count ?? this.rows().length;
       this.pageIndex.set(index);
     } catch (e) {
@@ -1409,8 +1404,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private loadState() {
     try {
       const raw = localStorage.getItem(this._persistKey);
-      if (!raw) return;
-      const data = JSON.parse(raw || '{}');
+      const data = parsePersistState(raw);
+      if (!data) return;
       if (data.sorting) this.sorting.set(data.sorting);
       if (data.visibility) this.colVisibility.set(data.visibility);
       if (data.filters) this.filterValues.set(data.filters);
@@ -1473,13 +1468,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         filters: this.filterValues() || {},
         selectionWidth: this.selectionStickyWidth(),
       };
-      localStorage.setItem(this._persistKey, JSON.stringify(data));
+      localStorage.setItem(this._persistKey, makePersistState(data));
     } catch {}
   }
 
   /** Helper: prevents editing specific fields */
-  private shouldBlockEdit(row: Partial<T>, key: keyof T): boolean {
-    return 'deletable' in row && (row as any).deletable === false && (key as string) === 'name';
+  private shouldBlockEdit(row: Partial<RowOf<T>>, key: keyof any): boolean {
+    return 'deletable' in (row as any) && (row as any).deletable === false && (key as string) === 'name';
   }
 
   private syncSignalsFromTable() {
@@ -1513,17 +1508,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Update table data with current visible window (fallback implementation)
   // For now, map to the visibleRows() slice when virtualizer is active
   private updateTableWindow(start: number, end: number) {
-    const data = this.rows().slice(start, end) as any[];
-    if (this.tsTable) {
-      this.tsTable.setOptions((prev: any) => ({
-        ...prev,
-        data,
-        state: {
-          ...prev.state,
-          rowSelection: this.buildRowSelectionForCurrentData(),
-          sorting: this.sortCol() && this.sortDir() ? [{ id: this.sortCol()!, desc: this.sortDir() === 'desc' }] : [],
-        },
-      }));
-    }
+    applyTableWindow(
+      this.tsTable,
+      this.rows() as any[],
+      start,
+      end,
+      this.buildRowSelectionForCurrentData(),
+      this.sortCol(),
+      this.sortDir(),
+    );
   }
 }
