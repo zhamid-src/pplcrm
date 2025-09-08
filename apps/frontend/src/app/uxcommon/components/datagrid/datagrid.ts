@@ -45,6 +45,7 @@ import {
   preparePanelFilters,
 } from './datagrid-filters';
 import { computeAutoSizeWidth, computePinOffsets, measureHeaderWidths } from './datagrid-columns';
+import { isPageFullySelected, togglePageSelectionSet, updateAllSelectedIdSet } from './datagrid-selection';
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
 import { UndoManager } from './undo-redo-mgr';
@@ -758,13 +759,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Whether the current page (displayed rows) is fully selected */
   protected isPageFullySelected(): boolean {
-    if (this.allSelected()) return false; // already globally selected
-
-    const rowsOnCurrentPage = this.getDisplayedCount();
-    if (rowsOnCurrentPage === 0) return false;
-
-    const selectedOnPage = this.getSelectedRows()?.length ?? 0;
-    return selectedOnPage > 0 && selectedOnPage === rowsOnCurrentPage;
+    return isPageFullySelected(this.allSelected(), this.getDisplayedCount(), this.getSelectedRows()?.length ?? 0);
   }
 
   protected isRowChecked(id: string): boolean {
@@ -971,8 +966,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.allSelected()) {
       const id = this.toId(row.original ?? row);
       if (!id) return;
-      if (!checked) this.allSelectedIdSet.delete(id);
-      else this.allSelectedIdSet.add(id);
+      updateAllSelectedIdSet(this.allSelectedIdSet, id, checked);
       this.onSelectionChanged();
       return;
     }
@@ -1084,7 +1078,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Column pinning helpers
   protected pinState(h: any): 'left' | 'right' | false {
     const fn = h?.column?.getIsPinned;
-    return typeof fn === 'function' ? (fn.call(h.column) as any) : false;
+    return typeof fn === 'function' ? (fn.call(h.column) as 'left' | 'right' | false) : false;
   }
 
   protected async prevPage() {
@@ -1131,8 +1125,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         tags: this.limitToTags(),
       };
       const { rows, count } = this.archiveMode()
-        ? await (this.gridSvc as any).getAllArchived(options)
-        : await this.gridSvc.getAll(options);
+        ? await this.gridSvc.getAllArchived(options as getAllOptionsType)
+        : await this.gridSvc.getAll(options as getAllOptionsType);
       const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
       this.allSelectedIds = ids;
       this.allSelectedIdSet = new Set(ids);
@@ -1257,19 +1251,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected togglePageChecked(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
-    const set = new Set<string>(this.selectedIdSet());
-    if (checked) {
-      for (const r of this.rows()) {
-        const id = String((r as any)?.id ?? '');
-        if (id) set.add(id);
-      }
-    } else {
-      for (const r of this.rows()) {
-        const id = String((r as any)?.id ?? '');
-        if (id) set.delete(id);
-      }
-    }
-    this.selectedIdSet.set(set);
+    const nextSet = togglePageSelectionSet(this.selectedIdSet(), this.rows() as any[], checked);
+    this.selectedIdSet.set(nextSet);
     this.onSelectionChanged();
   }
 
@@ -1388,7 +1371,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
               : [],
       } as Partial<getAllOptionsType>;
       const data = this.archiveMode()
-        ? await (this.gridSvc as any).getAllArchived(options)
+        ? await this.gridSvc.getAllArchived(options as getAllOptionsType)
         : await this.gridSvc.getAll(options as getAllOptionsType);
       const incoming = (data.rows as Partial<T>[]) ?? [];
       if (append && this.rows().length > 0) {
