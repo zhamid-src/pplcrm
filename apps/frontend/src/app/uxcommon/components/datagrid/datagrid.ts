@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, AfterViewInit, ViewChild, ElementRef, effect, inject, input, output, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, effect, inject, input, output, signal } from "@angular/core";
 import { createTable, ColumnDef as TSColumnDef, getCoreRowModel, type SortingState, type Updater } from '@tanstack/table-core';
 import { Virtualizer, elementScroll, observeElementRect, observeElementOffset } from '@tanstack/virtual-core';
 import { ActivatedRoute, Router } from "@angular/router";
@@ -28,7 +28,7 @@ import { Models } from "common/src/lib/kysely.models";
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
 })
-export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit {
+export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
   private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly route = inject(ActivatedRoute);
@@ -67,6 +67,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected showFilterPanel = signal(false);
   protected filterValues = signal<Record<string, any>>({});
   protected panelFilters = signal<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
+  protected colWidths = signal<Record<string, number>>({});
 
   // Table state (TanStack-like minimal state)
   protected rows = signal<Partial<T>[]>([]);
@@ -118,6 +119,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   @ViewChild('scroller', { static: false }) private scroller?: ElementRef<HTMLDivElement>;
+  @ViewChild('gridTable', { static: false }) private gridTable?: ElementRef<HTMLTableElement>;
 
   public ngAfterViewInit() {
     const el = this.scroller?.nativeElement;
@@ -132,8 +134,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         scrollToFn: elementScroll,
         observeElementRect,
         observeElementOffset,
+        // measureElement can be supplied later for variable-height rows
       });
     }
+    // Measure header widths initially and on resize
+    queueMicrotask(() => this.updateHeaderWidths());
+    window.addEventListener('resize', this.updateHeaderWidths);
+  }
+
+  public ngOnDestroy(): void {
+    // Abort any inflight requests and release refs
+    try { this.gridSvc.abort(); } catch {}
+    this.virtualizer = undefined;
+    this.tsTable = undefined;
+    window.removeEventListener('resize', this.updateHeaderWidths);
   }
 
   /** Confirm and then delete selected rows */
@@ -215,8 +229,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         sorting: this.sorting(),
         columnVisibility: this.colVisibility(),
         rowSelection: this.buildRowSelectionForCurrentData(),
+        // Provide defaults expected by some table features
+        columnPinning: { left: [], right: [] },
       },
-      onStateChange: () => {},
+      initialState: {
+        columnPinning: { left: [], right: [] },
+      } as any,
+      onStateChange: () => this.syncSignalsFromTable(),
       renderFallbackValue: null as any,
       onSortingChange: (updater: Updater<SortingState>) => {
         const next = typeof updater === 'function'
@@ -243,6 +262,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       },
     });
     await this.loadPage(0);
+  }
+
+  private syncSignalsFromTable() {
+    const st: any = this.tsTable?.getState?.() ?? {};
+    if (st.sorting) this.sorting.set(st.sorting);
+    if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
+    // Recompute pin offsets when pinning state changes
+    this.updatePinOffsets();
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -389,6 +416,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Helpers for template-safe access to dynamic fields/formatters/renderers
   protected getCellValue(row: any, col: ColDef): any {
+    // Prefer valueGetter when provided
+    const vget: any = (col as any)?.valueGetter;
+    if (typeof vget === 'function') {
+      try {
+        return vget({ data: row, colDef: col, value: (row as any)?.[col.field as string] });
+      } catch {
+        // fall through to field lookup
+      }
+    }
     const field = (col.field as string) || '';
     return field ? (row as any)?.[field] : undefined;
   }
@@ -518,6 +554,236 @@ protected bottomPadHeight(): number {
     return this.rows().slice(this.startIndex(), this.endIndex());
   }
 
+  // TanStack helpers
+  protected leafHeaders(): any[] {
+    const tbl: any = this.tsTable;
+    if (!tbl) return [];
+    // Flat headers correspond to leaf columns
+    return (tbl.getFlatHeaders?.() || []).filter((h: any) => h.column?.getIsVisible?.());
+  }
+
+  protected headerGroups(): any[] {
+    const tbl: any = this.tsTable;
+    return tbl?.getHeaderGroups?.() || [];
+  }
+
+  protected visibleTableRows(): any[] {
+    const tbl: any = this.tsTable;
+    const all = tbl?.getRowModel?.().rows || [];
+    const start = this.startIndex();
+    const end = this.endIndex();
+    return all.slice(start, end);
+  }
+
+  protected sortIndicatorForHeader(h: any): string {
+    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (s === 'asc') return '▲';
+    if (s === 'desc') return '▼';
+    return '';
+  }
+
+  protected ariaSortHeader(h: any): 'ascending' | 'descending' | 'none' {
+    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (s === 'asc') return 'ascending';
+    if (s === 'desc') return 'descending';
+    return 'none';
+  }
+
+  protected toggleHeaderSort(h: any, ev?: MouseEvent) {
+    const fn = h?.column?.toggleSorting;
+    if (typeof fn === 'function') fn.call(h.column, undefined, !!ev?.shiftKey);
+  }
+
+  protected getColDefById(id: string): ColDef | undefined {
+    return this.colDefsWithEdit.find((c) => c.field === id);
+  }
+
+  protected getColWidth(id: string): number | null {
+    return this.colWidths()[id] ?? null;
+  }
+
+  protected setColWidth(id: string, px: number) {
+    const next = { ...this.colWidths() };
+    next[id] = Math.max(40, Math.floor(px));
+    this.colWidths.set(next);
+    // After width change, recompute sticky offsets
+    queueMicrotask(() => this.updateHeaderWidths());
+  }
+
+  protected getFieldFromHeader(h: any): string | null {
+    const id = h?.column?.id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  // Column pinning helpers
+  protected pinState(h: any): 'left' | 'right' | false {
+    const fn = h?.column?.getIsPinned;
+    return typeof fn === 'function' ? (fn.call(h.column) as any) : false;
+  }
+
+  protected cyclePin(h: any) {
+    const current = this.pinState(h);
+    const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, next as any);
+  }
+
+  protected pinLeft(h: any) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, 'left');
+  }
+
+  protected pinRight(h: any) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, 'right');
+  }
+
+  protected unpin(h: any) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, false);
+  }
+
+  // Header menu actions
+  protected sortAsc(h: any) {
+    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (isSorted !== 'asc') {
+      const fn = h?.column?.toggleSorting;
+      if (typeof fn === 'function') fn.call(h.column, false, false);
+    }
+  }
+
+  protected sortDesc(h: any) {
+    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (isSorted !== 'desc') {
+      const fn = h?.column?.toggleSorting;
+      if (typeof fn === 'function') fn.call(h.column, true, false);
+    }
+  }
+
+  protected clearSort(h: any) {
+    if (typeof h?.column?.clearSorting === 'function') {
+      h.column.clearSorting();
+      return;
+    }
+    // Fallback: remove from sorting state
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const next = (this.sorting() as any[]).filter((s) => s.id !== id);
+    this.sorting.set(next);
+    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: next } }));
+    this.loadPage(0);
+  }
+
+  protected hideColumn(h: any) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    this.toggleCol(id, false);
+    if (typeof h?.column?.toggleVisibility === 'function') h.column.toggleVisibility(false);
+  }
+
+  protected getFilterValue(field: string): string {
+    const fv: any = this.filterValues()[field];
+    if (fv && typeof fv === 'object' && 'value' in fv) return String(fv.value ?? '');
+    return fv ? String(fv) : '';
+  }
+
+  protected onHeaderFilterInput(field: string, value: any) {
+    const v = String(value ?? '').trim();
+    const next = { ...this.filterValues() };
+    if (!v) delete next[field];
+    else next[field] = { op: 'contains', value: v } as any;
+    this.filterValues.set(next);
+    this.loadPage(0);
+  }
+
+  protected clearHeaderFilter(field: string) {
+    const next = { ...this.filterValues() };
+    delete next[field];
+    this.filterValues.set(next);
+    this.loadPage(0);
+  }
+
+  // Sticky pin offsets
+  private headerWidthMap = new Map<string, number>();
+  private pinnedLeftOffsets = signal<Record<string, number>>({});
+  private pinnedRightOffsets = signal<Record<string, number>>({});
+
+  protected leftOffsetPx(colId: string): number {
+    return this.pinnedLeftOffsets()[colId] || 0;
+  }
+
+  protected rightOffsetPx(colId: string): number {
+    return this.pinnedRightOffsets()[colId] || 0;
+  }
+
+  private updateHeaderWidths = () => {
+    const table = this.gridTable?.nativeElement;
+    if (!table) return;
+    const nodes = table.querySelectorAll('thead th[data-col-id]');
+    nodes.forEach((el) => {
+      const id = (el as HTMLElement).getAttribute('data-col-id') || '';
+      if (!id) return;
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      if (rect.width > 0) this.headerWidthMap.set(id, rect.width);
+    });
+    this.updatePinOffsets();
+  };
+
+  private updatePinOffsets() {
+    const tbl: any = this.tsTable;
+    const pin = tbl?.getState?.().columnPinning || { left: [], right: [] };
+    const leftIds: string[] = Array.isArray(pin.left) ? pin.left : [];
+    const rightIds: string[] = Array.isArray(pin.right) ? pin.right : [];
+
+    const left: Record<string, number> = {};
+    let acc = 0;
+    for (const id of leftIds) {
+      left[id] = acc;
+      acc += this.headerWidthMap.get(id) || 0;
+    }
+    const right: Record<string, number> = {};
+    let racc = 0;
+    for (let i = rightIds.length - 1; i >= 0; i--) {
+      const id = rightIds[i];
+      right[id] = racc;
+      racc += this.headerWidthMap.get(id) || 0;
+    }
+    this.pinnedLeftOffsets.set(left);
+    this.pinnedRightOffsets.set(right);
+  }
+
+  // Column visibility bulk actions
+  protected showAllCols() {
+    const v = { ...this.colVisibility() };
+    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = true;
+    this.colVisibility.set(v);
+    if (this.tsTable) this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+  }
+
+  protected hideAllCols() {
+    const v = { ...this.colVisibility() };
+    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = false;
+    this.colVisibility.set(v);
+    if (this.tsTable) this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+  }
+
+  // Auto-size column based on header and currently visible cells
+  protected autoSizeColumn(h: any) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const table = this.gridTable?.nativeElement;
+    if (!table) return;
+    let max = 0;
+    const head = table.querySelector(`thead th[data-col-id="${id}"]`) as HTMLElement | null;
+    if (head) max = Math.max(max, head.scrollWidth + 16);
+    const cells = table.querySelectorAll(`tbody td[data-col-id="${id}"]`);
+    cells.forEach((el) => {
+      const w = (el as HTMLElement).scrollWidth + 16;
+      if (w > max) max = w;
+    });
+    if (max > 0) this.setColWidth(id, max);
+  }
+
   protected hasCellRenderer(col: ColDef): boolean {
     return !!(col as any)?.cellRenderer;
   }
@@ -611,6 +877,11 @@ protected bottomPadHeight(): number {
     if (!col.field) return '';
     if (this.sortCol() !== col.field) return '';
     return this.sortDir() === 'asc' ? '▲' : this.sortDir() === 'desc' ? '▼' : '';
+  }
+
+  protected ariaSort(col: ColDef): 'ascending' | 'descending' | 'none' {
+    if (!col.field || this.sortCol() !== col.field) return 'none';
+    return this.sortDir() === 'desc' ? 'descending' : 'ascending';
   }
 
   protected toId(row: any): string {

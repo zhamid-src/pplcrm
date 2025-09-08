@@ -49,7 +49,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
     super();
   }
 
-  public ngOnDestroy() {
+  public override ngOnDestroy(): void {
     this.sub?.unsubscribe?.();
   }
 

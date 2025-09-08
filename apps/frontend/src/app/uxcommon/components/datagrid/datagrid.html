@@ -30,7 +30,11 @@
       <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">
         <pc-icon name="view-column"></pc-icon>
       </label>
-      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow">
+      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+        <li class="px-2 py-1 flex gap-2">
+          <button class="btn btn-ghost btn-xs" (click)="showAllCols()">Show all</button>
+          <button class="btn btn-ghost btn-xs" (click)="hideAllCols()">Hide all</button>
+        </li>
         @for (col of colDefsWithEdit; track col.field) { @if (col.field) {
         <li>
           <label class="label cursor-pointer justify-start gap-2">
@@ -73,8 +77,8 @@
   </div>
   }
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
-    <table class="table table-zebra w-full">
-      <thead>
+    <table #gridTable class="table table-zebra w-full">
+      <thead class="sticky top-0 bg-base-100 z-10">
         <tr>
           @if (enableSelection()) {
           <th class="w-12">
@@ -85,27 +89,105 @@
               (change)="togglePageChecked($any($event.target).checked)"
             />
           </th>
-          } @for (col of colDefsWithEdit; track col.field) { @if (col.field && isColVisible(col)) {
-          <th (click)="headerClick(col, $event)" class="cursor-pointer select-none">
-            {{ col.headerName || col.field }}
-            <span class="ml-1 text-xs opacity-70">{{ sortIndicator(col) }}</span>
+          }
+          @for (h of leafHeaders(); track h.id) {
+          @if (h && h.column?.getIsVisible?.()) {
+          <th (click)="toggleHeaderSort(h, $event)" class="cursor-pointer select-none" role="columnheader" [attr.aria-sort]="ariaSortHeader(h)"
+              [class.sticky]="pinState(h) !== false"
+              [style.left.px]="pinState(h) === 'left' ? leftOffsetPx(h.column.id) : null"
+              [style.right.px]="pinState(h) === 'right' ? rightOffsetPx(h.column.id) : null"
+              [style.zIndex]="pinState(h) !== false ? 20 : null"
+              [style.width.px]="getColWidth(h.column.id) || null"
+              [attr.data-col-id]="h.column.id">
+            <div class="flex items-center gap-2">
+              <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
+              <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
+              <div class="ml-auto dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label tabindex="0" class="btn btn-ghost btn-xs" title="Column options">
+                  <pc-icon name="ellipsis-vertical"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[30] w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li>
+                    <details>
+                      <summary>Filter</summary>
+                      <div class="px-2 py-2 space-y-2">
+                        @if (col && getFilterOptionsForCol(col)?.length) {
+                        <select class="select select-bordered select-xs w-full"
+                          [value]="getFilterValue(h.column.id)"
+                          (change)="onHeaderFilterInput(h.column.id, $any($event.target).value)">
+                          <option value="">All</option>
+                          @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+                            <option [value]="opt">{{ opt }}</option>
+                          }
+                        </select>
+                        } @else {
+                        <input class="input input-bordered input-xs w-full" type="text" placeholder="Filter value"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)" />
+                        }
+                        <div><button class="btn btn-ghost btn-xs" (click)="clearHeaderFilter(h.column.id)">Clear</button></div>
+                      </div>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Sort</summary>
+                      <ul>
+                        <li><a (click)="sortAsc(h)">Sort asc</a></li>
+                        <li><a (click)="sortDesc(h)">Sort desc</a></li>
+                        <li><a (click)="clearSort(h)">Clear sort</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Stickiness</summary>
+                      <ul>
+                        <li><a (click)="pinLeft(h)">Pin left</a></li>
+                        <li><a (click)="pinRight(h)">Pin right</a></li>
+                        <li><a (click)="unpin(h)">Unpin</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Size</summary>
+                      <ul>
+                        <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details>
+                      <summary>Column</summary>
+                      <ul>
+                        <li><a (click)="hideColumn(h)">Hide</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </th>
-          } }
+          }
+          }
         </tr>
         @if (showFilters()) {
         <tr>
           @if (enableSelection()) {<th class="w-12"></th>}
-          @for (col of colDefsWithEdit; track col.field) {
-            @if (col.field && isColVisible(col)) {
+          @for (h of leafHeaders(); track h.id) {
+            @if (h && h.column?.getIsVisible?.()) {
+            @let col = getColDefById(h.column.id);
             <th>
-              @if (getFilterOptionsForCol(col)?.length) {
+              @if (col && getFilterOptionsForCol(col)?.length) {
               <select
                 class="select select-bordered select-xs w-full"
-                [value]="filterValues()[col.field!] || ''"
-                (change)="onFilterInput(col.field!, $any($event.target).value)"
+                [value]="filterValues()[col!.field!] || ''"
+                (change)="onFilterInput(col!.field!, $any($event.target).value)"
               >
                 <option value="">All</option>
-                @for (opt of getFilterOptionsForCol(col)!; track opt) {
+                @for (opt of getFilterOptionsForCol(col!)!; track opt) {
                 <option [value]="opt">{{ opt }}</option>
                 }
               </select>
@@ -114,8 +196,8 @@
                 type="text"
                 class="input input-bordered input-xs w-full"
                 placeholder="Filter..."
-                [value]="$any(filterValues())[col.field!] || ''"
-                (input)="onFilterInput(col.field!, $any($event.target).value)"
+                [value]="$any(filterValues())[col!.field!] || ''"
+                (input)="onFilterInput(col!.field!, $any($event.target).value)"
               />
               }
             </th>
@@ -131,25 +213,35 @@
             <div [style.height.px]="topPadHeight()"></div>
           </td>
         </tr>
-        @for (row of visibleRows(); track toId(row)) {
-        <tr (mouseover)="onCellMouseOver(row)">
+        @for (r of visibleTableRows(); track r.id) {
+        <tr (mouseover)="onCellMouseOver(r.original)">
           @if (enableSelection()) {
           <td>
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
-              [checked]="isRowChecked(toId(row))"
-              (change)="toggleRowChecked(toId(row), $any($event.target).checked)"
+              [checked]="isRowChecked(toId(r.original))"
+              (change)="toggleRowChecked(toId(r.original), $any($event.target).checked)"
             />
           </td>
-          } @for (col of colDefsWithEdit; track col.field) { @if (col.field && isColVisible(col)) {
-          <td (dblclick)="handleCellDblClick(row, col)">
-            @if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(row, col)"></span>
-            } @else if (col.valueFormatter) { {{ callValueFormatter(row, col) }} } @else { {{ getCellValue(row, col) }}
+          }
+          @for (cell of r.getVisibleCells(); track cell.id) {
+            @let col = getColDefById(cell.column.id);
+            @if (col && isColVisible(col)) {
+            <td (dblclick)="handleCellDblClick(r.original, col)"
+                [class.sticky]="pinState(cell) !== false"
+                [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+                [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+                [style.background]="pinState(cell) !== false ? 'var(--fallback-b1,oklch(var(--b1)))' : null"
+                [style.zIndex]="pinState(cell) !== false ? 10 : null"
+                [style.width.px]="getColWidth(cell.column.id) || null"
+                [attr.data-col-id]="cell.column.id">
+              @if (hasCellRenderer(col)) {
+              <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+              } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{ getCellValue(r.original, col) }} }
+            </td>
             }
-          </td>
-          } }
+          }
         </tr>
         }
         <!-- bottom spacer -->
