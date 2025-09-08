@@ -80,15 +80,30 @@ export class ListsRepo extends BaseRepository<'lists'> {
       ])
       .$if(!!options.sortModel?.length, (qb) => {
         const sorts = options.sortModel ?? [];
-        // If sorting by created_by alias, order by authusers full name
         const createdSort = sorts.find((s) => s.colId === 'created_by');
-        const others = sorts.filter((s) => s.colId !== 'created_by');
+        const listSizeSort = sorts.find((s) => s.colId === 'list_size');
+        const usedInSort = sorts.find((s) => s.colId === 'used_in');
+        const others = sorts.filter(
+          (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
+        );
         let acc: any = qb;
+        // created_by sort: sort by full name of creator
         if (createdSort) {
           acc = acc.orderBy(
             sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`,
             (createdSort as any).sort,
           );
+        }
+        // list_size sort: derived from people_count vs household_count
+        if (listSizeSort) {
+          acc = acc.orderBy(
+            sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
+            (listSizeSort as any).sort,
+          );
+        }
+        // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
+        if (usedInSort) {
+          acc = acc.orderBy('lists.updated_at' as any, (usedInSort as any).sort);
         }
         for (const s of others) acc = acc.orderBy(s.colId as any, (s as any).sort);
         return acc;
