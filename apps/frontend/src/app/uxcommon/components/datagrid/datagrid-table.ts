@@ -39,6 +39,7 @@ export function setTableData(
   }));
 }
 import { createTable, getCoreRowModel, type Updater, type SortingState, type ColumnDef as TSColumnDef } from '@tanstack/table-core';
+import type { ColumnDef as ColDef } from './grid-defaults';
 
 export function createGridTable(params: {
   rows: any[];
@@ -71,3 +72,14 @@ export function createGridTable(params: {
   });
 }
 
+export function buildTsColumns(colDefs: ColDef[]): TSColumnDef<any, any>[] {
+  return (colDefs
+    .filter((c) => !!c.field)
+    .map((c) => ({
+      id: c.field as string,
+      header: c.headerName || (c.field as string),
+      accessorFn: (row: any) => row?.[c.field as string],
+      enableSorting: true,
+      enableResizing: true,
+    })) as unknown) as TSColumnDef<any, any>[];
+}

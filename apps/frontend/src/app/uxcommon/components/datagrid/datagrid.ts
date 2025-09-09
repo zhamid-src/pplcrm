@@ -46,7 +46,7 @@ import {
 import { computeAutoSizeWidth, computePinOffsets, measureHeaderWidths } from './datagrid-columns';
 import { isPageFullySelected, togglePageSelectionSet, updateAllSelectedIdSet } from './datagrid-selection';
 import { buildGetAllOptions, computeTotalPages, makePersistState, parsePersistState } from './datagrid-data';
-import { setTableData, updateTableWindow as applyTableWindow, createGridTable } from './datagrid-table';
+import { setTableData, updateTableWindow as applyTableWindow, createGridTable, buildTsColumns } from './datagrid-table';
 type RowOf<K extends keyof Models> = Models[K];
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
@@ -271,7 +271,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public getDefinition(): getAllOptionsType {
     return {
       searchStr: this.searchSvc.getFilterText(),
-      sortModel: this.sorting().map((s: any) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
+      sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
       filterModel: this.buildFilterModel(),
       tags: this.limitToTags(),
     } as getAllOptionsType;
@@ -335,15 +335,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = true;
     this.colVisibility.set(vis);
     // Build TanStack columns
-    this.tsColumns = this.colDefsWithEdit
-      .filter((c) => !!c.field)
-      .map((c) => ({
-        id: c.field as string,
-        header: c.headerName || (c.field as string),
-        accessorFn: (row: any) => row?.[c.field as string],
-        enableSorting: true,
-        enableResizing: true,
-      })) as TSColumnDef<any, any>[];
+    this.tsColumns = buildTsColumns(this.colDefsWithEdit);
     this.tsTable = createGridTable({
       rows: this.rows(),
       columns: this.tsColumns,
