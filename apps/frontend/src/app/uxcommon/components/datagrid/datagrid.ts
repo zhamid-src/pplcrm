@@ -25,8 +25,6 @@ import {
   type SortingState,
   ColumnDef as TSColumnDef,
   type Updater,
-  createTable,
-  getCoreRowModel,
 } from '@tanstack/table-core';
 import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -48,7 +46,7 @@ import {
 import { computeAutoSizeWidth, computePinOffsets, measureHeaderWidths } from './datagrid-columns';
 import { isPageFullySelected, togglePageSelectionSet, updateAllSelectedIdSet } from './datagrid-selection';
 import { buildGetAllOptions, computeTotalPages, makePersistState, parsePersistState } from './datagrid-data';
-import { setTableData, updateTableWindow as applyTableWindow } from './datagrid-table';
+import { setTableData, updateTableWindow as applyTableWindow, createGridTable } from './datagrid-table';
 type RowOf<K extends keyof Models> = Models[K];
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { GridActionComponent } from './tool-button';
@@ -346,27 +344,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         enableSorting: true,
         enableResizing: true,
       })) as TSColumnDef<any, any>[];
-    this.tsTable = createTable({
-      data: this.rows(),
+    this.tsTable = createGridTable({
+      rows: this.rows(),
       columns: this.tsColumns,
-      getCoreRowModel: getCoreRowModel(),
       getRowId: (row: any) => this.toId(row),
-      // not in the formal type, supported by our usage
-      enableColumnResizing: true as unknown as boolean,
       state: {
         sorting: this.sorting(),
         columnVisibility: this.colVisibility(),
         rowSelection: this.buildRowSelectionForCurrentData(),
-        // Provide defaults expected by some table features
         columnPinning: { left: [], right: [] },
         columnSizing: {},
       },
-      initialState: {
-        columnPinning: { left: [], right: [] },
-        columnSizing: {},
-      } as unknown as any,
       onStateChange: () => this.syncSignalsFromTable(),
-      renderFallbackValue: null as unknown,
       onSortingChange: (updater: Updater<SortingState>) => {
         const next = typeof updater === 'function' ? updater(this.tsTable!.getState().sorting) : updater;
         this.sorting.set(next);
@@ -377,7 +366,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.saveState();
       },
       onRowSelectionChange: (updater: Updater<any>) => {
-    const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
+        const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
         const next: any = typeof updater === 'function' ? updater(current) : updater;
         const set = new Set(this.selectedIdSet());
         for (const row of this.rows()) {
@@ -389,14 +378,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.selectedIdSet.set(set);
         this.onSelectionChanged();
       },
-      columnResizeMode: 'onChange',
       onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
         const current = (this.tsTable!.getState() as any).columnSizing || {};
         const next = typeof updater === 'function' ? (updater as any)(current) : (updater as any);
         this.colWidths.set({ ...(next || {}) });
-        // Apply into table state so getSize() reflects
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
-        // Recompute sticky offsets after sizing change
         queueMicrotask(() => this.updatePinOffsets());
         this.saveState();
       },
@@ -539,9 +525,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.getCellValue(row, col);
   }
 
-  protected canMerge() {
-    return this.countRowSelected() > 1;
-  }
+  protected readonly canMerge = computed(() => this.countRowSelected() > 1);
 
   // canNext/canPrev are computed
 
@@ -754,11 +738,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return tbl?.getHeaderGroups?.() || [];
   }
 
-  // Hidden columns list for header menu
-  protected hiddenColumns(): string[] {
+  // Hidden columns list for header menu as a computed
+  protected readonly hiddenColumns = computed(() => {
     const v = this.colVisibility();
     return this.colDefsWithEdit.map((c) => c.field as string).filter((f) => !!f && v[f] === false) as string[];
-  }
+  });
 
   protected hideAllCols() {
     const v = { ...this.colVisibility() };

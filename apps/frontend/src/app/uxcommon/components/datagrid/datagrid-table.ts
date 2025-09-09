@@ -38,4 +38,36 @@ export function setTableData(
     },
   }));
 }
+import { createTable, getCoreRowModel, type Updater, type SortingState, type ColumnDef as TSColumnDef } from '@tanstack/table-core';
+
+export function createGridTable(params: {
+  rows: any[];
+  columns: TSColumnDef<any, any>[];
+  getRowId: (row: any) => string;
+  state: any;
+  onStateChange: () => void;
+  onSortingChange: (updater: Updater<SortingState>) => void;
+  onRowSelectionChange: (updater: Updater<any>) => void;
+  onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
+}): any {
+  return createTable({
+    data: params.rows,
+    columns: params.columns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: params.getRowId,
+    // not in the formal type, supported by our usage
+    enableColumnResizing: true as unknown as boolean,
+    state: params.state,
+    initialState: {
+      columnPinning: { left: [], right: [] },
+      columnSizing: {},
+    } as any,
+    onStateChange: params.onStateChange,
+    renderFallbackValue: null as unknown,
+    onSortingChange: params.onSortingChange,
+    onRowSelectionChange: params.onRowSelectionChange,
+    columnResizeMode: 'onChange',
+    onColumnSizingChange: params.onColumnSizingChange,
+  });
+}
 
