@@ -108,11 +108,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
-  protected readonly countRowSelected = signal(0);
+  protected readonly countRowSelected = computed(() =>
+    this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
+  );
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
 
   // State & UI Signals
-  protected readonly isRowSelected = signal(false);
+  // Removed isRowSelected in favor of hasSelection computed
   protected readonly router = inject(Router);
   protected readonly undoMgr = new UndoManager();
 
@@ -204,6 +206,39 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.oldFilterText = quickFilterText;
         this.loadPage(0);
       }
+    });
+    // Persist key table-related states whenever they change
+    effect(() => {
+      // dependencies
+      this.sorting();
+      this.colVisibility();
+      this.filterValues();
+      this.selectionStickyWidth();
+      this.saveState();
+    });
+    // Update table data when rows or sort change
+    effect(() => {
+      const rows = this.rows();
+      this.sortCol();
+      this.sortDir();
+      setTableData(
+        this.tsTable,
+        rows as any[],
+        this.buildRowSelectionForCurrentData(),
+        this.sortCol(),
+        this.sortDir(),
+      );
+    });
+    // Keep virtualizer count in sync with rows length
+    effect(() => {
+      const count = this.rows().length;
+      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
+    });
+    // Recompute pin offsets on column width or selection width changes
+    effect(() => {
+      this.colWidths();
+      this.selectionStickyWidth();
+      this.updatePinOffsets();
     });
   }
 
@@ -520,8 +555,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.allSelectedIds = [];
     this.allSelectedIdSet = new Set();
     this.allSelectedCount = 0;
-    this.isRowSelected.set(false);
-    this.countRowSelected.set(0);
   }
 
   protected clearHeaderFilter(field: string) {
@@ -564,7 +597,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const id = this.toId(row);
     const value = this.coerceEditingValue(col, this.editingValue());
     const key = col.field as string;
-    const prev = (row as any)[key];
+    const prev = (row as any)[key as any];
     // Skip saving if value hasn't changed
     const equal = prev === value || (prev == null && (value == null || value === ''));
     if (equal) {
@@ -573,7 +606,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     // Apply value locally to row copy (optimistic)
     const before = { ...(row || {}) } as any;
-    (row as any)[key] = value;
+    (row as any)[key as any] = value;
     try {
       // Pass the full row so payload includes the edited value
       await this.onCellValueChanged(row as any, col.field as any);
@@ -581,7 +614,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.alertSvc.showSuccess('Row updated');
     } catch {
       // revert local row on failure
-      (row as any)[key] = before[key];
+      (row as any)[key as any] = before[key as any];
       this.alertSvc.showError('Update failed');
     } finally {
       this.editingCell.set(null);
@@ -632,7 +665,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Helpers for template-safe access to dynamic fields/formatters/renderers
   protected getCellValue(row: any, col: ColDef): any {
     // Prefer valueGetter when provided
-    const vget: any = (col as any)?.valueGetter;
+    const vget = col.valueGetter as ((p: any) => any) | undefined;
     if (typeof vget === 'function') {
       try {
         return vget({ data: row, colDef: col, value: (row as any)?.[col.field as string] });
@@ -681,19 +714,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.startEdit(row, col);
       return;
     }
-    if (typeof (col as any).onCellDoubleClicked === 'function') {
-      (col as any).onCellDoubleClicked({ data: row, colDef: col });
+    if (typeof col.onCellDoubleClicked === 'function') {
+      col.onCellDoubleClicked({ data: row, colDef: col });
     } else {
       this.openEditOnDoubleClick(row);
     }
   }
 
   protected hasCellRenderer(col: ColDef): boolean {
-    return !!(col as any)?.cellRenderer;
+    return !!col.cellRenderer;
   }
 
   protected hasValueFormatter(col: ColDef): boolean {
-    return typeof (col as any)?.valueFormatter === 'function';
+    return typeof col.valueFormatter === 'function';
   }
 
   protected headerClick(col: ColDef, ev?: MouseEvent) {
@@ -748,7 +781,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' {
-    const t = String((col as any)?.cellDataType || '').toLowerCase();
+    const t = String(col?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') return 'number';
     if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
     return 'text';
@@ -762,7 +795,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Inline edit helpers
   protected isEditable(col: ColDef): boolean {
-    return !!(col as any)?.editable;
+    return !!col?.editable;
   }
 
   protected isOptionChecked(field: string, option: string): boolean {
@@ -1142,8 +1175,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.allSelectedIdSet = new Set(ids);
       this.allSelectedCount = count ?? ids.length;
       this.allSelected.set(ids.length > 0);
-      this.isRowSelected.set(ids.length > 0);
-      this.countRowSelected.set(this.allSelectedCount);
       this.alertSvc.showInfo(`Selected ${this.allSelectedCount} row(s)`);
     } catch (e) {
       this.alertSvc.showError('Failed to select all rows');
