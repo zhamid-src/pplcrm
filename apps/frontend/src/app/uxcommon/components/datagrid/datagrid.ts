@@ -50,6 +50,7 @@ import { Models } from 'common/src/lib/kysely.models';
   imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent, DataGridHeaderComponent, DataGridInlineFiltersRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
+  providers: [GridStoreService],
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
   private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
@@ -276,18 +277,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.loadPage(0);
       }
     });
-    // Persist key table-related states whenever they change
-    effect(() => {
-      // dependencies
-      this.sorting();
-      this.colVisibility();
-      this.filterValues();
-      this.selectionStickyWidth();
-      this.saveState();
-    });
-    // Update table data when rows or sort change
+    // Keep table data + selection + sorting synced when rows or sort change
     effect(() => {
       const rows = this.rows();
+      // touch sort signals so effect re-runs when they change
       this.sortCol();
       this.sortDir();
       this.tableSvc.setTableData(
@@ -418,7 +411,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       },
     });
     // Attach to store for syncing & persistence
-    try { this.store.attachTable(this.tsTable); } catch {}
+    try {
+      this.store.attachTable(this.tsTable);
+      this.store.setPersistKey(this._persistKey);
+      this.store.setGetRowId((row: any) => this.toId(row));
+    } catch {}
     // Load persisted state and apply to table before first load
     this.loadState();
     await this.loadPage(0);

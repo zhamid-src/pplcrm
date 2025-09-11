@@ -7,7 +7,7 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
   selector: 'pc-icon',
   standalone: true,
   imports: [BypassHtmlSanitizerPipe],
-  template: ` <div class="class()" [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
+  template: ` <div [class]="class()" [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
 })
 export class Icon {
   /** Holds the final SVG markup (with class injected). */

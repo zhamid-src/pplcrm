@@ -20,6 +20,7 @@ export class GridStoreService {
 
   private _persistKey = signal<string>('');
   private _table: any = null;
+  private _getRowId: ((row: any) => string) | null = null;
 
   constructor() {
     effect(() => {
@@ -53,6 +54,51 @@ export class GridStoreService {
         } catch {}
       }
     });
+
+    // Sync sorting state
+    effect(() => {
+      const s = this.sorting();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: s } }));
+        } catch {}
+      }
+    });
+
+    // Sync column sizing
+    effect(() => {
+      const sizing = this.colWidths();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+        } catch {}
+      }
+    });
+
+    // Sync data
+    effect(() => {
+      const r = this.rows();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, data: r }));
+        } catch {}
+      }
+    });
+
+    // Sync row selection map for current rows
+    effect(() => {
+      const rows = this.rows();
+      const ids = this.selectedIdSet();
+      if (!this._table || !this._getRowId) return;
+      try {
+        const map: Record<string, boolean> = {};
+        for (const r of rows) {
+          const id = this._getRowId(r);
+          if (id && ids.has(id)) map[id] = true;
+        }
+        this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
+      } catch {}
+    });
   }
 
   setPersistKey(key: string) {
@@ -61,5 +107,9 @@ export class GridStoreService {
 
   attachTable(table: any) {
     this._table = table;
+  }
+
+  setGetRowId(fn: (row: any) => string) {
+    this._getRowId = fn;
   }
 }
