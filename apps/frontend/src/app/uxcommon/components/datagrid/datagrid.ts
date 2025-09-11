@@ -1141,12 +1141,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected sortIndicator(col: ColDef): string {
-    if (!col.field) return '';
-    if (this.sortCol() !== col.field) return '';
-    return this.sortDir() === 'asc' ? '▲' : this.sortDir() === 'desc' ? '▼' : '';
-  }
-
   protected sortIndicatorForHeader(h: any): string {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (s === 'asc') return '▲';
