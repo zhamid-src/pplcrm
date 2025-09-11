@@ -37,7 +37,6 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     {
       field: 'assigned_to',
       headerName: 'Assigned To',
-      cellEditor: 'agSelectCellEditor',
       editable: true,
       valueGetter: (p: any) => this.assignedToValueGetter(p),
       valueFormatter: (p: any) => this.assignedToValueFormatter(p),

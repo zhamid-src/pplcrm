@@ -43,7 +43,7 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
     { field: 'state', headerName: 'State' },
     { field: 'zip', headerName: 'Zip' },
     { field: 'people_count', headerName: 'People' },
-    { field: 'tags', headerName: 'Tags', filter: 'agSetColumnFilter' },
+    { field: 'tags', headerName: 'Tags' },
   ];
 
   public override allowFilter = input<boolean>(true);
@@ -76,7 +76,7 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
     { field: 'last_name', headerName: 'Last Name' },
     { field: 'email', headerName: 'Email' },
     { field: 'mobile', headerName: 'Mobile' },
-    { field: 'tags', headerName: 'Tags', filter: 'agSetColumnFilter' },
+    { field: 'tags', headerName: 'Tags' },
     { field: 'city', headerName: 'City' },
     { field: 'state', headerName: 'State' },
     { field: 'zip', headerName: 'Zip' },

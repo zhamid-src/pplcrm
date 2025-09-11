@@ -47,7 +47,6 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     { field: 'city', headerName: 'City', editable: true },
     {
       field: 'tags',
-      filter: true,
       headerName: 'Tags',
       cellDataType: 'object',
       cellRendererParams: {
