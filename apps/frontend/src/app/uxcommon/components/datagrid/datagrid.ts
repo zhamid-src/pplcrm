@@ -37,13 +37,14 @@ import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
-import { GridActionComponent } from './tool-button';
+import { DataGridToolbarComponent } from './ui/toolbar';
+import { DataGridFilterPanelComponent } from './ui/filter-panel';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [Icon, GridActionComponent, FormsModule],
+  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
 })
@@ -178,6 +179,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
+  public readonly labelForFn = (f: string) => this.panelLabelFor(f);
+  public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
