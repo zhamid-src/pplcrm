@@ -32,7 +32,6 @@ import { DataGridFiltersService } from './services/filters.service';
 import { DataGridSelectionService } from './services/selection.service';
 import { DataGridTableService } from './services/table.service';
 import { DataGridActionsService } from './services/actions.service';
-// Legacy grid callbacks removed in TanStack swap
 import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';

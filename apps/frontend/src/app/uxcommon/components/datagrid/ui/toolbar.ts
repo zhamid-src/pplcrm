@@ -35,7 +35,13 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
         icon="arrow-down-tray"
         (action)="exportCsv.emit()"
       />
-      <pc-grid-action icon="funnel" tip="Filter the grid" [active]="showFilters()" (action)="toggleFilters.emit()" />
+      <pc-grid-action
+        icon="funnel"
+        tip="Filter the grid"
+        [hidden]="!allowFilter()"
+        [active]="showFilters()"
+        (action)="toggleFilters.emit()"
+      />
 
       <li class="dropdown dropdown-end">
         <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">
@@ -89,6 +95,7 @@ export class DataGridToolbarComponent {
   hasSelection = input<boolean>(false);
   disableImport = input<boolean>(true);
   disableExport = input<boolean>(false);
+  allowFilter = input<boolean>(true);
   showFilters = input<boolean>(false);
   showArchiveIcon = input<boolean>(false);
   archiveMode = input<boolean>(false);

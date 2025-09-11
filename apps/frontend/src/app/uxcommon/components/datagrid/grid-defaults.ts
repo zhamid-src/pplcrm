@@ -1,12 +1,8 @@
-import { DEFAULT_DATA_GRID_CONFIG } from './datagrid.tokens';
-
-// Lightweight, AG-free column definition used by DataGrid
+// Lightweight column definition used by DataGrid
 export interface ColumnDef {
   field?: string;
   headerName?: string;
   editable?: boolean;
-  colId?: string;
-  filter?: any;
   cellDataType?: string;
   cellRenderer?: (p: { data: any; value: any; colDef: ColumnDef }) => string;
   cellRendererParams?: any;
@@ -18,12 +14,7 @@ export interface ColumnDef {
   valueGetter?: (p: any) => any;
   valueSetter?: (p: any) => boolean;
   cellClass?: string | ((p: any) => string | undefined);
-  cellEditor?: any;
   cellEditorParams?: any;
 }
 
 export const SELECTION_COLUMN: ColumnDef = {};
-
-export const defaultGridOptions = {
-  pageSize: DEFAULT_DATA_GRID_CONFIG.pageSize,
-};
