@@ -1,26 +1,15 @@
 import { Injectable } from '@angular/core';
-import { get, set } from 'idb-keyval';
-import { DataGridConfig } from '../datagrid.tokens';
 import type { ConfirmDialogService } from '@services/shared-dialog.service';
 import type { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { loadingGate } from '@uxcommon/loading-gate';
 
-type DeleteCtx = {
-  alertSvc: AlertService;
-  api?: any; // legacy grid API (unused)
-  config: DataGridConfig;
-  dialogs: ConfirmDialogService;
-  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
-  mergedGridOptions?: any;
-  rowModelType?: 'clientSide' | 'serverSide';
-  _loading: loadingGate;
+import { get, set } from 'idb-keyval';
 
-  getSelectedRows: () => (Partial<any> & { id: string })[];
-};
+import { DataGridConfig } from '../datagrid.tokens';
 
 @Injectable({ providedIn: 'root' })
 export class DataGridActionsService {
-  async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
     const { messages } = ctx.config;
 
     const selectedCount = ctx.getSelectedRows()?.length ?? 0;
@@ -65,9 +54,8 @@ export class DataGridActionsService {
     }
   }
 
-  async doExportCsv(deps: {
+  public async doExportCsv(deps: {
     dialogs: ConfirmDialogService;
-    api?: any;
     alertSvc: AlertService;
     config: DataGridConfig;
     getRowsForExport?: () => Array<Record<string, any>>;
@@ -90,9 +78,7 @@ export class DataGridActionsService {
       jobs.push(job);
       await set('pc_export_jobs', jobs);
 
-      if (deps.api?.exportDataAsCsv) {
-        deps.api.exportDataAsCsv();
-      } else if (deps.getRowsForExport) {
+      if (deps.getRowsForExport) {
         const rows = deps.getRowsForExport() || [];
         if (!rows.length) return;
         const headers = Object.keys(rows[0]);
@@ -135,3 +121,15 @@ export class DataGridActionsService {
     }
   }
 }
+
+type DeleteCtx = {
+  _loading: loadingGate;
+  alertSvc: AlertService;
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
+  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+  mergedGridOptions?: any;
+  rowModelType?: 'clientSide' | 'serverSide';
+
+  getSelectedRows: () => (Partial<any> & { id: string })[];
+};
