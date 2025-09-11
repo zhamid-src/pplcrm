@@ -1,8 +1,8 @@
 import { computed, signal } from '@angular/core';
 
 /**
- * An undo/redo manager for ag-Grid.
- * Supports both AG Grid’s built-in undo (`aggrid`) and custom row-based actions (`custom`).
+ * An undo/redo manager stub for the datagrid.
+ * Currently tracks sizes via signals; integration points are no-ops.
  */
 export class UndoManager {
   private readonly redoSize = signal(0);
@@ -25,29 +25,19 @@ export class UndoManager {
     return 0;
   }
 
-  /**
-   * Assigns the AG Grid API instance to the manager.
-   *
-   * @param api - The grid API to use.
-   */
+  /** Initialize tracking hooks (no external API required). */
   public initialize(_api: any): void {
     this.updateSizes();
   }
 
-  /**
-   * Redoes the last undone action and moves it to the undo stack.
-   * Supports both ag-Grid and custom redo.
-   */
+  /** Redo (not implemented). */
   public redo() {
-    // no-op (AG Grid removed)
+    // no-op
   }
 
-  /**
-   * Redoes the last undone action and moves it to the undo stack.
-   * Supports both ag-Grid and custom redo.
-   */
+  /** Undo (not implemented). */
   public undo() {
-    // no-op (AG Grid removed)
+    // no-op
   }
 
   public updateSizes() {

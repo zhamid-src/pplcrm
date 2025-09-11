@@ -1,13 +1,12 @@
 /**
  * @fileoverview Advanced data grid component for managing person records.
  * Provides comprehensive person management with inline editing, tag management,
- * and address confirmation workflows in a high-performance AG-Grid interface.
+ * and address confirmation workflows.
  */
 import { Component, NgZone, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
-// Removed AG Grid cell renderer usage
 import { Icon } from '@icons/icon';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
@@ -29,7 +28,7 @@ interface ParamsType {
  * including inline editing, tag management, and address handling with confirmation workflows.
  *
  * **Key Features:**
- * - **High-Performance Grid**: Built on AG-Grid for handling large datasets
+ * - **High-Performance Grid**: Efficient rendering for large datasets
  * - **Inline Editing**: Direct editing of person fields (name, email, mobile)
  * - **Tag Management**: Visual tag display and management with custom renderer
  * - **Address Integration**: Address fields with confirmation dialogs for changes
@@ -210,8 +209,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   /**
    * Handles double-click events on address-related cells.
    * Triggers a modal confirmation dialog before navigating to household edit view.
-   *
-   * @param event - The ag-Grid cell event
+   * @param event - The cell event carrying row data
    */
   protected confirmOpenEditOnDoubleClick(event: any) {
     this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
