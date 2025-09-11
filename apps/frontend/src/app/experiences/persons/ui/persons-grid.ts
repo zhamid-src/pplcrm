@@ -10,7 +10,7 @@ import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 // Removed AG Grid cell renderer usage
 import { Icon } from '@icons/icon';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { tagArrayEquals, tagsToString } from '@uxcommon/components/datagrid/datagrid.utils';
+import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
@@ -69,6 +69,7 @@ interface ParamsType {
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly zone = inject(NgZone);
+  private readonly utils = inject(DataGridUtilsService);
 
   /**
    * Stores the household ID when a user tries to change an address,
@@ -119,9 +120,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       },
       // cellRenderer removed; valueFormatter renders tags
       onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
-      equals: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
     },
     {
       field: 'street_num',
