@@ -111,7 +111,7 @@
           } @else {
           <th
             (click)="toggleHeaderSort(h, $event)"
-            class="cursor-pointer select-none relative overflow-visible min-w-0"
+            class="cursor-pointer select-none relative overflow-visible min-w-0 pr-0"
             draggable="true"
             (dragstart)="onHeaderDragStart(h, $event)"
             (dragover)="onHeaderDragOver(h, $event)"
@@ -126,13 +126,13 @@
             [style.width.px]="getColWidth(h.column.id) || null"
             [attr.data-col-id]="h.column.id"
           >
-            <div class="flex items-center gap-2 pr-10">
+            <div class="flex items-center gap-2 pr-0">
               <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
               <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
               <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
               <div
                 tabindex="0"
-                class="ml-auto mr-4 dropdown dropdown-end relative z-[100]"
+                class="ml-auto mr-0 dropdown dropdown-end relative z-[100]"
                 (click)="$event.stopPropagation()"
               >
                 <label
@@ -143,19 +143,33 @@
                 >
                   <pc-icon name="ellipsis-vertical"></pc-icon>
                 </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0">
+                <ul
+                  tabindex="0"
+                  class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0"
+                >
                   @let col = getColDefById(h.column.id);
                   <!-- Filter submenu as nested dropdown -->
                   <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Filter</span><span class="pl-2">▸</span></label>
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2">
-                      @if (col && getFilterOptionsForCol(col)?.length) {
-                      @for (opt of getFilterOptionsForCol(col!)!; track opt) {
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Filter</span><span class="pl-2">▸</span></label
+                    >
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2"
+                    >
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col!)!;
+                      track opt) {
                       <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1" (click)="$event.stopPropagation()">
-                          <input type="checkbox" class="checkbox checkbox-xs"
+                        <label
+                          class="label cursor-pointer justify-start gap-2 px-2 py-1"
+                          (click)="$event.stopPropagation()"
+                        >
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
                             [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)" />
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
                           <span class="label-text">{{ opt }}</span>
                         </label>
                       </li>
@@ -163,10 +177,14 @@
                       <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
                       } @else {
                       <li class="px-2 py-1">
-                        <input class="input input-bordered input-xs w-full" type="text" placeholder="Filter value"
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
                           [value]="getFilterValue(h.column.id)"
                           (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                          (click)="$event.stopPropagation()" />
+                          (click)="$event.stopPropagation()"
+                        />
                       </li>
                       <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
                       }
@@ -174,8 +192,13 @@
                   </li>
                   <!-- Sort submenu as nested dropdown -->
                   <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Sort</span><span class="pl-2">▸</span></label>
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Sort</span><span class="pl-2">▸</span></label
+                    >
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2"
+                    >
                       <li><a (click)="sortAsc(h)">Sort asc</a></li>
                       <li><a (click)="sortDesc(h)">Sort desc</a></li>
                       <li><a (click)="clearSort(h)">Clear sort</a></li>
@@ -183,8 +206,13 @@
                   </li>
                   <!-- Stickiness submenu as nested dropdown -->
                   <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Stickiness</span><span class="pl-2">▸</span></label>
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Stickiness</span><span class="pl-2">▸</span></label
+                    >
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2"
+                    >
                       <li><a (click)="pinLeft(h)">Pin left</a></li>
                       <li><a (click)="pinRight(h)">Pin right</a></li>
                       <li><a (click)="unpin(h)">Unpin</a></li>
@@ -192,25 +220,39 @@
                   </li>
                   <!-- Size submenu as nested dropdown -->
                   <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Size</span><span class="pl-2">▸</span></label>
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-56 p-2 shadow transform -translate-x-2">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Size</span><span class="pl-2">▸</span></label
+                    >
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-56 p-2 shadow transform -translate-x-2"
+                    >
                       <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
                       <li><a (click)="resetColWidth(h)">Reset width</a></li>
                     </ul>
                   </li>
                   <!-- Column submenu as nested dropdown -->
                   <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"><span>Column</span><span class="pl-2">▸</span></label>
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Column</span><span class="pl-2">▸</span></label
+                    >
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2"
+                    >
                       <li><a (click)="hideColumn(h)">Hide</a></li>
                       <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"><span>Columns</span><span class="pl-2">▸</span></label>
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[120] w-64 p-2 shadow transform -translate-x-2">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span>Columns</span><span class="pl-2">▸</span></label
+                        >
+                        <ul
+                          tabindex="0"
+                          class="dropdown-content menu bg-base-100 rounded-box z-[120] w-64 p-2 shadow transform -translate-x-2"
+                        >
                           @for (cid of hiddenColumns(); track cid) {
-                            <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
-                          }
-                          @if (!hiddenColumns().length) {
-                            <li class="opacity-60 px-2 py-1">None hidden</li>
+                          <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                          } @if (!hiddenColumns().length) {
+                          <li class="opacity-60 px-2 py-1">None hidden</li>
                           }
                         </ul>
                       </li>
@@ -252,9 +294,12 @@
                 @for (opt of getFilterOptionsForCol(col!)!; track opt) {
                 <li>
                   <label class="label cursor-pointer justify-start gap-2 px-2 py-1" (click)="$event.stopPropagation()">
-                    <input type="checkbox" class="checkbox checkbox-xs"
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-xs"
                       [checked]="isOptionChecked(col!.field!, opt)"
-                      (change)="onToggleFilterOption(col!.field!, opt, $any($event.target).checked)" />
+                      (change)="onToggleFilterOption(col!.field!, opt, $any($event.target).checked)"
+                    />
                     <span class="label-text">{{ opt }}</span>
                   </label>
                 </li>
