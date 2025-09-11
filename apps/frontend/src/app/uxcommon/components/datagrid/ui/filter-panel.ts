@@ -1,0 +1,77 @@
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+@Component({
+  selector: 'pc-dg-filter-panel',
+  standalone: true,
+  imports: [Icon],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="fixed inset-0 z-40">
+      <div class="absolute inset-0 bg-black/30" (click)="close.emit()"></div>
+      <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 overflow-auto">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-semibold">Advanced Filters</h3>
+          <button class="btn btn-ghost btn-sm" (click)="close.emit()">
+            <pc-icon name="chevron-right"></pc-icon>
+          </button>
+        </div>
+        <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
+        <div class="space-y-3">
+          @for (field of panelFields(); track field) {
+          <div class="form-control">
+            <label class="label py-0"><span class="label-text">{{ labelFor()(field) }}</span></label>
+            <div class="flex gap-2">
+              <select
+                class="select select-bordered select-xs w-28"
+                (change)="changeOp.emit({ field, op: $any($event.target).value })"
+                [value]="$any(panelFilters())[field]?.op || 'contains'"
+              >
+                <option value="contains">contains</option>
+                <option value="equals">equals</option>
+              </select>
+              @if (optionsFor()(field)?.length) {
+              <select
+                class="select select-bordered select-xs flex-1"
+                (change)="changeValue.emit({ field, value: $any($event.target).value })"
+                [value]="$any(panelFilters())[field]?.value || ''"
+              >
+                <option value="">Any</option>
+                @for (opt of optionsFor()(field)!; track opt) {
+                <option [value]="opt">{{ opt }}</option>
+                }
+              </select>
+              } @else {
+              <input
+                class="input input-bordered input-xs flex-1"
+                type="text"
+                placeholder="Value"
+                (input)="changeValue.emit({ field, value: $any($event.target).value })"
+                [value]="$any(panelFilters())[field]?.value || ''"
+              />
+              }
+            </div>
+          </div>
+          }
+        </div>
+        <div class="divider my-3"></div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary btn-sm" (click)="apply.emit()">Apply</button>
+          <button class="btn btn-ghost btn-sm" (click)="clear.emit()">Clear</button>
+        </div>
+      </aside>
+    </div>
+  `,
+})
+export class DataGridFilterPanelComponent {
+  panelFields = input<string[]>([]);
+  panelFilters = input<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
+  labelFor = input<(field: string) => string>((f) => f);
+  optionsFor = input<(field: string) => string[] | null>((_f) => null);
+
+  close = output<void>();
+  apply = output<void>();
+  clear = output<void>();
+  changeOp = output<{ field: string; op: 'contains' | 'equals' }>();
+  changeValue = output<{ field: string; value: any }>();
+}
