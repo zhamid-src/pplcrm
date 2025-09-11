@@ -36,6 +36,7 @@ const UNKNOWN: PcIconNameType = 'unknown';
 const _cache = new Map<PcIconNameType, Promise<string>>();
 
 export const icons = {
+  none: 'none',
   'add-home': 'assets/icons/add-home.svg',
   'add-list': 'assets/icons/add-list.svg',
   'archive-box': 'assets/icons/archive-box.svg',

@@ -1,7 +1,7 @@
 import { Component, effect, input, signal } from '@angular/core';
+import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 import { PcIconNameType, loadIconSvg } from './icons.index';
-import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 @Component({
   selector: 'pc-icon',
@@ -48,10 +48,14 @@ export class Icon {
   }
 
   private async loadSvg(name: PcIconNameType, size: number) {
-    // Fetch raw SVG text from /assets
-    const raw = await loadIconSvg(name);
-    // Inject Tailwind classes into the <svg> element
-    const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
-    this._svgHtml.set(withClass);
+    if (name === 'none') {
+      this._svgHtml.set('');
+    } else {
+      // Fetch raw SVG text from /assets
+      const raw = await loadIconSvg(name);
+      // Inject Tailwind classes into the <svg> element
+      const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
+      this._svgHtml.set(withClass);
+    }
   }
 }
