@@ -53,7 +53,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
               <input
                 type="checkbox"
                 class="checkbox checkbox-xs"
-                [checked]="colVisibilityMap()?.[col.field!] !== false"
+                [checked]="colVisibilityMap()[col.field!] !== false"
                 (change)="toggleCol.emit({ field: col.field!, checked: $any($event.target).checked })"
               />
               <span class="label-text">{{ col.headerName || col.field }}</span>

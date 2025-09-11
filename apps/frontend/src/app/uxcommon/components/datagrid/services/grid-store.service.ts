@@ -19,6 +19,7 @@ export class GridStoreService {
   readonly displayedCount = computed(() => this.rows().length);
 
   private _persistKey = signal<string>('');
+  private _persistTick = signal<number>(0);
   private _table: any = null;
   private _getRowId: ((row: any) => string) | null = null;
 
@@ -30,6 +31,7 @@ export class GridStoreService {
       this.filterValues();
       this.selectionStickyWidth();
       this.colWidths();
+      this._persistTick();
       if (!key) return;
       try {
         const st: any = this._table?.getState?.() ?? {};
@@ -44,6 +46,13 @@ export class GridStoreService {
         } as any;
         localStorage.setItem(key, JSON.stringify(data));
       } catch {}
+    });
+
+    // Attempt to load persisted state whenever key changes
+    effect(() => {
+      const key = this._persistKey();
+      if (!key) return;
+      this._loadFromStorage(key);
     });
 
     effect(() => {
@@ -111,5 +120,46 @@ export class GridStoreService {
 
   setGetRowId(fn: (row: any) => string) {
     this._getRowId = fn;
+  }
+
+  /** Force a persistence attempt, e.g., after pinning/order changes. */
+  requestPersist() {
+    this._persistTick.update((v) => (v + 1) | 0);
+  }
+
+  /** Public: load persisted state immediately (after attach + setPersistKey). */
+  loadState() {
+    const key = this._persistKey();
+    if (!key) return;
+    this._loadFromStorage(key);
+  }
+
+  private _loadFromStorage(key: string) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const data = JSON.parse(raw || '{}') as any;
+      if (data.sorting) this.sorting.set(data.sorting);
+      if (data.visibility) this.colVisibility.set(data.visibility);
+      if (data.filters) this.filterValues.set(data.filters);
+      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      const sizing = data.sizing || {};
+      queueMicrotask(() => {
+        if (this._table?.setOptions) {
+          this._table.setOptions((prev: any) => ({
+            ...prev,
+            state: {
+              ...prev.state,
+              sorting: data.sorting || prev.state?.sorting,
+              columnVisibility: data.visibility || prev.state?.columnVisibility,
+              columnPinning: data.pinning || prev.state?.columnPinning,
+              columnSizing: sizing || prev.state?.columnSizing,
+              columnOrder: data.order || prev.state?.columnOrder,
+            },
+          }));
+        }
+        this.colWidths.set({ ...(sizing || {}) });
+      });
+    } catch {}
   }
 }
