@@ -41,6 +41,7 @@ import { DataGridToolbarComponent } from './ui/toolbar';
 import { DataGridFilterPanelComponent } from './ui/filter-panel';
 import { DataGridHeaderComponent } from './ui/header';
 import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
+import { GridStoreService } from './services/grid-store.service';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -105,6 +106,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly actionsSvc = inject(DataGridActionsService);
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
+  private readonly store = inject(GridStoreService);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
   );
@@ -151,24 +153,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected allSelectedIds: string[] = [];
   protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
-  protected colVisibility = signal<Record<string, boolean>>({});
-  protected colWidths = signal<Record<string, number>>({});
+  protected colVisibility = this.store.colVisibility;
+  protected colWidths = this.store.colWidths;
 
   // Inline edit state
   protected editingCell = signal<{ id: string; field: string } | null>(null);
   protected editingValue = signal<any>('');
-  protected filterValues = signal<Record<string, any>>({});
+  protected filterValues = this.store.filterValues;
   protected isLoading = this._loading.visible;
   protected mergedGridOptions: any = {};
-  protected pageIndex = signal(0);
-  protected panelFilters = signal<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
+  protected pageIndex = this.store.pageIndex;
+  protected panelFilters = this.store.panelFilters;
   protected rowHeight = 36;
 
   // Table state (TanStack-like minimal state)
-  protected rows = signal<Partial<RowOf<T>>[]>([]);
+  protected rows = this.store.rows as any;
   protected scrollTop = signal(0);
-  protected selectedIdSet = signal<Set<string>>(new Set());
-  protected selectionStickyWidth = signal<number>(48);
+  protected selectedIdSet = this.store.selectedIdSet;
+  protected selectionStickyWidth = this.store.selectionStickyWidth;
   protected showFilterPanel = signal(false);
   protected showFilters = signal(false);
   protected sortCol = signal<string | null>(null);
@@ -415,6 +417,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.saveState();
       },
     });
+    // Attach to store for syncing & persistence
+    try { this.store.attachTable(this.tsTable); } catch {}
     // Load persisted state and apply to table before first load
     this.loadState();
     await this.loadPage(0);
@@ -608,7 +612,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
       config: this.config,
-      getRowsForExport: () => this.rows().map((r) => ({ ...r })),
+      getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
     });
   }
 
@@ -1393,7 +1397,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         : await this.gridSvc.getAll(options as getAllOptionsType);
       const incoming = (data.rows as Partial<RowOf<T>>[]) ?? [];
       if (append && this.rows().length > 0) {
-        this.rows.update((curr) => [...curr, ...incoming]);
+        this.rows.update((curr: any[]) => [...curr, ...incoming]);
       } else {
         this.rows.set(incoming);
       }
@@ -1528,7 +1532,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateEditedRowInCaches(id: string, field: string | undefined, value: any) {
     if (!field) return;
     // Update visible rows array
-    this.rows.update((curr) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any);
+    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any);
   }
 
   private updatePinOffsets() {
