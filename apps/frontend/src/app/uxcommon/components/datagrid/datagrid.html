@@ -47,245 +47,65 @@
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
     <table #gridTable class="table table-zebra table-fixed w-full">
       <thead class="sticky top-0 bg-base-100 z-10">
-        @let groups = headerGroups(); @for (grp of groups; track grp.id; let i = $index) {
-        <tr>
-          @if (enableSelection() && i === 0) {
-          <th
-            class="selection-col sticky left-0 z-10 bg-base-100 relative overflow-hidden"
-            [attr.rowspan]="groups.length"
-            [style.width.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-            <!-- Always-visible visual divider -->
-            <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[15]"></span>
-            <!-- Interactive resizer handle -->
-            <span
-              class="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none z-[20] hover:bg-base-300/50"
-              (mousedown)="onSelectionResizeMouseDown($event)"
-              (touchstart)="onSelectionResizeTouchStart($event)"
-              (dragstart)="onSelectionResizeDragStart($event)"
-              draggable="false"
-            ></span>
-          </th>
-          } @for (h of grp.headers; track h.id) { @if (h?.isPlaceholder) {
-          <th [attr.colspan]="h.colSpan"></th>
-          } @else {
-          <th
-            (click)="toggleHeaderSort(h, $event)"
-            class="cursor-pointer select-none relative overflow-visible min-w-0 pr-0"
-            draggable="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            role="columnheader"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [attr.colspan]="h.colSpan"
-            [class.sticky]="pinState(h) !== false"
-            [style.left.px]="pinState(h) === 'left' ? leftOffsetPx(h.column.id) : null"
-            [style.right.px]="pinState(h) === 'right' ? rightOffsetPx(h.column.id) : null"
-            [style.zIndex]="pinState(h) !== false ? 20 : 40"
-            [style.width.px]="getColWidth(h.column.id) || null"
-            [attr.data-col-id]="h.column.id"
-          >
-            <div class="flex items-center gap-2 pr-0">
-              <span class="flex-grow">{{ h.column?.columnDef?.header || h.column?.id }}</span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
-              <div
-                tabindex="0"
-                class="ml-auto mr-0 dropdown dropdown-end relative z-[100]"
-                (click)="$event.stopPropagation()"
-              >
-                <label
-                  tabindex="0"
-                  class="btn btn-ghost btn-xs pointer-events-auto"
-                  title="Column options"
-                  (click)="$event.stopPropagation()"
-                >
-                  <pc-icon name="ellipsis-vertical"></pc-icon>
-                </label>
-                <ul
-                  tabindex="0"
-                  class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0"
-                >
-                  @let col = getColDefById(h.column.id);
-                  <!-- Filter submenu as nested dropdown -->
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Filter</span><span class="pl-2">▸</span></label
-                    >
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2"
-                    >
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col!)!;
-                      track opt) {
-                      <li>
-                        <label
-                          class="label cursor-pointer justify-start gap-2 px-2 py-1"
-                          (click)="$event.stopPropagation()"
-                        >
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                          (click)="$event.stopPropagation()"
-                        />
-                      </li>
-                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
-                      }
-                    </ul>
-                  </li>
-                  <!-- Sort submenu as nested dropdown -->
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Sort</span><span class="pl-2">▸</span></label
-                    >
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2"
-                    >
-                      <li><a (click)="sortAsc(h)">Sort asc</a></li>
-                      <li><a (click)="sortDesc(h)">Sort desc</a></li>
-                      <li><a (click)="clearSort(h)">Clear sort</a></li>
-                    </ul>
-                  </li>
-                  <!-- Stickiness submenu as nested dropdown -->
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Stickiness</span><span class="pl-2">▸</span></label
-                    >
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-48 p-2 shadow transform -translate-x-2"
-                    >
-                      <li><a (click)="pinLeft(h)">Pin left</a></li>
-                      <li><a (click)="pinRight(h)">Pin right</a></li>
-                      <li><a (click)="unpin(h)">Unpin</a></li>
-                    </ul>
-                  </li>
-                  <!-- Size submenu as nested dropdown -->
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Size</span><span class="pl-2">▸</span></label
-                    >
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-56 p-2 shadow transform -translate-x-2"
-                    >
-                      <li><a (click)="autoSizeColumn(h)">Auto-size</a></li>
-                      <li><a (click)="resetColWidth(h)">Reset width</a></li>
-                    </ul>
-                  </li>
-                  <!-- Column submenu as nested dropdown -->
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Column</span><span class="pl-2">▸</span></label
-                    >
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[110] w-64 p-2 shadow transform -translate-x-2"
-                    >
-                      <li><a (click)="hideColumn(h)">Hide</a></li>
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span>Columns</span><span class="pl-2">▸</span></label
-                        >
-                        <ul
-                          tabindex="0"
-                          class="dropdown-content menu bg-base-100 rounded-box z-[120] w-64 p-2 shadow transform -translate-x-2"
-                        >
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
-                          } @if (!hiddenColumns().length) {
-                          <li class="opacity-60 px-2 py-1">None hidden</li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-            </div>
-            @if (i === groups.length - 1) {
-            <!-- Always-visible visual divider -->
-            <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
-            <!-- Interactive resizer handle (kept narrow) -->
-            <span
-              class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
-              (mousedown)="onHeaderResizeMouseDown(h, $event)"
-              (touchstart)="onHeaderResizeTouchStart(h, $event)"
-              (dblclick)="onHeaderResizeDblClick(h, $event)"
-              (dragstart)="onHeaderResizeDragStart($event)"
-              draggable="false"
-            ></span>
-            }
-          </th>
-          } }
-        </tr>
-        } @if (showFilters()) {
-        <tr>
-          @if (enableSelection()) {
-          <th class="selection-col sticky left-0 z-30 bg-base-100" [style.width.px]="selectionStickyWidth()"></th>
-          } @for (h of leafHeaders(); track h.id) { @if (h && h.column?.getIsVisible?.()) { @let col =
-          getColDefById(h.column.id);
-          <th class="border-r border-base-300">
-            @if (col && getFilterOptionsForCol(col)?.length) {
-            <div class="dropdown dropdown-bottom w-full">
-              <label tabindex="0" class="btn btn-ghost btn-xs w-full justify-between">
-                <span>{{ inlineFilterLabel(col!.field!) }}</span>
-                <span>▾</span>
-              </label>
-              <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 shadow">
-                @for (opt of getFilterOptionsForCol(col!)!; track opt) {
-                <li>
-                  <label class="label cursor-pointer justify-start gap-2 px-2 py-1" (click)="$event.stopPropagation()">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-xs"
-                      [checked]="isOptionChecked(col!.field!, opt)"
-                      (change)="onToggleFilterOption(col!.field!, opt, $any($event.target).checked)"
-                    />
-                    <span class="label-text">{{ opt }}</span>
-                  </label>
-                </li>
-                }
-                <li class="px-2 pt-1"><a (click)="clearHeaderFilter(col!.field!)">Clear</a></li>
-              </ul>
-            </div>
-            } @else {
-            <input
-              type="text"
-              class="input input-bordered input-xs w-full"
-              placeholder="Filter..."
-              [value]="$any(filterValues())[col!.field!] || ''"
-              (input)="onFilterInput(col!.field!, $any($event.target).value)"
-            />
-            }
-          </th>
-          } }
-        </tr>
+        <pc-dg-header
+          [groups]="headerGroups()"
+          [enableSelection]="enableSelection()"
+          [selectionStickyWidth]="selectionStickyWidth()"
+          [allSelected]="allSelected()"
+          [tableAllPageSelected]="tableAllPageSelectedFn"
+          [tableSomePageSelected]="tableSomePageSelectedFn"
+          [onHeaderCheckbox]="onHeaderCheckboxFn"
+          [onSelectionResizeMouseDown]="onSelectionResizeMouseDownFn"
+          [onSelectionResizeTouchStart]="onSelectionResizeTouchStartFn"
+          [onSelectionResizeDragStart]="onSelectionResizeDragStartFn"
+          [toggleHeaderSort]="toggleHeaderSortFn"
+          [onHeaderDragStart]="onHeaderDragStartFn"
+          [onHeaderDragOver]="onHeaderDragOverFn"
+          [onHeaderDrop]="onHeaderDropFn"
+          [onHeaderResizeMouseDown]="onHeaderResizeMouseDownFn"
+          [onHeaderResizeTouchStart]="onHeaderResizeTouchStartFn"
+          [onHeaderResizeDblClick]="onHeaderResizeDblClickFn"
+          [onHeaderResizeDragStart]="onHeaderResizeDragStartFn"
+          [ariaSortHeader]="ariaSortHeaderFn"
+          [pinState]="pinStateHFn"
+          [leftOffsetPx]="leftOffsetPxFn"
+          [rightOffsetPx]="rightOffsetPxFn"
+          [getColWidth]="getColWidthFn"
+          [sortIndicatorForHeader]="sortIndicatorForHeaderFn"
+          [getColDefById]="getColDefByIdFn"
+          [getFilterOptionsForCol]="getFilterOptionsForColFn"
+          [isOptionChecked]="isOptionCheckedFn"
+          [onToggleFilterOption]="onToggleFilterOptionFn"
+          [clearHeaderFilter]="clearHeaderFilterFn"
+          [getFilterValue]="getFilterValueFn"
+          [onHeaderFilterInput]="onHeaderFilterInputFn"
+          [sortAsc]="sortAscFn"
+          [sortDesc]="sortDescFn"
+          [clearSort]="clearSortFn"
+          [pinLeft]="pinLeftFn"
+          [pinRight]="pinRightFn"
+          [unpin]="unpinFn"
+          [autoSizeColumn]="autoSizeColumnFn"
+          [resetColWidth]="resetColWidthFn"
+          [hideColumn]="hideColumnFn"
+          [showColumnById]="showColumnByIdFn"
+          [columnLabelFor]="columnLabelForFn"
+          [hiddenColumns]="hiddenColumns()"
+        />
+        @if (showFilters()) {
+          <pc-dg-inline-filters-row
+            [enableSelection]="enableSelection()"
+            [selectionStickyWidth]="selectionStickyWidth()"
+            [leafHeaders]="leafHeaders()"
+            [getColDefById]="inlineGetColDefByIdFn"
+            [getFilterOptionsForCol]="inlineGetFilterOptionsForColFn"
+            [inlineFilterLabel]="inlineFilterLabelFn"
+            [isOptionChecked]="inlineIsOptionCheckedFn"
+            [onToggleFilterOption]="inlineOnToggleFilterOptionFn"
+            [onHeaderFilterInput]="inlineOnHeaderFilterInputFn"
+            [clearHeaderFilter]="inlineClearHeaderFilterFn"
+            [getFilterValue]="inlineGetFilterValueFn"
+          />
         }
       </thead>
       <tbody>
