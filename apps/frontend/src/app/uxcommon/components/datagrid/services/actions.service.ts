@@ -7,7 +7,7 @@ import type { loadingGate } from '@uxcommon/loading-gate';
 
 type DeleteCtx = {
   alertSvc: AlertService;
-  api?: any; // ignored (AG Grid removed)
+  api?: any; // legacy grid API (unused)
   config: DataGridConfig;
   dialogs: ConfirmDialogService;
   gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };

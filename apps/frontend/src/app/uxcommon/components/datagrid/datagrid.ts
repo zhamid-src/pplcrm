@@ -32,7 +32,7 @@ import { DataGridFiltersService } from './services/filters.service';
 import { DataGridSelectionService } from './services/selection.service';
 import { DataGridTableService } from './services/table.service';
 import { DataGridActionsService } from './services/actions.service';
-// AG Grid callbacks/datasource removed in TanStack swap
+// Legacy grid callbacks removed in TanStack swap
 import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
@@ -564,7 +564,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Math.min(this.rows().length, this.startIndex() + this.visibleCount());
   }
 
-  // exportToCSV removed (legacy AG Grid path)
+  // exportToCSV removed (legacy path)
   protected filter() {
     // Open right-side filter panel and seed with current filters
     const current = this.filterValues();
@@ -720,10 +720,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.allSelected() ? this.allSelectedIdSet.has(id) : this.selectedIdSet().has(id);
   }
 
-  /** Utility: sets ID for each row (keep it stringy for stability) */
-  // no-op (AG Grid only)
-
-  // Theme no-op (AG Grid removed)
+  // Theme no-op (unused)
 
   // Sorting
   protected isSortable(col: ColDef): boolean {

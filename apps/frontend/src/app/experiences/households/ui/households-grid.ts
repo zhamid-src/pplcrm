@@ -3,7 +3,6 @@
  */
 import { Component, inject } from '@angular/core';
 import { UpdateHouseholdsObj } from '@common';
-// Removed AG Grid cell renderer usage
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 
@@ -34,9 +33,7 @@ interface ParamsType {
  */
 export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly utils = inject(DataGridUtilsService);
-  /**
-   * Column definitions for the ag-Grid used in the households datagrid.
-   */
+  /** Column definitions for the households datagrid. */
   protected col = [
     {
       field: 'persons_count',
