@@ -22,7 +22,10 @@ import { AbstractAPIService } from '@services/api/abstract-api.service';
 import { SearchService } from '@services/api/search-service';
 import { ConfirmDialogService } from '@services/shared-dialog.service';
 import { type SortingState, ColumnDef as TSColumnDef, type Updater } from '@tanstack/table-core';
-import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
+// Virtualizer handled via controller
+// Context available for future slices/controllers (not yet used here)
+// import { GridContextService } from './state/grid-context.service';
+import { VirtualizerController } from './controllers/virtualizer.controller';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -70,7 +73,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private _selStartW = 48;
   private _selStartX = 0;
   private dragColId: string | null = null;
-  private fetchingNext = false;
+  // Infinite append state handled by controller
   @ViewChild('gridTable', { static: false }) private gridTable?: ElementRef<HTMLTableElement>;
 
   // Sticky pin offsets
@@ -94,7 +97,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.headerWidthMap = measured.headerMap;
     this.updatePinOffsets();
   };
-  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
+  private readonly vctrl = inject(VirtualizerController);
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
@@ -167,7 +170,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Table state (TanStack-like minimal state)
   protected rows = this.store.rows as any;
-  protected scrollTop = signal(0);
   protected selectedIdSet = this.store.selectedIdSet;
   protected selectionStickyWidth = this.store.selectionStickyWidth;
   protected showFilterPanel = signal(false);
@@ -177,7 +179,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected sorting = signal<SortingState>([]);
   protected suppressHeaderDrag = false;
   protected totalCountAll = 0;
-  protected viewportH = signal(0);
+  // viewport handled by controller
 
   public readonly importCSV = output<string>();
   public readonly showArchiveIcon = input<boolean>(false);
@@ -288,11 +290,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.sortDir(),
       );
     });
-    // Keep virtualizer count in sync with rows length
-    effect(() => {
-      const count = this.rows().length;
-      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
-    });
+    // Virtualizer count sync handled by controller
     // Recompute pin offsets on column width or selection width changes
     effect(() => {
       this.colWidths();
@@ -316,21 +314,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public ngAfterViewInit() {
-    const el = this.scroller?.nativeElement;
-    if (el) this.viewportH.set(el.clientHeight || 0);
-    if (el) {
-      this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
-        count: this.rows().length,
-        getScrollElement: () => el,
-        estimateSize: () => this.rowHeight,
-        overscan: 6,
-        // required observers + scroller for DOM elements
-        scrollToFn: elementScroll,
-        observeElementRect,
-        observeElementOffset,
-        // measureElement can be supplied later for variable-height rows
-      });
-    }
+    const el = this.scroller?.nativeElement as HTMLDivElement | undefined;
+    if (el) this.vctrl.attach(el, this.rowHeight);
     // Measure header widths initially and on resize
     queueMicrotask(() => this.updateHeaderWidths());
     window.addEventListener('resize', this.updateHeaderWidths);
@@ -341,7 +326,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     try {
       this.gridSvc.abort();
     } catch {}
-    this.virtualizer = undefined;
+    this.vctrl.detach();
     this.tsTable = undefined;
     window.removeEventListener('resize', this.updateHeaderWidths);
   }
@@ -458,16 +443,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected bottomPadHeight(): number {
-    const v = this.virtualizer;
-    if (v) {
-      const items = v.getVirtualItems();
-      const total = v.getTotalSize();
-      const renderedEnd = items.length ? items[items.length - 1].end : 0;
-      return Math.max(0, total - renderedEnd);
-    }
-    const total = this.rows().length * this.rowHeight;
-    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
-    return Math.max(0, total - rendered);
+    return this.vctrl.bottomPadHeight();
   }
 
   // Build a compact filter model from current UI filter values
@@ -617,9 +593,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected endIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items[items.length - 1].index + 1;
-    return Math.min(this.rows().length, this.startIndex() + this.visibleCount());
+    return this.vctrl.endIndex();
   }
 
   // exportToCSV removed (legacy path)
@@ -968,20 +942,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Virtualization helpers
   protected onScroll(event: Event) {
-    const el = event.target as HTMLElement;
-    this.scrollTop.set(el.scrollTop || 0);
-    this.viewportH.set(el.clientHeight || this.viewportH());
-    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
-    // Infinite append: when near bottom, fetch next page if available
-    try {
-      if (this.canNext() && !this.isLoading() && !this.fetchingNext) {
-        const nearBottom = this.endIndex() > this.rows().length - 10;
-        if (nearBottom) {
-          this.fetchingNext = true;
-          this.nextPage().finally(() => (this.fetchingNext = false));
-        }
-      }
-    } catch {}
+    this.vctrl.configurePaging({
+      canNext: () => this.canNext(),
+      isLoading: () => this.isLoading(),
+      nextPage: () => this.nextPage(),
+    });
+    this.vctrl.onScroll(event);
   }
 
   // Prevent drag-reorder when grabbing selection resizer
@@ -1199,10 +1165,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected startIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items[0].index;
-    // Fallback before virtualizer initializes
-    return Math.max(0, Math.floor((this.scrollTop() || 0) / this.rowHeight));
+    return this.vctrl.startIndex();
   }
 
   // Row selection helpers (TanStack-driven)
@@ -1265,9 +1228,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected topPadHeight(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items[0].start;
-    return this.startIndex() * this.rowHeight;
+    return this.vctrl.topPadHeight();
   }
 
   // Pagination
@@ -1279,10 +1240,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected visibleCount(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items.length;
-    const vp = this.viewportH() || 0;
-    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
+    return this.vctrl.visibleCount();
   }
 
   protected visibleRows(): Partial<RowOf<T>>[] {
@@ -1290,11 +1248,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected visibleTableRows(): any[] {
-    const tbl: any = this.tsTable;
-    const all = tbl?.getRowModel?.().rows || [];
-    const start = this.startIndex();
-    const end = this.endIndex();
-    return all.slice(start, end);
+    this.vctrl.attachTable(this.tsTable);
+    return this.vctrl.visibleTableRows();
   }
 
   /** Helper: applies single-field patch */
@@ -1367,13 +1322,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       } else {
         this.rows.set(incoming);
       }
-      // Update virtualizer and table data
-      if (this.virtualizer) {
-        this.virtualizer.setOptions({
-          ...this.virtualizer.options,
-          count: this.rows().length,
-        });
-      }
+      // Virtualizer count sync handled by controller
       this.tableSvc.setTableData(
         this.tsTable,
         this.rows() as any[],
