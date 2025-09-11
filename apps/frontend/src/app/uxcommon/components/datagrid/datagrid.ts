@@ -39,12 +39,14 @@ import { DataGridUtilsService } from './services/utils.service';
 import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
 import { DataGridToolbarComponent } from './ui/toolbar';
 import { DataGridFilterPanelComponent } from './ui/filter-panel';
+import { DataGridHeaderComponent } from './ui/header';
+import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent],
+  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent, DataGridHeaderComponent, DataGridInlineFiltersRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
 })
@@ -181,6 +183,53 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
   public readonly labelForFn = (f: string) => this.panelLabelFor(f);
   public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
+  public readonly tableAllPageSelectedFn = () => this.tableAllPageSelected();
+  public readonly tableSomePageSelectedFn = () => this.tableSomePageSelected();
+  public readonly onHeaderCheckboxFn = (checked: boolean) => this.onHeaderCheckbox(checked);
+  public readonly onSelectionResizeMouseDownFn = (ev: MouseEvent) => this.onSelectionResizeMouseDown(ev);
+  public readonly onSelectionResizeTouchStartFn = (ev: TouchEvent) => this.onSelectionResizeTouchStart(ev);
+  public readonly onSelectionResizeDragStartFn = (ev: DragEvent) => this.onSelectionResizeDragStart(ev);
+  public readonly toggleHeaderSortFn = (h: any, ev?: MouseEvent) => this.toggleHeaderSort(h, ev);
+  public readonly onHeaderDragStartFn = (h: any, ev: DragEvent) => this.onHeaderDragStart(h, ev);
+  public readonly onHeaderDragOverFn = (h: any, ev: DragEvent) => this.onHeaderDragOver(h, ev);
+  public readonly onHeaderDropFn = (h: any, ev: DragEvent) => this.onHeaderDrop(h, ev);
+  public readonly ariaSortHeaderFn = (h: any) => this.ariaSortHeader(h);
+  public readonly pinStateHFn = (h: any) => this.pinState(h);
+  public readonly leftOffsetPxFn = (id: string) => this.leftOffsetPx(id);
+  public readonly rightOffsetPxFn = (id: string) => this.rightOffsetPx(id);
+  public readonly getColWidthFn = (id: string) => this.getColWidth(id);
+  public readonly sortIndicatorForHeaderFn = (h: any) => this.sortIndicatorForHeader(h);
+  public readonly getColDefByIdFn = (id: string) => this.getColDefById(id);
+  public readonly getFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
+  public readonly isOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
+  public readonly onToggleFilterOptionFn = (field: string, opt: string, checked: boolean) => this.onToggleFilterOption(field, opt, checked);
+  public readonly clearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
+  public readonly getFilterValueFn = (field: string) => this.getFilterValue(field);
+  public readonly onHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
+  public readonly sortAscFn = (h: any) => this.sortAsc(h);
+  public readonly sortDescFn = (h: any) => this.sortDesc(h);
+  public readonly clearSortFn = (h: any) => this.clearSort(h);
+  public readonly pinLeftFn = (h: any) => this.pinLeft(h);
+  public readonly pinRightFn = (h: any) => this.pinRight(h);
+  public readonly unpinFn = (h: any) => this.unpin(h);
+  public readonly autoSizeColumnFn = (h: any) => this.autoSizeColumn(h);
+  public readonly resetColWidthFn = (h: any) => this.resetColWidth(h);
+  public readonly hideColumnFn = (h: any) => this.hideColumn(h);
+  public readonly showColumnByIdFn = (id: string) => this.showColumnById(id);
+  public readonly columnLabelForFn = (id: string) => this.columnLabelFor(id);
+  public readonly onHeaderResizeMouseDownFn = (h: any, ev: MouseEvent) => this.onHeaderResizeMouseDown(h, ev);
+  public readonly onHeaderResizeTouchStartFn = (h: any, ev: TouchEvent) => this.onHeaderResizeTouchStart(h, ev);
+  public readonly onHeaderResizeDblClickFn = (h: any, ev: MouseEvent) => this.onHeaderResizeDblClick(h, ev);
+  public readonly onHeaderResizeDragStartFn = (ev: DragEvent) => this.onHeaderResizeDragStart(ev);
+
+  public readonly inlineGetColDefByIdFn = (id: string) => this.getColDefById(id);
+  public readonly inlineGetFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
+  public readonly inlineFilterLabelFn = (field: string) => this.inlineFilterLabel(field);
+  public readonly inlineIsOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
+  public readonly inlineOnToggleFilterOptionFn = (field: string, opt: string, checked: boolean) => this.onToggleFilterOption(field, opt, checked);
+  public readonly inlineOnHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
+  public readonly inlineClearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
+  public readonly inlineGetFilterValueFn = (field: string) => this.getFilterValue(field);
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
