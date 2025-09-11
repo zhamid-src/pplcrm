@@ -387,7 +387,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.sortCol.set(first?.id ?? null);
         this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
         this.loadPage(0);
-        this.saveState();
+        this.store.requestPersist();
       },
       onRowSelectionChange: (updater: Updater<any>) => {
         const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
@@ -407,7 +407,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.colWidths.set({ ...(next || {}) });
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
         queueMicrotask(() => this.updatePinOffsets());
-        this.saveState();
+        this.store.requestPersist();
       },
     });
     // Attach to store for syncing & persistence
@@ -417,7 +417,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.store.setGetRowId((row: any) => this.toId(row));
     } catch {}
     // Load persisted state and apply to table before first load
-    this.loadState();
+    this.store.loadState();
     await this.loadPage(0);
   }
 
@@ -463,7 +463,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!table) return;
     const px = this.columnsSvc.computeAutoSizeWidth(table, id);
     if (px > 0) this.setColWidth(id, px);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected bottomPadHeight(): number {
@@ -519,7 +519,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     delete next[field];
     this.filterValues.set(next);
     this.loadPage(0);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected clearPanelFilters() {
@@ -618,7 +618,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, next as any);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   /** Triggers the import CSV flow (placeholder only). */
@@ -921,7 +921,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (from < 0 || to < 0) return;
     order.splice(to, 0, ...order.splice(from, 1));
     table?.setOptions?.((prev: any) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected onHeaderFilterInput(field: string, value: any) {
@@ -931,7 +931,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     else next[field] = { op: 'contains', value: v };
     this.filterValues.set(next);
     this.loadPage(0);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected onHeaderResizeDblClick(h: any, ev: MouseEvent) {
@@ -1063,7 +1063,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     else next[field] = { op: 'in', value: nextArr };
     this.filterValues.set(next);
     this.loadPage(0);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   /** Opens edit form for row. */
@@ -1095,13 +1095,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected pinLeft(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'left');
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected pinRight(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'right');
-    this.saveState();
+    this.store.requestPersist();
   }
 
   // Column pinning helpers
@@ -1125,7 +1125,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const sizing: Record<string, number> = {};
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
     queueMicrotask(() => this.updatePinOffsets());
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected resetColWidth(h: any) {
@@ -1269,7 +1269,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         state: { ...prev.state, columnVisibility: v },
       }));
     }
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected toggleHeaderSort(h: any, ev?: MouseEvent) {
@@ -1306,7 +1306,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected unpin(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, false);
-    this.saveState();
+    this.store.requestPersist();
   }
 
   protected visibleCount(): number {
@@ -1369,7 +1369,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   private endSelectionResize() {
-    this.saveState();
+    this.store.requestPersist();
   }
 
   private async loadPage(index: number, append = false) {
@@ -1421,33 +1421,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  private loadState() {
-    try {
-      const raw = localStorage.getItem(this._persistKey);
-      const data = this.dataSvc.parsePersistState(raw);
-      if (!data) return;
-      if (data.sorting) this.sorting.set(data.sorting);
-      if (data.visibility) this.colVisibility.set(data.visibility);
-      if (data.filters) this.filterValues.set(data.filters);
-      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
-      queueMicrotask(() => {
-        if (!this.tsTable) return;
-        this.tsTable.setOptions((prev: any) => ({
-          ...prev,
-          state: {
-            ...prev.state,
-            sorting: data.sorting || prev.state.sorting,
-            columnVisibility: data.visibility || prev.state.columnVisibility,
-            columnPinning: data.pinning || prev.state.columnPinning,
-            columnSizing: data.sizing || prev.state.columnSizing,
-            columnOrder: data.order || prev.state.columnOrder,
-          },
-        }));
-        this.colWidths.set({ ...(data.sizing || {}) });
-        this.updatePinOffsets();
-      });
-    } catch {}
-  }
+  // Persistence handled by GridStoreService
 
   private manualColumnResizeMove(col: any, clientX: number) {
     const dx = clientX - this._colStartX;
@@ -1470,7 +1444,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const up = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
-      this.saveState();
+      this.store.requestPersist();
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -1496,21 +1470,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.undoMgr.updateSizes();
   }
 
-  private saveState() {
-    try {
-      const st: any = this.tsTable?.getState?.() ?? {};
-      const data = {
-        sorting: st.sorting || [],
-        visibility: st.columnVisibility || {},
-        pinning: st.columnPinning || { left: [], right: [] },
-        sizing: st.columnSizing || {},
-        order: st.columnOrder || [],
-        filters: this.filterValues() || {},
-        selectionWidth: this.selectionStickyWidth(),
-      };
-      localStorage.setItem(this._persistKey, this.dataSvc.makePersistState(data));
-    } catch {}
-  }
+  // saveState removed (consolidated into GridStoreService)
 
   /** Helper: prevents editing specific fields */
   private shouldBlockEdit(row: Partial<RowOf<T>>, key: keyof any): boolean {
@@ -1523,7 +1483,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
     // Recompute pin offsets when pinning state changes
     this.updatePinOffsets();
-    this.saveState();
+    this.store.requestPersist();
   }
 
   private updateEditedRowInCaches(id: string, field: string | undefined, value: any) {
