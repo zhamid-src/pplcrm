@@ -1141,11 +1141,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected sortIndicatorForHeader(h: any): string {
+  protected sortIndicatorForHeader(h: any): PcIconNameType {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
-    if (s === 'asc') return '▲';
-    if (s === 'desc') return '▼';
-    return '';
+    if (s === 'asc') return 'chevron-up';
+    if (s === 'desc') return 'chevron-down';
+    return 'none';
   }
 
   protected startEdit(row: any, col: ColDef) {

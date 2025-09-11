@@ -127,8 +127,8 @@
             [attr.data-col-id]="h.column.id"
           >
             <div class="flex items-center gap-2 pr-0">
-              <span>{{ h.column?.columnDef?.header || h.column?.id }}</span>
-              <span class="text-xs opacity-70">{{ sortIndicatorForHeader(h) }}</span>
+              <span class="flex-grow">{{ h.column?.columnDef?.header || h.column?.id }}</span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
               <!-- Dropdown moved to absolute container to avoid overlap with resizer -->
               <div
                 tabindex="0"
