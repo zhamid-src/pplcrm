@@ -1,16 +1,6 @@
 import { Injectable } from '@angular/core';
 import type { getAllOptionsType } from '@common';
 
-export interface PersistState {
-  sorting: any[];
-  visibility: Record<string, boolean>;
-  pinning: { left: string[]; right: string[] };
-  sizing: Record<string, number>;
-  order: string[];
-  filters: Record<string, any>;
-  selectionWidth: number;
-}
-
 @Injectable({ providedIn: 'root' })
 export class DataGridDataService {
   computeTotalPages(totalCountAll: number, pageSize: number): number {
@@ -43,19 +33,4 @@ export class DataGridDataService {
             : [],
     } satisfies Partial<getAllOptionsType>;
   }
-
-  parsePersistState(raw: string | null): PersistState | null {
-    if (!raw) return null;
-    try {
-      const data = JSON.parse(raw || '{}');
-      return data as PersistState;
-    } catch {
-      return null;
-    }
-  }
-
-  makePersistState(data: PersistState): string {
-    return JSON.stringify(data);
-  }
 }
-

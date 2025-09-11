@@ -21,7 +21,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
         icon="trash"
         (action)="deleteSelected.emit()"
       />
-      <pc-grid-action [enabled]="canMerge()" [tip]="'Merge'" icon="merge" (action)="merge.emit()"></pc-grid-action>
+      
       <pc-grid-action
         [enabled]="!disableImport()"
         [tip]="'Import data from CSV'"
@@ -87,7 +87,6 @@ export class DataGridToolbarComponent {
   canRedo = input<boolean>(false);
   disableDelete = input<boolean>(false);
   hasSelection = input<boolean>(false);
-  canMerge = input<boolean>(false);
   disableImport = input<boolean>(true);
   disableExport = input<boolean>(false);
   showFilters = input<boolean>(false);
@@ -102,7 +101,6 @@ export class DataGridToolbarComponent {
   undo = output<void>();
   redo = output<void>();
   deleteSelected = output<void>();
-  merge = output<void>();
   importCsv = output<void>();
   exportCsv = output<void>();
   toggleFilters = output<void>();

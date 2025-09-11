@@ -36,7 +36,7 @@ import { DataGridActionsService } from './services/actions.service';
 import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
-import { type ColumnDef as ColDef, SELECTION_COLUMN, defaultGridOptions } from './grid-defaults';
+import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
 import { DataGridToolbarComponent } from './ui/toolbar';
 import { DataGridFilterPanelComponent } from './ui/filter-panel';
 import { DataGridHeaderComponent } from './ui/header';
@@ -111,7 +111,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
   );
-  protected readonly canMerge = computed(() => this.countRowSelected() > 1);
+  
 
   // Computed derivations
   protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll, this.config.pageSize));
@@ -162,7 +162,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected editingValue = signal<any>('');
   protected filterValues = this.store.filterValues;
   protected isLoading = this._loading.visible;
-  protected mergedGridOptions: any = {};
   protected pageIndex = this.store.pageIndex;
   protected panelFilters = this.store.panelFilters;
   protected rowHeight = 36;
@@ -260,11 +259,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
-  public gridOptions = input<any>({});
+  // gridOptions removed (unused)
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
-  public storageKey = input<string>('');
 
   constructor() {
     // React to global search (SSRM: trigger server-side filter)
@@ -352,14 +350,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public async ngOnInit() {
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
-    this._persistKey = this.storageKey() ? this.storageKey()! : `pcdg:${urlKey}`;
-    const allowFilter = this.allowFilter();
-    this.mergedGridOptions = {
-      ...defaultGridOptions,
-      rowModelType: 'serverSide',
-      suppressHeaderMenuButton: !allowFilter,
-      ...this.gridOptions(),
-    };
+    this._persistKey = `pcdg:${urlKey}`;
+    // Note: allowFilter input retained for API compatibility (filter UI uses signals)
     const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
     this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
     // Initialize column visibility defaults
@@ -593,8 +585,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       alertSvc: this.alertSvc,
       getSelectedRows: () => this.getSelectedRows(),
       gridSvc: this.gridSvc,
-      rowModelType: 'serverSide',
-      mergedGridOptions: this.mergedGridOptions,
       config: this.config,
     });
 
@@ -716,25 +706,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return typeof col.valueFormatter === 'function';
   }
 
-  protected headerClick(col: ColDef, ev?: MouseEvent) {
-    if (!this.isSortable(col) || !col.field) return;
-    const id = col.field as string;
-    const multi = !!ev?.shiftKey;
-    const colObj = this.tsTable?.getColumn?.(id);
-    if (colObj?.toggleSorting) {
-      colObj.toggleSorting(undefined, multi);
-      return;
-    }
-    // Fallback: minimal multi-sort
-    const current = [...this.sorting()];
-    let next: SortingState = multi ? current : [];
-    const idx = next.findIndex((s) => s.id === id);
-    if (idx === -1) next.push({ id, desc: false });
-    else if (!next[idx].desc) next[idx] = { id, desc: true };
-    else next.splice(idx, 1);
-    this.sorting.set(next);
-    this.loadPage(0);
-  }
+  // headerClick removed; using explicit header API bindings instead
 
   protected headerGroups(): any[] {
     const tbl: any = this.tsTable;
@@ -808,9 +780,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.pinnedLeftOffsets()[colId] || 0;
   }
 
-  protected merge() {
-    console.log('merged');
-  }
+  // merge action removed
 
   protected async nextPage() {
     if (!this.canNext()) return;
