@@ -231,6 +231,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly inlineClearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
   public readonly inlineGetFilterValueFn = (field: string) => this.getFilterValue(field);
 
+  // Row/cell adapters
+  public readonly toIdFn = (row: any) => this.toId(row);
+  public readonly onRowCheckboxChangeFn = (row: any, checked: boolean) => this.onRowCheckboxChange(row, checked);
+  public readonly isColVisibleFn = (col: any) => this.isColVisible(col);
+  public readonly pinStateCellFn = (cell: any) => this.pinState(cell as any);
+  public readonly handleCellDblClickFn = (row: any, col: any) => this.handleCellDblClick(row, col);
+  public readonly onCellKeydownFn = (ev: KeyboardEvent) => this.onCellKeydown(ev);
+  public readonly setEditingValueFn = (v: any) => this.editingValue.set(v);
+  public readonly commitEditFn = (row: any, col: any) => this.commitEdit(row, col);
+  public readonly cancelEditFn = () => this.cancelEdit();
+  public readonly inputTypeForFn = (col: any) => this.inputTypeFor(col);
+  public readonly hasCellRendererFn = (col: any) => this.hasCellRenderer(col);
+  public readonly callCellRendererFn = (row: any, col: any) => this.callCellRenderer(row, col);
+  public readonly callValueFormatterFn = (row: any, col: any) => this.callValueFormatter(row, col);
+  public readonly getCellValueFn = (row: any, col: any) => this.getCellValue(row, col);
+
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
   public allowFilter = input<boolean>(true);
