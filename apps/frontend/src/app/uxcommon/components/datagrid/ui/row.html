@@ -1,0 +1,65 @@
+@if (enableSelection()) {
+  <td class="sticky left-0 z-20 bg-base-100" [style.width.px]="selectionStickyWidth()">
+    <input
+      type="checkbox"
+      class="checkbox checkbox-sm"
+      [checked]="allSelected() ? allSelectedIdSet().has(toId()(row().original)) : row().getIsSelected()"
+      (change)="onRowCheckboxChange()(row(), $any($event.target).checked)"
+    />
+  </td>
+}
+@for (cell of row().getVisibleCells(); track cell.id) {
+  @let col = getColDefById()(cell.column.id);
+  @if (col && isColVisible()(col)) {
+    <td
+      (dblclick)="handleCellDblClick()(row().original, col)"
+      tabindex="0"
+      (keydown)="onCellKeydown()($event)"
+      [pcStickyPin]="true"
+      [pcStickyState]="pinStateCell()(cell)"
+      [pcStickyLeft]="leftOffsetPx()(cell.column.id)"
+      [pcStickyRight]="rightOffsetPx()(cell.column.id)"
+      [pcStickyZ]="10"
+      [style.width.px]="getColWidth()(cell.column.id) || null"
+      class="overflow-hidden min-w-0 px-0"
+      [attr.data-col-id]="cell.column.id"
+    >
+      @let ec = editingCell();
+      @if (ec && ec.id === toId()(row().original) && ec.field === col.field) {
+        @let opts = getFilterOptionsForCol()(col);
+        @if (opts?.length) {
+          <select
+            class="select select-bordered select-xs w-full"
+            [ngModel]="editingValue()"
+            (ngModelChange)="setEditingValue()($event)"
+            (blur)="commitEdit()(row().original, col)"
+            (keydown.enter)="commitEdit()(row().original, col)"
+            (keydown.esc)="cancelEdit()()"
+            autofocus
+          >
+            @for (o of opts; track o) {
+              <option [value]="o">{{ o }}</option>
+            }
+          </select>
+        } @else {
+          <input
+            [type]="inputTypeFor()(col)"
+            class="input input-bordered input-xs w-full"
+            [ngModel]="editingValue()"
+            (ngModelChange)="setEditingValue()($event)"
+            (blur)="commitEdit()(row().original, col)"
+            (keydown.enter)="commitEdit()(row().original, col)"
+            (keydown.esc)="cancelEdit()()"
+            autofocus
+          />
+        }
+      } @else if (hasCellRenderer()(col)) {
+        <span [innerHTML]="callCellRenderer()(row().original, col)"></span>
+      } @else if (col.valueFormatter) {
+        {{ callValueFormatter()(row().original, col) }}
+      } @else {
+        {{ getCellValue()(row().original, col) }}
+      }
+    </td>
+  }
+}
