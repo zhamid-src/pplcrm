@@ -128,8 +128,6 @@ type DeleteCtx = {
   config: DataGridConfig;
   dialogs: ConfirmDialogService;
   gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
-  mergedGridOptions?: any;
-  rowModelType?: 'clientSide' | 'serverSide';
 
   getSelectedRows: () => (Partial<any> & { id: string })[];
 };
