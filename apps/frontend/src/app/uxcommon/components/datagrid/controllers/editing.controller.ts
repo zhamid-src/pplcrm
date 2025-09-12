@@ -21,7 +21,7 @@ export class EditingController {
 
   async commitSingleCell(opts: {
     row: any;
-    col: { field?: string; cellDataType?: string };
+    col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean };
     currentValue: any;
     toId: (row: any) => string;
     createPayload: (row: any, key: string) => any;
@@ -40,11 +40,23 @@ export class EditingController {
     if (!id) return false;
     const key = col.field as string;
     const prev = (row as any)[key as any];
-    const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
-    if (equal) return true;
-
+    // If a valueSetter is provided on the col, let it handle assignment/normalization
+    let changed = false;
     const before = { ...(row || {}) } as any;
-    (row as any)[key as any] = currentValue;
+    if (typeof opts.col.valueSetter === 'function') {
+      try {
+        // Provide a best-effort AG-like params object
+        const didSet = opts.col.valueSetter({ data: row, newValue: opts.currentValue, value: prev, colDef: opts.col });
+        changed = !!didSet;
+      } catch {
+        changed = false;
+      }
+    } else {
+      const equal = prev === opts.currentValue || (prev == null && (opts.currentValue == null || opts.currentValue === ''));
+      changed = !equal;
+      if (changed) (row as any)[key as any] = opts.currentValue;
+    }
+    if (!changed) return true;
     try {
       if (this.shouldBlockEdit(row, key)) {
         opts.undo();
@@ -71,4 +83,3 @@ export class EditingController {
     }
   }
 }
-
