@@ -50,6 +50,7 @@ import { ResizingController } from './controllers/resizing.controller';
 import { ReorderController } from './controllers/reorder.controller';
 import { KeyboardController } from './controllers/keyboard.controller';
 import { EditingController } from './controllers/editing.controller';
+import { FetchController } from './controllers/fetch.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -116,6 +117,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly rctrl = inject(ResizingController);
   private readonly kctrl = inject(KeyboardController);
   private readonly editingCtrl = inject(EditingController);
+  private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
@@ -1034,20 +1036,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Select all rows that match current search/tags (server- or client-side). */
   protected async selectAllMatching() {
     try {
-      const options: any = {
-        searchStr: this.searchSvc.getFilterText(),
-        tags: this.limitToTags(),
-      };
-      const { rows, count } = this.archiveMode()
-        ? await this.gridSvc.getAllArchived(options as getAllOptionsType)
-        : await this.gridSvc.getAll(options as getAllOptionsType);
-      const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
+      const { ids, count } = await this.fetchCtrl.selectAllMatching({
+        archiveMode: this.archiveMode(),
+        searchText: this.searchSvc.getFilterText(),
+        limitToTags: this.limitToTags(),
+        gridSvc: this.gridSvc as any,
+      });
       this.allSelectedIds = ids;
       this.allSelectedIdSet = new Set(ids);
-      this.allSelectedCount = count ?? ids.length;
+      this.allSelectedCount = count;
       this.allSelected.set(ids.length > 0);
       this.alertSvc.showInfo(`Selected ${this.allSelectedCount} row(s)`);
-    } catch (e) {
+    } catch {
       this.alertSvc.showError('Failed to select all rows');
     }
   }
@@ -1238,48 +1238,37 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // selection resize handled by ResizingController
 
   private async loadPage(index: number, append = false) {
-    const end = this._loading.begin();
-    try {
-      const pageSize = this.config.pageSize;
-      const startRow = index * pageSize;
-      const endRow = startRow + pageSize;
-      const sortState = this.sorting();
-      const options = this.dataSvc.buildGetAllOptions({
-        searchStr: this.searchSvc.getFilterText(),
-        startRow,
-        endRow,
-        tags: this.limitToTags(),
-        filterModel: this.buildFilterModel(),
-        sortState: sortState as any,
-        sortCol: this.sortCol(),
-        sortDir: this.sortDir(),
-      });
-      const data = this.archiveMode()
-        ? await this.gridSvc.getAllArchived(options as getAllOptionsType)
-        : await this.gridSvc.getAll(options as getAllOptionsType);
-      const incoming = (data.rows as Partial<RowOf<T>>[]) ?? [];
-      if (append && this.rows().length > 0) {
-        this.rows.update((curr: any[]) => [...curr, ...incoming]);
-      } else {
-        this.rows.set(incoming);
-      }
-      // Virtualizer count sync handled by controller
-      this.tableSvc.setTableData(
-        this.tsTable,
-        this.rows() as any[],
-        this.buildRowSelectionForCurrentData(),
-        this.sortCol(),
-        this.sortDir(),
-      );
-      this.totalCountAll = data.count ?? this.rows().length;
-      this.pageIndex.set(index);
-      // Ensure OnPush view updates when rows/table data change
-      this.cdr.markForCheck();
-    } catch (e) {
-      this.alertSvc.showError(this.config.messages.loadFailed);
-    } finally {
-      end();
-    }
+    await this.fetchCtrl.loadPage({
+      index,
+      append,
+      pageSize: this.config.pageSize,
+      archiveMode: this.archiveMode(),
+      searchText: this.searchSvc.getFilterText(),
+      limitToTags: this.limitToTags(),
+      filterModel: this.buildFilterModel(),
+      sortState: this.sorting() as any,
+      sortCol: this.sortCol(),
+      sortDir: this.sortDir(),
+      gridSvc: this.gridSvc as any,
+      dataSvc: this.dataSvc as any,
+      getRows: () => this.rows(),
+      setRows: (rows: any[]) => this.rows.set(rows as any),
+      updateTableData: (rows: any[]) =>
+        this.tableSvc.setTableData(
+          this.tsTable,
+          rows,
+          this.buildRowSelectionForCurrentData(),
+          this.sortCol(),
+          this.sortDir(),
+        ),
+      setVirtualCount: (_count: number) => {},
+      setTotalCountAll: (n: number) => (this.totalCountAll = n),
+      setPageIndex: (i: number) => this.pageIndex.set(i),
+      begin: () => this._loading.begin(),
+      showError: (m: string) => this.alertSvc.showError(m),
+      loadFailedMsg: this.config.messages.loadFailed,
+    });
+    this.cdr.markForCheck();
   }
 
   // Persistence handled by GridStoreService
