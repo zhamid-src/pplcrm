@@ -354,9 +354,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public ngOnDestroy(): void {
     // Abort any inflight requests and release refs
-    try {
-      this.gridSvc.abort();
-    } catch {}
+    this.gridSvc.abort();
     this.vctrl.detach();
     this.tsTable = undefined;
     window.removeEventListener('resize', this.updateHeaderWidths);
@@ -1235,7 +1233,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       showError: (m: string) => this.alertSvc.showError(m),
       loadFailedMsg: this.config.messages.loadFailed,
     });
-    this.cdr.markForCheck();
   }
 
   // Persistence handled by GridStoreService
