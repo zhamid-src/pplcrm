@@ -43,9 +43,8 @@ import { HeaderResizeDirective } from '../directives/header-resize.directive';
         (click)="toggleHeaderSort()(h, $event)"
         class="cursor-pointer select-none relative overflow-visible min-w-0 pr-0"
         draggable="true"
-        (dragstart)="onHeaderDragStart()(h, $event)"
-        (dragover)="onHeaderDragOver()(h, $event)"
-        (drop)="onHeaderDrop()(h, $event)"
+        pcHeaderReorder
+        [pcHeaderReorder]="h"
         role="columnheader"
         [attr.aria-sort]="ariaSortHeader()(h)"
         [attr.colspan]="h.colSpan"
@@ -144,10 +143,8 @@ import { HeaderResizeDirective } from '../directives/header-resize.directive';
         <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
         <span
           class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
-          (mousedown)="onHeaderResizeMouseDown()(h, $event)"
-          (touchstart)="onHeaderResizeTouchStart()(h, $event)"
-          (dblclick)="onHeaderResizeDblClick()(h, $event)"
-          (dragstart)="onHeaderResizeDragStart()($event)"
+          pcHeaderResize
+          [pcHeaderResize]="h"
           draggable="false"
         ></span>
         }
