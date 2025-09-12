@@ -47,6 +47,7 @@ import { DataGridHeaderComponent } from './ui/header';
 import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
+import { ReorderController } from './controllers/reorder.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -72,7 +73,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private _persistKey = 'pcdg';
   // selection width tracked in store
   // Selection resize handled by ResizingController
-  private dragColId: string | null = null;
+  // dragColId handled in ReorderController
   // Infinite append state handled by controller
   @ViewChild('gridTable', { static: false }) private gridTable?: ElementRef<HTMLTableElement>;
 
@@ -111,6 +112,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly store = inject(GridStoreService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly rctrl = inject(ResizingController);
+  private readonly reorder = inject(ReorderController);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
   );
@@ -826,44 +828,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected onHeaderDragOver(_h: any, ev: DragEvent) {
-    ev.preventDefault();
-    try {
-      ev.dataTransfer!.dropEffect = 'move';
-    } catch {}
+    this.reorder.onDragOver(ev);
   }
 
   // Column reordering (drag-and-drop)
   protected onHeaderDragStart(h: any, ev: DragEvent) {
-    // If a resize gesture initiated, cancel drag reorder
-    if (this.suppressHeaderDrag) {
-      try {
-        ev.preventDefault();
-      } catch {}
-      ev.stopPropagation();
-      return;
-    }
-    const id = String(h?.column?.id || '');
-    this.dragColId = id;
-    try {
-      ev.dataTransfer?.setData('text/plain', id);
-      ev.dataTransfer!.effectAllowed = 'move';
-    } catch {}
+    this.reorder.configure({ suppressHeaderDrag: () => this.suppressHeaderDrag, requestPersist: () => this.store.requestPersist() });
+    this.reorder.onDragStart(h, ev);
   }
 
   protected onHeaderDrop(h: any, ev: DragEvent) {
-    ev.preventDefault();
-    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
-    const tgt = String(h?.column?.id || '');
-    if (!src || !tgt || src === tgt) return;
-    const table: any = this.tsTable;
-    const leaves: any[] = table?.getAllLeafColumns?.() || [];
-    const order: string[] = leaves.map((c: any) => String(c.id));
-    const from = order.indexOf(String(src));
-    const to = order.indexOf(String(tgt));
-    if (from < 0 || to < 0) return;
-    order.splice(to, 0, ...order.splice(from, 1));
-    table?.setOptions?.((prev: any) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
-    this.store.requestPersist();
+    this.reorder.onDrop(h, ev, this.tsTable);
   }
 
   protected onHeaderFilterInput(field: string, value: any) {
