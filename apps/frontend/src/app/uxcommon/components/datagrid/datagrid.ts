@@ -1,3 +1,5 @@
+//tsco: ignore
+
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -57,7 +59,15 @@ import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent, DataGridHeaderComponent, DataGridInlineFiltersRowComponent, EditableCellDirective],
+  imports: [
+    Icon,
+    FormsModule,
+    DataGridToolbarComponent,
+    DataGridFilterPanelComponent,
+    DataGridHeaderComponent,
+    DataGridInlineFiltersRowComponent,
+    EditableCellDirective,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
   providers: [
@@ -133,10 +143,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
-  
 
   // Computed derivations
-  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll(), this.config.pageSize));
+  protected readonly totalPages = computed(() =>
+    this.dataSvc.computeTotalPages(this.totalCountAll(), this.config.pageSize),
+  );
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
@@ -225,7 +236,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly getColDefByIdFn = (id: string) => this.getColDefById(id);
   public readonly getFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
   public readonly isOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
-  public readonly onToggleFilterOptionFn = (field: string, opt: string, checked: boolean) => this.onToggleFilterOption(field, opt, checked);
+  public readonly onToggleFilterOptionFn = (field: string, opt: string, checked: boolean) =>
+    this.onToggleFilterOption(field, opt, checked);
   public readonly clearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
   public readonly getFilterValueFn = (field: string) => this.getFilterValue(field);
   public readonly onHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
@@ -246,7 +258,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly inlineGetFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
   public readonly inlineFilterLabelFn = (field: string) => this.inlineFilterLabel(field);
   public readonly inlineIsOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
-  public readonly inlineOnToggleFilterOptionFn = (field: string, opt: string, checked: boolean) => this.onToggleFilterOption(field, opt, checked);
+  public readonly inlineOnToggleFilterOptionFn = (field: string, opt: string, checked: boolean) =>
+    this.onToggleFilterOption(field, opt, checked);
   public readonly inlineOnHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
   public readonly inlineClearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
   public readonly inlineGetFilterValueFn = (field: string) => this.getFilterValue(field);
@@ -255,7 +268,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly toIdFn = (row: any) => this.toId(row);
   public readonly inputTypeForFn = (col: any) => this.inputTypeFor(col);
   public readonly createPayloadFn = (row: any, key: string) => this.utilsSvc.createPayload(row, key);
-  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any) => this.updateEditedRowInCaches(id, f, v);
+  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any) =>
+    this.updateEditedRowInCaches(id, f, v);
   public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
   public readonly requestPersistFn = () => this.store.requestPersist();
   public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c as any, raw);
@@ -268,7 +282,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     value: () => this.editingValue(),
     setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
     createPayload: this.createPayloadFn,
-    applyEdit: (id: string, data: any) => this.gridSvc.update(id, data).then(() => true).catch(() => false),
+    applyEdit: (id: string, data: any) =>
+      this.gridSvc
+        .update(id, data)
+        .then(() => true)
+        .catch(() => false),
     updateEditedRow: this.updateEditedRowInCachesFn,
     updateWindow: this.updateTableWindowFn,
     startIndex: () => this.startIndex(),
@@ -293,7 +311,23 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
 
+  private _squelch = false;
+
   constructor() {
+    // Prevents being stuck on an out-of-range page after filters change.
+    effect(() => {
+      if (this._squelch) return;
+      const total = this.totalPages();
+      const page = this.pageIndex();
+      if (total > 0 && page >= total) {
+        this._squelch = true;
+        queueMicrotask(async () => {
+          await this.loadPage(Math.max(0, total - 1));
+          this._squelch = false;
+        });
+      }
+    });
+
     // React to global search (SSRM: trigger server-side filter)
     effect(() => {
       const quickFilterText = this.searchSvc.getFilterText();
@@ -345,7 +379,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.pctrl.init({
       getColWidth: (id) => this.getColWidth(id),
       getSelectionWidth: () => this.selectionStickyWidth(),
-      getPinState: () => (this.tsTable?.getState?.().columnPinning ?? { left: [], right: [] }),
+      getPinState: () => this.tsTable?.getState?.().columnPinning ?? { left: [], right: [] },
     });
     // Measure header widths initially and on resize
     this.updateHeaderWidths();
@@ -767,7 +801,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return (tbl.getFlatHeaders?.() || []).filter((h: any) => h.column?.getIsVisible?.());
   }
 
-  protected leftOffsetPx(colId: string): number { return this.pctrl.leftOffsetPx(colId); }
+  protected leftOffsetPx(colId: string): number {
+    return this.pctrl.leftOffsetPx(colId);
+  }
 
   // merge action removed
 
@@ -815,7 +851,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Column reordering (drag-and-drop)
   protected onHeaderDragStart(h: any, ev: DragEvent) {
-    this.reorder.configure({ suppressHeaderDrag: () => this.suppressHeaderDrag, requestPersist: () => this.store.requestPersist() });
+    this.reorder.configure({
+      suppressHeaderDrag: () => this.suppressHeaderDrag,
+      requestPersist: () => this.store.requestPersist(),
+    });
     this.reorder.onDragStart(h, ev);
   }
 
@@ -1257,7 +1296,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateEditedRowInCaches(id: string, field: string | undefined, value: any) {
     if (!field) return;
     // Update visible rows array
-    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any);
+    this.rows.update(
+      (curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any,
+    );
   }
 
   // pin offsets handled by PinningController
