@@ -48,6 +48,8 @@ import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
 import { ReorderController } from './controllers/reorder.controller';
+import { KeyboardController } from './controllers/keyboard.controller';
+import { EditingController } from './controllers/editing.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -112,6 +114,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly store = inject(GridStoreService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly rctrl = inject(ResizingController);
+  private readonly kctrl = inject(KeyboardController);
+  private readonly editingCtrl = inject(EditingController);
   private readonly reorder = inject(ReorderController);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
@@ -521,33 +525,23 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected async commitEdit(row: any, col: ColDef) {
     if (!col.field) return;
-    const id = this.toId(row);
-    const value = this.coerceEditingValue(col, this.editingValue());
-    const key = col.field as string;
-    const prev = (row as any)[key as any];
-    // Skip saving if value hasn't changed
-    const equal = prev === value || (prev == null && (value == null || value === ''));
-    if (equal) {
-      this.editingCell.set(null);
-      return;
-    }
-    // Apply value locally to row copy (optimistic)
-    const before = { ...(row || {}) } as any;
-    (row as any)[key as any] = value;
-    try {
-      // Pass the full row so payload includes the edited value
-      await this.onCellValueChanged(row as any, col.field as any);
-      this.updateEditedRowInCaches(id, col.field, value);
-      this.alertSvc.showSuccess('Row updated');
-    } catch {
-      // revert local row on failure
-      (row as any)[key as any] = before[key as any];
-      this.alertSvc.showError('Update failed');
-    } finally {
-      this.editingCell.set(null);
-      // Refresh visible window in table
-      this.updateTableWindow(this.startIndex(), this.endIndex());
-    }
+    const value = this.editingValue();
+    await this.editingCtrl.commitSingleCell({
+      row,
+      col,
+      currentValue: this.coerceEditingValue(col, value),
+      toId: (r) => this.toId(r),
+      createPayload: (r, k) => this.utilsSvc.createPayload(r, k),
+      applyEdit: (id, data) => this.applyEdit(id, data),
+      updateEditedRowInCaches: (id, field, v) => this.updateEditedRowInCaches(id, field, v),
+      updateTableWindow: (s, e) => this.updateTableWindow(s, e),
+      startIndex: () => this.startIndex(),
+      endIndex: () => this.endIndex(),
+      showSuccess: (m) => this.alertSvc.showSuccess(m),
+      showError: (m) => this.alertSvc.showError(m),
+      undo: () => this.undoMgr.undo(),
+    });
+    this.editingCell.set(null);
   }
 
   /** Confirm and then delete selected rows */
@@ -763,48 +757,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Keyboard navigation between cells
   protected onCellKeydown(ev: KeyboardEvent) {
-    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
-    if (!td) return;
-    const tr = td.parentElement as HTMLElement | null;
-    if (!tr) return;
-    const colId = td.getAttribute('data-col-id') || '';
-    if (!colId) return;
-    const key = ev.key;
-    if (key === 'Enter') {
-      ev.preventDefault();
-      const rowId = tr.getAttribute('data-row-id') || '';
-      if (!rowId) return;
-      const col = this.getColDefById(colId);
-      if (!col) return;
-      // Find row by id from current window or full rows
-      const row = (this.rows() as any[]).find((r: any) => String(r?.id) === rowId);
-      if (!row) return;
-      if (this.isEditable(col)) this.startEdit(row, col);
-      return;
-    }
-    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
-    ev.preventDefault();
-    if (key === 'ArrowDown' || key === 'ArrowUp') {
-      const dir = key === 'ArrowDown' ? 1 : -1;
-      let row: HTMLElement | null = tr;
-      while (row) {
-        row =
-          dir > 0 ? (row.nextElementSibling as HTMLElement | null) : (row.previousElementSibling as HTMLElement | null);
-        if (!row) break;
-        const nextTd = row.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
-        if (nextTd) {
-          nextTd.focus({ preventScroll: false });
-          break;
-        }
-      }
-    } else {
-      // Left/Right within row
-      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
-      const idx = cells.findIndex((c) => c === td);
-      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
-      const nextTd = cells[nextIdx];
-      if (nextTd) nextTd.focus({ preventScroll: false });
-    }
+    this.kctrl.handleCellKeydown(ev, {
+      getColDefById: (id) => this.getColDefById(id),
+      isEditable: (col) => this.isEditable(col),
+      startEdit: (row, col) => this.startEdit(row, col),
+      rows: () => this.rows(),
+    });
   }
 
   /** Called when a row is hovered. Used to track row ID. */
@@ -1328,32 +1286,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // header resize handled by ResizingController
 
-  /** Called when a cell changes. Persists changes via backend and manages undo. */
-  private async onCellValueChanged(row: Partial<RowOf<T>> & { id: string }, field: any) {
-    const key = field;
-
-    if (this.shouldBlockEdit(row, key)) {
-      this.undoMgr.undo();
-      return this.alertSvc.showError(this.config.messages.editBlocked);
-    }
-
-    const payload = this.utilsSvc.createPayload(row, key);
-    const edited = await this.applyEdit(row.id, payload);
-
-    if (!edited) {
-      this.undoMgr.undo();
-      return this.alertSvc.showError(this.config.messages.editFailed);
-    }
-
-    this.undoMgr.updateSizes();
-  }
+  // onCellValueChanged handled by EditingController
 
   // saveState removed (consolidated into GridStoreService)
 
-  /** Helper: prevents editing specific fields */
-  private shouldBlockEdit(row: Partial<RowOf<T>>, key: keyof any): boolean {
-    return 'deletable' in (row as any) && (row as any).deletable === false && (key as string) === 'name';
-  }
+  // shouldBlockEdit handled by EditingController
 
   private syncSignalsFromTable() {
     const st: any = this.tsTable?.getState?.() ?? {};
