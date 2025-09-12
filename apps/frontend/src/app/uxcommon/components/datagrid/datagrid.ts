@@ -30,6 +30,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { DataGridColumnsService } from './services/columns.service';
+import { PinningController } from './controllers/pinning.controller';
 import { DataGridDataService } from './services/data.service';
 import { DataGridFiltersService } from './services/filters.service';
 import { DataGridSelectionService } from './services/selection.service';
@@ -44,6 +45,7 @@ import { DataGridFilterPanelComponent } from './ui/filter-panel';
 import { DataGridHeaderComponent } from './ui/header';
 import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
 import { GridStoreService } from './services/grid-store.service';
+import { ResizingController } from './controllers/resizing.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -60,42 +62,38 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly route = inject(ActivatedRoute);
   private readonly searchSvc = inject(SearchService);
 
-  private _colStartW = 0;
-
-  // Manual fallback for column resizing when core handler isn't available
-  private _colStartX = 0;
+  // Header resize handled by ResizingController
 
   //private readonly themeSvc = inject(ThemeService);
   private _loading = createLoadingGate();
 
   // Persistence
   private _persistKey = 'pcdg';
-  private _selStartW = 48;
-  private _selStartX = 0;
+  // selection width tracked in store
+  // Selection resize handled by ResizingController
   private dragColId: string | null = null;
   // Infinite append state handled by controller
   @ViewChild('gridTable', { static: false }) private gridTable?: ElementRef<HTMLTableElement>;
 
   // Sticky pin offsets
-  private headerWidthMap = new Map<string, number>();
+  // header widths tracked by PinningController
 
   // Other State
   private lastRowHovered: string | undefined;
   private oldFilterText = '';
-  private pinnedLeftOffsets = signal<Record<string, number>>({});
-  private pinnedRightOffsets = signal<Record<string, number>>({});
+  // pin offsets tracked by PinningController
 
   // Optional cache placeholder removed (unused in current implementation)
   @ViewChild('scroller', { static: false }) private scroller?: ElementRef<HTMLDivElement>;
   private tsColumns: TSColumnDef<any, any>[] = [];
   private tsTable: any;
+  private readonly pctrl = inject(PinningController);
   private updateHeaderWidths = () => {
     const table = this.gridTable?.nativeElement;
     if (!table) return;
-    const measured = this.columnsSvc.measureHeaderWidths(table);
+    const measured = this.pctrl.measureHeaderWidths(table);
     if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
-    this.headerWidthMap = measured.headerMap;
-    this.updatePinOffsets();
+    this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
   };
   private readonly vctrl = inject(VirtualizerController);
 
@@ -110,6 +108,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
   private readonly store = inject(GridStoreService);
+  private readonly rctrl = inject(ResizingController);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
   );
@@ -295,7 +294,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     effect(() => {
       this.colWidths();
       this.selectionStickyWidth();
-      this.updatePinOffsets();
+      this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
     });
   }
 
@@ -382,7 +381,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         const next = typeof updater === 'function' ? (updater as any)(current) : (updater as any);
         this.colWidths.set({ ...(next || {}) });
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
-        queueMicrotask(() => this.updatePinOffsets());
+        queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
         this.store.requestPersist();
       },
     });
@@ -749,9 +748,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return (tbl.getFlatHeaders?.() || []).filter((h: any) => h.column?.getIsVisible?.());
   }
 
-  protected leftOffsetPx(colId: string): number {
-    return this.pinnedLeftOffsets()[colId] || 0;
-  }
+  protected leftOffsetPx(colId: string): number { return this.pctrl.leftOffsetPx(colId); }
 
   // merge action removed
 
@@ -900,8 +897,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       window.removeEventListener('mouseup', end);
     };
     window.addEventListener('mouseup', end);
-    // Always use manual handler for consistent behavior
-    this.manualColumnResizeStart(h, ev.clientX);
+    this.rctrl.beginHeaderResize(
+      h,
+      ev.clientX,
+      (id) => this.getColWidth(id),
+      (col, id, w) => {
+        if (typeof col.setSize === 'function') col.setSize(w);
+        else this.setColWidth(String(id), w);
+        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth());
+      },
+      () => this.store.requestPersist(),
+    );
   }
 
   protected onHeaderResizeTouchStart(h: any, ev: TouchEvent) {
@@ -912,8 +918,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       window.removeEventListener('touchend', end);
     };
     window.addEventListener('touchend', end);
-    // Always use manual handler for consistent behavior
-    this.manualColumnResizeStart(h, ev.touches?.[0]?.clientX ?? 0);
+    this.rctrl.beginHeaderResizeTouch(
+      h,
+      ev.touches?.[0]?.clientX ?? 0,
+      (id) => this.getColWidth(id),
+      (col, id, w) => {
+        if (typeof col.setSize === 'function') col.setSize(w);
+        else this.setColWidth(String(id), w);
+        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth());
+      },
+      () => this.store.requestPersist(),
+    );
   }
 
   protected onPanelOpChange(field: string, op: 'contains' | 'equals') {
@@ -961,31 +976,31 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Selection column resize
   protected onSelectionResizeMouseDown(ev: MouseEvent) {
     ev.stopPropagation();
-    this._selStartX = ev.clientX;
-    this._selStartW = this.selectionStickyWidth();
-    const move = (e: MouseEvent) => this.continueSelectionResize(e.clientX);
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      this.endSelectionResize();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    const startW = this.selectionStickyWidth();
+    this.rctrl.beginSelectionResize(
+      ev.clientX,
+      startW,
+      (w) => {
+        this.selectionStickyWidth.set(w);
+        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, w);
+      },
+      () => this.store.requestPersist(),
+    );
   }
 
   protected onSelectionResizeTouchStart(ev: TouchEvent) {
     ev.stopPropagation();
     const x = ev.touches?.[0]?.clientX ?? 0;
-    this._selStartX = x;
-    this._selStartW = this.selectionStickyWidth();
-    const move = (e: TouchEvent) => this.continueSelectionResize(e.touches?.[0]?.clientX ?? 0);
-    const up = () => {
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', up);
-      this.endSelectionResize();
-    };
-    window.addEventListener('touchmove', move);
-    window.addEventListener('touchend', up);
+    const startW = this.selectionStickyWidth();
+    this.rctrl.beginSelectionResizeTouch(
+      x,
+      startW,
+      (w) => {
+        this.selectionStickyWidth.set(w);
+        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, w);
+      },
+      () => this.store.requestPersist(),
+    );
   }
 
   protected onToggleFilterOption(field: string, option: string, checked: boolean) {
@@ -1059,7 +1074,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.colWidths.set({});
     const sizing: Record<string, number> = {};
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-    queueMicrotask(() => this.updatePinOffsets());
+    queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
     this.store.requestPersist();
   }
 
@@ -1074,11 +1089,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return next;
     });
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-    queueMicrotask(() => this.updatePinOffsets());
+    queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
   }
 
   protected rightOffsetPx(colId: string): number {
-    return this.pinnedRightOffsets()[colId] || 0;
+    return this.pctrl.rightOffsetPx(colId);
   }
 
   /** Select all rows that match current search/tags (server- or client-side). */
@@ -1285,16 +1300,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return raw;
   }
 
-  private continueSelectionResize(clientX: number) {
-    const dx = clientX - this._selStartX;
-    const w = Math.max(32, this._selStartW + dx);
-    this.selectionStickyWidth.set(Math.round(w));
-    this.updatePinOffsets();
-  }
-
-  private endSelectionResize() {
-    this.store.requestPersist();
-  }
+  // selection resize handled by ResizingController
 
   private async loadPage(index: number, append = false) {
     const end = this._loading.begin();
@@ -1341,32 +1347,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Persistence handled by GridStoreService
 
-  private manualColumnResizeMove(col: any, clientX: number) {
-    const dx = clientX - this._colStartX;
-    const w = Math.max(40, Math.floor(this._colStartW + dx));
-    if (typeof col.setSize === 'function') col.setSize(w);
-    else this.setColWidth(String(col.id || ''), w);
-    this.updatePinOffsets();
-  }
-
-  private manualColumnResizeStart(h: any, clientX: number) {
-    const col = h?.column;
-    if (!col) return;
-    const id = String(col.id || '');
-    const startW = Number(
-      (typeof col.getSize === 'function' ? col.getSize() : undefined) || this.getColWidth(id) || 100,
-    );
-    this._colStartX = clientX;
-    this._colStartW = startW;
-    const move = (e: MouseEvent) => this.manualColumnResizeMove(col, e.clientX);
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      this.store.requestPersist();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  }
+  // header resize handled by ResizingController
 
   /** Called when a cell changes. Persists changes via backend and manages undo. */
   private async onCellValueChanged(row: Partial<RowOf<T>> & { id: string }, field: any) {
@@ -1400,7 +1381,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (st.sorting) this.sorting.set(st.sorting);
     if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
     // Recompute pin offsets when pinning state changes
-    this.updatePinOffsets();
+    this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
     this.store.requestPersist();
   }
 
@@ -1410,18 +1391,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any);
   }
 
-  private updatePinOffsets() {
-    const tbl: any = this.tsTable;
-    const pin = tbl?.getState?.().columnPinning || { left: [], right: [] };
-    const { left, right } = this.columnsSvc.computePinOffsets({
-      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
-      getColWidth: (id) => this.getColWidth(id),
-      headerWidthMap: this.headerWidthMap,
-      selectionStickyWidth: this.selectionStickyWidth(),
-    });
-    this.pinnedLeftOffsets.set(left);
-    this.pinnedRightOffsets.set(right);
-  }
+  // pin offsets handled by PinningController
 
   // Update table data with current visible window (fallback implementation)
   // For now, map to the visibleRows() slice when virtualizer is active
