@@ -1,6 +1,7 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   OnDestroy,
@@ -108,6 +109,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
   private readonly store = inject(GridStoreService);
+  private readonly cdr = inject(ChangeDetectorRef);
   private readonly rctrl = inject(ResizingController);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
@@ -1338,6 +1340,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       );
       this.totalCountAll = data.count ?? this.rows().length;
       this.pageIndex.set(index);
+      // Ensure OnPush view updates when rows/table data change
+      this.cdr.markForCheck();
     } catch (e) {
       this.alertSvc.showError(this.config.messages.loadFailed);
     } finally {
