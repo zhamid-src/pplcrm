@@ -109,13 +109,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     requestAnimationFrame(() => {
       const measured = this.pctrl.measureHeaderWidths(table);
       if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
-      this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
     });
-    // Ensure controllers know the current table instance
-    this.vctrl.attachTable(this.tsTable);
-    try {
-      (this.pctrl as any).attachTable?.(this.tsTable);
-    } catch {}
   };
   private readonly vctrl = inject(VirtualizerController);
 
@@ -325,12 +319,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       );
     });
     // Virtualizer count sync handled by controller
-    // Recompute pin offsets on column width or selection width changes
-    effect(() => {
-      this.colWidths();
-      this.selectionStickyWidth();
-      this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
-    });
+    // Pin offsets recompute centralized in PinningController
   }
 
   public getCountRowSelected() {
@@ -352,11 +341,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (el) this.vctrl.attach(el, this.rowHeight);
     // Attach controllers to the table once
     this.vctrl.attachTable(this.tsTable);
-    try {
-      (this.pctrl as any).attachTable?.(this.tsTable);
-    } catch {}
+    this.pctrl.attachTable(this.tsTable);
+    this.pctrl.init({
+      getColWidth: (id) => this.getColWidth(id),
+      getSelectionWidth: () => this.selectionStickyWidth(),
+      getPinState: () => (this.tsTable?.getState?.().columnPinning ?? { left: [], right: [] }),
+    });
     // Measure header widths initially and on resize
-    requestAnimationFrame(() => this.updateHeaderWidths());
+    this.updateHeaderWidths();
     window.addEventListener('resize', this.updateHeaderWidths);
   }
 
@@ -421,7 +413,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         const next = typeof updater === 'function' ? (updater as any)(current) : (updater as any);
         this.colWidths.set({ ...(next || {}) });
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
-        queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
         this.store.requestPersist();
       },
     });
@@ -864,7 +855,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.allSelected()) {
       const id = this.toId(row.original ?? row);
       if (!id) return;
-      this.selSvc.updateAllSelectedIdSet(this.allSelectedIdSet, id, checked);
+      const next = new Set(this.allSelectedIdSet);
+      if (checked) next.add(id);
+      else next.delete(id);
+      this.allSelectedIdSet = next;
+      this.cdr.markForCheck();
       return;
     }
     if (typeof row?.toggleSelected === 'function') row.toggleSelected(checked);
@@ -897,7 +892,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       startW,
       (w) => {
         this.selectionStickyWidth.set(w);
-        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, w);
       },
       () => this.store.requestPersist(),
     );
@@ -912,7 +906,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       startW,
       (w) => {
         this.selectionStickyWidth.set(w);
-        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, w);
       },
       () => this.store.requestPersist(),
     );
@@ -989,7 +982,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.colWidths.set({});
     const sizing: Record<string, number> = {};
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-    queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
     this.store.requestPersist();
   }
 
@@ -1004,7 +996,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return next;
     });
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-    queueMicrotask(() => this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth()));
   }
 
   protected rightOffsetPx(colId: string): number {
@@ -1145,8 +1136,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected toggleRowChecked(id: string, checked: boolean) {
     if (this.allSelected()) {
-      if (!checked) this.allSelectedIdSet.delete(id);
-      else this.allSelectedIdSet.add(id);
+      const next = new Set(this.allSelectedIdSet);
+      if (checked) next.add(id);
+      else next.delete(id);
+      this.allSelectedIdSet = next;
+      this.cdr.markForCheck();
     } else {
       const set = new Set(this.selectedIdSet());
       if (checked) set.add(id);
@@ -1169,10 +1163,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected visibleCount(): number {
     return this.vctrl.visibleCount();
-  }
-
-  protected visibleRows(): Partial<RowOf<T>>[] {
-    return this.rows().slice(this.startIndex(), this.endIndex());
   }
 
   protected visibleTableRows(): any[] {
@@ -1262,8 +1252,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const st: any = this.tsTable?.getState?.() ?? {};
     if (st.sorting) this.sorting.set(st.sorting);
     if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
-    // Recompute pin offsets when pinning state changes
-    this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
+    // Notify pin-state change so controller effect recomputes offsets
+    this.pctrl.notifyPinStateChanged();
     this.store.requestPersist();
   }
 
@@ -1275,8 +1265,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // pin offsets handled by PinningController
 
-  // Update table data with current visible window (fallback implementation)
-  // For now, map to the visibleRows() slice when virtualizer is active
+  // Update table data with current visible window
   private updateTableWindow(start: number, end: number) {
     this.tableSvc.updateTableWindow(
       this.tsTable,
