@@ -2,11 +2,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import type { PcIconNameType } from '@icons/icons.index';
 import type { ColumnDef as ColDef } from '../grid-defaults';
+import { HeaderReorderDirective } from '../directives/header-reorder.directive';
+import { HeaderResizeDirective } from '../directives/header-resize.directive';
 
 @Component({
   selector: 'pc-dg-header',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, HeaderReorderDirective, HeaderResizeDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @for (grp of groups(); track grp.id; let i = $index) {
