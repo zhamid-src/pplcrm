@@ -1,41 +1,68 @@
 import { Directive, HostListener, Input, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
+import { ResizingController } from '../controllers/resizing.controller';
+import { PinningController } from '../controllers/pinning.controller';
+import type { HeaderRef } from '../types';
 
 @Directive({
   selector: '[pcHeaderResize]',
   standalone: true,
 })
 export class HeaderResizeDirective {
-  @Input('pcHeaderResize') header: any;
+  private readonly resizing = inject(ResizingController);
+  private readonly pinning = inject(PinningController);
 
-  private readonly grid = inject<any>(DataGrid as any);
+  @Input({ required: true }) pcHeaderResize!: {
+    header: HeaderRef; // TanStack header ref
+    getColWidth: (id: string) => number | null;
+    setWidth: (col: any, id: string, px: number) => void;
+    requestPersist: () => void;
+    selectionWidth: () => number;
+  };
 
   @HostListener('mousedown', ['$event'])
   onMouseDown(ev: MouseEvent) {
-    try {
-      this.grid.onHeaderResizeMouseDown(this.header, ev);
-    } catch {}
+    ev.stopPropagation();
+    const h = this.pcHeaderResize.header;
+    this.resizing.beginHeaderResize(
+      h,
+      ev.clientX,
+      this.pcHeaderResize.getColWidth,
+      (col, id, w) => {
+        this.pcHeaderResize.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table,
+          (cid) => this.pcHeaderResize.getColWidth(cid) ?? 0,
+          this.pcHeaderResize.selectionWidth()
+        );
+      },
+      this.pcHeaderResize.requestPersist,
+    );
   }
 
   @HostListener('touchstart', ['$event'])
   onTouchStart(ev: TouchEvent) {
-    try {
-      this.grid.onHeaderResizeTouchStart(this.header, ev);
-    } catch {}
-  }
-
-  @HostListener('dblclick', ['$event'])
-  onDblClick(ev: MouseEvent) {
-    try {
-      this.grid.onHeaderResizeDblClick(this.header, ev);
-    } catch {}
+    ev.stopPropagation();
+    const x = ev.touches?.[0]?.clientX ?? 0;
+    const h = this.pcHeaderResize.header;
+    this.resizing.beginHeaderResizeTouch(
+      h,
+      x,
+      this.pcHeaderResize.getColWidth,
+      (col, id, w) => {
+        this.pcHeaderResize.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table,
+          (cid) => this.pcHeaderResize.getColWidth(cid) ?? 0,
+          this.pcHeaderResize.selectionWidth()
+        );
+      },
+      this.pcHeaderResize.requestPersist,
+    );
   }
 
   @HostListener('dragstart', ['$event'])
   onDragStart(ev: DragEvent) {
-    try {
-      this.grid.onHeaderResizeDragStart(ev);
-    } catch {}
+    ev.preventDefault();
+    ev.stopPropagation();
   }
 }
-

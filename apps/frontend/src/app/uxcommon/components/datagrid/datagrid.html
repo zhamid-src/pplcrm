@@ -32,14 +32,14 @@
   />
   } @if (isLoading()) {
   <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll) {
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
     <span>All {{ displayedCount() }} rows on this page are selected.</span>
-    <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll }} rows</a>
+    <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll() }} rows</a>
   </div>
   } @if (allSelected()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span>All {{ allSelectedCount || totalCountAll }} rows are selected.</span>
+    <span>All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span>
     <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
   </div>
   }
@@ -61,10 +61,7 @@
           [onHeaderDragStart]="onHeaderDragStartFn"
           [onHeaderDragOver]="onHeaderDragOverFn"
           [onHeaderDrop]="onHeaderDropFn"
-          [onHeaderResizeMouseDown]="onHeaderResizeMouseDownFn"
-          [onHeaderResizeTouchStart]="onHeaderResizeTouchStartFn"
-          [onHeaderResizeDblClick]="onHeaderResizeDblClickFn"
-          [onHeaderResizeDragStart]="onHeaderResizeDragStartFn"
+          [requestPersist]="requestPersistFn"
           [ariaSortHeader]="ariaSortHeaderFn"
           [pinState]="pinStateHFn"
           [leftOffsetPx]="leftOffsetPxFn"
@@ -128,7 +125,7 @@
           } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
           isColVisible(col)) {
           <td
-            (dblclick)="handleCellDblClick(r.original, col)"
+            [pcEditable]="editableCfg(r.original, col)"
             tabindex="0"
             (keydown)="onCellKeydown($event)"
             [class.sticky]="pinState(cell) !== false"
@@ -146,9 +143,6 @@
               class="select select-bordered select-xs w-full"
               [ngModel]="editingValue()"
               (ngModelChange)="editingValue.set($event)"
-              (blur)="commitEdit(r.original, col)"
-              (keydown.enter)="commitEdit(r.original, col)"
-              (keydown.esc)="cancelEdit()"
               autofocus
             >
               @for (o of opts; track o) {
@@ -161,9 +155,6 @@
               class="input input-bordered input-xs w-full"
               [ngModel]="editingValue()"
               (ngModelChange)="editingValue.set($event)"
-              (blur)="commitEdit(r.original, col)"
-              (keydown.enter)="commitEdit(r.original, col)"
-              (keydown.esc)="cancelEdit()"
               autofocus
             />
             } } @else if (hasCellRenderer(col)) {
@@ -184,7 +175,7 @@
     </table>
   </div>
   <div class="flex items-center justify-between mt-2">
-    <div class="text-sm">Page {{ pageIndex() + 1 }} of {{ totalPages() }} ({{ totalCountAll }} rows)</div>
+    <div class="text-sm">Page {{ pageIndex() + 1 }} of {{ totalPages() }} ({{ totalCountAll() }} rows)</div>
     <div class="join">
       <button class="btn btn-sm join-item" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
       <button class="btn btn-sm join-item" [disabled]="!canNext()" (click)="nextPage()">Next</button>

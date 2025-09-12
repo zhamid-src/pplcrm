@@ -6,8 +6,13 @@ export class PinningController {
   private headerWidthMap = new Map<string, number>();
   readonly pinnedLeftOffsets = signal<Record<string, number>>({});
   readonly pinnedRightOffsets = signal<Record<string, number>>({});
+  private tsTable: any = null;
 
   constructor(private readonly columnsSvc: DataGridColumnsService) {}
+
+  attachTable(tsTable: any) {
+    this.tsTable = tsTable;
+  }
 
   measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null } {
     const measured = this.columnsSvc.measureHeaderWidths(table);
@@ -16,7 +21,8 @@ export class PinningController {
   }
 
   updatePinOffsets(tsTable: any, getColWidth: (id: string) => number | null, selectionStickyWidth: number) {
-    const pin = tsTable?.getState?.().columnPinning || { left: [], right: [] };
+    const table = tsTable ?? this.tsTable;
+    const pin = table?.getState?.().columnPinning || { left: [], right: [] };
     const { left, right } = this.columnsSvc.computePinOffsets({
       pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
       getColWidth,
@@ -34,4 +40,3 @@ export class PinningController {
     return this.pinnedRightOffsets()[id] || 0;
   }
 }
-

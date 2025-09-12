@@ -143,8 +143,8 @@ import { HeaderResizeDirective } from '../directives/header-resize.directive';
         <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[30]"></span>
         <span
           class="absolute top-0 right-0 h-full w-1 cursor-col-resize select-none z-40 hover:bg-base-300/50"
-          pcHeaderResize
-          [pcHeaderResize]="h"
+          [pcHeaderResize]="resizeCfg(h)"
+          (dblclick)="autoSizeColumn()(h)"
           draggable="false"
         ></span>
         }
@@ -172,10 +172,7 @@ export class DataGridHeaderComponent {
   onHeaderDragStart = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
   onHeaderDragOver = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
   onHeaderDrop = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
-  onHeaderResizeMouseDown = input<(h: any, ev: MouseEvent) => void>((_h, _e) => {});
-  onHeaderResizeTouchStart = input<(h: any, ev: TouchEvent) => void>((_h, _e) => {});
-  onHeaderResizeDblClick = input<(h: any, ev: MouseEvent) => void>((_h, _e) => {});
-  onHeaderResizeDragStart = input<(ev: DragEvent) => void>((_e) => {});
+  requestPersist = input<() => void>(() => {});
 
   ariaSortHeader = input<(h: any) => 'ascending' | 'descending' | 'none'>((_h) => 'none');
   pinState = input<(h: any) => 'left' | 'right' | false>((_h) => false);
@@ -203,4 +200,21 @@ export class DataGridHeaderComponent {
   showColumnById = input<(id: string) => void>((_id) => {});
   columnLabelFor = input<(id: string) => string>((_id) => '');
   hiddenColumns = input<string[]>([]);
+
+  // helpers for header resize directive config to avoid complex inline expressions
+  headerSetWidth(col: any, _id: string, w: number) {
+    if (col?.setSize) col.setSize(w);
+  }
+  selectionWidthValue() {
+    return this.selectionStickyWidth();
+  }
+  resizeCfg(h: any) {
+    return {
+      header: h,
+      getColWidth: this.getColWidth(),
+      setWidth: this.headerSetWidth.bind(this),
+      requestPersist: this.requestPersist(),
+      selectionWidth: this.selectionWidthValue.bind(this),
+    } as const;
+  }
 }
