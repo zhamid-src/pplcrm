@@ -55,6 +55,12 @@ export class VirtualizerController {
     this.tsTable = null;
   }
 
+  setCount(n: number) {
+    if (this.virtualizer) {
+      this.virtualizer.setOptions({ ...this.virtualizer.options, count: n });
+    }
+  }
+
   onScroll(event: Event) {
     const el = event.target as HTMLElement;
     this.viewportH.set(el.clientHeight || this.viewportH());
@@ -124,4 +130,3 @@ export class VirtualizerController {
     return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
   }
 }
-

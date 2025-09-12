@@ -45,6 +45,7 @@ import { DataGridToolbarComponent } from './ui/toolbar';
 import { DataGridFilterPanelComponent } from './ui/filter-panel';
 import { DataGridHeaderComponent } from './ui/header';
 import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
+import { EditableCellDirective } from './directives/editable-cell.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
 import { ReorderController } from './controllers/reorder.controller';
@@ -56,10 +57,19 @@ import { Models } from 'common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-datagrid',
-  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent, DataGridHeaderComponent, DataGridInlineFiltersRowComponent],
+  imports: [Icon, FormsModule, DataGridToolbarComponent, DataGridFilterPanelComponent, DataGridHeaderComponent, DataGridInlineFiltersRowComponent, EditableCellDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
-  providers: [GridStoreService],
+  providers: [
+    GridStoreService,
+    VirtualizerController,
+    PinningController,
+    ResizingController,
+    ReorderController,
+    KeyboardController,
+    EditingController,
+    FetchController,
+  ],
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
   private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
@@ -96,9 +106,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateHeaderWidths = () => {
     const table = this.gridTable?.nativeElement;
     if (!table) return;
-    const measured = this.pctrl.measureHeaderWidths(table);
-    if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
-    this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
+    requestAnimationFrame(() => {
+      const measured = this.pctrl.measureHeaderWidths(table);
+      if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
+      this.pctrl.updatePinOffsets(this.tsTable, (id) => this.getColWidth(id) ?? 0, this.selectionStickyWidth());
+    });
+    // Ensure controllers know the current table instance
+    this.vctrl.attachTable(this.tsTable);
+    try {
+      (this.pctrl as any).attachTable?.(this.tsTable);
+    } catch {}
   };
   private readonly vctrl = inject(VirtualizerController);
 
@@ -120,18 +137,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
   protected readonly countRowSelected = computed(() =>
-    this.allSelected() ? this.allSelectedCount : this.selectedIdSet().size,
+    this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
   
 
   // Computed derivations
-  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll, this.config.pageSize));
+  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll(), this.config.pageSize));
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
-    this.allSelected() ? this.allSelectedCount > 0 : this.selectedIdSet().size > 0,
+    this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
 
   // Hidden columns list for header menu as a computed
@@ -160,7 +177,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Select-all-across-results state
   protected allSelected = signal(false);
-  protected allSelectedCount = 0;
+  protected allSelectedCount = signal(0);
   protected allSelectedIdSet: Set<string> = new Set();
   protected allSelectedIds: string[] = [];
   protected archiveMode = signal(false);
@@ -187,7 +204,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected sortDir = signal<'asc' | 'desc' | null>(null);
   protected sorting = signal<SortingState>([]);
   protected suppressHeaderDrag = false;
-  protected totalCountAll = 0;
+  protected totalCountAll = signal(0);
   // viewport handled by controller
 
   public readonly importCSV = output<string>();
@@ -229,10 +246,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly hideColumnFn = (h: any) => this.hideColumn(h);
   public readonly showColumnByIdFn = (id: string) => this.showColumnById(id);
   public readonly columnLabelForFn = (id: string) => this.columnLabelFor(id);
-  public readonly onHeaderResizeMouseDownFn = (h: any, ev: MouseEvent) => this.onHeaderResizeMouseDown(h, ev);
-  public readonly onHeaderResizeTouchStartFn = (h: any, ev: TouchEvent) => this.onHeaderResizeTouchStart(h, ev);
-  public readonly onHeaderResizeDblClickFn = (h: any, ev: MouseEvent) => this.onHeaderResizeDblClick(h, ev);
-  public readonly onHeaderResizeDragStartFn = (ev: DragEvent) => this.onHeaderResizeDragStart(ev);
+  // header resize handled by pcHeaderResize directive
 
   public readonly inlineGetColDefByIdFn = (id: string) => this.getColDefById(id);
   public readonly inlineGetFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
@@ -243,21 +257,32 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly inlineClearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
   public readonly inlineGetFilterValueFn = (field: string) => this.getFilterValue(field);
 
-  // Row/cell adapters
+  // Row/cell adapters used by directives/templates
   public readonly toIdFn = (row: any) => this.toId(row);
-  public readonly onRowCheckboxChangeFn = (row: any, checked: boolean) => this.onRowCheckboxChange(row, checked);
-  public readonly isColVisibleFn = (col: any) => this.isColVisible(col);
-  public readonly pinStateCellFn = (cell: any) => this.pinState(cell as any);
-  public readonly handleCellDblClickFn = (row: any, col: any) => this.handleCellDblClick(row, col);
-  public readonly onCellKeydownFn = (ev: KeyboardEvent) => this.onCellKeydown(ev);
-  public readonly setEditingValueFn = (v: any) => this.editingValue.set(v);
-  public readonly commitEditFn = (row: any, col: any) => this.commitEdit(row, col);
-  public readonly cancelEditFn = () => this.cancelEdit();
   public readonly inputTypeForFn = (col: any) => this.inputTypeFor(col);
-  public readonly hasCellRendererFn = (col: any) => this.hasCellRenderer(col);
-  public readonly callCellRendererFn = (row: any, col: any) => this.callCellRenderer(row, col);
-  public readonly callValueFormatterFn = (row: any, col: any) => this.callValueFormatter(row, col);
-  public readonly getCellValueFn = (row: any, col: any) => this.getCellValue(row, col);
+  public readonly createPayloadFn = (row: any, key: string) => this.utilsSvc.createPayload(row, key);
+  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any) => this.updateEditedRowInCaches(id, f, v);
+  public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
+  public readonly requestPersistFn = () => this.store.requestPersist();
+  public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c as any, raw);
+
+  public readonly editableCfg = (row: any, col: any) => ({
+    row,
+    col,
+    toId: this.toIdFn,
+    coerce: this.coerceFn,
+    value: () => this.editingValue(),
+    setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
+    createPayload: this.createPayloadFn,
+    applyEdit: (id: string, data: any) => this.gridSvc.update(id, data).then(() => true).catch(() => false),
+    updateEditedRow: this.updateEditedRowInCachesFn,
+    updateWindow: this.updateTableWindowFn,
+    startIndex: () => this.startIndex(),
+    endIndex: () => this.endIndex(),
+    showSuccess: (m: string) => this.alertSvc.showSuccess(m),
+    showError: (m: string) => this.alertSvc.showError(m),
+    undo: () => this.undoMgr.undo(),
+  });
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
@@ -325,8 +350,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public ngAfterViewInit() {
     const el = this.scroller?.nativeElement as HTMLDivElement | undefined;
     if (el) this.vctrl.attach(el, this.rowHeight);
+    // Attach controllers to the table once
+    this.vctrl.attachTable(this.tsTable);
+    try {
+      (this.pctrl as any).attachTable?.(this.tsTable);
+    } catch {}
     // Measure header widths initially and on resize
-    queueMicrotask(() => this.updateHeaderWidths());
+    requestAnimationFrame(() => this.updateHeaderWidths());
     window.addEventListener('resize', this.updateHeaderWidths);
   }
 
@@ -487,7 +517,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.allSelected.set(false);
     this.allSelectedIds = [];
     this.allSelectedIdSet = new Set();
-    this.allSelectedCount = 0;
+    this.allSelectedCount.set(0);
   }
 
   protected clearHeaderFilter(field: string) {
@@ -759,6 +789,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Keyboard navigation between cells
   protected onCellKeydown(ev: KeyboardEvent) {
+    // Ignore key handling when an input/select inside the cell is focused
+    const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase?.() || '';
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
     this.kctrl.handleCellKeydown(ev, {
       getColDefById: (id) => this.getColDefById(id),
       isEditable: (col) => this.isEditable(col),
@@ -811,62 +844,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store.requestPersist();
   }
 
-  protected onHeaderResizeDblClick(h: any, ev: MouseEvent) {
-    ev.stopPropagation();
-    this.autoSizeColumn(h);
-  }
-
-  // Prevent header drag-reorder when grabbing resizer
-  protected onHeaderResizeDragStart(ev: DragEvent) {
-    try {
-      ev.preventDefault();
-    } catch {}
-    ev.stopPropagation();
-  }
-
-  // Column resize handlers (bridge to TanStack handlers)
-  protected onHeaderResizeMouseDown(h: any, ev: MouseEvent) {
-    ev.stopPropagation();
-    // suppress header drag until mouseup
-    this.suppressHeaderDrag = true;
-    const end = () => {
-      this.suppressHeaderDrag = false;
-      window.removeEventListener('mouseup', end);
-    };
-    window.addEventListener('mouseup', end);
-    this.rctrl.beginHeaderResize(
-      h,
-      ev.clientX,
-      (id) => this.getColWidth(id),
-      (col, id, w) => {
-        if (typeof col.setSize === 'function') col.setSize(w);
-        else this.setColWidth(String(id), w);
-        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth());
-      },
-      () => this.store.requestPersist(),
-    );
-  }
-
-  protected onHeaderResizeTouchStart(h: any, ev: TouchEvent) {
-    ev.stopPropagation();
-    this.suppressHeaderDrag = true;
-    const end = () => {
-      this.suppressHeaderDrag = false;
-      window.removeEventListener('touchend', end);
-    };
-    window.addEventListener('touchend', end);
-    this.rctrl.beginHeaderResizeTouch(
-      h,
-      ev.touches?.[0]?.clientX ?? 0,
-      (id) => this.getColWidth(id),
-      (col, id, w) => {
-        if (typeof col.setSize === 'function') col.setSize(w);
-        else this.setColWidth(String(id), w);
-        this.pctrl.updatePinOffsets(this.tsTable, (cid) => this.getColWidth(cid) ?? 0, this.selectionStickyWidth());
-      },
-      () => this.store.requestPersist(),
-    );
-  }
+  // header resize is handled via HeaderResizeDirective
 
   protected onPanelOpChange(field: string, op: 'contains' | 'equals') {
     const next = { ...this.panelFilters() };
@@ -1044,9 +1022,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       });
       this.allSelectedIds = ids;
       this.allSelectedIdSet = new Set(ids);
-      this.allSelectedCount = count;
+      this.allSelectedCount.set(count);
       this.allSelected.set(ids.length > 0);
-      this.alertSvc.showInfo(`Selected ${this.allSelectedCount} row(s)`);
+      this.alertSvc.showInfo(`Selected ${this.allSelectedCount()} row(s)`);
     } catch {
       this.alertSvc.showError('Failed to select all rows');
     }
@@ -1064,7 +1042,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     next[id] = Math.max(40, Math.floor(px));
     this.colWidths.set(next);
     // After width change, recompute sticky offsets
-    queueMicrotask(() => this.updateHeaderWidths());
+    this.updateHeaderWidths();
   }
 
   // Column visibility bulk actions
@@ -1198,7 +1176,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected visibleTableRows(): any[] {
-    this.vctrl.attachTable(this.tsTable);
     return this.vctrl.visibleTableRows();
   }
 
@@ -1261,8 +1238,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.sortCol(),
           this.sortDir(),
         ),
-      setVirtualCount: (_count: number) => {},
-      setTotalCountAll: (n: number) => (this.totalCountAll = n),
+      setVirtualCount: (count: number) => this.vctrl.setCount(count),
+      setTotalCountAll: (n: number) => this.totalCountAll.set(n),
       setPageIndex: (i: number) => this.pageIndex.set(i),
       begin: () => this._loading.begin(),
       showError: (m: string) => this.alertSvc.showError(m),
