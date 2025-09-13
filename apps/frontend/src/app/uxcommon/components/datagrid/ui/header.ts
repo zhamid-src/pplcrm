@@ -16,7 +16,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
     <tr>
       @if (enableSelection() && i === 0) {
       <th
-        class="selection-col sticky left-0 z-10 bg-base-100 relative overflow-hidden"
+        class="selection-col sticky left-0 z-30 bg-base-100 relative overflow-hidden"
         [attr.rowspan]="groups().length"
         [style.width.px]="selectionStickyWidth()"
       >
@@ -42,7 +42,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
       } @else {
       <th
         (click)="toggleHeaderSort()(h, $event)"
-        class="cursor-pointer select-none relative overflow-visible min-w-0 pr-0"
+        class="cursor-pointer select-none relative overflow-visible min-w-0 pr-0 bg-base-100"
         draggable="true"
         pcHeaderReorder
         [pcHeaderReorder]="h"

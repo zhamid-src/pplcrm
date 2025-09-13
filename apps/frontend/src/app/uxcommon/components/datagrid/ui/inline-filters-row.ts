@@ -11,7 +11,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
       <th class="selection-col sticky left-0 z-30 bg-base-100" [style.width.px]="selectionStickyWidth()"></th>
       }
       @for (h of leafHeaders(); track h.id) { @if (h && h.column?.getIsVisible?.()) { @let col = getColDefById()(h.column.id);
-      <th class="border-r border-base-300">
+      <th class="border-r border-base-300 bg-base-100">
         @if (col && getFilterOptionsForCol()(col)?.length) {
         <div class="dropdown dropdown-bottom w-full">
           <label tabindex="0" class="btn btn-ghost btn-xs w-full justify-between">
