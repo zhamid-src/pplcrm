@@ -1,4 +1,4 @@
-import { Directive, HostListener, Input, inject } from '@angular/core';
+import { Directive, ElementRef, HostListener, Input, inject } from '@angular/core';
 import { EditingController } from '../controllers/editing.controller';
 
 @Directive({
@@ -7,6 +7,7 @@ import { EditingController } from '../controllers/editing.controller';
 })
 export class EditableCellDirective {
   private readonly editing = inject(EditingController);
+  private readonly host = inject(ElementRef<HTMLElement>);
 
   @Input({ required: true }) pcEditable!: {
     row: any;
@@ -15,6 +16,8 @@ export class EditableCellDirective {
     coerce: (col: any, raw: any) => any;
     value: () => any; // current editingValue()
     setEditingCell: (v: { id: string; field: string } | null) => void;
+    setEditingValue: (v: any) => void;
+    getCellValue: (row: any, col: any) => any;
     createPayload: (row: any, key: string) => any;
     applyEdit: (id: string, data: any) => Promise<boolean>;
     updateEditedRow: (id: string, field: string | undefined, v: any) => void;
@@ -28,12 +31,16 @@ export class EditableCellDirective {
 
   @HostListener('dblclick')
   onDblClick() {
-    const { row, col, toId, setEditingCell } = this.pcEditable;
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue } = this.pcEditable;
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
     if (!(col as any)?.editable) return;
     const id = toId(row);
     if (!id) return;
+    try {
+      const cur = getCellValue(row, col);
+      setEditingValue(cur);
+    } catch {}
     setEditingCell({ id, field: col.field });
   }
 
@@ -48,9 +55,12 @@ export class EditableCellDirective {
     this.pcEditable.setEditingCell(null);
   }
 
-  // Use focusout for bubbling behavior from inputs
-  @HostListener('focusout')
-  async onFocusOut() {
+  // Commit only when focus leaves the cell subtree
+  @HostListener('focusout', ['$event'])
+  async onFocusOut(ev: FocusEvent) {
+    const container = this.host.nativeElement;
+    const next = ev.relatedTarget as Node | null;
+    if (next && container.contains(next)) return;
     await this.commit();
   }
 
