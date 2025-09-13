@@ -89,19 +89,19 @@
           [hiddenColumns]="hiddenColumns()"
         />
         @if (showFilters()) {
-          <pc-dg-inline-filters-row
-            [enableSelection]="enableSelection()"
-            [selectionStickyWidth]="selectionStickyWidth()"
-            [leafHeaders]="leafHeaders()"
-            [getColDefById]="inlineGetColDefByIdFn"
-            [getFilterOptionsForCol]="inlineGetFilterOptionsForColFn"
-            [inlineFilterLabel]="inlineFilterLabelFn"
-            [isOptionChecked]="inlineIsOptionCheckedFn"
-            [onToggleFilterOption]="inlineOnToggleFilterOptionFn"
-            [onHeaderFilterInput]="inlineOnHeaderFilterInputFn"
-            [clearHeaderFilter]="inlineClearHeaderFilterFn"
-            [getFilterValue]="inlineGetFilterValueFn"
-          />
+        <pc-dg-inline-filters-row
+          [enableSelection]="enableSelection()"
+          [selectionStickyWidth]="selectionStickyWidth()"
+          [leafHeaders]="leafHeaders()"
+          [getColDefById]="inlineGetColDefByIdFn"
+          [getFilterOptionsForCol]="inlineGetFilterOptionsForColFn"
+          [inlineFilterLabel]="inlineFilterLabelFn"
+          [isOptionChecked]="inlineIsOptionCheckedFn"
+          [onToggleFilterOption]="inlineOnToggleFilterOptionFn"
+          [onHeaderFilterInput]="inlineOnHeaderFilterInputFn"
+          [clearHeaderFilter]="inlineClearHeaderFilterFn"
+          [getFilterValue]="inlineGetFilterValueFn"
+        />
         }
       </thead>
       <tbody>
@@ -188,15 +188,15 @@
 
 <!-- Right-side Filter Panel -->
 @if (showFilterPanel()) {
-  <pc-dg-filter-panel
-    [panelFields]="panelFields()"
-    [panelFilters]="panelFilters()"
-    [labelFor]="labelForFn"
-    [optionsFor]="optionsForFn"
-    (close)="closePanel()"
-    (apply)="applyPanelFilters()"
-    (clear)="clearPanelFilters()"
-    (changeOp)="onPanelOpChange($event.field, $event.op)"
-    (changeValue)="onPanelValueChange($event.field, $event.value)"
-  />
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  (close)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+/>
 }

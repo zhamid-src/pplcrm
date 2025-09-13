@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import type { PcIconNameType } from '@icons/icons.index';
-import type { ColumnDef as ColDef } from '../grid-defaults';
+
 import { HeaderReorderDirective } from '../directives/header-reorder.directive';
 import { HeaderResizeDirective } from '../directives/header-resize.directive';
+import type { ColumnDef as ColDef } from '../grid-defaults';
 
 @Component({
   selector: 'pc-dg-header',
@@ -55,12 +56,12 @@ import { HeaderResizeDirective } from '../directives/header-resize.directive';
         [style.width.px]="getColWidth()(h.column.id) || null"
         [attr.data-col-id]="h.column.id"
       >
-        <div class="flex items-center gap-2 pr-0">
+        <div class="flex group items-center gap-2 pr-0">
           <span class="flex-grow">{{ h.column?.columnDef?.header || h.column?.id }}</span>
           <pc-icon [name]="sortIndicatorForHeader()(h)" [size]="4"></pc-icon>
-          <div tabindex="0" class="ml-auto mr-0 dropdown dropdown-end relative z-[100]" (click)="$event.stopPropagation()">
+          <div tabindex="0" class=" ml-auto mr-0 dropdown dropdown-end relative z-[100]" (click)="$event.stopPropagation()">
             <label tabindex="0" class="btn btn-ghost btn-xs pointer-events-auto" title="Column options" (click)="$event.stopPropagation()">
-              <pc-icon name="ellipsis-vertical"></pc-icon>
+              <pc-icon class="group-hover:visible invisible" name="ellipsis-vertical"></pc-icon>
             </label>
             <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box font-light z-[100] w-60 p-2 mt-1 shadow right-0">
               @let col = getColDefById()(h.column.id);
@@ -155,60 +156,53 @@ import { HeaderResizeDirective } from '../directives/header-resize.directive';
   `,
 })
 export class DataGridHeaderComponent {
-  groups = input<any[]>([]);
-  enableSelection = input<boolean>(true);
-  selectionStickyWidth = input<number>(48);
-
-  allSelected = input<boolean>(false);
-  tableAllPageSelected = input<() => boolean>(() => false);
-  tableSomePageSelected = input<() => boolean>(() => false);
-
-  onHeaderCheckbox = input<(checked: boolean) => void>((_c) => {});
-  onSelectionResizeMouseDown = input<(ev: MouseEvent) => void>((_e) => {});
-  onSelectionResizeTouchStart = input<(ev: TouchEvent) => void>((_e) => {});
-  onSelectionResizeDragStart = input<(ev: DragEvent) => void>((_e) => {});
-
-  toggleHeaderSort = input<(h: any, ev?: MouseEvent) => void>((_h, _e?) => {});
-  onHeaderDragStart = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
-  onHeaderDragOver = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
-  onHeaderDrop = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
-  requestPersist = input<() => void>(() => {});
-
-  ariaSortHeader = input<(h: any) => 'ascending' | 'descending' | 'none'>((_h) => 'none');
-  pinState = input<(h: any) => 'left' | 'right' | false>((_h) => false);
-  leftOffsetPx = input<(id: string) => number>((_id) => 0);
-  rightOffsetPx = input<(id: string) => number>((_id) => 0);
-  getColWidth = input<(id: string) => number | null>((_id) => null);
-  sortIndicatorForHeader = input<(h: any) => PcIconNameType>((_h) => 'none' as PcIconNameType);
-  getColDefById = input<(id: string) => ColDef | undefined>((_id) => undefined);
-  getFilterOptionsForCol = input<(col: ColDef) => string[] | null>((_c) => null);
-  isOptionChecked = input<(field: string, option: string) => boolean>((_f, _o) => false);
-  onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((_f, _o, _c) => {});
-  clearHeaderFilter = input<(field: string) => void>((_f) => {});
-  getFilterValue = input<(field: string) => string>((_f) => '');
-  onHeaderFilterInput = input<(field: string, value: any) => void>((_f, _v) => {});
-
-  sortAsc = input<(h: any) => void>((_h) => {});
-  sortDesc = input<(h: any) => void>((_h) => {});
-  clearSort = input<(h: any) => void>((_h) => {});
-  pinLeft = input<(h: any) => void>((_h) => {});
-  pinRight = input<(h: any) => void>((_h) => {});
-  unpin = input<(h: any) => void>((_h) => {});
-  autoSizeColumn = input<(h: any) => void>((_h) => {});
-  resetColWidth = input<(h: any) => void>((_h) => {});
-  hideColumn = input<(h: any) => void>((_h) => {});
-  showColumnById = input<(id: string) => void>((_id) => {});
-  columnLabelFor = input<(id: string) => string>((_id) => '');
-  hiddenColumns = input<string[]>([]);
+  public allSelected = input<boolean>(false);
+  public ariaSortHeader = input<(h: any) => 'ascending' | 'descending' | 'none'>((_h) => 'none');
+  public autoSizeColumn = input<(h: any) => void>((_h) => {});
+  public clearHeaderFilter = input<(field: string) => void>((_f) => {});
+  public clearSort = input<(h: any) => void>((_h) => {});
+  public columnLabelFor = input<(id: string) => string>((_id) => '');
+  public enableSelection = input<boolean>(true);
+  public getColDefById = input<(id: string) => ColDef | undefined>((_id) => undefined);
+  public getColWidth = input<(id: string) => number | null>((_id) => null);
+  public getFilterOptionsForCol = input<(col: ColDef) => string[] | null>((_c) => null);
+  public getFilterValue = input<(field: string) => string>((_f) => '');
+  public groups = input<any[]>([]);
+  public hiddenColumns = input<string[]>([]);
+  public hideColumn = input<(h: any) => void>((_h) => {});
+  public isOptionChecked = input<(field: string, option: string) => boolean>((_f, _o) => false);
+  public leftOffsetPx = input<(id: string) => number>((_id) => 0);
+  public onHeaderCheckbox = input<(checked: boolean) => void>((_c) => {});
+  public onHeaderDragOver = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
+  public onHeaderDragStart = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
+  public onHeaderDrop = input<(h: any, ev: DragEvent) => void>((_h, _e) => {});
+  public onHeaderFilterInput = input<(field: string, value: any) => void>((_f, _v) => {});
+  public onSelectionResizeDragStart = input<(ev: DragEvent) => void>((_e) => {});
+  public onSelectionResizeMouseDown = input<(ev: MouseEvent) => void>((_e) => {});
+  public onSelectionResizeTouchStart = input<(ev: TouchEvent) => void>((_e) => {});
+  public onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((_f, _o, _c) => {});
+  public pinLeft = input<(h: any) => void>((_h) => {});
+  public pinRight = input<(h: any) => void>((_h) => {});
+  public pinState = input<(h: any) => 'left' | 'right' | false>((_h) => false);
+  public requestPersist = input<() => void>(() => {});
+  public resetColWidth = input<(h: any) => void>((_h) => {});
+  public rightOffsetPx = input<(id: string) => number>((_id) => 0);
+  public selectionStickyWidth = input<number>(48);
+  public showColumnById = input<(id: string) => void>((_id) => {});
+  public sortAsc = input<(h: any) => void>((_h) => {});
+  public sortDesc = input<(h: any) => void>((_h) => {});
+  public sortIndicatorForHeader = input<(h: any) => PcIconNameType>((_h) => 'none' as PcIconNameType);
+  public tableAllPageSelected = input<() => boolean>(() => false);
+  public tableSomePageSelected = input<() => boolean>(() => false);
+  public toggleHeaderSort = input<(h: any, ev?: MouseEvent) => void>((_h, _e?) => {});
+  public unpin = input<(h: any) => void>((_h) => {});
 
   // helpers for header resize directive config to avoid complex inline expressions
-  headerSetWidth(col: any, _id: string, w: number) {
+  public headerSetWidth(col: any, _id: string, w: number) {
     if (col?.setSize) col.setSize(w);
   }
-  selectionWidthValue() {
-    return this.selectionStickyWidth();
-  }
-  resizeCfg(h: any) {
+
+  public resizeCfg(h: any) {
     return {
       header: h,
       getColWidth: this.getColWidth(),
@@ -216,5 +210,9 @@ export class DataGridHeaderComponent {
       requestPersist: this.requestPersist(),
       selectionWidth: this.selectionWidthValue.bind(this),
     } as const;
+  }
+
+  public selectionWidthValue() {
+    return this.selectionStickyWidth();
   }
 }
