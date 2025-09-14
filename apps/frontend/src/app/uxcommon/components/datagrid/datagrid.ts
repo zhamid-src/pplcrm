@@ -217,52 +217,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
   public readonly labelForFn = (f: string) => this.panelLabelFor(f);
   public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
-  public readonly tableAllPageSelectedFn = () => this.tableAllPageSelected();
-  public readonly tableSomePageSelectedFn = () => this.tableSomePageSelected();
-  public readonly onHeaderCheckboxFn = (checked: boolean) => this.onHeaderCheckbox(checked);
-  public readonly onSelectionResizeMouseDownFn = (ev: MouseEvent) => this.onSelectionResizeMouseDown(ev);
-  public readonly onSelectionResizeTouchStartFn = (ev: TouchEvent) => this.onSelectionResizeTouchStart(ev);
-  public readonly onSelectionResizeDragStartFn = (ev: DragEvent) => this.onSelectionResizeDragStart(ev);
-  public readonly toggleHeaderSortFn = (h: any, ev?: MouseEvent) => this.toggleHeaderSort(h, ev);
-  public readonly onHeaderDragStartFn = (h: any, ev: DragEvent) => this.onHeaderDragStart(h, ev);
-  public readonly onHeaderDragOverFn = (h: any, ev: DragEvent) => this.onHeaderDragOver(h, ev);
-  public readonly onHeaderDropFn = (h: any, ev: DragEvent) => this.onHeaderDrop(h, ev);
-  public readonly ariaSortHeaderFn = (h: any) => this.ariaSortHeader(h);
-  public readonly pinStateHFn = (h: any) => this.pinState(h);
-  public readonly leftOffsetPxFn = (id: string) => this.leftOffsetPx(id);
-  public readonly rightOffsetPxFn = (id: string) => this.rightOffsetPx(id);
-  public readonly getColWidthFn = (id: string) => this.getColWidth(id);
-  public readonly sortIndicatorForHeaderFn = (h: any) => this.sortIndicatorForHeader(h);
-  public readonly getColDefByIdFn = (id: string) => this.getColDefById(id);
-  public readonly getFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
-  public readonly isOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
-  public readonly onToggleFilterOptionFn = (field: string, opt: string, checked: boolean) =>
-    this.onToggleFilterOption(field, opt, checked);
-  public readonly clearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
-  public readonly getFilterValueFn = (field: string) => this.getFilterValue(field);
-  public readonly onHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
-  public readonly sortAscFn = (h: any) => this.sortAsc(h);
-  public readonly sortDescFn = (h: any) => this.sortDesc(h);
-  public readonly clearSortFn = (h: any) => this.clearSort(h);
-  public readonly pinLeftFn = (h: any) => this.pinLeft(h);
-  public readonly pinRightFn = (h: any) => this.pinRight(h);
-  public readonly unpinFn = (h: any) => this.unpin(h);
-  public readonly autoSizeColumnFn = (h: any) => this.autoSizeColumn(h);
-  public readonly resetColWidthFn = (h: any) => this.resetColWidth(h);
-  public readonly hideColumnFn = (h: any) => this.hideColumn(h);
-  public readonly showColumnByIdFn = (id: string) => this.showColumnById(id);
-  public readonly columnLabelForFn = (id: string) => this.columnLabelFor(id);
+  // Header handlers now called directly by pc-dg-header via injection
   // header resize handled by pcHeaderResize directive
 
-  public readonly inlineGetColDefByIdFn = (id: string) => this.getColDefById(id);
-  public readonly inlineGetFilterOptionsForColFn = (col: any) => this.getFilterOptionsForCol(col as any);
-  public readonly inlineFilterLabelFn = (field: string) => this.inlineFilterLabel(field);
-  public readonly inlineIsOptionCheckedFn = (field: string, opt: string) => this.isOptionChecked(field, opt);
-  public readonly inlineOnToggleFilterOptionFn = (field: string, opt: string, checked: boolean) =>
-    this.onToggleFilterOption(field, opt, checked);
-  public readonly inlineOnHeaderFilterInputFn = (field: string, value: any) => this.onHeaderFilterInput(field, value);
-  public readonly inlineClearHeaderFilterFn = (field: string) => this.clearHeaderFilter(field);
-  public readonly inlineGetFilterValueFn = (field: string) => this.getFilterValue(field);
+  // Inline filters row injects DataGrid directly; no adapters needed
 
   // Row/cell adapters used by directives/templates
   public readonly toIdFn = (row: any) => this.toId(row);
@@ -271,7 +229,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any) =>
     this.updateEditedRowInCaches(id, f, v);
   public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
-  public readonly requestPersistFn = () => this.store.requestPersist();
+  // Expose a simple persist method for header/directives
+  public requestPersist() {
+    this.store.requestPersist();
+  }
   public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c as any, raw);
 
   public readonly editableCfg = (row: any, col: any) => ({
@@ -281,6 +242,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     coerce: this.coerceFn,
     value: () => this.editingValue(),
     setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
+    setEditingValue: (v: any) => this.editingValue.set(v),
+    getCellValue: (r: any, c: any) => this.getCellValue(r, c),
     createPayload: this.createPayloadFn,
     applyEdit: (id: string, data: any) =>
       this.gridSvc
@@ -467,6 +430,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected add() {
     this.navSvc.navigateIfValid(this.router, this.route, this.addRoute());
   }
+  public doAdd() { this.add(); }
 
   protected applyPanelFilters() {
     const raw = this.panelFilters();
@@ -481,12 +445,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.loadPage(0);
   }
 
-  protected ariaSort(col: ColDef): 'ascending' | 'descending' | 'none' {
-    if (!col.field || this.sortCol() !== col.field) return 'none';
-    return this.sortDir() === 'desc' ? 'descending' : 'ascending';
-  }
-
-  protected ariaSortHeader(h: any): 'ascending' | 'descending' | 'none' {
+  public ariaSortHeader(h: any): 'ascending' | 'descending' | 'none' {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (s === 'asc') return 'ascending';
     if (s === 'desc') return 'descending';
@@ -494,7 +453,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Auto-size column based on header and currently visible cells
-  protected autoSizeColumn(h: any) {
+  public autoSizeColumn(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
     const table = this.gridTable?.nativeElement;
@@ -543,7 +502,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.allSelectedCount.set(0);
   }
 
-  protected clearHeaderFilter(field: string) {
+  public clearHeaderFilter(field: string) {
     const next = { ...this.filterValues() };
     delete next[field];
     this.filterValues.set(next);
@@ -555,7 +514,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.panelFilters.set({});
   }
 
-  protected clearSort(h: any) {
+  public clearSort(h: any) {
     if (typeof h?.column?.clearSorting === 'function') {
       h.column.clearSorting();
       return;
@@ -573,7 +532,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.showFilterPanel.set(false);
   }
 
-  protected columnLabelFor(id: string): string {
+  public columnLabelFor(id: string): string {
     const c = this.colDefsWithEdit.find((x) => x.field === id);
     return c?.headerName || id;
   }
@@ -619,6 +578,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.clearAllSelection();
     await this.refresh();
   }
+  public doConfirmDelete() { void this.confirmDelete(); }
 
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
@@ -629,6 +589,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
     });
   }
+  public doConfirmExport() { void this.confirmExport(); }
 
   protected cyclePin(h: any) {
     const current = this.pinState(h);
@@ -639,7 +600,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Triggers the import CSV flow (placeholder only). */
-  protected doImportCSV() {
+  public doImportCSV() {
     // Emit a simple signal so consumers can open their import UI
     this.importCSV.emit('open');
   }
@@ -649,7 +610,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // exportToCSV removed (legacy path)
-  protected filter() {
+  public filter() {
     // Open right-side filter panel and seed with current filters
     const current = this.filterValues();
     this.panelFilters.set(this.filtersSvc.preparePanelFilters(current));
@@ -671,11 +632,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return field ? (row as any)?.[field] : undefined;
   }
 
-  protected getColDefById(id: string): ColDef | undefined {
+  public getColDefById(id: string): ColDef | undefined {
     return this.colDefsWithEdit.find((c) => c.field === id);
   }
 
-  protected getColWidth(id: string): number | null {
+  public getColWidth(id: string): number | null {
     const col = this.tsTable?.getColumn?.(id);
     const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
     if (size && size > 0) return size;
@@ -693,11 +654,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Helper to derive filter select options from a column definition
-  protected getFilterOptionsForCol(col: ColDef): string[] | null {
+  public getFilterOptionsForCol(col: ColDef): string[] | null {
     return this.filtersSvc.getFilterOptionsForCol(col);
   }
 
-  protected getFilterValue(field: string): string {
+  public getFilterValue(field: string): string {
     return this.filtersSvc.getFilterValue(this.filterValues(), field);
   }
 
@@ -745,8 +706,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.tsTable)
       this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
+  public hideAllColsPublic() { this.hideAllCols(); }
 
-  protected hideColumn(h: any) {
+  public hideColumn(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
     this.toggleCol(id, false);
@@ -754,7 +716,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Inline filter row helpers for multi-select label
-  protected inlineFilterLabel(field: string): string {
+  public inlineFilterLabel(field: string): string {
     return this.filtersSvc.inlineFilterLabel(this.filterValues(), field);
   }
 
@@ -764,6 +726,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
     return 'text';
   }
+
+  // Toolbar helpers
+  public canUndo() { return !!this.undoMgr.canUndo(); }
+  public canRedo() { return !!this.undoMgr.canRedo(); }
+  public undo() { this.undoMgr.undo(); }
+  public redo() { this.undoMgr.redo(); }
+  public showFiltersState() { return this.showFilterPanel() || this.showFilters(); }
+  public archiveModeState() { return this.archiveMode(); }
+  public hasSelectionState() { return this.hasSelection(); }
+  public getColDefsForToolbar() { return this.colDefsWithEdit; }
+  public getColVisibilityMap() { return this.colVisibility(); }
 
   protected isColVisible(c: ColDef): boolean {
     const v = this.colVisibility();
@@ -776,7 +749,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col?.editable;
   }
 
-  protected isOptionChecked(field: string, option: string): boolean {
+  public isOptionChecked(field: string, option: string): boolean {
     return this.getFilterArray(field).includes(option);
   }
 
@@ -801,7 +774,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return (tbl.getFlatHeaders?.() || []).filter((h: any) => h.column?.getIsVisible?.());
   }
 
-  protected leftOffsetPx(colId: string): number {
+  public leftOffsetPx(colId: string): number {
     return this.pctrl.leftOffsetPx(colId);
   }
 
@@ -839,18 +812,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.loadPage(0);
   }
 
-  protected onHeaderCheckbox(checked: boolean) {
+  public onHeaderCheckbox(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
     const api: any = this.tsTable;
     if (typeof api?.toggleAllRowsSelected === 'function') api.toggleAllRowsSelected(checked);
   }
 
-  protected onHeaderDragOver(_h: any, ev: DragEvent) {
+  public onHeaderDragOver(_h: any, ev: DragEvent) {
     this.reorder.onDragOver(ev);
   }
 
   // Column reordering (drag-and-drop)
-  protected onHeaderDragStart(h: any, ev: DragEvent) {
+  public onHeaderDragStart(h: any, ev: DragEvent) {
     this.reorder.configure({
       suppressHeaderDrag: () => this.suppressHeaderDrag,
       requestPersist: () => this.store.requestPersist(),
@@ -858,11 +831,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.reorder.onDragStart(h, ev);
   }
 
-  protected onHeaderDrop(h: any, ev: DragEvent) {
+  public onHeaderDrop(h: any, ev: DragEvent) {
     this.reorder.onDrop(h, ev, this.tsTable);
   }
 
-  protected onHeaderFilterInput(field: string, value: any) {
+  public onHeaderFilterInput(field: string, value: any) {
     const v = String(value ?? '').trim();
     const next = { ...this.filterValues() };
     if (!v) delete next[field];
@@ -913,7 +886,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Prevent drag-reorder when grabbing selection resizer
-  protected onSelectionResizeDragStart(ev: DragEvent) {
+  public onSelectionResizeDragStart(ev: DragEvent) {
     try {
       ev.preventDefault();
     } catch {}
@@ -921,7 +894,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Selection column resize
-  protected onSelectionResizeMouseDown(ev: MouseEvent) {
+  public onSelectionResizeMouseDown(ev: MouseEvent) {
     ev.stopPropagation();
     const startW = this.selectionStickyWidth();
     this.rctrl.beginSelectionResize(
@@ -934,7 +907,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     );
   }
 
-  protected onSelectionResizeTouchStart(ev: TouchEvent) {
+  public onSelectionResizeTouchStart(ev: TouchEvent) {
     ev.stopPropagation();
     const x = ev.touches?.[0]?.clientX ?? 0;
     const startW = this.selectionStickyWidth();
@@ -948,7 +921,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     );
   }
 
-  protected onToggleFilterOption(field: string, option: string, checked: boolean) {
+  public onToggleFilterOption(field: string, option: string, checked: boolean) {
     const current = this.getFilterArray(field);
     let nextArr: string[] = current.slice();
     if (checked && !nextArr.includes(option)) nextArr.push(option);
@@ -987,20 +960,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.getFilterOptionsForCol(col);
   }
 
-  protected pinLeft(h: any) {
+  public pinLeft(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'left');
     this.store.requestPersist();
   }
 
-  protected pinRight(h: any) {
+  public pinRight(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'right');
     this.store.requestPersist();
   }
 
   // Column pinning helpers
-  protected pinState(h: any): 'left' | 'right' | false {
+  public pinState(h: any): 'left' | 'right' | false {
     const fn = h?.column?.getIsPinned;
     return typeof fn === 'function' ? (fn.call(h.column) as 'left' | 'right' | false) : false;
   }
@@ -1014,6 +987,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected async refresh(): Promise<void> {
     await this.loadPage(this.pageIndex());
   }
+  public doRefresh() { void this.refresh(); }
 
   protected resetAllWidths() {
     this.colWidths.set({});
@@ -1021,8 +995,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
     this.store.requestPersist();
   }
+  public resetAllWidthsPublic() { this.resetAllWidths(); }
 
-  protected resetColWidth(h: any) {
+  public resetColWidth(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
     const sizing = { ...((this.tsTable!.getState() as any).columnSizing || {}) };
@@ -1035,7 +1010,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
   }
 
-  protected rightOffsetPx(colId: string): number {
+  public rightOffsetPx(colId: string): number {
     return this.pctrl.rightOffsetPx(colId);
   }
 
@@ -1081,15 +1056,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.tsTable)
       this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
+  public showAllColsPublic() { this.showAllCols(); }
 
-  protected showColumnById(id: string) {
+  public showColumnById(id: string) {
     this.toggleCol(id, true);
     const col = (this.tsTable as any)?.getColumn?.(id);
     if (col?.toggleVisibility) col.toggleVisibility(true);
   }
 
   // Header menu actions
-  protected sortAsc(h: any) {
+  public sortAsc(h: any) {
     const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (isSorted !== 'asc') {
       const fn = h?.column?.toggleSorting;
@@ -1097,7 +1073,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected sortDesc(h: any) {
+  public sortDesc(h: any) {
     const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (isSorted !== 'desc') {
       const fn = h?.column?.toggleSorting;
@@ -1105,7 +1081,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected sortIndicatorForHeader(h: any): PcIconNameType {
+  public sortIndicatorForHeader(h: any): PcIconNameType {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (s === 'asc') return 'chevron-up';
     if (s === 'desc') return 'chevron-down';
@@ -1125,11 +1101,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Row selection helpers (TanStack-driven)
-  protected tableAllPageSelected(): boolean {
+  public tableAllPageSelected(): boolean {
     return !!this.tsTable?.getIsAllPageRowsSelected?.();
   }
 
-  protected tableSomePageSelected(): boolean {
+  public tableSomePageSelected(): boolean {
     return !!this.tsTable?.getIsSomePageRowsSelected?.();
   }
 
@@ -1146,6 +1122,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Reload first page
     this.loadPage(0);
   }
+  public toggleArchiveModePublic() { this.toggleArchiveMode(); }
 
   protected toggleCol(field: string, checked: boolean) {
     const v = { ...this.colVisibility() };
@@ -1159,8 +1136,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     this.store.requestPersist();
   }
+  public toggleColPublic(field: string, checked: boolean) { this.toggleCol(field, checked); }
 
-  protected toggleHeaderSort(h: any, ev?: MouseEvent) {
+  public toggleHeaderSort(h: any, ev?: MouseEvent) {
     const fn = h?.column?.toggleSorting;
     if (typeof fn === 'function') fn.call(h.column, undefined, !!ev?.shiftKey);
   }
@@ -1192,7 +1170,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Pagination
   // totalPages is computed
-  protected unpin(h: any) {
+  public unpin(h: any) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, false);
     this.store.requestPersist();

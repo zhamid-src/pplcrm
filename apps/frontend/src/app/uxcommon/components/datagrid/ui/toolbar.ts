@@ -1,8 +1,7 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import type { ColumnDef as ColDef } from '../grid-defaults';
+import { DataGrid } from '../datagrid';
 
 @Component({
   selector: 'pc-dg-toolbar',
@@ -11,36 +10,36 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ul class="menu menu-horizontal flex flex-row pt-0">
-      <pc-grid-action [enabled]="!!addRoute()" [tip]="'Add'" [icon]="plusIcon()" (action)="add.emit()" />
-      <pc-grid-action [enabled]="!disableRefresh()" [tip]="'Refresh the grid'" icon="arrow-path" (action)="refresh.emit()" />
-      <pc-grid-action [enabled]="!!canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="undo.emit()" />
-      <pc-grid-action [enabled]="!!canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="redo.emit()" />
+      <pc-grid-action [enabled]="!!grid.addRoute?.()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+      <pc-grid-action [enabled]="!grid.disableRefresh()" [tip]="'Refresh the grid'" icon="arrow-path" (action)="onRefresh()" />
+      <pc-grid-action [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+      <pc-grid-action [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
       <pc-grid-action
-        [enabled]="!disableDelete() && hasSelection()"
+        [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
         [tip]="'Deleted selected row(s)'"
         icon="trash"
-        (action)="deleteSelected.emit()"
+        (action)="onDeleteSelected()"
       />
       
       <pc-grid-action
-        [enabled]="!disableImport()"
+        [enabled]="!grid.disableImport()"
         [tip]="'Import data from CSV'"
         icon="arrow-up-tray"
-        (action)="importCsv.emit()"
+        (action)="onImportCsv()"
       />
 
       <pc-grid-action
-        [enabled]="!disableExport()"
+        [enabled]="!grid.disableExport()"
         [tip]="'Download as CSV'"
         icon="arrow-down-tray"
-        (action)="exportCsv.emit()"
+        (action)="onExportCsv()"
       />
       <pc-grid-action
         icon="funnel"
         tip="Filter the grid"
-        [hidden]="!allowFilter()"
-        [active]="showFilters()"
-        (action)="toggleFilters.emit()"
+        [hidden]="!grid.allowFilter()"
+        [active]="grid.showFiltersState()"
+        (action)="onToggleFilters()"
       />
 
       <li class="dropdown dropdown-end">
@@ -49,18 +48,18 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
         </label>
         <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
           <li class="px-2 py-1 flex gap-2">
-            <button class="btn btn-ghost btn-xs" (click)="showAllCols.emit()">Show all</button>
-            <button class="btn btn-ghost btn-xs" (click)="hideAllCols.emit()">Hide all</button>
-            <button class="btn btn-ghost btn-xs" (click)="resetAllWidths.emit()">Reset widths</button>
+            <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
+            <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
+            <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
           </li>
-          @for (col of colDefs(); track col.field) { @if (col.field) {
+          @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
           <li>
             <label class="label cursor-pointer justify-start gap-2">
               <input
                 type="checkbox"
                 class="checkbox checkbox-xs"
-                [checked]="colVisibilityMap()[col.field!] !== false"
-                (change)="toggleCol.emit({ field: col.field!, checked: $any($event.target).checked })"
+                [checked]="grid.getColVisibilityMap()[col.field!] !== false"
+                (change)="onToggleCol(col.field!, $any($event.target).checked)"
               />
               <span class="label-text">{{ col.headerName || col.field }}</span>
             </label>
@@ -72,9 +71,9 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
       <pc-grid-action
         icon="archive-box"
         tip="See archived tasks"
-        [hidden]="!showArchiveIcon()"
-        [active]="archiveMode()"
-        (action)="toggleArchive.emit()"
+        [hidden]="!grid.showArchiveIcon()"
+        [active]="grid.archiveModeState()"
+        (action)="onToggleArchive()"
       />
       <li class="grow">
         <a class="hover:text-primary ml-auto">
@@ -85,35 +84,19 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
   `,
 })
 export class DataGridToolbarComponent {
-  // Inputs
-  addRoute = input<string | null>(null);
-  plusIcon = input<PcIconNameType>('plus');
-  disableRefresh = input<boolean>(false);
-  canUndo = input<boolean>(false);
-  canRedo = input<boolean>(false);
-  disableDelete = input<boolean>(false);
-  hasSelection = input<boolean>(false);
-  disableImport = input<boolean>(true);
-  disableExport = input<boolean>(false);
-  allowFilter = input<boolean>(true);
-  showFilters = input<boolean>(false);
-  showArchiveIcon = input<boolean>(false);
-  archiveMode = input<boolean>(false);
-  colDefs = input<ColDef[]>([]);
-  colVisibilityMap = input<Record<string, boolean>>({});
+  public readonly grid = inject<DataGrid<any, any>>(DataGrid as any);
 
-  // Outputs
-  add = output<void>();
-  refresh = output<void>();
-  undo = output<void>();
-  redo = output<void>();
-  deleteSelected = output<void>();
-  importCsv = output<void>();
-  exportCsv = output<void>();
-  toggleFilters = output<void>();
-  showAllCols = output<void>();
-  hideAllCols = output<void>();
-  resetAllWidths = output<void>();
-  toggleArchive = output<void>();
-  toggleCol = output<{ field: string; checked: boolean }>();
+  onAdd() { this.grid.doAdd(); }
+  onRefresh() { this.grid.doRefresh(); }
+  onUndo() { this.grid.undo(); }
+  onRedo() { this.grid.redo(); }
+  onDeleteSelected() { this.grid.doConfirmDelete(); }
+  onImportCsv() { this.grid.doImportCSV(); }
+  onExportCsv() { this.grid.doConfirmExport(); }
+  onToggleFilters() { this.grid.filter(); }
+  onShowAllCols() { this.grid.showAllColsPublic(); }
+  onHideAllCols() { this.grid.hideAllColsPublic(); }
+  onResetAllWidths() { this.grid.resetAllWidthsPublic(); }
+  onToggleArchive() { this.grid.toggleArchiveModePublic(); }
+  onToggleCol(field: string, checked: boolean) { this.grid.toggleColPublic(field, checked); }
 }
