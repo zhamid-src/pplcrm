@@ -1,0 +1,53 @@
+<tr>
+  @if (enableSelection()) {
+  <th class="selection-col sticky left-0 z-30 bg-base-100 min-w-0 px-0 relative overflow-hidden">
+    <!-- optional right-edge hairline to match header -->
+    <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80 z-[15]"></span>
+  </th>
+  } @for (h of leafHeaders(); track h.id) { @if (h && h.column?.getIsVisible?.()) { @let col =
+  getColDefById()(h.column.id);
+  <th
+    class="bg-base-100 min-w-0 px-0 relative"
+    [class.sticky]="pinState()(h) !== false"
+    [style.left.px]="pinState()(h) === 'left' ? leftOffsetPx()(h.column.id) : null"
+    [style.right.px]="pinState()(h) === 'right' ? rightOffsetPx()(h.column.id) : null"
+    [style.zIndex]="pinState()(h) !== false ? 20 : null"
+    [attr.data-col-id]="h.column.id"
+  >
+    @if (col && getFilterOptionsForCol()(col)?.length) {
+    <div class="dropdown dropdown-bottom w-full">
+      <label tabindex="0" class="btn btn-ghost btn-xs w-full justify-between">
+        <span>{{ inlineFilterLabel()(col!.field!) }}</span>
+        <span>▾</span>
+      </label>
+      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 shadow">
+        @for (opt of getFilterOptionsForCol()(col!)!; track opt) {
+        <li>
+          <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="isOptionChecked()(h.column.id, opt)"
+              (change)="onToggleFilterOption()(h.column.id, opt, $any($event.target).checked)"
+            />
+            <span class="label-text">{{ opt }}</span>
+          </label>
+        </li>
+        }
+        <li class="px-2 pt-1"><a (click)="clearHeaderFilter()(h.column.id)">Clear</a></li>
+      </ul>
+    </div>
+    } @else {
+    <input
+      class="input input-bordered input-xs w-full"
+      type="text"
+      placeholder="Filter value"
+      [value]="getFilterValue()(h.column.id)"
+      (input)="onHeaderFilterInput()(h.column.id, $any($event.target).value)"
+    />
+    }
+    <!-- match header's right hairline so it doesn't look off by 1px -->
+    <span class="pointer-events-none absolute top-0 right-0 h-full w-px bg-base-300/80"></span>
+  </th>
+  } }
+</tr>

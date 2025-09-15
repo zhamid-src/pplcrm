@@ -1,0 +1,22 @@
+/* lock layout + neutralize cell padding/borders */
+.grid-table {
+  table-layout: fixed; /* you already set via class; reiterate here */
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.grid-table :where(th, td) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border: 0 !important; /* use absolutely-positioned hairlines instead */
+  box-sizing: border-box;
+  vertical-align: middle; /* keep baselines consistent */
+}
+/* keep scrollbars from shifting header/body widths */
+.flex-1.overflow-auto {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* optional: quick debug to visually confirm alignment; remove after testing */
+.grid-table col:nth-child(odd) {
+  background: color-mix(in oklab, transparent, black 3%);
+}
