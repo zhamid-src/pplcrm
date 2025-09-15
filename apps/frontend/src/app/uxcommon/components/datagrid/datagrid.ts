@@ -43,10 +43,10 @@ import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
 import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
-import { DataGridToolbarComponent } from './ui/toolbar';
-import { DataGridFilterPanelComponent } from './ui/filter-panel';
-import { DataGridHeaderComponent } from './ui/header';
-import { DataGridInlineFiltersRowComponent } from './ui/inline-filters-row';
+import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
+import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
+import { DataGridHeaderComponent } from './ui/datagrid-header';
+import { DataGridInlineFiltersRowComponent } from './ui/datagrid-inline-filters-row';
 import { EditableCellDirective } from './directives/editable-cell.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
@@ -70,6 +70,7 @@ import { Models } from 'common/src/lib/kysely.models';
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
+  styleUrl: './datagrid.css',
   providers: [
     GridStoreService,
     VirtualizerController,
@@ -430,7 +431,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected add() {
     this.navSvc.navigateIfValid(this.router, this.route, this.addRoute());
   }
-  public doAdd() { this.add(); }
+  public doAdd() {
+    this.add();
+  }
 
   protected applyPanelFilters() {
     const raw = this.panelFilters();
@@ -578,7 +581,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.clearAllSelection();
     await this.refresh();
   }
-  public doConfirmDelete() { void this.confirmDelete(); }
+  public doConfirmDelete() {
+    void this.confirmDelete();
+  }
 
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
@@ -589,7 +594,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
     });
   }
-  public doConfirmExport() { void this.confirmExport(); }
+  public doConfirmExport() {
+    void this.confirmExport();
+  }
 
   protected cyclePin(h: any) {
     const current = this.pinState(h);
@@ -706,7 +713,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.tsTable)
       this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
-  public hideAllColsPublic() { this.hideAllCols(); }
+  public hideAllColsPublic() {
+    this.hideAllCols();
+  }
 
   public hideColumn(h: any) {
     const id = this.getFieldFromHeader(h);
@@ -728,15 +737,33 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Toolbar helpers
-  public canUndo() { return !!this.undoMgr.canUndo(); }
-  public canRedo() { return !!this.undoMgr.canRedo(); }
-  public undo() { this.undoMgr.undo(); }
-  public redo() { this.undoMgr.redo(); }
-  public showFiltersState() { return this.showFilterPanel() || this.showFilters(); }
-  public archiveModeState() { return this.archiveMode(); }
-  public hasSelectionState() { return this.hasSelection(); }
-  public getColDefsForToolbar() { return this.colDefsWithEdit; }
-  public getColVisibilityMap() { return this.colVisibility(); }
+  public canUndo() {
+    return !!this.undoMgr.canUndo();
+  }
+  public canRedo() {
+    return !!this.undoMgr.canRedo();
+  }
+  public undo() {
+    this.undoMgr.undo();
+  }
+  public redo() {
+    this.undoMgr.redo();
+  }
+  public showFiltersState() {
+    return this.showFilterPanel() || this.showFilters();
+  }
+  public archiveModeState() {
+    return this.archiveMode();
+  }
+  public hasSelectionState() {
+    return this.hasSelection();
+  }
+  public getColDefsForToolbar() {
+    return this.colDefsWithEdit;
+  }
+  public getColVisibilityMap() {
+    return this.colVisibility();
+  }
 
   protected isColVisible(c: ColDef): boolean {
     const v = this.colVisibility();
@@ -987,7 +1014,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected async refresh(): Promise<void> {
     await this.loadPage(this.pageIndex());
   }
-  public doRefresh() { void this.refresh(); }
+  public doRefresh() {
+    void this.refresh();
+  }
 
   protected resetAllWidths() {
     this.colWidths.set({});
@@ -995,7 +1024,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
     this.store.requestPersist();
   }
-  public resetAllWidthsPublic() { this.resetAllWidths(); }
+  public resetAllWidthsPublic() {
+    this.resetAllWidths();
+  }
 
   public resetColWidth(h: any) {
     const id = this.getFieldFromHeader(h);
@@ -1056,7 +1087,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.tsTable)
       this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
-  public showAllColsPublic() { this.showAllCols(); }
+  public showAllColsPublic() {
+    this.showAllCols();
+  }
 
   public showColumnById(id: string) {
     this.toggleCol(id, true);
@@ -1122,7 +1155,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Reload first page
     this.loadPage(0);
   }
-  public toggleArchiveModePublic() { this.toggleArchiveMode(); }
+  public toggleArchiveModePublic() {
+    this.toggleArchiveMode();
+  }
 
   protected toggleCol(field: string, checked: boolean) {
     const v = { ...this.colVisibility() };
@@ -1136,7 +1171,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     this.store.requestPersist();
   }
-  public toggleColPublic(field: string, checked: boolean) { this.toggleCol(field, checked); }
+  public toggleColPublic(field: string, checked: boolean) {
+    this.toggleCol(field, checked);
+  }
 
   public toggleHeaderSort(h: any, ev?: MouseEvent) {
     const fn = h?.column?.toggleSorting;
