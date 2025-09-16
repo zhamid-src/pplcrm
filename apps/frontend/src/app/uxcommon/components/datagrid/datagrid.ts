@@ -45,8 +45,7 @@ import { DataGridUtilsService } from './services/utils.service';
 import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
 import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
-import { DataGridHeaderComponent } from './ui/datagrid-header';
-import { DataGridInlineFiltersRowComponent } from './ui/datagrid-inline-filters-row';
+// Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
@@ -64,8 +63,7 @@ import { Models } from 'common/src/lib/kysely.models';
     FormsModule,
     DataGridToolbarComponent,
     DataGridFilterPanelComponent,
-    DataGridHeaderComponent,
-    DataGridInlineFiltersRowComponent,
+    
     EditableCellDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,

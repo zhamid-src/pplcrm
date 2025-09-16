@@ -13,33 +13,102 @@
   </div>
   }
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
-    <table #gridTable class="table table-zebra table-fixed w-full grid-table">
-      <colgroup>
-        @if (enableSelection()) {
-        <col [style.width.px]="selectionStickyWidth()" />
-        } @for (h of leafHeaders(); track h.column.id) {
-        <col [style.width.px]="getColWidth(h.column.id) || null" />
-        }
-      </colgroup>
-
-      <thead class="sticky top-0 bg-base-100 z-10">
-        <pc-dg-header
-          [groups]="headerGroups()"
-          [enableSelection]="enableSelection()"
-          [selectionStickyWidth]="selectionStickyWidth()"
-          [allSelected]="allSelected()"
-          [hiddenColumns]="hiddenColumns()"
-        />
-        @if (showFilters()) {
-        <pc-dg-inline-filters-row
-          [enableSelection]="enableSelection()"
-          [selectionStickyWidth]="selectionStickyWidth()"
-          [leafHeaders]="leafHeaders()"
-          [pinState]="pinState"
-          [leftOffsetPx]="leftOffsetPx"
-          [rightOffsetPx]="rightOffsetPx"
-        />
-        }
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th>
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th role="columnheader" class="cursor-pointer" [attr.aria-sort]="ariaSortHeader(h)">
+            <div class="flex items-center gap-2">
+              <span class="flex-grow" (click)="toggleHeaderSort(h, $event)">
+                {{ h.column?.columnDef?.header || h.column?.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label tabindex="0" class="btn btn-ghost btn-xs" title="Column options">
+                  <pc-icon name="ellipsis-vertical"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Filter</span><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Sort</span><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li><a (click)="sortAsc(h)">Sort asc</a></li>
+                      <li><a (click)="sortDesc(h)">Sort desc</a></li>
+                      <li><a (click)="clearSort(h)">Clear sort</a></li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span>Column</span><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      <li><a (click)="hideColumn(h)">Hide</a></li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span>Columns</span><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                          } @if (!hiddenColumns().length) {
+                          <li class="opacity-60 px-2 py-1">None hidden</li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </th>
+          }
+        </tr>
       </thead>
       <tbody>
         @for (r of visibleTableRows(); track r.id) {
