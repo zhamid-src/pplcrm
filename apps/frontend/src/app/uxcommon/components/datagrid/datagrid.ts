@@ -1065,6 +1065,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
     this.store.requestPersist();
   }
+
+  // Resolve row background using DaisyUI tokens for zebra striping
+  protected rowBgForIndex(i: number): string {
+    return i % 2 === 1 ? 'var(--fallback-b2, oklch(var(--b2)))' : 'var(--fallback-b1, oklch(var(--b1)))';
+  }
   public resetAllWidthsPublic() {
     this.resetAllWidths();
   }
