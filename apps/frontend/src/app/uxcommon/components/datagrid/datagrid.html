@@ -128,6 +128,7 @@
             [pcEditable]="editableCfg(r.original, col)"
             tabindex="0"
             (keydown)="onCellKeydown($event)"
+            (dblclick)="handleCellDblClick(r.original, col)"
             [class.sticky]="pinState(cell) !== false"
             [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
             [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"

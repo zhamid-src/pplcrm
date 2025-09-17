@@ -8,6 +8,7 @@ import { EditingController } from '../controllers/editing.controller';
 export class EditableCellDirective {
   private readonly editing = inject(EditingController);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private isEditing = false;
 
   @Input({ required: true }) pcEditable!: {
     row: any;
@@ -42,22 +43,26 @@ export class EditableCellDirective {
       setEditingValue(cur);
     } catch {}
     setEditingCell({ id, field: col.field });
+    this.isEditing = true;
   }
 
   @HostListener('keydown.enter')
   async onEnter() {
-    // prevent default handled by table navigation
+    if (!this.isEditing) return;
     await this.commit();
   }
 
   @HostListener('keydown.esc')
   onEsc() {
+    if (!this.isEditing) return;
+    this.isEditing = false;
     this.pcEditable.setEditingCell(null);
   }
 
   // Commit only when focus leaves the cell subtree
   @HostListener('focusout', ['$event'])
   async onFocusOut(ev: FocusEvent) {
+    if (!this.isEditing) return;
     const container = this.host.nativeElement;
     const next = ev.relatedTarget as Node | null;
     if (next && container.contains(next)) return;
@@ -83,5 +88,6 @@ export class EditableCellDirective {
       undo: p.undo,
     });
     p.setEditingCell(null);
+    this.isEditing = false;
   }
 }
