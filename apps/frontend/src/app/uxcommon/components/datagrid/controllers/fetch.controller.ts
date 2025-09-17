@@ -15,7 +15,10 @@ export class FetchController {
     sortDir: 'asc' | 'desc' | null;
 
     // dependencies
-    gridSvc: { getAll(o: any): Promise<any>; getAllArchived(o: any): Promise<any> };
+    gridSvc: {
+      getAll(o: any): Promise<{ rows: any[]; count: number }>;
+      getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
+    };
     dataSvc: { buildGetAllOptions(a: any): any };
 
     // state hooks
@@ -46,7 +49,7 @@ export class FetchController {
         sortDir: opts.sortDir,
       });
       const data = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
-      const incoming = (data.rows as any[]) ?? [];
+      const incoming = data.rows ?? [];
       if (opts.append && opts.getRows().length > 0) {
         const next = [...opts.getRows(), ...incoming];
         opts.setRows(next);
@@ -69,7 +72,10 @@ export class FetchController {
     archiveMode: boolean;
     searchText: string;
     limitToTags: string[];
-    gridSvc: { getAll(o: any): Promise<any>; getAllArchived(o: any): Promise<any> };
+    gridSvc: {
+      getAll(o: any): Promise<{ rows: any[]; count: number }>;
+      getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
+    };
   }): Promise<{ ids: string[]; count: number }> {
     const options: any = { searchStr: opts.searchText, tags: opts.limitToTags };
     const { rows, count } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
@@ -77,4 +83,3 @@ export class FetchController {
     return { ids, count: count ?? ids.length };
   }
 }
-

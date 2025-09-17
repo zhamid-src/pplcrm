@@ -5,7 +5,7 @@ export class DataGridUtilsService {
   bucketByRoute(nodes: any[]): Map<string, any[]> {
     const map = new Map<string, any[]>();
     for (const n of nodes) {
-      const routeArr = (n as any).route ?? [];
+      const routeArr = (n as { route?: unknown[] }).route ?? [];
       const key = JSON.stringify(routeArr);
       const list = map.get(key) ?? [];
       if (n.data) list.push(n.data);
@@ -26,4 +26,3 @@ export class DataGridUtilsService {
     return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
   }
 }
-

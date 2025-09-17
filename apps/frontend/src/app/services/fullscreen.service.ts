@@ -15,7 +15,7 @@ export class FullScreenService {
     });
 
     // Safari (older WebKit) – vendor event
-    document.addEventListener('webkitfullscreenchange' as any, () => {
+    document.addEventListener('webkitfullscreenchange' as unknown as keyof DocumentEventMap, () => {
       this._isFullScreen.set(this.hasFsElement());
     });
   }
@@ -36,7 +36,10 @@ export class FullScreenService {
 
   /** Request browser fullscreen on the whole app */
   private async enterFullScreen(): Promise<void> {
-    const elem = document.documentElement as any;
+    const elem = document.documentElement as unknown as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+      msRequestFullscreen?: () => Promise<void>;
+    };
     try {
       if (elem.requestFullscreen) {
         await elem.requestFullscreen();
@@ -56,7 +59,10 @@ export class FullScreenService {
     try {
       if (!this.hasFsElement()) return; // avoid "Not in fullscreen" errors
 
-      const doc: any = document;
+      const doc = document as unknown as Document & {
+        webkitExitFullscreen?: () => Promise<void>;
+        msExitFullscreen?: () => Promise<void>;
+      };
       if (document.exitFullscreen) {
         await document.exitFullscreen();
       } else if (doc.webkitExitFullscreen) {
@@ -72,7 +78,10 @@ export class FullScreenService {
 
   /** Cross-browser check for current fullscreen element */
   private hasFsElement(): boolean {
-    const doc: any = document;
+    const doc = document as unknown as Document & {
+      webkitFullscreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
     return !!(document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
   }
 }

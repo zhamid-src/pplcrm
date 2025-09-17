@@ -8,20 +8,16 @@ export class DataGridSelectionService {
     return selectedOnPage > 0 && selectedOnPage === rowsOnCurrentPage;
   }
 
-  togglePageSelectionSet(
-    current: Set<string>,
-    rows: Array<{ id?: string } | any>,
-    checked: boolean,
-  ): Set<string> {
+  togglePageSelectionSet(current: Set<string>, rows: Array<{ id?: string }>, checked: boolean): Set<string> {
     const next = new Set<string>(current);
     if (checked) {
       for (const r of rows) {
-        const id = String((r as any)?.id ?? '');
+        const id = String(r?.id ?? '');
         if (id) next.add(id);
       }
     } else {
       for (const r of rows) {
-        const id = String((r as any)?.id ?? '');
+        const id = String(r?.id ?? '');
         if (id) next.delete(id);
       }
     }
@@ -33,4 +29,3 @@ export class DataGridSelectionService {
     else set.add(id);
   }
 }
-

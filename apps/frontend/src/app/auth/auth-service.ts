@@ -104,7 +104,9 @@ export class AuthService extends TRPCService<'authusers'> {
    * @throws `TRPCError` if authentication fails.
    */
   public async signIn(input: signInInputType) {
-    const token = await (this.api.auth.signIn.mutate as any)(input, { meta: { skipErrorHandler: true } });
+    const token = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      meta: { skipErrorHandler: true },
+    });
     return this.updateTokensAndGetCurrentUser(token);
   }
 

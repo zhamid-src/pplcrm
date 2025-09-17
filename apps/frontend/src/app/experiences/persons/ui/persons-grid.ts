@@ -243,7 +243,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const tags = Array.from(combined);
 
     try {
-      const res = (await (this.gridSvc as PersonsService).import(rows, tags)) as any;
+      const res = await (this.gridSvc as PersonsService).import(rows, tags);
       const inserted = res?.inserted ?? 0;
       const errors = res?.errors ?? 0;
       const diag: string[] = [];

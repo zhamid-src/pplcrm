@@ -12,7 +12,7 @@ import { GridActionComponent } from '../tool-button';
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
-  public readonly grid = inject<DataGrid<any, any>>(DataGrid as any);
+  public readonly grid: any = inject(DataGrid);
 
   public onAdd() {
     this.grid.doAdd();

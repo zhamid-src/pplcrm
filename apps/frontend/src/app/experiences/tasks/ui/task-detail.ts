@@ -58,7 +58,7 @@ export class TaskDetail implements OnInit {
     if (!plain) return;
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
+      await (this.tasks as unknown as { api: any }).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
       this.newComment = '';
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } finally {
@@ -112,7 +112,7 @@ export class TaskDetail implements OnInit {
     this.isLoading.set(true);
     try {
       const [t, us] = await Promise.all([this.tasks.getById(this.id()), this.auth.getUsers()]);
-      this.task.set(t as any);
+      this.task.set(t as unknown as any);
       this.users.set(us);
       const assigned = (t as any)?.assigned_to;
       this.assignedTo.set(assigned == null ? '' : String(assigned));
@@ -123,13 +123,13 @@ export class TaskDetail implements OnInit {
   }
 
   private async loadComments() {
-    const list = await (this.tasks as any).api.tasks.getComments.query(this.id());
-    this.comments.set(list as any[]);
+    const list = await (this.tasks as unknown as { api: any }).api.tasks.getComments.query(this.id());
+    this.comments.set(list as unknown as any[]);
   }
 
   private async loadAttachments() {
-    const list = await (this.tasks as any).api.tasks.getAttachments.query(this.id());
-    this.attachments.set(list as any[]);
+    const list = await (this.tasks as unknown as { api: any }).api.tasks.getAttachments.query(this.id());
+    this.attachments.set(list as unknown as any[]);
   }
 
   protected async addAttachment() {
@@ -138,7 +138,7 @@ export class TaskDetail implements OnInit {
     if (!name) return;
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
+      await (this.tasks as unknown as { api: any }).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
       this.attName = '';
       this.attUrl = '';
       await this.loadAttachments();
@@ -148,8 +148,8 @@ export class TaskDetail implements OnInit {
   }
 
   private async loadSubtasks() {
-    const list = await (this.tasks as any).api.tasks.getSubtasks.query(this.id());
-    this.subtasks.set(list as any[]);
+    const list = await (this.tasks as unknown as { api: any }).api.tasks.getSubtasks.query(this.id());
+    this.subtasks.set(list as unknown as any[]);
   }
 
   protected async addSubtask() {
@@ -157,7 +157,7 @@ export class TaskDetail implements OnInit {
     if (!name) return;
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
+      await (this.tasks as unknown as { api: any }).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
       this.subtaskName = '';
       await this.loadSubtasks();
     } finally {
@@ -173,7 +173,7 @@ export class TaskDetail implements OnInit {
   protected async toggleSubtask(s: any, isDone: boolean) {
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.updateSubtask.mutate({ id: String(s.id), data: { status: isDone ? 'done' : 'todo' } });
+      await (this.tasks as unknown as { api: any }).api.tasks.updateSubtask.mutate({ id: String(s.id), data: { status: isDone ? 'done' : 'todo' } });
       await this.loadSubtasks();
     } finally {
       this.isLoading.set(false);

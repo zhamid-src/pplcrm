@@ -176,7 +176,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
         const unsubscribe = next(op).subscribe({
           next: (value) => observer.next(value),
           error: (err) => {
-            const meta = (op as any).meta as { skipErrorHandler?: boolean } | undefined;
+            const meta = (op as unknown as { meta?: { skipErrorHandler?: boolean } }).meta;
 
             if (err instanceof TRPCClientError) {
               const code = err.data?.code as string | undefined;
@@ -192,7 +192,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
 
               if (!meta?.skipErrorHandler) errorSvc.handle(err);
             } else {
-              if (!meta?.skipErrorHandler) errorSvc.handle(err as any);
+              if (!meta?.skipErrorHandler) errorSvc.handle(err as unknown);
             }
 
             observer.error(err);

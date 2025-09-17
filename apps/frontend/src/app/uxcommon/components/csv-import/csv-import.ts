@@ -127,18 +127,18 @@ export class CsvImportComponent {
               this.pageIndex.set(0);
               this.parsing.set(false);
             });
-            worker.removeEventListener('message', handle as any);
+            worker.onmessage = null;
             worker.terminate();
           } else if (data.type === 'error') {
             this.zone.run(() => {
               this.alerts.showError(data.message || 'Failed to parse CSV');
               this.parsing.set(false);
             });
-            worker.removeEventListener('message', handle as any);
+            worker.onmessage = null;
             worker.terminate();
           }
         };
-        worker.addEventListener('message', handle as any);
+        worker.onmessage = handle;
         worker.postMessage({ type: 'parse', text });
       } catch {
         this.zone.run(() => {

@@ -43,7 +43,7 @@ export class EmailCacheStore {
     const cached = this.emailBodiesCache()[key];
     if (typeof cached !== 'undefined') return cached;
 
-    const res = (await this.svc.getEmailBody(key)) as any;
+    const res = (await this.svc.getEmailBody(key)) as unknown as { body_html?: string };
     const body = res?.body_html ?? '';
     // IMPORTANT: cache even if empty string so future checks see "loaded"
     this.setInCache(this.emailBodiesCache, key, body);
@@ -66,9 +66,12 @@ export class EmailCacheStore {
 
     this.markLoading(key);
     try {
-      const res = (await this.svc.getEmailWithHeaders(key)) as any;
+      const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
+        body?: { body_html?: string } | null;
+        header?: any;
+      };
       const bodyHtml = res?.body?.body_html ?? '';
-      const header = res?.header ?? null;
+      const header = (res as any)?.header ?? null;
 
       // IMPORTANT: cache regardless of truthiness ('' or null still mean "loaded")
       this.setInCache(this.emailBodiesCache, key, bodyHtml);
@@ -93,7 +96,9 @@ export class EmailCacheStore {
     if (!existing) return;
     const next = {
       ...existing,
-      comments: ((existing as any).comments ?? []).filter((c: any) => String(c.id) !== String(commentId)),
+      comments: ((existing as unknown as { comments?: any[] }).comments ?? []).filter(
+        (c: any) => String(c.id) !== String(commentId),
+      ),
     };
     this.setInCache(this.emailHeadersCache, key, next);
   }

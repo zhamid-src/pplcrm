@@ -9,9 +9,10 @@ export class DataGridFiltersService {
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(raw)) {
       if (v === undefined || v === null) continue;
-      if (typeof v === 'object' && v && 'value' in (v as any)) {
-        const op = ((v as any).op as Op) ?? 'contains';
-        const sv = String((v as any).value ?? '').trim();
+      if (typeof v === 'object' && v && 'value' in v) {
+        const vv = v as { op?: Op; value?: unknown };
+        const op = vv.op ?? 'contains';
+        const sv = String(vv.value ?? '').trim();
         if (!sv) continue;
         out[k] = { type: 'text', op, value: sv };
       } else {
@@ -24,7 +25,7 @@ export class DataGridFiltersService {
   }
 
   getFilterOptionsForCol(col: ColDef): string[] | null {
-    const cep: any = (col as any)?.cellEditorParams;
+    const cep = col?.cellEditorParams;
     let cfg: any = null;
     if (!cep) return null;
     try {
@@ -59,11 +60,11 @@ export class DataGridFiltersService {
   preparePanelFilters(current: Record<string, any>): Record<string, { op: 'contains' | 'equals'; value: any }> {
     const panel: Record<string, { op: 'contains' | 'equals'; value: any }> = {};
     for (const [k, v] of Object.entries(current)) {
-      const entry = v as any;
-      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry) panel[k] = entry;
+      const entry = v as { op?: 'contains' | 'equals'; value?: any };
+      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry)
+        panel[k] = entry as { op: 'contains' | 'equals'; value: any };
       else panel[k] = { op: 'contains', value: v };
     }
     return panel;
   }
 }
-
