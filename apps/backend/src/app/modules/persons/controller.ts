@@ -200,6 +200,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   ) {
     const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
     const households = new HouseholdRepo();
+    const personsBefore = await this.getRepo().count(auth.tenant_id);
 
     // Add an automatic import tag with timestamp
     const now = new Date();
@@ -207,7 +208,11 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 
     const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const results = { inserted: 0, errors: 0 };
+    const results: { inserted: number; errors: number; households_created: number } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+    };
 
     await this.getRepo()
       .transaction()
@@ -253,8 +258,8 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
                 if (existingBlank?.id) {
                   cachedBlankHouseholdId = String(existingBlank.id);
                 } else {
-                  const created = await households.add(
-                    {
+                const created = await households.add(
+                  {
                       row: {
                         tenant_id: auth.tenant_id,
                         campaign_id,
@@ -264,6 +269,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
                     trx,
                   );
                   cachedBlankHouseholdId = String(created?.id);
+                  results.households_created += 1;
                 }
               }
               householdId = cachedBlankHouseholdId;
@@ -317,6 +323,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
                   trx,
                 );
                 householdId = String(household?.id);
+                results.households_created += 1;
               }
             }
 
@@ -373,7 +380,8 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         }
       });
 
-    return { ...results, tag: autoTag };
+    const personsAfter = await this.getRepo().count(auth.tenant_id);
+    return { ...results, tag: autoTag, tenant_id: auth.tenant_id, campaign_id, persons_total_after: personsAfter, persons_total_before: personsBefore } as any;
   }
 
   /**

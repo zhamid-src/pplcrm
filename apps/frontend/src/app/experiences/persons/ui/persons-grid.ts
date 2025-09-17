@@ -3,7 +3,7 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows.
  */
-import { Component, NgZone, inject } from '@angular/core';
+import { Component, NgZone, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
@@ -105,7 +105,12 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     { field: 'last_name', headerName: 'Last Name', editable: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'home_phone', headerName: 'Home phone', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
     {
       field: 'tags',
       headerName: 'Tags',
@@ -175,10 +180,15 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   // Import CSV state
   protected csvHeaders: string[] = [];
   protected csvRows: Array<Record<string, string>> = [];
-  protected importLoading = false;
+  protected importLoading = signal(false);
   protected importProgress = 0;
   protected importProgressMax = 100;
   protected importStatus = '';
+  protected importSummary = signal<{ inserted: number; errors: number; skipped: number; tag?: string; failed: boolean; message?: string }>(
+    { inserted: 0, errors: 0, skipped: 0, failed: false },
+  );
+  protected importDialogOpen = signal(false);
+  protected importSummaryOpen = signal(false);
 
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
@@ -232,7 +242,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       return;
     }
     this.zone.run(() => {
-      this.importLoading = true;
+      this.importLoading.set(true);
     });
     const reader = new FileReader();
     reader.onload = () => {
@@ -247,14 +257,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
               this.csvRows = data.rows || [];
               this.mapping = this.csvHeaders.map((h: string) => this.autoMapHeader(h));
               this.previewPage = 0;
-              this.importLoading = false;
+              this.importLoading.set(false);
             });
             worker.removeEventListener('message', handle as any);
             worker.terminate();
           } else if (data.type === 'error') {
             this.zone.run(() => {
               this.alertSvc.showError(data.message || 'Failed to parse CSV');
-              this.importLoading = false;
+              this.importLoading.set(false);
             });
             worker.removeEventListener('message', handle as any);
             worker.terminate();
@@ -265,11 +275,11 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       } catch {
         this.zone.run(() => {
           this.alertSvc.showError('Failed to parse CSV');
-          this.importLoading = false;
+          this.importLoading.set(false);
         });
       }
     };
-    reader.onerror = () => this.zone.run(() => (this.importLoading = false));
+    reader.onerror = () => this.zone.run(() => this.importLoading.set(false));
     reader.readAsText(file);
   }
 
@@ -281,8 +291,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     this.tagsInput = '';
     this.importLoading = false;
     if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    const dialog = document.querySelector('#importPersons') as HTMLDialogElement;
-    dialog?.showModal();
+    this.importDialogOpen.set(true);
   }
 
   protected prevPreviewPage() {
@@ -322,22 +331,43 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       return mapped;
     });
 
+    // Filter out rows that ended up completely empty after mapping
+    const nonEmptyRows = rows.filter((r) => Object.keys(r).length > 0);
+    const skipped = rows.length - nonEmptyRows.length;
+
+    if (!nonEmptyRows.length) {
+      this.alertSvc.showError('Nothing to import. Please map at least one column to a field.');
+      return;
+    }
+
     const tags = this.tagsInput
       .split(',')
       .map((t) => t.trim())
       .filter((t) => !!t);
 
     try {
-      const res = (await (this.gridSvc as PersonsService).import(rows, tags)) as any;
+      const res = (await (this.gridSvc as PersonsService).import(nonEmptyRows, tags)) as any;
       const inserted = res?.inserted ?? 0;
       const errors = res?.errors ?? 0;
-      this.alertSvc.showSuccess(`Import complete: ${inserted} inserted`);
-      if (errors > 0) this.alertSvc.showWarn(`${errors} row(s) skipped due to errors`);
-      if (res?.tag) this.alertSvc.showInfo(`Applied tag: ${res.tag}`);
-      (document.querySelector('#importPersons') as HTMLDialogElement)?.close();
+      const diag: string[] = [];
+      if (typeof res?.persons_total_before === 'number' && typeof res?.persons_total_after === 'number') {
+        diag.push(`Total before/after: ${res.persons_total_before} → ${res.persons_total_after}`);
+      }
+      if (typeof res?.households_created === 'number') {
+        diag.push(`Households created: ${res.households_created}`);
+      }
+      if (res?.tenant_id) diag.push(`Tenant: ${res.tenant_id}`);
+      if (res?.campaign_id) diag.push(`Campaign: ${res.campaign_id}`);
+      const msg = diag.join(' • ');
+      this.importSummary.set({ inserted, errors, skipped, tag: res?.tag, failed: false, message: msg });
+      this.importDialogOpen.set(false);
+      this.importSummaryOpen.set(true);
       await this.refresh();
-    } catch (e) {
-      this.alertSvc.showError('Import failed');
+    } catch (e: any) {
+      const msg = e?.message || e?.data?.message || 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped, failed: true, message: msg });
+      this.importDialogOpen.set(false);
+      this.importSummaryOpen.set(true);
     }
   }
 
