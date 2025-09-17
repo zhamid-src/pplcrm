@@ -10,7 +10,7 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
   templateUrl: 'datagrid-inline-filters-row.html',
 })
 export class DataGridInlineFiltersRowComponent {
-  private readonly grid = inject<DataGrid<any, any>>(DataGrid as any, { optional: true });
+  private readonly grid: any = inject(DataGrid, { optional: true });
 
   public clearHeaderFilter = input<(field: string) => void>((f) => this.grid?.clearHeaderFilter(f));
   public enableSelection = input<boolean>(true);

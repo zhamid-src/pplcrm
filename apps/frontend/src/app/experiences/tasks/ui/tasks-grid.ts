@@ -156,16 +156,16 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     {
       const label: string = p.newValue ?? '';
       if (label === this.unassignedLabel) {
-        if ((p.data as any).assigned_to !== null) {
-          (p.data as any).assigned_to = null;
+        if ((p.data as Record<string, any>)['assigned_to'] !== null) {
+          (p.data as Record<string, any>)['assigned_to'] = null;
           return true;
         }
         return false;
       }
       const idx = this.userLabels.indexOf(label);
       const id = idx >= 0 ? this.userIds[idx] : String(p.newValue ?? '');
-      if ((p.data as any).assigned_to !== id) {
-        (p.data as any).assigned_to = id;
+      if ((p.data as Record<string, any>)['assigned_to'] !== id) {
+        (p.data as Record<string, any>)['assigned_to'] = id;
         return true;
       }
       return false;
@@ -188,8 +188,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     const val: string = p.newValue || p.value || '';
     // ensure only YYYY-MM-DD is stored
     const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    if ((p.data as any).due_at !== dateOnly) {
-      (p.data as any).due_at = dateOnly;
+    if ((p.data as Record<string, any>)['due_at'] !== dateOnly) {
+      (p.data as Record<string, any>)['due_at'] = dateOnly;
       return true;
     }
     return false;
@@ -228,8 +228,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
 
   private priorityValueSetter(p: any) {
     const v = this.parsePriorityLabel(p.newValue);
-    if ((p.data as any).priority !== v) {
-      (p.data as any).priority = v;
+    if ((p.data as Record<string, any>)['priority'] !== v) {
+      (p.data as Record<string, any>)['priority'] = v;
       return true;
     }
     return false;
@@ -273,8 +273,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
 
   private statusValueSetter(p: any) {
     const v = this.parseStatusLabel(p.newValue);
-    if ((p.data as any).status !== v) {
-      (p.data as any).status = v;
+    if ((p.data as Record<string, any>)['status'] !== v) {
+      (p.data as Record<string, any>)['status'] = v;
       return true;
     }
     return false;

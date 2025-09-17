@@ -82,7 +82,7 @@ export class TasksBoard implements OnInit {
 
   public async ngOnInit() {
     const res = await this.svc.getAll({ limit: 1000, columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'] });
-    const rows = (res.rows || []) as any[];
+    const rows = (res.rows || []) as unknown as any[];
     const items: Task[] = rows.map((r) => ({
       id: String(r.id),
       name: String(r.name || '(no name)'),

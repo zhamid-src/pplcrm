@@ -62,7 +62,7 @@ export class EmailComments {
     const em = this.email();
     if (!em) return [];
     const header = this.store.getEmailHeaderById(em.id)();
-    return (header as any)?.comments ?? [];
+    return (header as unknown as { comments?: Partial<EmailCommentType>[] })?.comments ?? [];
   });
 
   /** Tenant users for display names */
@@ -129,7 +129,7 @@ export class EmailComments {
   /** Can the current user delete this comment? */
   public canDelete(comment: Partial<EmailCommentType>): boolean {
     const me = this.meId;
-    const authorId = (comment as any)?.author_id ?? null;
+    const authorId = (comment as Partial<EmailCommentType> as any)?.author_id ?? null;
     // Adjust rule if you want admins/moderators here
     return !!me && String(authorId) === String(me);
   }
@@ -165,7 +165,7 @@ export class EmailComments {
   /** Attempt to delete a comment (optimistic + rollback in store) */
   protected async deleteComment(comment: Partial<EmailCommentType>): Promise<void> {
     const em = this.email();
-    const cid = String((comment as any).id ?? '');
+    const cid = String((comment as Partial<EmailCommentType> as any).id ?? '');
     if (!em?.id || !cid) return;
 
     // de-dupe

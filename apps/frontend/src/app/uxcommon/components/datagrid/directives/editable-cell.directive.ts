@@ -35,7 +35,7 @@ export class EditableCellDirective {
     const { row, col, toId, setEditingCell, setEditingValue, getCellValue } = this.pcEditable;
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
-    if (!(col as any)?.editable) return;
+    if (!col?.editable) return;
     const id = toId(row);
     if (!id) return;
     try {

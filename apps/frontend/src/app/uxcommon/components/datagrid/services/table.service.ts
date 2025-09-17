@@ -66,7 +66,7 @@ export class DataGridTableService {
       initialState: {
         columnPinning: { left: [], right: [] },
         columnSizing: {},
-      } as any,
+      },
       onStateChange: params.onStateChange,
       renderFallbackValue: null as unknown,
       onSortingChange: params.onSortingChange,
@@ -88,4 +88,3 @@ export class DataGridTableService {
       })) as unknown) as TSColumnDef<any, any>[];
   }
 }
-

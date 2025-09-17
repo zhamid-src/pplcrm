@@ -7,6 +7,8 @@ import { get, set } from 'idb-keyval';
 
 import { DataGridConfig } from '../datagrid.tokens';
 
+type ExportJob = { id: string; name: string; status: 'in_progress' | 'completed' | 'failed'; created_at: number };
+
 @Injectable({ providedIn: 'root' })
 export class DataGridActionsService {
   public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
@@ -34,7 +36,9 @@ export class DataGridActionsService {
       return;
     }
 
-    const deletableRows = rows.filter((row) => !('deletable' in row) || (row as any).deletable !== false);
+    const deletableRows = rows.filter(
+      (row) => !('deletable' in row) || (row as { deletable?: boolean }).deletable !== false,
+    );
     if (deletableRows.length !== rows.length) {
       ctx.alertSvc.showError(messages.deleteSystemValues);
     }
@@ -73,8 +77,13 @@ export class DataGridActionsService {
     if (!ok) return;
 
     try {
-      const jobs = ((await get('pc_export_jobs')) as any[]) || [];
-      const job = { id: crypto.randomUUID(), name: 'Grid CSV Export', status: 'in_progress', created_at: Date.now() };
+      const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
+      const job: ExportJob = {
+        id: crypto.randomUUID(),
+        name: 'Grid CSV Export',
+        status: 'in_progress',
+        created_at: Date.now(),
+      };
       jobs.push(job);
       await set('pc_export_jobs', jobs);
 
@@ -87,7 +96,7 @@ export class DataGridActionsService {
           return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
         };
         const csv = [headers.join(',')]
-          .concat(rows.map((r) => headers.map((h) => escape((r as any)[h])).join(',')))
+          .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
           .join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -100,7 +109,7 @@ export class DataGridActionsService {
         URL.revokeObjectURL(url);
       }
 
-      const jobs2 = ((await get('pc_export_jobs')) as any[]) || [];
+      const jobs2 = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
       const idx = jobs2.findIndex((j) => j.id === job.id);
       if (idx >= 0) {
         jobs2[idx] = { ...jobs2[idx], status: 'completed' };
@@ -111,7 +120,7 @@ export class DataGridActionsService {
       console.error(e);
       deps.alertSvc.showError(messages.exportFailed);
       try {
-        const jobs = ((await get('pc_export_jobs')) as any[]) || [];
+        const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
         const last = jobs[jobs.length - 1];
         if (last && last.status === 'in_progress') {
           last.status = 'failed';

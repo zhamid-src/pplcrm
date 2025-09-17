@@ -249,7 +249,7 @@ export class ListDetail {
         tags: this.flattenPositiveTags(tags_expression),
       };
       // Do not send member_ids limited to the current page; backend will expand definition to all matches
-      delete (payload as any).member_ids;
+      delete (payload as Record<string, unknown>)['member_ids'];
     }
 
     const end = this._loading.begin();

@@ -16,7 +16,7 @@ export class EditingController {
   }
 
   shouldBlockEdit(row: any, key: string): boolean {
-    return 'deletable' in (row as any) && (row as any).deletable === false && key === 'name';
+    return !!(row && typeof row === 'object' && 'deletable' in row && (row as { deletable?: boolean }).deletable === false && key === 'name');
   }
 
   async commitSingleCell(opts: {
@@ -39,10 +39,10 @@ export class EditingController {
     const id = toId(row);
     if (!id) return false;
     const key = col.field as string;
-    const prev = (row as any)[key as any];
+    const prev = (row as Record<string, unknown>)[key];
     // If a valueSetter is provided on the col, let it handle assignment/normalization
     let changed = false;
-    const before = { ...(row || {}) } as any;
+    const before: Record<string, unknown> = { ...(row || {}) };
     if (typeof opts.col.valueSetter === 'function') {
       try {
         // Provide a best-effort AG-like params object
@@ -54,21 +54,21 @@ export class EditingController {
     } else {
       const equal = prev === opts.currentValue || (prev == null && (opts.currentValue == null || opts.currentValue === ''));
       changed = !equal;
-      if (changed) (row as any)[key as any] = opts.currentValue;
+      if (changed) Object.assign(row as object, { [key]: opts.currentValue });
     }
     if (!changed) return true;
     try {
       if (this.shouldBlockEdit(row, key)) {
         opts.undo();
         opts.showError('Editing this field is blocked');
-        (row as any)[key as any] = before[key as any];
+        Object.assign(row as object, { [key]: before[key] });
         return false;
       }
       const payload = opts.createPayload(row, key);
       const edited = await opts.applyEdit(id, payload);
       if (!edited) {
         opts.undo();
-        (row as any)[key as any] = before[key as any];
+        Object.assign(row as object, { [key]: before[key] });
         opts.showError('Update failed');
         return false;
       }
@@ -77,7 +77,7 @@ export class EditingController {
       opts.showSuccess('Row updated');
       return true;
     } catch {
-      (row as any)[key as any] = before[key as any];
+      Object.assign(row as object, { [key]: before[key] });
       opts.showError('Update failed');
       return false;
     }

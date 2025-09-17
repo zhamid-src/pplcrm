@@ -199,7 +199,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected rowHeight = 36;
 
   // Table state (TanStack-like minimal state)
-  protected rows = this.store.rows as any;
+  protected rows = this.store.rows;
   protected selectedIdSet = this.store.selectedIdSet;
   protected selectionStickyWidth = this.store.selectionStickyWidth;
   protected showFilterPanel = signal(false);
@@ -232,7 +232,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public requestPersist() {
     this.store.requestPersist();
   }
-  public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c as any, raw);
+  public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c, raw);
 
   public readonly editableCfg = (row: any, col: any) => ({
     row,
@@ -308,7 +308,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.sortDir();
       this.tableSvc.setTableData(
         this.tsTable,
-        rows as any[],
+        rows,
         this.buildRowSelectionForCurrentData(),
         this.sortCol(),
         this.sortDir(),
@@ -390,9 +390,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.loadPage(0);
         this.store.requestPersist();
       },
-      onRowSelectionChange: (updater: Updater<any>) => {
-        const current: any = (this.tsTable!.getState() as any).rowSelection ?? {};
-        const next: any = typeof updater === 'function' ? updater(current) : updater;
+      onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => {
+        const state = this.tsTable!.getState() as unknown as { rowSelection?: Record<string, boolean> };
+        const current: Record<string, boolean> = state?.rowSelection ?? {};
+        const next: Record<string, boolean> = typeof updater === 'function' ? updater(current) : updater;
         const set = new Set(this.selectedIdSet());
         for (const row of this.rows()) {
           const id = this.toId(row);
@@ -403,8 +404,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.selectedIdSet.set(set);
       },
       onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
-        const current = (this.tsTable!.getState() as any).columnSizing || {};
-        const next = typeof updater === 'function' ? (updater as any)(current) : (updater as any);
+        const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
+        const current: Record<string, number> = state?.columnSizing || {};
+        const next: Record<string, number> = typeof updater === 'function' ? updater(current) : updater;
         this.colWidths.set({ ...(next || {}) });
         this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
         this.store.requestPersist();
@@ -437,9 +439,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const raw = this.panelFilters();
     const cleaned: Record<string, any> = {};
     for (const [k, v] of Object.entries(raw)) {
-      const sv = String((v as any)?.value ?? '').trim();
+      const sv = String(v?.value ?? '').trim();
       if (!sv) continue;
-      cleaned[k] = { op: (v as any)?.op ?? 'contains', value: sv };
+      cleaned[k] = { op: v?.op ?? 'contains', value: sv };
     }
     this.filterValues.set(cleaned);
     this.showFilterPanel.set(false);
@@ -474,7 +476,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected callCellRenderer(row: any, col: ColDef): string {
-    const fn: any = (col as any).cellRenderer;
+    const fn: any = col.cellRenderer;
     if (typeof fn === 'function') {
       const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
       return String(fn({ data: row, value, colDef: col }));
@@ -483,7 +485,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected callValueFormatter(row: any, col: ColDef): any {
-    const fn: any = (col as any).valueFormatter;
+    const fn: any = col.valueFormatter;
     if (typeof fn === 'function') {
       return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
     }
@@ -600,7 +602,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const current = this.pinState(h);
     const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
     const pin = h?.column?.pin;
-    if (typeof pin === 'function') pin.call(h.column, next as any);
+    if (typeof pin === 'function') pin.call(h.column, next);
     this.store.requestPersist();
   }
 
@@ -628,13 +630,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const vget = col.valueGetter as ((p: any) => any) | undefined;
     if (typeof vget === 'function') {
       try {
-        return vget({ data: row, colDef: col, value: (row as any)?.[col.field as string] });
+        return vget({ data: row, colDef: col, value: row?.[col.field as string] });
       } catch {
         // fall through to field lookup
       }
     }
     const field = (col.field as string) || '';
-    return field ? (row as any)?.[field] : undefined;
+    return field ? row?.[field] : undefined;
   }
 
   public getColDefById(id: string): ColDef | undefined {
@@ -1029,7 +1031,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public resetColWidth(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
-    const sizing = { ...((this.tsTable!.getState() as any).columnSizing || {}) };
+    const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
+    const sizing = { ...(state?.columnSizing || {}) };
     if (id in sizing) delete sizing[id];
     this.colWidths.update((m) => {
       const next = { ...(m || {}) };
@@ -1050,7 +1053,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         archiveMode: this.archiveMode(),
         searchText: this.searchSvc.getFilterText(),
         limitToTags: this.limitToTags(),
-        gridSvc: this.gridSvc as any,
+        gridSvc: this.gridSvc,
       });
       this.allSelectedIds = ids;
       this.allSelectedIdSet = new Set(ids);
@@ -1091,7 +1094,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public showColumnById(id: string) {
     this.toggleCol(id, true);
-    const col = (this.tsTable as any)?.getColumn?.(id);
+    const col = this.tsTable?.getColumn?.(id);
     if (col?.toggleVisibility) col.toggleVisibility(true);
   }
 
@@ -1141,7 +1144,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected toId(row: any): string {
-    const id = (row as any)?.id;
+    const id = row?.id;
     return id == null ? '' : String(id);
   }
 
@@ -1180,7 +1183,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected togglePageChecked(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
-    const nextSet = this.selSvc.togglePageSelectionSet(this.selectedIdSet(), this.rows() as any[], checked);
+    const nextSet = this.selSvc.togglePageSelectionSet(this.selectedIdSet(), this.rows(), checked);
     this.selectedIdSet.set(nextSet);
   }
 
@@ -1263,13 +1266,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       searchText: this.searchSvc.getFilterText(),
       limitToTags: this.limitToTags(),
       filterModel: this.buildFilterModel(),
-      sortState: this.sorting() as any,
+      sortState: this.sorting(),
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
-      gridSvc: this.gridSvc as any,
-      dataSvc: this.dataSvc as any,
+      gridSvc: this.gridSvc,
+      dataSvc: this.dataSvc,
       getRows: () => this.rows(),
-      setRows: (rows: any[]) => this.rows.set(rows as any),
+      setRows: (rows: any[]) => this.rows.set(rows),
       updateTableData: (rows: any[]) =>
         this.tableSvc.setTableData(
           this.tsTable,
@@ -1309,9 +1312,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateEditedRowInCaches(id: string, field: string | undefined, value: any) {
     if (!field) return;
     // Update visible rows array
-    this.rows.update(
-      (curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)) as any,
-    );
+    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
   }
 
   // pin offsets handled by PinningController
@@ -1320,7 +1321,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private updateTableWindow(start: number, end: number) {
     this.tableSvc.updateTableWindow(
       this.tsTable,
-      this.rows() as any[],
+      this.rows(),
       start,
       end,
       this.buildRowSelectionForCurrentData(),

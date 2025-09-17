@@ -8,7 +8,7 @@ import { DataGrid } from '../datagrid';
 export class HeaderReorderDirective {
   @Input('pcHeaderReorder') header: any;
 
-  private readonly grid = inject<any>(DataGrid as any);
+  private readonly grid: any = inject(DataGrid);
 
   @HostListener('dragstart', ['$event'])
   onDragStart(ev: DragEvent) {
@@ -31,4 +31,3 @@ export class HeaderReorderDirective {
     } catch {}
   }
 }
-

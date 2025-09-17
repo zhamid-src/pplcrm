@@ -30,7 +30,10 @@ export class ExportsPage {
       }
     });
     // best-effort cleanup when page destroyed (Angular standalone component)
-    (globalThis as any).addEventListener?.('beforeunload', () => clearInterval(interval));
+    (globalThis as unknown as { addEventListener?: (t: string, cb: () => void) => void }).addEventListener?.(
+      'beforeunload',
+      () => clearInterval(interval),
+    );
   }
 
   protected formatDate(ms: number) {

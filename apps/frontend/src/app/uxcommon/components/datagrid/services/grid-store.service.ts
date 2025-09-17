@@ -34,7 +34,13 @@ export class GridStoreService {
       this._persistTick();
       if (!key) return;
       try {
-        const st: any = this._table?.getState?.() ?? {};
+        const st = (this._table?.getState?.() ?? {}) as unknown as {
+          sorting?: any[];
+          columnVisibility?: Record<string, boolean>;
+          columnPinning?: { left: string[]; right: string[] };
+          columnSizing?: Record<string, number>;
+          columnOrder?: string[];
+        };
         const data = {
           sorting: st.sorting || this.sorting(),
           visibility: st.columnVisibility || this.colVisibility(),
@@ -43,7 +49,7 @@ export class GridStoreService {
           order: st.columnOrder || [],
           filters: this.filterValues() || {},
           selectionWidth: this.selectionStickyWidth(),
-        } as any;
+        };
         localStorage.setItem(key, JSON.stringify(data));
       } catch {}
     });
@@ -138,7 +144,16 @@ export class GridStoreService {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return;
-      const data = JSON.parse(raw || '{}') as any;
+      type Persisted = {
+        sorting?: any[];
+        visibility?: Record<string, boolean>;
+        filters?: Record<string, any>;
+        selectionWidth?: number;
+        sizing?: Record<string, number>;
+        pinning?: { left: string[]; right: string[] };
+        order?: string[];
+      };
+      const data = JSON.parse(raw || '{}') as unknown as Persisted;
       if (data.sorting) this.sorting.set(data.sorting);
       if (data.visibility) this.colVisibility.set(data.visibility);
       if (data.filters) this.filterValues.set(data.filters);

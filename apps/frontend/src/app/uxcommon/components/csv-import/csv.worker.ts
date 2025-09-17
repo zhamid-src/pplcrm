@@ -42,7 +42,7 @@ function splitLine(line: string, delimiter: string): string[] {
   return result.map((s) => s.trim());
 }
 
-const ctx = self as any;
+const ctx: any = self as unknown;
 
 ctx.onmessage = (e: MessageEvent) => {
   try {
@@ -72,4 +72,3 @@ ctx.onmessage = (e: MessageEvent) => {
     ctx.postMessage({ type: 'error', message: err?.message || 'Parse failed' });
   }
 };
-

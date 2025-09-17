@@ -24,7 +24,7 @@ export class KeyboardController {
       if (!rowId) return;
       const col = helpers.getColDefById(colId);
       if (!col) return;
-      const row = (helpers.rows() as any[]).find((r: any) => String(r?.id) === rowId);
+      const row = helpers.rows().find((r: any) => String(r?.id) === rowId);
       if (!row) return;
       if (helpers.isEditable(col)) helpers.startEdit(row, col);
       return;
@@ -52,4 +52,3 @@ export class KeyboardController {
     }
   }
 }
-

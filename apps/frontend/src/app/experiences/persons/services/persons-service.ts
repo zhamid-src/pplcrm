@@ -226,7 +226,9 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    */
   public import(rows: any[], tags: string[] = []) {
     // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return (this.api.persons.import.mutate as any)({ rows, tags }, { meta: { skipErrorHandler: true } });
+    return (this.api.persons.import.mutate as unknown as (input: any, opts: any) => Promise<any>)({ rows, tags }, {
+      meta: { skipErrorHandler: true },
+    });
   }
 
   /**

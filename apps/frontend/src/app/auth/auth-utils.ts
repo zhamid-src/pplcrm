@@ -14,7 +14,8 @@ export function emailControl(fb: AnyFormBuilder) {
  * Returns the number of times the provided control's value was found in data breaches.
  */
 export function passwordBreachNumber(control: AbstractControl | null | undefined) {
-  return (control?.errors as any)?.pwnedPasswordOccurrence;
+  const errs = control?.errors as unknown as { pwnedPasswordOccurrence?: number } | undefined;
+  return errs?.pwnedPasswordOccurrence ?? null;
 }
 
 /**
