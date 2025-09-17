@@ -15,6 +15,7 @@ export class GridStoreService {
   readonly allSelectedCount = signal<number>(0);
   readonly selectionStickyWidth = signal<number>(48);
   readonly pageIndex = signal<number>(0);
+  readonly pageSize = signal<number>(25);
 
   readonly displayedCount = computed(() => this.rows().length);
 
@@ -31,6 +32,7 @@ export class GridStoreService {
       this.filterValues();
       this.selectionStickyWidth();
       this.colWidths();
+      this.pageSize();
       this._persistTick();
       if (!key) return;
       try {
@@ -49,6 +51,7 @@ export class GridStoreService {
           order: st.columnOrder || [],
           filters: this.filterValues() || {},
           selectionWidth: this.selectionStickyWidth(),
+          pageSize: this.pageSize(),
         };
         localStorage.setItem(key, JSON.stringify(data));
       } catch {}
@@ -152,12 +155,14 @@ export class GridStoreService {
         sizing?: Record<string, number>;
         pinning?: { left: string[]; right: string[] };
         order?: string[];
+        pageSize?: number;
       };
       const data = JSON.parse(raw || '{}') as unknown as Persisted;
       if (data.sorting) this.sorting.set(data.sorting);
       if (data.visibility) this.colVisibility.set(data.visibility);
       if (data.filters) this.filterValues.set(data.filters);
       if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
       const sizing = data.sizing || {};
       queueMicrotask(() => {
         if (this._table?.setOptions) {

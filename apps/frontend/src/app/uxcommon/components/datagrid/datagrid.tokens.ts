@@ -46,7 +46,7 @@ export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CO
 
 /** Default config used when no provider is registered */
 export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
-  pageSize: 5,
+  pageSize: 25,
   filterToolPanelId: 'filters-new',
   messages: {
     noDeletePermission: 'You do not have the permission to delete rows from this table.',

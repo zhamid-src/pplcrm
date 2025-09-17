@@ -28,7 +28,6 @@ import { type SortingState, ColumnDef as TSColumnDef, type Updater } from '@tans
 // Virtualizer handled via controller
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
-import { VirtualizerController } from './controllers/virtualizer.controller';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -71,7 +70,6 @@ import { Models } from 'common/src/lib/kysely.models';
   styleUrl: './datagrid.css',
   providers: [
     GridStoreService,
-    VirtualizerController,
     PinningController,
     ResizingController,
     ReorderController,
@@ -120,7 +118,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
     });
   };
-  private readonly vctrl = inject(VirtualizerController);
+  // Virtualizer disabled for paginated grid
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
@@ -144,8 +142,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   );
 
   // Computed derivations
+  // Page size selection (persisted via GridStoreService)
+  protected readonly pageSize = this.store.pageSize;
+  protected readonly pageSizeChoices = computed(() => {
+    const base = [25, 50, 100];
+    const current = this.pageSize();
+    return base.includes(current) ? base : [current, ...base];
+  });
   protected readonly totalPages = computed(() =>
-    this.dataSvc.computeTotalPages(this.totalCountAll(), this.config.pageSize),
+    this.dataSvc.computeTotalPages(this.totalCountAll(), this.pageSize()),
   );
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
@@ -154,6 +159,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
+
+  // Display range helpers (1-based)
+  protected readonly displayStartIndex = computed(() => {
+    const total = this.totalCountAll();
+    if (!total) return 0;
+    return this.pageIndex() * this.pageSize() + 1;
+  });
+  protected readonly displayEndIndex = computed(() => {
+    const total = this.totalCountAll();
+    if (!total) return 0;
+    const end = (this.pageIndex() + 1) * this.pageSize();
+    return Math.min(end, total);
+  });
 
   // Hidden columns list for header menu as a computed
   protected readonly hiddenColumns = computed(() => {
@@ -274,6 +292,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public showToolbar = input<boolean>(true);
 
   private _squelch = false;
+  private _initialized = false;
+  private _lastPageSize: number | null = null;
 
   constructor() {
     // Prevents being stuck on an out-of-range page after filters change.
@@ -299,6 +319,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.oldFilterText = quickFilterText;
         this.loadPage(0);
       }
+    });
+    // When page size changes, go back to first page (after init)
+    effect(() => {
+      const size = this.pageSize();
+      if (!this._initialized) {
+        this._lastPageSize = size;
+        return;
+      }
+      if (this._lastPageSize === size) return;
+      this._lastPageSize = size;
+      void this.loadPage(0);
     });
     // Keep table data + selection + sorting synced when rows or sort change
     effect(() => {
@@ -333,10 +364,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public ngAfterViewInit() {
+    // Virtualizer disabled for paged grid; no attach
     const el = this.scroller?.nativeElement as HTMLDivElement | undefined;
-    if (el) this.vctrl.attach(el, this.rowHeight);
+    void el; // reserved for future use
     // Attach controllers to the table once
-    this.vctrl.attachTable(this.tsTable);
     this.pctrl.attachTable(this.tsTable);
     this.pctrl.init({
       getColWidth: (id) => this.getColWidth(id),
@@ -351,7 +382,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public ngOnDestroy(): void {
     // Abort any inflight requests and release refs
     this.gridSvc.abort();
-    this.vctrl.detach();
     this.tsTable = undefined;
     window.removeEventListener('resize', this.updateHeaderWidths);
   }
@@ -419,8 +449,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.store.setGetRowId((row: any) => this.toId(row));
     } catch {}
     // Load persisted state and apply to table before first load
+    // Set default page size from config; loadState may override with persisted value
+    if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
     this.store.loadState();
     await this.loadPage(0);
+    this._initialized = true;
   }
 
   public triggerFilterChanged() {
@@ -466,9 +499,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store.requestPersist();
   }
 
-  protected bottomPadHeight(): number {
-    return this.vctrl.bottomPadHeight();
-  }
+  // Virtualizer padding not used in paginated mode
 
   // Build a compact filter model from current UI filter values
   protected buildFilterModel(): Record<string, any> {
@@ -613,7 +644,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected endIndex(): number {
-    return this.vctrl.endIndex();
+    return this.rows().length;
   }
 
   // exportToCSV removed (legacy path)
@@ -813,6 +844,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     await this.loadPage(this.pageIndex() + 1, false);
   }
 
+  // First/Last page navigation
+  protected async firstPage() {
+    if (!this.canPrev()) return;
+    await this.loadPage(0, false);
+  }
+  protected async lastPage() {
+    const last = Math.max(0, this.totalPages() - 1);
+    if (this.pageIndex() >= last) return;
+    await this.loadPage(last, false);
+  }
+
 
   // Keyboard navigation between cells
   protected onCellKeydown(ev: KeyboardEvent) {
@@ -906,7 +948,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Virtualization helpers
   protected onScroll(event: Event) {
-    this.vctrl.onScroll(event);
+    // No infinite scroll or virtualization-driven paging; ignore scroll.
+    // Keep handler to allow future enhancements.
+    void event;
   }
 
   // Prevent drag-reorder when grabbing selection resizer
@@ -1025,6 +1069,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.resetAllWidths();
   }
 
+  protected onPageSizeChange(val: string | number) {
+    const n = typeof val === 'number' ? val : parseInt(String(val), 10);
+    const size = isNaN(n) || n <= 0 ? 25 : n;
+    if (size === this.pageSize()) return;
+    this.pageSize.set(size);
+    // loadPage(0) is triggered by effect on pageSize
+  }
+
   public resetColWidth(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
@@ -1128,7 +1180,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected startIndex(): number {
-    return this.vctrl.startIndex();
+    return 0;
   }
 
   // Row selection helpers (TanStack-driven)
@@ -1199,9 +1251,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected topPadHeight(): number {
-    return this.vctrl.topPadHeight();
-  }
+  // topPadHeight not used without virtualizer
 
   // Pagination
   // totalPages is computed
@@ -1211,12 +1261,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store.requestPersist();
   }
 
-  protected visibleCount(): number {
-    return this.vctrl.visibleCount();
-  }
+  // visibleCount not used without virtualizer
 
   protected visibleTableRows(): any[] {
-    return this.vctrl.visibleTableRows();
+    const rows = this.tsTable?.getRowModel?.().rows || [];
+    return rows;
   }
 
   /** Helper: applies single-field patch */
@@ -1258,7 +1307,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     await this.fetchCtrl.loadPage({
       index,
       append,
-      pageSize: this.config.pageSize,
+      pageSize: this.pageSize(),
       archiveMode: this.archiveMode(),
       searchText: this.searchSvc.getFilterText(),
       limitToTags: this.limitToTags(),
@@ -1278,7 +1327,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.sortCol(),
           this.sortDir(),
         ),
-      setVirtualCount: (count: number) => this.vctrl.setCount(count),
+      // setVirtualCount removed (no virtualizer)
       setTotalCountAll: (n: number) => this.totalCountAll.set(n),
       setPageIndex: (i: number) => this.pageIndex.set(i),
       begin: () => this._loading.begin(),
