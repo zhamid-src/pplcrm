@@ -1,0 +1,116 @@
+<dialog class="modal" [open]="open()" (close)="onCloseDialog()">
+  <div class="modal-box max-w-5xl">
+    <h3 class="text-lg font-bold mb-3">{{ title() }}</h3>
+    <div class="grid gap-4">
+      <div class="grid gap-2">
+        <label class="font-semibold">1) Choose CSV file</label>
+        <input type="file" accept=".csv,text/csv" (change)="onFileSelected($event)" class="file-input file-input-bordered" />
+        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
+      </div>
+
+      @if (parsing()) {
+      <div class="grid gap-2">
+        <progress class="progress w-full"></progress>
+        <span class="text-xs opacity-70" aria-live="polite">Reading and parsing the file...</span>
+      </div>
+      }
+
+      @if (csvHeaders().length) {
+      <div class="grid gap-2">
+        <label class="font-semibold">2) Map CSV columns</label>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          @for (hdr of csvHeaders(); track hdr; let idx = $index) {
+            <div class="grid grid-cols-2 gap-2 items-center">
+              <div class="truncate" [title]="hdr">{{ hdr }}</div>
+              <select class="select select-bordered select-sm" [ngModel]="mapping()[idx]" (ngModelChange)="setMappingAt(idx, $event)">
+                <option value="">Skip</option>
+                @for (f of mappableFields(); track f) {
+                <option [value]="f">{{ f }}</option>
+                }
+              </select>
+            </div>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Optional extras slot provided by parent (e.g., tags) -->
+      <ng-content select="[pc-import-extras]"></ng-content>
+
+      @if (csvRows().length) {
+      <div class="grid gap-2">
+        <label class="font-semibold">Preview</label>
+        <div class="overflow-auto border rounded relative">
+          @if (parsing()) {
+          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
+            <progress class="progress w-64"></progress>
+          </div>
+          }
+          <table class="table table-zebra table-xs">
+            <thead>
+              <tr>
+                @for (h of csvHeaders(); track h) {
+                <th>{{ h }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of previewRows(); track r) {
+              <tr>
+                @for (h of csvHeaders(); track h) {
+                <td>{{ r[h] }}</td>
+                }
+              </tr>
+              }
+            </tbody>
+          </table>
+          <div class="flex items-center justify-end gap-2 p-2">
+            <button class="btn btn-xs" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
+            <span class="text-xs opacity-70">Page {{ pageIndex() + 1 }} of {{ totalPages() }}</span>
+            <button class="btn btn-xs" [disabled]="!canNext()" (click)="nextPage()">Next</button>
+          </div>
+        </div>
+      </div>
+      }
+
+      <div class="flex justify-end gap-2 mt-2">
+        <button class="btn" (click)="closeDialog()">Cancel</button>
+        <button class="btn btn-primary" [disabled]="!csvRows().length" (click)="onSubmit()">
+          <pc-icon name="cloud-arrow-up" />
+          Import
+        </button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Summary Modal controlled by parent-provided summary input -->
+<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="closeSummary.emit()">
+  <div class="modal-box">
+    @if (!!summary() && !summary()!.failed) {
+    <h3 class="text-lg font-bold mb-2">Import Summary</h3>
+    <ul class="menu bg-base-100 rounded-box p-2">
+      <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
+      <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
+      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
+      @if (summary()!.tag) {
+      <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
+      }
+      @if (summary()!.message) {
+      <li class="opacity-90 whitespace-pre-wrap text-xs"><span>{{ summary()!.message }}</span></li>
+      }
+    </ul>
+    } @else if (!!summary()) {
+    <h3 class="text-lg font-bold mb-2">Import Failed</h3>
+    <p class="py-2 font-light">{{ summary()!.message }}</p>
+    <ul class="menu bg-base-100 rounded-box p-2">
+      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
+    </ul>
+    }
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn" (click)="closeSummary.emit()">OK</button>
+      </form>
+    </div>
+  </div>
+</dialog>

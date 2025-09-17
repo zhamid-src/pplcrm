@@ -264,7 +264,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
   public disableExport = input<boolean>(false);
-  public disableImport = input<boolean>(true);
+  public disableImport = input<boolean>(false);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);

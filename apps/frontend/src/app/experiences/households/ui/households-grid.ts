@@ -1,10 +1,13 @@
 /**
  * @file Grid component for listing households with counts and tags.
  */
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { Icon } from '@icons/icon';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
@@ -15,10 +18,34 @@ interface ParamsType {
 
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, CsvImportComponent, FormsModule, Icon],
   template: `
-    <pc-datagrid [colDefs]="col" [disableDelete]="true" [disableView]="false" addRoute="add" plusIcon="add-home">
-    </pc-datagrid>
+    <pc-datagrid
+      [colDefs]="col"
+      [disableDelete]="true"
+      [disableView]="false"
+      [disableImport]="false"
+      (importCSV)="openImportDialog()"
+      addRoute="add"
+      plusIcon="add-home"
+    ></pc-datagrid>
+
+    <!-- Reusable CSV Importer for Households -->
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Households from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    >
+      <div pc-import-extras class="grid gap-2">
+        <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <input class="input input-bordered" placeholder="Comma separated e.g. neighborhood, parish" [(ngModel)]="tagsInput" />
+      </div>
+    </pc-csv-importer>
   `,
   providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
 })
@@ -33,6 +60,23 @@ interface ParamsType {
  */
 export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly utils = inject(DataGridUtilsService);
+  // Importer state
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected tagsInput = '';
+
+  protected readonly mappableFields: string[] = [
+    'street_num',
+    'apt',
+    'street1',
+    'street2',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'home_phone',
+    'notes',
+  ];
   /** Column definitions for the households datagrid. */
   protected col = [
     {
@@ -89,5 +133,56 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
    */
   constructor() {
     super();
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    this.importerOpen.set(true);
+  }
+
+  protected autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      homephone: 'home_phone',
+      phone: 'home_phone',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }) {
+    // Backend households import endpoint not implemented yet; show informative summary
+    const diag = 'Households import is not available yet.';
+    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
+    this.importerOpen.set(false);
   }
 }
