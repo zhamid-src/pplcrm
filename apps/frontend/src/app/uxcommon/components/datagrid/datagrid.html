@@ -17,7 +17,7 @@
       <thead>
         <tr>
           @if (enableSelection()) {
-          <th>
+          <th class="border-r border-base-300 pl-2">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -27,7 +27,11 @@
             />
           </th>
           } @for (h of leafHeaders(); track h.id) {
-          <th role="columnheader" class="cursor-pointer" [attr.aria-sort]="ariaSortHeader(h)">
+          <th
+            role="columnheader"
+            class="cursor-pointer border-r border-base-300 pl-2"
+            [attr.aria-sort]="ariaSortHeader(h)"
+          >
             <div class="flex items-center gap-2">
               <span class="flex-grow" (click)="toggleHeaderSort(h, $event)">
                 {{ h.column?.columnDef?.header || h.column?.id }}
@@ -110,11 +114,15 @@
           }
         </tr>
       </thead>
-      <tbody>
-        @for (r of visibleTableRows(); track r.id) {
-        <tr (mouseover)="onCellMouseOver(r.original)" [attr.data-row-id]="toId(r.original)">
+      <tbody class="bg-base-100">
+        @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
           @if (enableSelection()) {
-          <td class="sticky left-0 z-20 bg-base-100">
+          <td class="sticky left-0 z-20 border-r border-base-300 pl-2" [style.background]="rowBgForIndex(i)">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -132,9 +140,9 @@
             [class.sticky]="pinState(cell) !== false"
             [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
             [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? 'var(--fallback-b1,oklch(var(--b1)))' : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
             [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            class="overflow-hidden min-w-0 px-0"
+            class="overflow-hidden min-w-0 px-0 border-r border-base-300 pl-2"
             [attr.data-col-id]="cell.column.id"
           >
             @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let opts =
