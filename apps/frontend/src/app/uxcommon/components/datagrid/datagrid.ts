@@ -390,6 +390,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
     this._persistKey = `pcdg:${urlKey}`;
+    // Attempt to read saved column order before table creation
+    let savedColumnOrder: string[] | undefined;
+    try {
+      const raw = localStorage.getItem(this._persistKey);
+      if (raw) {
+        const data = JSON.parse(raw || '{}') as { order?: string[] };
+        if (Array.isArray(data?.order)) savedColumnOrder = data.order as string[];
+      }
+    } catch {}
     // Note: allowFilter input retained for API compatibility (filter UI uses signals)
     const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
     this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
@@ -409,6 +418,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         rowSelection: this.buildRowSelectionForCurrentData(),
         columnPinning: { left: [], right: [] },
         columnSizing: {},
+        columnOrder: savedColumnOrder || [],
       },
       onStateChange: () => this.syncSignalsFromTable(),
       onSortingChange: (updater: Updater<SortingState>) => {
