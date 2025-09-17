@@ -2,19 +2,37 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { FormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
 
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-tasks-grid',
-  imports: [DataGrid],
-  template: `<pc-datagrid
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableView]="false"
-    [showArchiveIcon]="true"
-  ></pc-datagrid>`,
+  imports: [DataGrid, CsvImportComponent, FormsModule, Icon],
+  template: `
+    <pc-datagrid
+      [colDefs]="col"
+      [disableDelete]="false"
+      [disableView]="false"
+      [disableImport]="false"
+      [showArchiveIcon]="true"
+      (importCSV)="openImportDialog()"
+    ></pc-datagrid>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
   providers: [{ provide: AbstractAPIService, useClass: TasksService }],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
@@ -80,9 +98,45 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     },
   ];
   protected isArchiveMode = signal(false);
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
 
   constructor() {
     super();
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  protected onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }) {
+    // No backend support yet; report helpful message
+    const msg = 'Tasks import is not available yet.';
+    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: msg });
+    this.importerOpen.set(false);
   }
 
   public override async ngOnInit() {

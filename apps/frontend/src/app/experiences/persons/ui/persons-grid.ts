@@ -3,12 +3,13 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows.
  */
-import { Component, NgZone, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { Icon } from '@icons/icon';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
@@ -62,12 +63,11 @@ interface ParamsType {
  */
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule],
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
   templateUrl: './persons-grid.html',
   providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
-  private readonly zone = inject(NgZone);
   private readonly utils = inject(DataGridUtilsService);
 
   /**
@@ -177,24 +177,12 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     { field: 'notes', headerName: 'Notes', editable: true },
   ];
 
-  // Import CSV state
-  protected csvHeaders: string[] = [];
-  protected csvRows: Array<Record<string, string>> = [];
-  protected importLoading = signal(false);
-  protected importProgress = 0;
-  protected importProgressMax = 100;
-  protected importStatus = '';
-  protected importSummary = signal<{ inserted: number; errors: number; skipped: number; tag?: string; failed: boolean; message?: string }>(
-    { inserted: 0, errors: 0, skipped: 0, failed: false },
-  );
-  protected importDialogOpen = signal(false);
-  protected importSummaryOpen = signal(false);
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
 
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
-  protected mapping: string[] = [];
-  protected previewPage = 0;
-  protected previewPageSize = 5;
   protected tagsInput = '';
 
   /**
@@ -206,13 +194,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     this.limitTags = route.snapshot.data['tags'] ?? [];
   }
 
-  protected canNextPage() {
-    return (this.previewPage + 1) * this.previewPageSize < this.csvRows.length;
-  }
-
-  protected canPrevPage() {
-    return this.previewPage > 0;
-  }
+  // paging/preview managed by CsvImportComponent
 
   /**
    * Handles double-click events on address-related cells.
@@ -224,83 +206,13 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     this.confirmAddressChange();
   }
 
-  protected getPreviewRows() {
-    const start = this.previewPage * this.previewPageSize;
-    const end = start + this.previewPageSize;
-    return this.csvRows.slice(start, end);
-  }
-
-  protected nextPreviewPage() {
-    if (this.canNextPage()) this.previewPage++;
-  }
-
-  protected onFileSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) {
-      this.importLoading = false;
-      return;
-    }
-    this.zone.run(() => {
-      this.importLoading.set(true);
-    });
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string) || '';
-      try {
-        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
-        const handle = (ev: MessageEvent) => {
-          const data: any = ev.data || {};
-          if (data.type === 'result') {
-            this.zone.run(() => {
-              this.csvHeaders = data.headers || [];
-              this.csvRows = data.rows || [];
-              this.mapping = this.csvHeaders.map((h: string) => this.autoMapHeader(h));
-              this.previewPage = 0;
-              this.importLoading.set(false);
-            });
-            worker.removeEventListener('message', handle as any);
-            worker.terminate();
-          } else if (data.type === 'error') {
-            this.zone.run(() => {
-              this.alertSvc.showError(data.message || 'Failed to parse CSV');
-              this.importLoading.set(false);
-            });
-            worker.removeEventListener('message', handle as any);
-            worker.terminate();
-          }
-        };
-        worker.addEventListener('message', handle as any);
-        worker.postMessage({ type: 'parse', text });
-      } catch {
-        this.zone.run(() => {
-          this.alertSvc.showError('Failed to parse CSV');
-          this.importLoading.set(false);
-        });
-      }
-    };
-    reader.onerror = () => this.zone.run(() => this.importLoading.set(false));
-    reader.readAsText(file);
-  }
-
   // --- Import CSV Flow ---
   protected openImportDialog() {
-    this.csvHeaders = [];
-    this.csvRows = [];
-    this.mapping = [];
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
     this.tagsInput = '';
-    this.importLoading = false;
     if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importDialogOpen.set(true);
-  }
-
-  protected prevPreviewPage() {
-    if (this.canPrevPage()) this.previewPage--;
-  }
-
-  protected previewTotalPages() {
-    const total = Math.ceil((this.csvRows.length || 0) / this.previewPageSize);
-    return total || 1;
+    this.importerOpen.set(true);
   }
 
   /**
@@ -316,37 +228,22 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     }
   }
 
-  protected async runImport() {
-    // Build mapped rows
-    const rows = this.csvRows.map((row) => {
-      const mapped: Record<string, string> = {};
-      this.csvHeaders.forEach((h, idx) => {
-        const field = this.mapping[idx];
-        if (!field) return; // skip
-        const val = (row[h] ?? '').toString();
-        if (val && !(field in mapped) && val.trim().length > 0) {
-          mapped[field] = val;
-        }
-      });
-      return mapped;
-    });
 
-    // Filter out rows that ended up completely empty after mapping
-    const nonEmptyRows = rows.filter((r) => Object.keys(r).length > 0);
-    const skipped = rows.length - nonEmptyRows.length;
-
-    if (!nonEmptyRows.length) {
-      this.alertSvc.showError('Nothing to import. Please map at least one column to a field.');
-      return;
-    }
-
-    const tags = this.tagsInput
+  protected async onImportSubmit(rows: Array<Record<string, string>>, skippedArg?: number): Promise<void>;
+  protected async onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }): Promise<void>;
+  protected async onImportSubmit(a: any, b?: any) {
+    const rows: Array<Record<string, string>> = Array.isArray(a) ? a : a?.rows;
+    const skippedComputed: number = Array.isArray(a) ? Number(b) || 0 : Number(a?.skipped) || 0;
+    // Merge route-derived filter tags (e.g., 'volunteer', 'donor') with user-provided tags
+    const inputTags = this.tagsInput
       .split(',')
       .map((t) => t.trim())
       .filter((t) => !!t);
+    const combined = new Set<string>([...this.limitTags, ...inputTags]);
+    const tags = Array.from(combined);
 
     try {
-      const res = (await (this.gridSvc as PersonsService).import(nonEmptyRows, tags)) as any;
+      const res = (await (this.gridSvc as PersonsService).import(rows, tags)) as any;
       const inserted = res?.inserted ?? 0;
       const errors = res?.errors ?? 0;
       const diag: string[] = [];
@@ -359,19 +256,17 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       if (res?.tenant_id) diag.push(`Tenant: ${res.tenant_id}`);
       if (res?.campaign_id) diag.push(`Campaign: ${res.campaign_id}`);
       const msg = diag.join(' • ');
-      this.importSummary.set({ inserted, errors, skipped, tag: res?.tag, failed: false, message: msg });
-      this.importDialogOpen.set(false);
-      this.importSummaryOpen.set(true);
+      this.importSummary.set({ inserted, errors, skipped: skippedComputed, tag: res?.tag, failed: false, message: msg });
+      this.importerOpen.set(false);
       await this.refresh();
     } catch (e: any) {
       const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped, failed: true, message: msg });
-      this.importDialogOpen.set(false);
-      this.importSummaryOpen.set(true);
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedComputed, failed: true, message: msg });
+      this.importerOpen.set(false);
     }
   }
 
-  private autoMapHeader(h: string): string {
+  public autoMapHeader(h: string): string {
     const raw = (h || '').toLowerCase().trim();
     const key = raw.replace(/[^a-z0-9]/g, '');
     const map: Record<string, string> = {

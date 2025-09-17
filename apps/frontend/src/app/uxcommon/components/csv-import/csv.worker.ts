@@ -1,4 +1,4 @@
-// CSV/TSV parsing web worker
+// CSV/TSV parsing web worker (shared)
 // Receives: { type: 'parse', text: string }
 // Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
 
@@ -72,3 +72,4 @@ ctx.onmessage = (e: MessageEvent) => {
     ctx.postMessage({ type: 'error', message: err?.message || 'Parse failed' });
   }
 };
+

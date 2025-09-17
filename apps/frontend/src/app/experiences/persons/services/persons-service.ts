@@ -225,7 +225,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
    */
   public import(rows: any[], tags: string[] = []) {
-    return this.api.persons.import.mutate({ rows, tags });
+    // Opt-out of global error toast; importer UI shows a scoped summary instead
+    return (this.api.persons.import.mutate as any)({ rows, tags }, { meta: { skipErrorHandler: true } });
   }
 
   /**
