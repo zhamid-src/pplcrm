@@ -807,10 +807,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // merge action removed
 
+  // Button-driven next page: replace current data
   protected async nextPage() {
     if (!this.canNext()) return;
-    await this.loadPage(this.pageIndex() + 1, true);
+    await this.loadPage(this.pageIndex() + 1, false);
   }
+
 
   // Keyboard navigation between cells
   protected onCellKeydown(ev: KeyboardEvent) {
@@ -904,11 +906,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Virtualization helpers
   protected onScroll(event: Event) {
-    this.vctrl.configurePaging({
-      canNext: () => this.canNext(),
-      isLoading: () => this.isLoading(),
-      nextPage: () => this.nextPage(),
-    });
     this.vctrl.onScroll(event);
   }
 
