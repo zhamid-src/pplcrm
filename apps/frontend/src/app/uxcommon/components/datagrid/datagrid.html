@@ -31,6 +31,10 @@
             role="columnheader"
             class="cursor-pointer border-r border-base-300 pl-2"
             [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
           >
             <div class="flex items-center gap-2">
               <span class="flex-grow" (click)="toggleHeaderSort(h, $event)">
