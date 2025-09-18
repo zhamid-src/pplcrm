@@ -46,6 +46,7 @@ import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 // Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
+import { HeaderResizeDirective } from './directives/header-resize.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { ResizingController } from './controllers/resizing.controller';
 import { ReorderController } from './controllers/reorder.controller';
@@ -64,6 +65,7 @@ import { Models } from 'common/src/lib/kysely.models';
     DataGridFilterPanelComponent,
     
     EditableCellDirective,
+    HeaderResizeDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
@@ -1082,6 +1084,25 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
   public resetAllWidthsPublic() {
     this.resetAllWidths();
+  }
+
+  // Build header resize config for directive
+  protected headerResizeConfig(h: any) {
+    return {
+      header: h,
+      getColWidth: (id: string) => this.getColWidth(id),
+      setWidth: (col: any, id: string, w: number) => {
+        try {
+          if (typeof col?.setSize === 'function') col.setSize(w);
+        } catch {}
+        this.setColWidth(id, w);
+      },
+      requestPersist: () => this.store.requestPersist(),
+      selectionWidth: () => this.selectionStickyWidth(),
+      setSuppressHeaderDrag: (v: boolean) => {
+        this.suppressHeaderDrag = !!v;
+      },
+    } as const;
   }
 
   protected onPageSizeChange(val: string | number) {
