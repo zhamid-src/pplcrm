@@ -126,18 +126,29 @@
       <tbody class="bg-base-100">
         @for (r of visibleTableRows(); let i = $index; track r.id) {
         <tr
+          class="group hover:bg-base-300"
           (mouseover)="onCellMouseOver(r.original)"
           [attr.data-row-id]="toId(r.original)"
           [class.bg-base-200]="(i % 2) === 1"
         >
           @if (enableSelection()) {
           <td class="sticky left-0 z-20 border-r border-base-300 pl-2" [style.background]="rowBgForIndex(i)">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="allSelected() ? allSelectedIdSet.has(toId(r.original)) : r.getIsSelected()"
-              (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-            />
+            <div class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet.has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              <span title="Open detail" aria-label="Open detail" (click)="openEdit(rowId); $event.stopPropagation();">
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                ></pc-icon>
+              </span>
+              }
+            </div>
           </td>
           } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
           isColVisible(col)) {
