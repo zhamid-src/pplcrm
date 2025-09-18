@@ -17,12 +17,15 @@ export class HeaderResizeDirective {
     setWidth: (col: any, id: string, px: number) => void;
     requestPersist: () => void;
     selectionWidth: () => number;
+    setSuppressHeaderDrag: (v: boolean) => void;
   };
 
   @HostListener('mousedown', ['$event'])
   onMouseDown(ev: MouseEvent) {
     ev.stopPropagation();
     const h = this.pcHeaderResize.header;
+    // prevent column drag while resizing
+    try { this.pcHeaderResize.setSuppressHeaderDrag(true); } catch {}
     this.resizing.beginHeaderResize(
       h,
       ev.clientX,
@@ -35,7 +38,10 @@ export class HeaderResizeDirective {
           this.pcHeaderResize.selectionWidth()
         );
       },
-      this.pcHeaderResize.requestPersist,
+      () => {
+        try { this.pcHeaderResize.requestPersist(); } catch {}
+        try { this.pcHeaderResize.setSuppressHeaderDrag(false); } catch {}
+      },
     );
   }
 
@@ -44,6 +50,7 @@ export class HeaderResizeDirective {
     ev.stopPropagation();
     const x = ev.touches?.[0]?.clientX ?? 0;
     const h = this.pcHeaderResize.header;
+    try { this.pcHeaderResize.setSuppressHeaderDrag(true); } catch {}
     this.resizing.beginHeaderResizeTouch(
       h,
       x,
@@ -56,7 +63,10 @@ export class HeaderResizeDirective {
           this.pcHeaderResize.selectionWidth()
         );
       },
-      this.pcHeaderResize.requestPersist,
+      () => {
+        try { this.pcHeaderResize.requestPersist(); } catch {}
+        try { this.pcHeaderResize.setSuppressHeaderDrag(false); } catch {}
+      },
     );
   }
 
