@@ -139,7 +139,7 @@
               <input
                 type="checkbox"
                 class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet.has(toId(r.original)) : r.getIsSelected()"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />
               @let rowId = toId(r.original); @if (!disableView() && rowId) {

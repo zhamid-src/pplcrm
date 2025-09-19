@@ -3,7 +3,6 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
-  ChangeDetectorRef,
   Component,
   ElementRef,
   OnDestroy,
@@ -133,7 +132,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
   private readonly store = inject(GridStoreService);
-  private readonly cdr = inject(ChangeDetectorRef);
   private readonly rctrl = inject(ResizingController);
   private readonly kctrl = inject(KeyboardController);
   private readonly editingCtrl = inject(EditingController);
@@ -200,10 +198,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly undoMgr = new UndoManager();
 
   // Select-all-across-results state
-  protected allSelected = signal(false);
-  protected allSelectedCount = signal(0);
-  protected allSelectedIdSet: Set<string> = new Set();
-  protected allSelectedIds: string[] = [];
+  protected readonly allSelected = this.store.allSelected;
+  protected readonly allSelectedCount = this.store.allSelectedCount;
+  protected readonly allSelectedIdSet = this.store.allSelectedIdSet;
+  protected readonly allSelectedIds = this.store.allSelectedIds;
   protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
   protected colVisibility = this.store.colVisibility;
@@ -543,8 +541,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Clear both grid selection and the select-all cache */
   protected clearAllSelection() {
     this.allSelected.set(false);
-    this.allSelectedIds = [];
-    this.allSelectedIdSet = new Set();
+    this.allSelectedIds.set([]);
+    this.allSelectedIdSet.set(new Set());
     this.allSelectedCount.set(0);
   }
 
@@ -715,7 +713,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Utility: returns selected rows from grid */
   protected getSelectedRows() {
     if (this.allSelected()) {
-      return this.allSelectedIds.map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
+      const ids = this.allSelectedIds();
+      return ids.map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
     }
     const ids = this.selectedIdSet();
     return Array.from(ids).map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
@@ -826,7 +825,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   /** Whether the current page (displayed rows) is fully selected */
   // isPageFullySelected is computed
   protected isRowChecked(id: string): boolean {
-    return this.allSelected() ? this.allSelectedIdSet.has(id) : this.selectedIdSet().has(id);
+    return this.allSelected() ? this.allSelectedIdSet().has(id) : this.selectedIdSet().has(id);
   }
 
   // Theme no-op (unused)
@@ -948,11 +947,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.allSelected()) {
       const id = this.toId(row.original ?? row);
       if (!id) return;
-      const next = new Set(this.allSelectedIdSet);
+      const current = this.allSelectedIdSet();
+      const next = new Set(current);
       if (checked) next.add(id);
       else next.delete(id);
-      this.allSelectedIdSet = next;
-      this.cdr.markForCheck();
+      this.allSelectedIdSet.set(next);
       return;
     }
     if (typeof row?.toggleSelected === 'function') row.toggleSelected(checked);
@@ -1140,8 +1139,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         limitToTags: this.limitToTags(),
         gridSvc: this.gridSvc,
       });
-      this.allSelectedIds = ids;
-      this.allSelectedIdSet = new Set(ids);
+      this.allSelectedIds.set(ids);
+      this.allSelectedIdSet.set(new Set(ids));
       this.allSelectedCount.set(count);
       this.allSelected.set(ids.length > 0);
       this.alertSvc.showInfo(`Selected ${this.allSelectedCount()} row(s)`);
@@ -1288,11 +1287,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected toggleRowChecked(id: string, checked: boolean) {
     if (this.allSelected()) {
-      const next = new Set(this.allSelectedIdSet);
+      const current = this.allSelectedIdSet();
+      const next = new Set(current);
       if (checked) next.add(id);
       else next.delete(id);
-      this.allSelectedIdSet = next;
-      this.cdr.markForCheck();
+      this.allSelectedIdSet.set(next);
     } else {
       const set = new Set(this.selectedIdSet());
       if (checked) set.add(id);
