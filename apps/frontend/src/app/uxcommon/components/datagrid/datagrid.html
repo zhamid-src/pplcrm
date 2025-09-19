@@ -35,6 +35,8 @@
             (dragstart)="onHeaderDragStart(h, $event)"
             (dragover)="onHeaderDragOver(h, $event)"
             (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="colWidths()[h.column.id] ?? undefined"
+            [style.minWidth.px]="colWidths()[h.column.id] ?? undefined"
           >
             <div class="flex items-center gap-2">
               <span class="flex-grow" (click)="toggleHeaderSort(h, $event)">
@@ -164,6 +166,8 @@
             [style.zIndex]="pinState(cell) !== false ? 10 : null"
             class="overflow-hidden min-w-0 px-0 border-r border-base-300 pl-2"
             [attr.data-col-id]="cell.column.id"
+            [style.width.px]="colWidths()[cell.column.id] ?? undefined"
+            [style.minWidth.px]="colWidths()[cell.column.id] ?? undefined"
           >
             @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let opts =
             getFilterOptionsForCol(col); @if (opts?.length) {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 
 import { DataGrid } from '../datagrid';
 import type { ColumnDef as ColDef } from '../grid-defaults';
@@ -34,4 +34,6 @@ export class DataGridInlineFiltersRowComponent {
   public pinState = input.required<(h: any) => 'left' | 'right' | false>();
   public rightOffsetPx = input.required<(colId: string) => number>();
   public selectionStickyWidth = input<number>(48);
+
+  public readonly colWidths = computed<Record<string, number>>(() => this.grid?.colWidths?.() ?? {});
 }

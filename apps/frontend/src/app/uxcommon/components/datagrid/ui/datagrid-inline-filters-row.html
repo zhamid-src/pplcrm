@@ -13,6 +13,8 @@
     [style.right.px]="pinState()(h) === 'right' ? rightOffsetPx()(h.column.id) : null"
     [style.zIndex]="pinState()(h) !== false ? 20 : null"
     [attr.data-col-id]="h.column.id"
+    [style.width.px]="colWidths()[h.column.id] ?? undefined"
+    [style.minWidth.px]="colWidths()[h.column.id] ?? undefined"
   >
     @if (col && getFilterOptionsForCol()(col)?.length) {
     <div class="dropdown dropdown-bottom w-full">
