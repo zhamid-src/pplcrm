@@ -1,15 +1,15 @@
-import { CommonModule } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { MarketingEmailType, MarketingEmailTopLinkType } from '@common';
-import { Icon } from '@icons/icon';
+import { CommonModule } from "@angular/common";
+import { Component, OnInit, computed, inject, signal } from "@angular/core";
+import { ActivatedRoute } from "@angular/router";
+import { MarketingEmailTopLinkType, MarketingEmailType } from "@common";
+import { Icon } from "@icons/icon";
 
-import { NewslettersService } from '../services/newsletters-service';
+import { NewslettersService } from "../services/newsletters-service";
 
 interface DetailMetric {
+  help?: string;
   label: string;
   value: string;
-  help?: string;
 }
 
 @Component({
@@ -177,12 +177,10 @@ interface DetailMetric {
   `,
 })
 export class NewsletterDetailComponent implements OnInit {
-  private readonly service = inject(NewslettersService);
   private readonly route = inject(ActivatedRoute);
+  private readonly service = inject(NewslettersService);
 
   protected readonly email = signal<MarketingEmailType | null>(null);
-  protected readonly error = signal<string | null>(null);
-
   protected readonly coreMetrics = computed<DetailMetric[]>(() => {
     const data = this.email();
     if (!data) return [];
@@ -213,7 +211,6 @@ export class NewsletterDetailComponent implements OnInit {
       },
     ];
   });
-
   protected readonly engagementMetrics = computed<DetailMetric[]>(() => {
     const data = this.email();
     if (!data) return [];
@@ -242,12 +239,36 @@ export class NewsletterDetailComponent implements OnInit {
       },
     ];
   });
-
+  protected readonly error = signal<string | null>(null);
   protected readonly topLinks = computed<MarketingEmailTopLinkType[]>(() => {
     const data = this.email();
     if (!data?.top_links) return [];
     return Array.isArray(data.top_links) ? data.top_links : [];
   });
+
+  public audienceLabel(): string {
+    const data = this.email();
+    if (!data) return '—';
+    if (data.target_lists) return data.target_lists;
+    if (data.segments) return data.segments;
+    return '—';
+  }
+
+  public formatBytes(value: number | null | undefined): string {
+    if (!value) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let size = value;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  public goBack() {
+    window.history.back();
+  }
 
   public async ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -268,24 +289,7 @@ export class NewsletterDetailComponent implements OnInit {
     }
   }
 
-  public goBack() {
-    window.history.back();
-  }
-
-  public audienceLabel(): string {
-    const data = this.email();
-    if (!data) return '—';
-    if (data.target_lists) return data.target_lists;
-    if (data.segments) return data.segments;
-    return '—';
-  }
-
-  private formatPercent(value: number | null | undefined): string {
-    if (value == null) return '--';
-    return `${value.toFixed(1)}%`;
-  }
-
-  private formatNumber(value: number | null | undefined): string {
+  protected formatNumber(value: number | null | undefined): string {
     if (value == null) return '--';
     return new Intl.NumberFormat().format(value);
   }
@@ -297,15 +301,8 @@ export class NewsletterDetailComponent implements OnInit {
     return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
   }
 
-  public formatBytes(value: number | null | undefined): string {
-    if (!value) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let unitIndex = 0;
-    let size = value;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  private formatPercent(value: number | null | undefined): string {
+    if (value == null) return '--';
+    return `${value.toFixed(1)}%`;
   }
 }
