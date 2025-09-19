@@ -207,7 +207,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected archiveMode = signal(false);
   protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
   protected colVisibility = this.store.colVisibility;
-  protected colWidths = this.store.colWidths;
+  public readonly colWidths = this.store.colWidths;
 
   // Inline edit state
   protected editingCell = signal<{ id: string; field: string } | null>(null);
@@ -1159,8 +1159,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected setColWidth(id: string, px: number) {
     const next = { ...this.colWidths() };
-    next[id] = Math.max(40, Math.floor(px));
+    const width = Math.max(40, Math.floor(px));
+    next[id] = width;
     this.colWidths.set(next);
+    if (this.tsTable) {
+      try {
+        this.tsTable.setOptions((prev: any) => {
+          const prevState = prev?.state ?? {};
+          const sizing = { ...(prevState.columnSizing || {}) };
+          sizing[id] = width;
+          return { ...prev, state: { ...prevState, columnSizing: sizing } };
+        });
+      } catch {}
+    }
+    try {
+      this.store.requestPersist();
+    } catch {}
     // After width change, recompute sticky offsets
     this.updateHeaderWidths();
   }
