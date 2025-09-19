@@ -2,6 +2,7 @@
  * tRPC router for managing list records and their members.
  */
 import { AddListObj, UpdateListObj, getAllOptions } from '@common';
+
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -20,7 +21,9 @@ function deleteList() {
 }
 
 function deleteLists() {
-  return authProcedure.input(z.array(z.string())).mutation(({ input, ctx }) => lists.deleteMany(ctx.auth.tenant_id, input));
+  return authProcedure
+    .input(z.array(z.string()))
+    .mutation(({ input, ctx }) => lists.deleteMany(ctx.auth.tenant_id, input));
 }
 
 function getAll() {
@@ -28,23 +31,23 @@ function getAll() {
 }
 
 function getAllWithCounts() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => lists.getAllWithCounts(ctx.auth, input));
+  return authProcedure
+    .input(getAllOptions)
+    .query(({ input, ctx }) => lists.getAllWithCounts(ctx.auth.tenant_id, input));
 }
 
 function getById() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-function getMembersPersons() {
   return authProcedure
     .input(z.string())
-    .query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input));
+    .query(({ input, ctx }) => lists.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
 function getMembersHouseholds() {
-  return authProcedure
-    .input(z.string())
-    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input));
+  return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input));
+}
+
+function getMembersPersons() {
+  return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input));
 }
 
 function update() {

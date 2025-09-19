@@ -3,10 +3,13 @@ import type { z } from 'zod';
 import type {
   AddTagObj,
   AddListObj,
+  AddMarketingEmailObj,
   AddTaskObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
   EmailDraftObj,
   PersonsObj,
   SettingsObj,
@@ -14,6 +17,7 @@ import type {
   UpdatePersonsObj,
   UpdateTagObj,
   ListsObj,
+  UpdateMarketingEmailObj,
   UpdateListObj,
   UpdateTaskObj,
   TasksObj,
@@ -35,6 +39,14 @@ export type EmailCommentType = z.infer<typeof EmailCommentObj>;
 export type EmailFolderType = z.infer<typeof EmailFolderObj>;
 
 export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
 
 export type EmailDraftType = z.infer<typeof EmailDraftObj>;
 

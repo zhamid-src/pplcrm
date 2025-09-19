@@ -1,8 +1,7 @@
-import { AddTagType, IAuthKeyPayload, UpdateTagType, getAllOptionsType } from '@common';
+import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 
-import { QueryParams } from '../../lib/base.repo';
-import { TagsRepo } from './repositories/tags.repo';
 import { BaseController } from '../../lib/base.controller';
+import { TagsRepo } from './repositories/tags.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
@@ -42,19 +41,6 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
       tenant_id: auth.tenant_id,
       key: name,
       column: 'name',
-    });
-  }
-
-  /**
-   * Get all tags in the tenant along with how many entities use each tag.
-   *
-   * @param tenant_id - Tenant ID
-   * @returns Tags with usage counts
-   */
-  public getAllWithCounts(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllWithCounts({
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
     });
   }
 

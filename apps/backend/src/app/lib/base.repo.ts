@@ -217,6 +217,27 @@ export class BaseRepository<T extends keyof Models> {
     return this.getSelectWithColumns(input.options, trx).where('tenant_id', '=', input.tenant_id).execute();
   }
 
+  /**
+   * This is a generic version of getAllWithCounts that works for any table.
+   * It simply returns all rows along with the total count of rows.
+   * Classes that extend this should override this method to provide
+   * more specific implementations if needed.
+   *
+   * @param input
+   * @param trx
+   * @returns
+   */
+  public async getAllWithCounts(
+    input: {
+      tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+      options?: QueryParams<any>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const rows = await this.getAll(input, trx);
+    return { rows, count: rows.length };
+  }
+
   /** ----------------------------------------------------------------
    * DRY helpers for selecting by column + tenant
    * ---------------------------------------------------------------- */
@@ -306,7 +327,7 @@ export class BaseRepository<T extends keyof Models> {
     const hasOffset = typeof options?.offset === 'number';
     const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
     const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
-    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, (endRow - (startRow ?? 0))) : undefined;
+    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
     const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
 
     const finalLimit = hasLimit ? options!.limit : derivedLimit;

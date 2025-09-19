@@ -81,6 +81,24 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    path: 'newsletter',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
     path: 'volunteers',
     children: [
       {

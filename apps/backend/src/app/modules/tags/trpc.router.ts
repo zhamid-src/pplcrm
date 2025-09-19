@@ -58,7 +58,7 @@ function getAll() {
  * Get all tags along with counts of their usage in people and households.
  */
 function getAllWithCounts() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => tags.getAllWithCounts(ctx.auth, input));
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => tags.getAllWithCounts(ctx.auth.tenant_id, input));
 }
 
 /**

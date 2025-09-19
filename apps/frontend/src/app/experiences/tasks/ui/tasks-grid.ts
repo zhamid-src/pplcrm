@@ -1,17 +1,16 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
+import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule, Icon],
+  imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `
     <pc-datagrid
       [colDefs]="col"
@@ -49,6 +48,9 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   private userIds: string[] = [];
   private userLabels: string[] = [];
   private usersById = new Map<string, string>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
 
   protected col = [
     { field: 'id', headerName: 'ID' },
@@ -97,12 +99,26 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       cellEditorParams: () => ({ values: this.userLabels }),
     },
   ];
-  protected isArchiveMode = signal(false);
-  protected importerOpen = signal(false);
   protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
 
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+  constructor() {
+    super();
+  }
+
+  public override async ngOnInit() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.auth.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+    await super.ngOnInit();
+  }
 
   protected readonly autoMapHeader = (h: string): string => {
     const raw = (h || '').toLowerCase().trim();
@@ -123,15 +139,6 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     return map[key] || '';
   };
 
-  constructor() {
-    super();
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
   protected onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }) {
     // No backend support yet; report helpful message
     const msg = 'Tasks import is not available yet.';
@@ -139,17 +146,9 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     this.importerOpen.set(false);
   }
 
-  public override async ngOnInit() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.auth.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-    await super.ngOnInit();
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
   }
 
   private assignToValueSetter(p: any) {

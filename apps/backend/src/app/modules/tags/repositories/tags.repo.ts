@@ -56,7 +56,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
    * @param trx - Optional Kysely transaction
    * @returns A list of tags with usage statistics
    */
-  public async getAllWithCounts(
+  public override async getAllWithCounts(
     input: {
       tenant_id: string;
       options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'>;
@@ -93,7 +93,9 @@ export class TagsRepo extends BaseRepository<'tags'> {
         )
         .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
           const raw = (filterModel['deletable']?.value ?? filterModel['deletable']) as any;
-          const v = String(raw || '').trim().toLowerCase();
+          const v = String(raw || '')
+            .trim()
+            .toLowerCase();
           if (v === 'true' || v === '1' || v === 'yes') return q.where('tags.deletable', '=', true);
           if (v === 'false' || v === '0' || v === 'no') return q.where('tags.deletable', '=', false);
           return q;
