@@ -18,7 +18,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
    * @param input.options - Optional filtering/pagination options
    * @param trx - Optional transaction
    */
-  public async getAllWithCounts(
+  public override async getAllWithCounts(
     input: {
       tenant_id: string;
       options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
@@ -58,7 +58,9 @@ export class ListsRepo extends BaseRepository<'lists'> {
         )
         .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
           const raw = (filterModel['object']?.value ?? filterModel['object']) as any;
-          const v = String(raw || '').trim().toLowerCase();
+          const v = String(raw || '')
+            .trim()
+            .toLowerCase();
           if (!v) return q;
           if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as any);
           return q.where('lists.object', '=', v as any);

@@ -2,7 +2,6 @@ import type { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } 
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
-import type { QueryParams } from '../../lib/base.repo';
 import { HouseholdsController } from '../households/controller';
 import { PersonsController } from '../persons/controller';
 import { ListsRepo } from './repositories/lists.repo';
@@ -111,13 +110,17 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   }
 
   /**
-   * Fetch all lists including computed sizes and metadata.
+   * Get all household members of a list.
    */
-  public getAllWithCounts(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllWithCounts({
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>,
-    });
+  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  /**
+   * Get all person members of a list with basic address fields.
+   */
+  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
   }
 
   /**
@@ -133,19 +136,5 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       id,
       row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
     });
-  }
-
-  /**
-   * Get all person members of a list with basic address fields.
-   */
-  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  /**
-   * Get all household members of a list.
-   */
-  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
   }
 }

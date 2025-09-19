@@ -112,7 +112,7 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'envelope',
       },
       {
-        name: 'Newsletters',
+        name: 'Newsletter',
         route: '/newsletter',
         icon: 'megaphone',
       },

@@ -118,6 +118,14 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     });
   }
 
+  public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
+    const tenant_id = tenant as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+    return this.getRepo().getAllWithCounts({
+      tenant_id,
+      options: options as QueryParams<any>,
+    });
+  }
+
   /**
    * Counts the number of rows for a given tenant.
    *

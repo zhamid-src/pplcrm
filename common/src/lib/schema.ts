@@ -76,6 +76,73 @@ export const EmailObj = z.object({
   status: z.enum(['open', 'closed']).nullable().default('open'),
 });
 
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
 /**
  * The parameter for updating a person.
  * It's used with an ID in the API call that

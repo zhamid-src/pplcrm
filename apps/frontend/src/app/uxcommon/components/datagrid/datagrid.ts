@@ -137,6 +137,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
+  private readonly hasEditableColumns = signal(false);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
@@ -188,6 +189,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return cnt;
   });
+  public readonly rowNavigatesToDetail = computed(() => !this.disableView() && !this.hasEditableColumns());
   protected readonly isPageFullySelected = computed(() =>
     this.selSvc.isPageFullySelected(this.allSelected(), this.displayedCount(), this.selectedOnPageCount()),
   );
@@ -402,6 +404,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Note: allowFilter input retained for API compatibility (filter UI uses signals)
     const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
     this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
+    this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
     // Initialize column visibility defaults
     const vis: Record<string, boolean> = {};
     for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = true;

@@ -48,6 +48,7 @@ export interface Models {
   tenants: Tenants;
   settings: Settings;
   emails: Emails;
+  newsletters: Newsletters;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
   email_headers: EmailHeaders;
@@ -293,7 +294,6 @@ export interface Tasks extends RecordType {
   assigned_to: string | null;
 }
 
-
 interface Tenants extends RecordType, AddressType {
   name: string;
   admin_id: string | null;
@@ -314,6 +314,33 @@ interface Emails extends RecordType {
   is_favourite: boolean;
   deleted_at: Timestamp | null;
   status: EmailStatus | null;
+}
+
+interface Newsletters extends RecordType {
+  name: string;
+  status: string;
+  subject: string | null;
+  preview_text: string | null;
+  audience_description: string | null;
+  target_lists: string | null;
+  segments: string | null;
+  total_recipients: number;
+  delivered_count: number;
+  bounce_count: number;
+  open_rate: number;
+  click_rate: number;
+  unique_opens: number;
+  unique_clicks: number;
+  unsubscribe_count: number;
+  spam_complaint_count: number;
+  reply_count: number;
+  send_date: Timestamp | null;
+  last_engagement_at: Timestamp | null;
+  summary: string | null;
+  html_content: string | null;
+  plain_text_content: string | null;
+  top_links: Json | null;
+  attachments: Json | null;
 }
 
 interface EmailComments extends RecordType {
