@@ -1,0 +1,151 @@
+@if (email()) {
+<div class="flex flex-col gap-6">
+  <div class="flex items-center gap-3">
+    <button class="btn btn-ghost btn-sm" (click)="goBack()">
+      <pc-icon name="arrow-left" [size]="4" class="text-base-content"></pc-icon>
+      Back
+    </button>
+    <div class="divider divider-horizontal"></div>
+    <span class="badge badge-outline capitalize">{{ email()?.status || 'sent' }}</span>
+  </div>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h1 class="text-2xl font-semibold">{{ email()?.name || 'Newsletter' }}</h1>
+    @if (email()?.summary) {
+    <p class="mt-2 text-sm text-base-content/70">{{ email()?.summary }}</p>
+    }
+    <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (metric of coreMetrics(); track metric.label) {
+      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat">
+          <div class="stat-title text-sm text-base-content/60">{{ metric.label }}</div>
+          <div class="stat-value text-lg font-semibold sm:text-2xl">{{ metric.value }}</div>
+          @if (metric.help) {
+          <div class="stat-desc text-xs text-base-content/60">{{ metric.help }}</div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Audience</h2>
+    <div class="mt-3 grid gap-4 sm:grid-cols-2">
+      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat">
+          <div class="stat-title text-sm text-base-content/60">Target lists / segments</div>
+          <div class="stat-value text-base font-medium sm:text-lg">{{ audienceLabel() }}</div>
+          <div class="stat-desc text-xs text-base-content/50">Primary audience selection</div>
+        </div>
+      </div>
+      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat">
+          <div class="stat-title text-sm text-base-content/60">Audience summary</div>
+          <div class="stat-value text-base font-medium sm:text-lg">{{ email()?.audience_description || '—' }}</div>
+          <div class="stat-desc text-xs text-base-content/50">Short description of the send</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Engagement</h2>
+    <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (metric of engagementMetrics(); track metric.label) {
+      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat">
+          <div class="stat-title text-sm text-base-content/60">{{ metric.label }}</div>
+          <div class="stat-value text-lg font-semibold sm:text-2xl">{{ metric.value }}</div>
+          @if (metric.help) {
+          <div class="stat-desc text-xs text-base-content/60">{{ metric.help }}</div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+
+    @if (topLinks().length) {
+    <div class="mt-6">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Top links</h3>
+      <div class="mt-3 grid gap-3">
+        @for (link of topLinks(); track link.url) {
+        <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+          <div class="stat">
+            <div class="stat-title truncate text-xs uppercase tracking-wide text-base-content/60" [title]="link.url">
+              {{ link.url }}
+            </div>
+            <div class="stat-value text-base sm:text-lg">{{ formatNumber(link.clicks) }} clicks</div>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </section>
+
+  @if (email()?.html_content || email()?.plain_text_content) {
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Content preview</h2>
+    <div class="mt-4 grid gap-6 lg:grid-cols-2">
+      <div>
+        <h3 class="text-sm font-semibold text-base-content/60">Subject line</h3>
+        <p class="mt-1 text-base">{{ email()?.subject || '—' }}</p>
+
+        <h3 class="mt-4 text-sm font-semibold text-base-content/60">Preview text</h3>
+        <p class="mt-1 text-base">{{ email()?.preview_text || '—' }}</p>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold text-base-content/60">HTML content</h3>
+        @if (email()?.html_content) {
+        <div class="mt-2 max-h-72 overflow-auto rounded border border-base-200 bg-base-200/20 p-3">
+          <div [innerHTML]="email()?.html_content"></div>
+        </div>
+        } @else {
+        <p class="mt-2 text-sm text-base-content/60">No HTML content stored.</p>
+        }
+      </div>
+    </div>
+    <div class="mt-4">
+      <h3 class="text-sm font-semibold text-base-content/60">Plain text content</h3>
+      <pre class="mt-2 max-h-56 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-sm">
+{{ email()?.plain_text_content || 'No plain text version stored.' }}</pre
+      >
+    </div>
+  </section>
+  } @if (email()?.attachments?.length) {
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Attachments</h2>
+    <div class="mt-3 grid gap-3">
+      @for (attachment of email()?.attachments ?? []; track attachment.name) {
+      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat">
+          <div class="stat-title truncate text-sm text-base-content/60" [title]="attachment.name">
+            {{ attachment.name }}
+          </div>
+          @if (attachment.size) {
+          <div class="stat-desc text-xs text-base-content/60">{{ formatBytes(attachment.size) }}</div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+  } @if (error()) {
+  <div class="alert alert-error">
+    <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
+    {{ error() }}
+  </div>
+  }
+</div>
+} @else { @if (!error()) {
+<div class="flex flex-col gap-4">
+  <div class="skeleton h-6 w-32"></div>
+  <div class="skeleton h-32 w-full"></div>
+</div>
+} @else {
+<div class="alert alert-error">
+  <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
+  {{ error() }}
+</div>
+} }
