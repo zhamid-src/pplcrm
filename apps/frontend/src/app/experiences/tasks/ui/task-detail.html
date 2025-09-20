@@ -29,12 +29,13 @@
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
-        <input
-          class="input"
-          type="date"
+        <calendar-date
+          class="cally bg-base-100 border border-base-300 shadow-lg rounded-box"
           [value]="dateOnly(task()?.due_at)"
-          (change)="update({ due_at: $any($event.target).value })"
-        />
+          (valueChange)="onDueDateChange($event)"
+        >
+          <calendar-month></calendar-month>
+        </calendar-date>
       </div>
     </div>
 

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { IAuthUser } from '@common';
@@ -17,6 +17,7 @@ import { MentionController, userDisplay } from '../../../uxcommon/mentions/menti
   selector: 'pc-task-detail',
   imports: [CommonModule, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
   templateUrl: './task-detail.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class TaskDetail implements OnInit {
   private readonly auth = inject(AuthService);
@@ -80,6 +81,11 @@ export class TaskDetail implements OnInit {
     if (!v) return '';
     const s = typeof v === 'string' ? v : new Date(v).toISOString();
     return s.slice(0, 10);
+  }
+
+  protected onDueDateChange(event: any) {
+    const value = this.normalizeCalendarValue(event);
+    void this.update({ due_at: value });
   }
 
   protected async update(patch: any) {
@@ -235,4 +241,21 @@ export class TaskDetail implements OnInit {
 
   // expose util for templates
   protected userDisplay = userDisplay;
+
+  private normalizeCalendarValue(event: any): string | null {
+    const raw =
+      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
+      (event?.detail?.value != null && event.detail.value) ||
+      (event?.target?.value != null && event.target.value) ||
+      (event?.value != null && event.value) ||
+      (typeof event === 'string' ? event : null);
+
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
 }

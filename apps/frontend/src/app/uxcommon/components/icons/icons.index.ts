@@ -39,6 +39,7 @@ export const icons = {
   none: 'none',
   'add-home': 'assets/icons/add-home.svg',
   'add-list': 'assets/icons/add-list.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
   'archive-box': 'assets/icons/archive-box.svg',
   'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
   'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',

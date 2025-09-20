@@ -22,11 +22,14 @@
     "@fastify/sensible": "6.0.3",
     "@googlemaps/js-api-loader": "^1.16.2",
     "@tailwindcss/cli": "^4.1.11",
+    "@tanstack/table-core": "^8.19.2",
+    "@tanstack/virtual-core": "^3.10.4",
     "@triangular/password-checker": "^20.0.0",
     "@trpc/react-query": "^11.4.4",
     "@types/dompurify": "^3.0.5",
     "@types/google.maps": "^3.54.10",
     "bcrypt": "^5.1.1",
+    "cally": "^0.8.0",
     "dompurify": "^3.2.6",
     "fast-jwt": "^6.0.2",
     "fastify": "^5.4.0",
@@ -39,9 +42,7 @@
     "pino-pretty": "^13.0.0",
     "quill": "^2.0.3",
     "tslib": "^2.3.0",
-    "zod": "^4.0.5",
-    "@tanstack/table-core": "^8.19.2",
-    "@tanstack/virtual-core": "^3.10.4"
+    "zod": "^4.0.5"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "20.1.3",

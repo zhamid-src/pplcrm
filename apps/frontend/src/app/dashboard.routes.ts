@@ -91,6 +91,11 @@ export const dashboardRoutes: Routes = [
         data: { shouldReuse: true, key: 'newslettersgridroot' },
       },
       {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+      },
+      {
         path: ':id',
         loadComponent: () =>
           import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
