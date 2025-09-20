@@ -43,6 +43,7 @@ export const icons = {
   'archive-box': 'assets/icons/archive-box.svg',
   'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
   'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
   'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
   'arrow-path': 'assets/icons/arrow-path.svg',
   'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
