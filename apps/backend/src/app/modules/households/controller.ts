@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../../lib/base.repo';
@@ -185,6 +185,18 @@ export class HouseholdsController extends BaseController<'households', Household
    */
   public getTags(id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getTags(id, auth.tenant_id);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithPeopleCount(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      return this.buildCsvResponse(rows, input);
+    }
+    return super.exportCsv(input);
   }
 
   /**

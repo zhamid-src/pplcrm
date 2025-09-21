@@ -15,7 +15,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 

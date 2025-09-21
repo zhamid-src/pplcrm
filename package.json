@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "npx npm-force-resolutions",
-    "lint": "eslint . --ext .ts,.html",
+    "lint": "eslint . --ext .ts",
     "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts",
     "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts"
   },

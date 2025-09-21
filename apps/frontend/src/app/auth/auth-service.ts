@@ -5,7 +5,7 @@
  */
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
-import { TRPCService } from '@services/api/trpc-service';
+import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
 
 /**

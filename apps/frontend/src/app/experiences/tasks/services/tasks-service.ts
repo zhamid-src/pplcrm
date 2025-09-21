@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { AddTaskType, UpdateTaskType, getAllOptionsType } from '@common';
+import { AddTaskType, ExportCsvInputType, ExportCsvResponseType, UpdateTaskType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -57,5 +57,9 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 
   public update(id: string, data: UpdateTaskType) {
     return this.api.tasks.update.mutate({ id, data });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.tasks.exportCsv.mutate(input);
   }
 }

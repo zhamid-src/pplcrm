@@ -4,8 +4,8 @@
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
-import { SearchService } from '@services/api/search-service';
-import { FullScreenService } from '@services/fullscreen.service';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Swap } from '@uxcommon/components/swap/swap';
 

@@ -2,7 +2,7 @@
  * @file Service responsible for managing household data via tRPC.
  */
 import { Injectable } from '@angular/core';
-import { UpdateHouseholdsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, UpdateHouseholdsType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -140,5 +140,9 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.getAllWithPeopleCount.query(options, {
       signal: this.ac.signal,
     });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.households.exportCsv.mutate(input);
   }
 }

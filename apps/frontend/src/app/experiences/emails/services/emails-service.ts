@@ -4,7 +4,7 @@
 import { Injectable } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '@common';
 
-import { TRPCService } from '@services/api/trpc-service';
+import { TRPCService } from '../../../services/api/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 import { HasRow } from 'common/src/lib/emails';
 import { EmailDraftType, EmailType } from 'common/src/lib/models';

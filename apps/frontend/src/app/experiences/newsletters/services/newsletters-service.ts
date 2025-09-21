@@ -1,5 +1,12 @@
 import { Injectable } from '@angular/core';
-import { AddMarketingEmailType, MarketingEmailTopLinkType, UpdateMarketingEmailType, getAllOptionsType } from '@common';
+import {
+  AddMarketingEmailType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  MarketingEmailTopLinkType,
+  UpdateMarketingEmailType,
+  getAllOptionsType,
+} from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -55,6 +62,10 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
 
   public update(_id: string, _data: UpdateMarketingEmailType) {
     return Promise.reject(new Error('Newsletters are read-only.'));
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.newsletters.exportCsv.mutate(input);
   }
 
   private normalize(record: any) {

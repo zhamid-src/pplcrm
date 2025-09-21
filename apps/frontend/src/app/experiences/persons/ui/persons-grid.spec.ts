@@ -21,7 +21,9 @@ jest.mock('@uxcommon/components/datagrid/datagrid', () => {
       protected tagsToString(tags: string[]) {
         return tags?.toString() ?? '';
       }
-      protected openEditOnDoubleClick() {}
+      protected openEditOnDoubleClick(): boolean {
+        return true;
+      }
     },
   };
 });
@@ -42,7 +44,9 @@ describe('PersonsGrid', () => {
   });
 
   it('should set household id and confirm on double click', () => {
-    const spy = jest.spyOn(component as any, 'confirmAddressChange').mockImplementation(() => {});
+    const spy = jest
+      .spyOn(component as any, 'confirmAddressChange')
+      .mockImplementation(() => undefined);
     (component as any).confirmOpenEditOnDoubleClick({ data: { household_id: 'h1' } } as any);
     expect((component as any).addressChangeModalId).toBe('h1');
     expect(spy).toHaveBeenCalled();

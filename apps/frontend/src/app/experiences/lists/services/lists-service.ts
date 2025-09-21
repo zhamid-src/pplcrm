@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { AddListType, UpdateListType, getAllOptionsType } from '@common';
+import { AddListType, ExportCsvInputType, ExportCsvResponseType, UpdateListType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -75,5 +75,9 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 
   public update(id: string, data: UpdateListType) {
     return this.api.lists.update.mutate({ id, data });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.lists.exportCsv.mutate(input);
   }
 }

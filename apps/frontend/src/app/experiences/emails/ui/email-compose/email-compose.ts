@@ -4,7 +4,7 @@ import { Component, ElementRef, Input, ViewChild, computed, inject, output, sign
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
-import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 

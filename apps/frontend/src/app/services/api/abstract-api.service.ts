@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
-import { getAllOptionsType } from '@common';
-import { TRPCService } from '@services/api/trpc-service';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
+import { TRPCService } from './trpc-service';
 
 import { Models } from 'common/src/lib/kysely.models';
 
@@ -184,4 +184,6 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * ```
    */
   public abstract update(id: string, data: U): Promise<Partial<T>[] | unknown>;
+
+  public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
 }

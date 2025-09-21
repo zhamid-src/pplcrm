@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { AddTagType, UpdateTagType, getAllOptionsType } from '@common';
+import { AddTagType, ExportCsvInputType, ExportCsvResponseType, UpdateTagType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { Tags } from 'common/src/lib/kysely.models';
@@ -155,5 +155,9 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    */
   public update(id: string, data: UpdateTagType) {
     return this.api.tags.update.mutate({ id: id, data });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.tags.exportCsv.mutate(input);
   }
 }

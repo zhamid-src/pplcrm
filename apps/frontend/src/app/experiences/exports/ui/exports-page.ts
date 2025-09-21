@@ -35,13 +35,13 @@ export class ExportsPage {
 
     // optional: re-run the effect when tab visibility changes
     // (so polling pauses when hidden and resumes when shown)
-    document.addEventListener('visibilitychange', () => {
-      // touching a signal forces the effect to re-evaluate if needed
-      // If you have a dedicated `pageVisible` signal, reference it in the effect instead.
-    });
+    const handleVisibilityChange = () => {
+      // Touch a signal so visibility changes trigger effect re-evaluation
+      void this.loading();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     this.destroyRef.onDestroy(() => {
-      // If you attached any listeners above, remove them here.
-      document.removeEventListener('visibilitychange', () => {});
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     });
   }
 

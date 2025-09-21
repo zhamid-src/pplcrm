@@ -13,6 +13,6 @@ export class DataGridRowComponent {
   allSelected = input<boolean>(false);
   allSelectedIdSet = input<Set<string>>(new Set());
   toId = input<(row: any) => string>((r) => String(r?.id ?? ''));
-  onRowCheckboxChange = input<(row: any, checked: boolean) => void>((_r, _c) => {});
-  onMouseOverRow = input<(row: any) => void>((_r) => {});
+  onRowCheckboxChange = input<(row: any, checked: boolean) => void>((_r, _c) => undefined);
+  onMouseOverRow = input<(row: any) => void>((_r) => undefined);
 }

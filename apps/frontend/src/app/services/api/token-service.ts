@@ -117,11 +117,19 @@ export class TokenService {
    * Automatically removes any token that is falsy.
    *
    * @param token - Object containing auth and/or refresh tokens.
-   */
+  */
   public set(token: IToken): void {
-    token.auth_token ? this.setAuthToken(token.auth_token) : this.removeAuthToken();
+    if (token.auth_token) {
+      this.setAuthToken(token.auth_token);
+    } else {
+      this.removeAuthToken();
+    }
 
-    token.refresh_token ? this.setRefreshToken(token.refresh_token) : this.removeRefreshToken();
+    if (token.refresh_token) {
+      this.setRefreshToken(token.refresh_token);
+    } else {
+      this.removeRefreshToken();
+    }
   }
 
   /**
@@ -178,9 +186,13 @@ export class TokenService {
    * Removes a specific token key from the active storage.
    *
    * @param item - The key of the token to remove.
-   */
+  */
   private removeToken(item: string): void {
-    this.persistence ? localStorage.removeItem(item) : sessionStorage.removeItem(item);
+    if (this.persistence) {
+      localStorage.removeItem(item);
+    } else {
+      sessionStorage.removeItem(item);
+    }
   }
 
   /**
@@ -188,9 +200,13 @@ export class TokenService {
    *
    * @param item - The key under which to store the token.
    * @param token - The token string to store.
-   */
+  */
   private setToken(item: string, token: string): void {
-    this.persistence ? localStorage.setItem(item, token) : sessionStorage.setItem(item, token);
+    if (this.persistence) {
+      localStorage.setItem(item, token);
+    } else {
+      sessionStorage.setItem(item, token);
+    }
   }
 }
 

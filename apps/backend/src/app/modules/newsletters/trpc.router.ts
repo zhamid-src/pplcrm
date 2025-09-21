@@ -1,4 +1,4 @@
-import { getAllOptions } from '@common';
+import { exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -15,4 +15,8 @@ export const NewslettersRouter = router({
   getById: authProcedure
     .input(z.string())
     .query(({ input, ctx }) => newsletters.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => newsletters.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
 });

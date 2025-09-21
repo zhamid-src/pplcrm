@@ -22,6 +22,8 @@ import type {
   UpdateTaskObj,
   TasksObj,
   getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
   sortModelItem,
 } from './schema';
 
@@ -81,3 +83,5 @@ export type UpdateListType = z.infer<typeof UpdateListObj>;
 export type AddTaskType = z.infer<typeof AddTaskObj>;
 export type TasksType = z.infer<typeof TasksObj>;
 export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;

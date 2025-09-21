@@ -20,9 +20,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { AbstractAPIService } from '@services/api/abstract-api.service';
-import { SearchService } from '@services/api/search-service';
-import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { SearchService } from '../../../services/api/search-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { type SortingState, ColumnDef as TSColumnDef, type Updater } from '@tanstack/table-core';
 // Virtualizer handled via controller
 // Context available for future slices/controllers (not yet used here)
@@ -638,7 +638,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       displayedCount: this.displayedCount(),
       totalCount: this.totalCountAll(),
       getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
-      loadAllRowsForExport: () => this.fetchAllRowsForExport(),
+      requestFullExport: () => this.requestFullExport(),
     });
   }
   public doConfirmExport() {
@@ -1391,7 +1391,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
-  private async fetchAllRowsForExport(): Promise<Record<string, any>[]> {
+  private async requestFullExport(): Promise<{ csv: string; fileName?: string; rowCount?: number }> {
     const totalRows = this.totalCountAll();
     const endRow = totalRows > 0 ? totalRows : Math.max(this.rows().length, this.pageSize());
     const options = this.dataSvc.buildGetAllOptions({
@@ -1403,13 +1403,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortState: this.sorting(),
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
+      includeArchived: this.archiveMode(),
     });
-    const fetch = this.archiveMode()
-      ? this.gridSvc.getAllArchived.bind(this.gridSvc)
-      : this.gridSvc.getAll.bind(this.gridSvc);
-    const result = await fetch(options);
-    const rows = result?.rows ?? [];
-    return rows.map((row: any) => ({ ...row }));
+    return this.gridSvc.exportCsv({
+      options,
+      columns: this.visibleColumnFields(),
+      fileName: this.config.messages.exportFileName,
+    });
+  }
+
+  private visibleColumnFields(): string[] {
+    const visibility = this.colVisibility();
+    return this.colDefsWithEdit
+      .map((col) => (typeof col.field === 'string' ? col.field : null))
+      .filter((field): field is string => !!field && visibility[field] !== false);
   }
 
   // Persistence handled by GridStoreService

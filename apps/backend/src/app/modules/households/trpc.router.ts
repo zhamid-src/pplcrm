@@ -2,7 +2,7 @@
  * tRPC router providing CRUD operations and tag management for
  * household records within a tenant.
  */
-import { UpdateHouseholdsObj, getAllOptions } from '@common';
+import { UpdateHouseholdsObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -110,6 +110,15 @@ function getTags() {
   return authProcedure.input(z.string()).query(({ input, ctx }) => households.getTags(input, ctx.auth));
 }
 
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) =>
+      households.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
+    );
+}
+
 /**
  * Update a household's information.
  */
@@ -142,4 +151,5 @@ export const HouseholdsRouter = router({
   getDistinctTags: getDistinctTags(),
   getAllWithPeopleCount: getAllWithPeopleCount(),
   getPeopleCount: getPeopleCount(),
+  exportCsv: exportCsv(),
 });

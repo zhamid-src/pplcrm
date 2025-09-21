@@ -93,6 +93,10 @@ export class AddBtnRow implements OnInit {
    * Otherwise, navigates away.
    */
   public stayOrCancel = () => {
-    this.stay ? this.form.reset() : this.cancel();
+    if (this.stay) {
+      this.form.reset();
+    } else {
+      this.cancel();
+    }
   };
 }

@@ -8,7 +8,7 @@ import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.s
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { Icon } from '@icons/icon';
-import { AbstractAPIService } from '@services/api/abstract-api.service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
@@ -174,7 +174,7 @@ export class ListDetail {
     effect(() => {
       // touch signals
       this.rulesRoot();
-      this.form.get('object')!.value;
+      void this.form.get('object')?.value;
       this.debouncedRecount();
     });
   }

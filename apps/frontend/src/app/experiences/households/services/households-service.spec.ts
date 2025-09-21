@@ -4,7 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { HouseholdsService } from './households-service';
-import { TokenService } from '@services/api/token-service';
+import { TokenService } from '../../../services/api/token-service';
 
 describe('HouseholdsService', () => {
   let service: HouseholdsService;
@@ -42,4 +42,3 @@ describe('HouseholdsService', () => {
     expect(result).toBe(res);
   });
 });
-

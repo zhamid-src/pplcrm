@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
@@ -472,11 +472,11 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
     // Extract email/phone even if jammed into other fields
     let first_name = trim(row.first_name);
-    let last_name = trim(row.last_name);
+    const last_name = trim(row.last_name);
     let email = (trim(row.email) || '').toLowerCase();
     let mobile = this.sanitizePhone(row.mobile);
     const home_phone = this.sanitizePhone(row.home_phone);
-    let notes = trim(row.notes);
+    const notes = trim(row.notes);
 
     // If email was not provided in its field, try to find it in name fields
     if (!email) {
@@ -519,13 +519,13 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
   private findPhone(text?: string): string | undefined {
     if (!text) return undefined;
-    const m = text.match(/\+?\d[\d\s\-]{7,}\d/);
+    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
     return m?.[0];
   }
 
   private stripNoise(text: string): string | undefined {
     const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
-    const noPhone = noEmail.replace(/\+?\d[\d\s\-]{7,}\d/g, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
     const cleaned = noPhone.replace(/[,]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
     return cleaned || undefined;
   }
@@ -535,5 +535,17 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     const token = local.split(/[._+-]/)[0] || '';
     if (!token) return undefined;
     return token.charAt(0).toUpperCase() + token.slice(1);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithAddress(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      return this.buildCsvResponse(rows, input);
+    }
+    return super.exportCsv(input);
   }
 }

@@ -10,7 +10,9 @@ jest.mock('@uxcommon/components/datagrid/datagrid', () => {
       protected tagsToString(tags: string[]) {
         return tags?.toString() ?? '';
       }
-      protected openEditOnDoubleClick() {}
+      protected openEditOnDoubleClick() {
+        return undefined;
+      }
     },
   };
 });
