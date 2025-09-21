@@ -48,7 +48,7 @@ export class EmailAssign {
 
   constructor() {
     this.auth.getUsers().then((u) => this.users.set(u));
-
+    // Can't use computed because assignedTo is settable
     effect(() => {
       this.assignedTo.set(this.email()?.assigned_to || null);
     });

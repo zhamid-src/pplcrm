@@ -60,8 +60,7 @@ export class EmailDetails {
         this.store.loadEmailWithHeaders(e.id).catch((err) => console.error('Failed to load email header:', err));
       }
     });
-
-    effect(() => this.noEmailMsgDelay.begin());
+    this.noEmailMsgDelay.begin();
   }
 
   public toggleComments(): void {

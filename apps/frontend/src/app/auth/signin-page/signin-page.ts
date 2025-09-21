@@ -70,7 +70,8 @@ export class SignInPage {
    */
   constructor() {
     effect(() => {
-      if (this.authService.getUser()) this.router.navigate(['summary']);
+      const user = this.authService.getUserSignal();
+      if (user()) this.router.navigate(['summary']);
     });
   }
 

@@ -38,6 +38,7 @@ export class EmailHeader {
   public isExpanded = this.store.isBodyExpanded;
 
   constructor() {
+    // isFavourite and isClosed are settable, so can't use computed
     effect(() => {
       const email = this.email();
 
@@ -186,7 +187,7 @@ export class EmailHeader {
 
   protected async toggleFavourite() {
     const e = this.email();
-    this.isFavourite.set(!this.isFavourite());
+    this.isFavourite.update((value) => !value);
     return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }

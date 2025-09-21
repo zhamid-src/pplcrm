@@ -5,9 +5,8 @@
  */
 import { Injectable, signal } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
-import { TRPCError } from '@trpc/server';
-
 import { TRPCService } from '@services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
 
 /**
  * Authentication service responsible for managing the user's authentication state.
@@ -61,6 +60,10 @@ export class AuthService extends TRPCService<'authusers'> {
    */
   public getUser(): IAuthUser | null {
     return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
   }
 
   /**
