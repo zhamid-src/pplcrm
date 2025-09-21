@@ -20,6 +20,7 @@ describe('HouseholdsRouter', () => {
     jest.spyOn(HouseholdsController.prototype, 'detachTag').mockResolvedValue(undefined as any);
     jest.spyOn(HouseholdsController.prototype, 'getAll').mockResolvedValue([{ id: '1' }] as any);
     jest.spyOn(HouseholdsController.prototype, 'getAllWithPeopleCount').mockResolvedValue({ rows: [], count: 0 } as any);
+    jest.spyOn(HouseholdsController.prototype, 'getPeopleCount').mockResolvedValue(3 as any);
     jest.spyOn(HouseholdsController.prototype, 'getOneById').mockResolvedValue({ id: '1' } as any);
     jest.spyOn(HouseholdsController.prototype, 'getDistinctTags').mockResolvedValue(['a']);
     jest.spyOn(HouseholdsController.prototype, 'getTags').mockResolvedValue(['a']);
@@ -70,6 +71,11 @@ describe('HouseholdsRouter', () => {
   /** Tests retrieval of households with aggregated people counts. */
   it('gets all with people count', async () => {
     await expect(caller.getAllWithPeopleCount({} as any)).resolves.toEqual({ rows: [], count: 0 });
+  });
+
+  /** Tests retrieving count of people in a household. */
+  it('gets people count', async () => {
+    await expect(caller.getPeopleCount('1')).resolves.toBe(3);
   });
 
   /** Tests retrieving a household by ID. */

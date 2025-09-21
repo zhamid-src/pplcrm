@@ -160,6 +160,13 @@ export class HouseholdsController extends BaseController<'households', Household
   }
 
   /**
+   * Retrieve the number of people associated with a household.
+   */
+  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
+
+  /**
    * Get a list of all distinct tags used across households for a tenant.
    *
    * @param auth - Auth context
