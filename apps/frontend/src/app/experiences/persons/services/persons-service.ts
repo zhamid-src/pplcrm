@@ -192,14 +192,19 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * });
    * ```
    */
-  public async getPeopleInHousehold(id: string | null | undefined) {
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
     if (!id) {
       return [];
     }
 
-    const peopleInHousehold = (await this.getByHouseholdId(id, {
-      columns: ['id', 'first_name', 'middle_names', 'last_name'],
-    })) as PERSONINHOUSEHOLDTYPE[];
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
 
     return peopleInHousehold.map((person) => {
       return {
