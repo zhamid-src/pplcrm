@@ -156,7 +156,8 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to attach to the household
    */
   protected tagAdded(tag: string) {
-    this.id && this.householdsSvc.attachTag(this.id, tag);
+    if (!this.id) return;
+    void this.householdsSvc.attachTag(this.id, tag);
   }
 
   /**
@@ -164,7 +165,8 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to detach from the household
    */
   protected tagRemoved(tag: string) {
-    this.id && this.householdsSvc.detachTag(this.id, tag);
+    if (!this.id) return;
+    void this.householdsSvc.detachTag(this.id, tag);
   }
 
   /**

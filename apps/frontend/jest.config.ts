@@ -14,8 +14,6 @@ const config: Config = {
     '^@uxcommon/(.*)$': '<rootDir>/src/app/uxcommon/$1',
     '^@icons/(.*)$': '<rootDir>/src/app/uxcommon/components/icons/$1',
     '^@experiences/(.*)$': '<rootDir>/src/app/experiences/$1',
-    '^@services/(.*)$': '<rootDir>/src/app/services/$1',
-    '^@pipes/(.*)$': '<rootDir>/src/app/pipes/$1',
     '^@common$': '<rootDir>/../../common/src/index.ts',
     '^apps/frontend/(.*)$': '<rootDir>/$1',
     '^apps/frontend/src/environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',

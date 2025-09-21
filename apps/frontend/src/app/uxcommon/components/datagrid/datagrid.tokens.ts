@@ -1,5 +1,5 @@
 import { InjectionToken, Provider } from '@angular/core';
-import type { BaseDialogOptions } from '@services/shared-dialog.service';
+import type { BaseDialogOptions } from '../../../services/shared-dialog.service';
 
 export interface DataGridConfig {
   filterToolPanelId: string;
@@ -26,6 +26,10 @@ export interface DataGridConfig {
     exportConfirmText: string;
     exportCancelText: string;
     exportFailed: string;
+    exportInProgress: string;
+    exportReady: string;
+    exportNavigateWarning: string;
+    exportFileName: string;
   };
   pageSize: number;
 }
@@ -72,5 +76,9 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     exportConfirmText: 'All rows',
     exportCancelText: 'Displayed rows',
     exportFailed: 'Export failed. Please try again.',
+    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
+    exportReady: 'Export ready. Your download should begin momentarily.',
+    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
+    exportFileName: 'grid-export.csv',
   },
 };

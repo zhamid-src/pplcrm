@@ -23,6 +23,8 @@ export type {
   UpdateMarketingEmailType,
   UpdateTaskType,
   getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
 } from './lib/models';
 
 export {
@@ -44,6 +46,8 @@ export {
   UpdateTaskObj,
   sortModelItem,
   getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

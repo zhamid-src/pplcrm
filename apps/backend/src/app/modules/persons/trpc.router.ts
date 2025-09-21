@@ -2,7 +2,7 @@
  * tRPC router offering CRUD operations, tag management, and queries
  * for person records associated with a tenant.
  */
-import { UpdatePersonsObj, getAllOptions } from '@common';
+import { UpdatePersonsObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -102,6 +102,15 @@ function getDistinctTags() {
   return authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth));
 }
 
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) =>
+      persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
+    );
+}
+
 /**
  * Get all tags assigned to a specific person.
  */
@@ -177,4 +186,5 @@ export const PersonsRouter = router({
   getDistinctTags: getDistinctTags(),
   getByHouseholdId: getByHouseholdId(),
   getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
 });

@@ -4,7 +4,7 @@
  * through type-safe tRPC communication with the backend.
  */
 import { Injectable } from '@angular/core';
-import { PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -255,6 +255,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public async update(id: string, data: UpdatePersonsType) {
     console.log(id, data);
     return this.api.persons.update.mutate({ id: id, data });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.persons.exportCsv.mutate(input);
   }
 }
 

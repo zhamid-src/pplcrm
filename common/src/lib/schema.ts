@@ -326,3 +326,18 @@ export const getAllOptions = z
     tags: z.array(z.string()).optional(),
   })
   .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.object({
+  csv: z.string(),
+  fileName: z.string(),
+  columns: z.array(z.string()),
+  rowCount: z.number(),
+});

@@ -2,7 +2,7 @@
  * tRPC router handling tag creation, modification, deletion, and search
  * operations for tenant-specific tags.
  */
-import { AddTagObj, UpdateTagObj, getAllOptions } from '@common';
+import { AddTagObj, UpdateTagObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -79,6 +79,13 @@ function update() {
     .mutation(({ input, ctx }) => tags.updateTag(input.id, input.data, ctx.auth));
 }
 
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => tags.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }));
+}
+
 const tags = new TagsController();
 
 /** Router exposing tag-related procedures. */
@@ -92,4 +99,5 @@ export const TagsRouter = router({
   deleteMany: deleteTags(),
   findByName: findByName(),
   getAllWithCounts: getAllWithCounts(),
+  exportCsv: exportCsv(),
 });

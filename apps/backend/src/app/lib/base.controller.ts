@@ -1,4 +1,4 @@
-import { getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
 
 import { OperandValueExpressionOrList, ReferenceExpression, Transaction } from 'kysely';
 
@@ -10,6 +10,7 @@ import {
   TypeTenantId,
 } from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
+import { rowsToCsv } from './csv';
 
 /**
  * Abstract base controller for all domain entities (e.g. persons, households, tags).
@@ -172,5 +173,35 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    */
   protected getRepo() {
     return this.repo;
+  }
+
+  public async exportCsv(input: ExportCsvInputType & { tenant_id: string }): Promise<ExportCsvResponseType> {
+    const tenant = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
+    const options = (input?.options ?? {}) as QueryParams<T>;
+    const rows = await this.repo.getAll({ tenant_id: tenant, options });
+    const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+    return this.buildCsvResponse(records, input);
+  }
+
+  protected buildCsvResponse(
+    rows: Array<Record<string, unknown>>,
+    input: ExportCsvInputType & { tenant_id: string },
+  ): ExportCsvResponseType {
+    const requestedColumns = Array.isArray(input?.columns)
+      ? (input.columns.filter((c): c is string => Boolean(c)) ?? [])
+      : [];
+    const columns = requestedColumns.length
+      ? requestedColumns
+      : rows.length > 0
+        ? Object.keys(rows[0] as Record<string, unknown>)
+        : [];
+    const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
+    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, any>>, columns) : '';
+    return {
+      csv,
+      columns,
+      fileName,
+      rowCount: rows.length,
+    };
   }
 }

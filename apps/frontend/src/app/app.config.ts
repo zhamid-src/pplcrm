@@ -14,8 +14,8 @@ import { environment } from '../environments/environment';
 import { appRoutes } from './app.routes';
 import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { jsendInterceptor } from '@services/jsend.interceptor';
-import { GlobalErrorHandler } from '@services/global-error-handler';
+import { jsendInterceptor } from './services/jsend.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
 
 /**
  * Initializes the user session during app startup.

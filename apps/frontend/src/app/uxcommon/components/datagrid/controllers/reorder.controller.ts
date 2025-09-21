@@ -4,7 +4,7 @@ import { Injectable } from '@angular/core';
 export class ReorderController {
   private dragColId: string | null = null;
   private suppressHeaderDrag: () => boolean = () => false;
-  private requestPersist: () => void = () => {};
+  private requestPersist: () => void = () => undefined;
 
   configure(opts: { suppressHeaderDrag: () => boolean; requestPersist: () => void }) {
     this.suppressHeaderDrag = opts.suppressHeaderDrag;
@@ -49,4 +49,3 @@ export class ReorderController {
     this.requestPersist();
   }
 }
-

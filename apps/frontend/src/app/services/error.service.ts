@@ -4,7 +4,7 @@ import { JSendServerError } from '@common';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
-import { TokenService } from '@services/api/token-service';
+import { TokenService } from './api/token-service';
 
 /**
  * Centralised error handling service.

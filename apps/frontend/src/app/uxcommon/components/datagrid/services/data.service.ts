@@ -17,14 +17,16 @@ export class DataGridDataService {
     sortState: Array<{ id: string; desc?: boolean }>;
     sortCol: string | null;
     sortDir: 'asc' | 'desc' | null;
+    includeArchived?: boolean;
   }): Partial<getAllOptionsType> {
-    const { searchStr, startRow, endRow, tags, filterModel, sortState, sortCol, sortDir } = args;
+    const { searchStr, startRow, endRow, tags, filterModel, sortState, sortCol, sortDir, includeArchived } = args;
     return {
       searchStr,
       startRow,
       endRow,
       tags,
       filterModel,
+      includeArchived,
       sortModel:
         sortState && sortState.length
           ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))

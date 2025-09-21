@@ -84,6 +84,10 @@ export class BaseRepository<T extends keyof Models> {
     this.table = tableIn;
   }
 
+  public getTableName(): T {
+    return this.table;
+  }
+
   /**
    * Insert a single row.
    */

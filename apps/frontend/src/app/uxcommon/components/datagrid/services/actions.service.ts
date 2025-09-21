@@ -1,13 +1,19 @@
 import { Injectable } from '@angular/core';
-import type { ConfirmDialogService } from '@services/shared-dialog.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { loadingGate } from '@uxcommon/loading-gate';
+import type { ConfirmDialogService } from '../../../../services/shared-dialog.service';
+import type { AlertService } from '../../alerts/alert-service';
+import type { loadingGate } from '../../../loading-gate';
 
 import { get, set } from 'idb-keyval';
 
 import { DataGridConfig } from '../datagrid.tokens';
 
-type ExportJob = { id: string; name: string; status: 'in_progress' | 'completed' | 'failed'; created_at: number };
+type ExportJob = {
+  id: string;
+  name: string;
+  status: 'in_progress' | 'completed' | 'failed';
+  created_at: number;
+  details?: string;
+};
 
 @Injectable({ providedIn: 'root' })
 export class DataGridActionsService {
@@ -63,7 +69,7 @@ export class DataGridActionsService {
     alertSvc: AlertService;
     config: DataGridConfig;
     getRowsForExport?: () => Array<Record<string, any>>;
-    loadAllRowsForExport?: () => Promise<Array<Record<string, any>>>;
+    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
     displayedCount?: number;
     totalCount?: number;
   }) {
@@ -80,6 +86,7 @@ export class DataGridActionsService {
         parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
       }
       parts.push(messages.exportMessage);
+      parts.push(messages.exportNavigateWarning);
       const wantsAll = await deps.dialogs.confirm({
         title: messages.exportTitle,
         message: parts.filter(Boolean).join('\n\n'),
@@ -93,7 +100,7 @@ export class DataGridActionsService {
     }
 
     if (!exportAllData && !deps.getRowsForExport) return;
-    if (exportAllData && !deps.loadAllRowsForExport) {
+    if (exportAllData && !deps.requestFullExport) {
       if (deps.getRowsForExport) {
         exportAllData = false;
       } else {
@@ -102,6 +109,7 @@ export class DataGridActionsService {
       }
     }
 
+    let currentJobId: string | null = null;
     try {
       const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
       const job: ExportJob = {
@@ -112,59 +120,78 @@ export class DataGridActionsService {
       };
       jobs.push(job);
       await set('pc_export_jobs', jobs);
-      const rows = exportAllData
-        ? await deps.loadAllRowsForExport?.()
-        : deps.getRowsForExport?.() ?? [];
-      if (!rows || rows.length === 0) {
-        await this.markJobCompleted(job.id, 'completed');
+      currentJobId = job.id;
+      let csv = '';
+      let fileName = messages.exportFileName;
+      let rowCount = 0;
+      if (exportAllData && deps.requestFullExport) {
+        deps.alertSvc.showInfo(messages.exportInProgress);
+        const result = await deps.requestFullExport();
+        csv = result?.csv ?? '';
+        fileName = (result?.fileName && result.fileName.trim()) || fileName;
+        rowCount = result?.rowCount ?? 0;
+      } else {
+        const rows = deps.getRowsForExport?.() ?? [];
+        if (!rows.length) {
+          await this.markJobCompleted(job.id, 'completed', 'No rows to export');
+          return;
+        }
+        rowCount = rows.length;
+        const headers = Object.keys(rows[0]);
+        const escape = (v: any) => {
+          const s = v == null ? '' : String(v);
+          return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+        csv = [headers.join(',')]
+          .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
+          .join('\n');
+      }
+
+      if (!csv) {
+        await this.markJobCompleted(job.id, 'failed', 'Export returned no data');
+        deps.alertSvc.showError(messages.exportFailed);
         return;
       }
 
-      const headers = Object.keys(rows[0]);
-      const escape = (v: any) => {
-        const s = v == null ? '' : String(v);
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-      };
-      const csv = [headers.join(',')]
-        .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
-        .join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'export.csv';
+      a.download = fileName || 'grid-export.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-
-      const jobs2 = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
-      const idx = jobs2.findIndex((j) => j.id === job.id);
-      if (idx >= 0) {
-        jobs2[idx] = { ...jobs2[idx], status: 'completed' };
-        await set('pc_export_jobs', jobs2);
-      }
+      deps.alertSvc.showSuccess(messages.exportReady);
+      const detail = exportAllData
+        ? rowCount ? `All rows (${rowCount})` : 'All rows'
+        : `Displayed rows (${rowCount})`;
+      await this.markJobCompleted(job.id, 'completed', detail);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
       deps.alertSvc.showError(messages.exportFailed);
+      if (currentJobId) {
+        await this.markJobCompleted(currentJobId, 'failed', 'Export failed');
+      }
       try {
         const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
         const last = jobs[jobs.length - 1];
         if (last && last.status === 'in_progress') {
           last.status = 'failed';
+          last.details = 'Export failed';
           await set('pc_export_jobs', jobs);
         }
       } catch {}
     }
   }
 
-  private async markJobCompleted(id: string, status: ExportJob['status']): Promise<void> {
+  private async markJobCompleted(id: string, status: ExportJob['status'], details?: string): Promise<void> {
     try {
       const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
       const idx = jobs.findIndex((j) => j.id === id);
       if (idx >= 0) {
-        jobs[idx] = { ...jobs[idx], status };
+        jobs[idx] = { ...jobs[idx], status, details };
         await set('pc_export_jobs', jobs);
       }
     } catch {}

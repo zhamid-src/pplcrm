@@ -1,4 +1,4 @@
-import { AddTaskObj, UpdateTaskObj, getAllOptions } from '@common';
+import { AddTaskObj, UpdateTaskObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -18,6 +18,10 @@ export const TasksRouter = router({
     .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
   getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
   getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
   getById: authProcedure
     .input(z.string())
     .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),

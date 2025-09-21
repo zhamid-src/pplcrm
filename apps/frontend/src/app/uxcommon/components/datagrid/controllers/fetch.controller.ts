@@ -47,6 +47,7 @@ export class FetchController {
         sortState: opts.sortState,
         sortCol: opts.sortCol,
         sortDir: opts.sortDir,
+        includeArchived: opts.archiveMode,
       });
       const data = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
       const incoming = data.rows ?? [];

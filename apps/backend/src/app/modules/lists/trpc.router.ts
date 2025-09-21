@@ -1,7 +1,7 @@
 /**
  * tRPC router for managing list records and their members.
  */
-import { AddListObj, UpdateListObj, getAllOptions } from '@common';
+import { AddListObj, UpdateListObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
 
 import { z } from 'zod';
 
@@ -56,6 +56,13 @@ function update() {
     .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth));
 }
 
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => lists.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }));
+}
+
 const lists = new ListsController();
 
 export const ListsRouter = router({
@@ -69,4 +76,5 @@ export const ListsRouter = router({
   update: update(),
   delete: deleteList(),
   deleteMany: deleteLists(),
+  exportCsv: exportCsv(),
 });

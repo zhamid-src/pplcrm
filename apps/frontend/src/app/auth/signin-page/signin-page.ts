@@ -7,7 +7,7 @@ import { AbstractControl, FormControl, NonNullableFormBuilder, ReactiveFormsModu
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
-import { TokenService } from '@services/api/token-service';
+import { TokenService } from '../../services/api/token-service';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';

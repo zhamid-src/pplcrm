@@ -6,7 +6,7 @@ import { Component, OnInit, computed, effect, inject, input, signal } from '@ang
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
-import { ConfirmDialogService } from '@services/shared-dialog.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -279,12 +279,14 @@ export class PersonDetail implements OnInit {
 
   /** Attaches a tag to the person */
   protected tagAdded(tag: string) {
-    this.id && this.personsSvc.attachTag(this.id, tag);
+    if (!this.id) return;
+    void this.personsSvc.attachTag(this.id, tag);
   }
 
   /** Detaches a tag from the person */
   protected tagRemoved(tag: string) {
-    this.id && this.personsSvc.detachTag(this.id, tag);
+    if (!this.id) return;
+    void this.personsSvc.detachTag(this.id, tag);
   }
 
   /**

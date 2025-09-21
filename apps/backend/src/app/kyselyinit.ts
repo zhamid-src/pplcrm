@@ -55,4 +55,4 @@ export async function migrateToLatest(): Promise<void> {
 }
 
 // Automatically run migration when script is executed directly
-migrateToLatest();
+void migrateToLatest();
