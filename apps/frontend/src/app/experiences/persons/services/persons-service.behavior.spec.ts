@@ -116,6 +116,20 @@ describe('PersonsService behavior', () => {
     ]);
   });
 
+  it('getPeopleInHousehold merges options', async () => {
+    api.persons.getByHouseholdId.query.mockResolvedValue([]);
+
+    await service.getPeopleInHousehold('hid', { columns: ['preferred_name'], limit: 10 } as any);
+
+    expect(api.persons.getByHouseholdId.query).toHaveBeenCalledWith({
+      id: 'hid',
+      options: {
+        columns: ['preferred_name', 'id', 'first_name', 'middle_names', 'last_name'],
+        limit: 10,
+      },
+    });
+  });
+
   it('getTags maps names', async () => {
     api.persons.getTags.query.mockResolvedValue([{ name: 'vip' }, { name: 'lead' }]);
     await expect(service.getTags('id1')).resolves.toEqual(['vip', 'lead']);
