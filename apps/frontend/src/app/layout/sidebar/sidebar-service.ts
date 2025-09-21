@@ -15,6 +15,12 @@ export class SidebarService {
   private _isMobileOpen = false;
   private drawerState: DrawerStates = this.getState();
   private items = SidebarItems;
+  private readonly collapsedSections = new Set<string>();
+  private readonly initializedSections = new Set<string>();
+
+  constructor() {
+    this.initializeCollapsedDefaults(this.items);
+  }
 
   /**
    * Indicates whether the drawer is open on mobile devices.
@@ -37,6 +43,19 @@ export class SidebarService {
    */
   public getItems() {
     return this.items;
+  }
+
+  public isCollapsed(name: string) {
+    return this.collapsedSections.has(name);
+  }
+
+  public toggleCollapsed(name: string) {
+    if (this.collapsedSections.has(name)) {
+      this.collapsedSections.delete(name);
+      return;
+    }
+
+    this.collapsedSections.add(name);
   }
 
   /**
@@ -79,6 +98,7 @@ export class SidebarService {
    */
   public setItems(items: ISidebarItem[]) {
     this.items = items;
+    this.initializeCollapsedDefaults(items);
   }
 
   /**
@@ -129,6 +149,30 @@ export class SidebarService {
     this.drawerState = state;
     localStorage.setItem('pc-drawerState', this.drawerState);
     return this.drawerState;
+  }
+
+  private initializeCollapsedDefaults(items: ISidebarItem[]) {
+    this.walkItems(items, (item) => {
+      if (this.initializedSections.has(item.name)) {
+        return;
+      }
+
+      this.initializedSections.add(item.name);
+
+      if (item.collapsed) {
+        this.collapsedSections.add(item.name);
+      }
+    });
+  }
+
+  private walkItems(items: ISidebarItem[], cb: (item: ISidebarItem) => void) {
+    items.forEach((item) => {
+      cb(item);
+
+      if (item.children?.length) {
+        this.walkItems(item.children, cb);
+      }
+    });
   }
 }
 
