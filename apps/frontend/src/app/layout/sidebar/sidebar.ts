@@ -1,7 +1,7 @@
 /**
  * Sidebar component rendering navigation links and managing drawer state.
  */
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -23,10 +23,9 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 /**
  * Displays the navigation sidebar and delegates state management to SidebarService.
  */
-export class Sidebar implements OnInit {
+export class Sidebar {
   private readonly sidebarSvc = inject(SidebarService);
 
-  protected readonly collapsedItems = new Set<string>();
   protected readonly router = inject(Router);
 
   public hoveringSidebar = false;
@@ -38,16 +37,6 @@ export class Sidebar implements OnInit {
    */
   protected get items() {
     return this.sidebarSvc.getItems();
-  }
-
-  public ngOnInit() {
-    const items = this.items;
-
-    items.forEach((item) => {
-      if (item.collapsed) {
-        this.collapsedItems.add(item.name);
-      }
-    });
   }
 
   /**
@@ -64,7 +53,7 @@ export class Sidebar implements OnInit {
    * @returns `true` if the section is collapsed.
    */
   protected isCollapsed(name: string): boolean {
-    return this.collapsedItems.has(name);
+    return this.sidebarSvc.isCollapsed(name);
   }
 
   /**
@@ -116,11 +105,7 @@ export class Sidebar implements OnInit {
    * @param name - Name of the section to toggle.
    */
   protected toggleCollapse(name: string) {
-    if (this.collapsedItems.has(name)) {
-      this.collapsedItems.delete(name);
-    } else {
-      this.collapsedItems.add(name);
-    }
+    this.sidebarSvc.toggleCollapsed(name);
   }
 
   /**
