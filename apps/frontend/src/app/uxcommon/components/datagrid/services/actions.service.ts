@@ -63,18 +63,44 @@ export class DataGridActionsService {
     alertSvc: AlertService;
     config: DataGridConfig;
     getRowsForExport?: () => Array<Record<string, any>>;
+    loadAllRowsForExport?: () => Promise<Array<Record<string, any>>>;
+    displayedCount?: number;
+    totalCount?: number;
   }) {
     const { messages } = deps.config;
 
-    const ok = await deps.dialogs.confirm({
-      title: messages.exportTitle,
-      message: messages.exportMessage,
-      variant: 'info',
-      icon: messages.exportIcon,
-      confirmText: messages.exportConfirmText,
-      cancelText: messages.exportCancelText,
-    });
-    if (!ok) return;
+    const displayedCount = deps.displayedCount ?? 0;
+    const totalCount = deps.totalCount ?? displayedCount;
+    const hasAllRowsVisible = totalCount <= displayedCount;
+
+    let exportAllData = false;
+    if (!hasAllRowsVisible) {
+      const parts: string[] = [];
+      if (totalCount > 0 && displayedCount > 0) {
+        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
+      }
+      parts.push(messages.exportMessage);
+      const wantsAll = await deps.dialogs.confirm({
+        title: messages.exportTitle,
+        message: parts.filter(Boolean).join('\n\n'),
+        variant: 'info',
+        icon: messages.exportIcon,
+        confirmText: messages.exportConfirmText,
+        cancelText: messages.exportCancelText,
+        allowBackdropClose: false,
+      });
+      exportAllData = wantsAll === true;
+    }
+
+    if (!exportAllData && !deps.getRowsForExport) return;
+    if (exportAllData && !deps.loadAllRowsForExport) {
+      if (deps.getRowsForExport) {
+        exportAllData = false;
+      } else {
+        deps.alertSvc.showError(messages.exportFailed);
+        return;
+      }
+    }
 
     try {
       const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
@@ -86,28 +112,31 @@ export class DataGridActionsService {
       };
       jobs.push(job);
       await set('pc_export_jobs', jobs);
-
-      if (deps.getRowsForExport) {
-        const rows = deps.getRowsForExport() || [];
-        if (!rows.length) return;
-        const headers = Object.keys(rows[0]);
-        const escape = (v: any) => {
-          const s = v == null ? '' : String(v);
-          return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-        };
-        const csv = [headers.join(',')]
-          .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
-          .join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'export.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      const rows = exportAllData
+        ? await deps.loadAllRowsForExport?.()
+        : deps.getRowsForExport?.() ?? [];
+      if (!rows || rows.length === 0) {
+        await this.markJobCompleted(job.id, 'completed');
+        return;
       }
+
+      const headers = Object.keys(rows[0]);
+      const escape = (v: any) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')]
+        .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'export.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
       const jobs2 = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
       const idx = jobs2.findIndex((j) => j.id === job.id);
@@ -128,6 +157,17 @@ export class DataGridActionsService {
         }
       } catch {}
     }
+  }
+
+  private async markJobCompleted(id: string, status: ExportJob['status']): Promise<void> {
+    try {
+      const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
+      const idx = jobs.findIndex((j) => j.id === id);
+      if (idx >= 0) {
+        jobs[idx] = { ...jobs[idx], status };
+        await set('pc_export_jobs', jobs);
+      }
+    } catch {}
   }
 }
 

@@ -65,12 +65,12 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     deleteFailed: 'Could not delete. Please try again later.',
     deleteSuccess: 'Selected rows were successfully deleted.',
 
-    exportTitle: 'Export limitation',
+    exportTitle: 'Choose export scope',
     exportMessage:
-      'This only exports the columns visible in the grid. If you’d like to export everything, use the Export component from the sidebar.',
+      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
     exportIcon: 'arrow-down-tray',
-    exportConfirmText: 'Accept',
-    exportCancelText: 'Cancel',
+    exportConfirmText: 'All rows',
+    exportCancelText: 'Displayed rows',
     exportFailed: 'Export failed. Please try again.',
   },
 };
