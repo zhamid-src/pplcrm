@@ -1,17 +1,16 @@
 /**
  * @file Component for creating or editing households and managing their tags and members.
  */
+import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE, UpdateHouseholdsType } from '@common';
+import { UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 
-import { PersonsService } from '../../persons/services/persons-service';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { HouseholdsService } from '../services/households-service';
 import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
@@ -30,7 +29,6 @@ export class HouseholdDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
 
   /** Whether a background operation is in progress */
@@ -44,12 +42,6 @@ export class HouseholdDetail implements OnInit {
 
   /** List of associated tag strings */
   protected tags: string[] = [];
-
-  /** Options for Google Places autocomplete (Canada, geocode) */
-  protected options: NgxGpAutocompleteOptions = {
-    componentRestrictions: { country: ['CA'] },
-    types: ['geocode'],
-  };
 
   /** Reactive form group to handle household data */
   protected form = this.fb.group({
@@ -81,8 +73,14 @@ export class HouseholdDetail implements OnInit {
   protected id: string | null = null;
   protected isLoading = this._loading.visible;
 
-  /** List of people linked to the household */
-  protected peopleInHousehold: PERSONINHOUSEHOLDTYPE[] = [];
+  /** Options for Google Places autocomplete (Canada, geocode) */
+  protected options: NgxGpAutocompleteOptions = {
+    componentRestrictions: { country: ['CA'] },
+    types: ['geocode'],
+  };
+
+  /** Count of people linked to the household */
+  protected peopleInHouseholdCount = signal(0);
 
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
@@ -203,7 +201,9 @@ export class HouseholdDetail implements OnInit {
     try {
       this.household.set((await this.householdsSvc.getById(this.id)) as Households);
       await this.getTags();
-      this.peopleInHousehold = await this.personsSvc.getPeopleInHousehold(this.id);
+
+      const peopleCount = await this.householdsSvc.getPeopleCount(this.id);
+      this.peopleInHouseholdCount.set(peopleCount);
       this.refreshForm();
     } finally {
       end();

@@ -113,6 +113,15 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   }
 
   /**
+   * Retrieve the number of people associated with a household.
+   * @param id Household ID.
+   * @returns Promise resolving to the people count.
+   */
+  public getPeopleCount(id: string) {
+    return this.api.households.getPeopleCount.query(id);
+  }
+
+  /**
    * Update a household record.
    * @param id Household ID.
    * @param data Updated household data.

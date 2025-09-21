@@ -79,6 +79,15 @@ function getAllWithPeopleCount() {
 }
 
 /**
+ * Get the count of people in a specific household.
+ */
+function getPeopleCount() {
+  return authProcedure
+    .input(z.string())
+    .query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth));
+}
+
+/**
  * Get a household by its ID.
  */
 function getById() {
@@ -132,4 +141,5 @@ export const HouseholdsRouter = router({
   deleteMany: deleteMany(),
   getDistinctTags: getDistinctTags(),
   getAllWithPeopleCount: getAllWithPeopleCount(),
+  getPeopleCount: getPeopleCount(),
 });

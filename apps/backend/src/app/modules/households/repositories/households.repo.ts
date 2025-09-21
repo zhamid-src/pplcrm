@@ -194,6 +194,20 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   /**
+   * Count the number of persons linked to a specific household for a tenant.
+   */
+  public async getPeopleCount(input: { tenant_id: string; id: string }) {
+    const result = await this.getSelect()
+      .leftJoin('persons', 'persons.household_id', 'households.id')
+      .where('households.id', '=', input.id)
+      .where('households.tenant_id', '=', input.tenant_id)
+      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
+      .executeTakeFirst();
+
+    return Number((result as { count?: number } | undefined)?.count ?? 0);
+  }
+
+  /**
    * Get a list of all distinct tag names used in the household map table for a tenant.
    *
    * @param tenant_id - The tenant ID
