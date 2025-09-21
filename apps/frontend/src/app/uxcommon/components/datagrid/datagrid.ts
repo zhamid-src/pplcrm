@@ -635,7 +635,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
       config: this.config,
+      displayedCount: this.displayedCount(),
+      totalCount: this.totalCountAll(),
       getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
+      loadAllRowsForExport: () => this.fetchAllRowsForExport(),
     });
   }
   public doConfirmExport() {
@@ -1386,6 +1389,27 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       showError: (m: string) => this.alertSvc.showError(m),
       loadFailedMsg: this.config.messages.loadFailed,
     });
+  }
+
+  private async fetchAllRowsForExport(): Promise<Record<string, any>[]> {
+    const totalRows = this.totalCountAll();
+    const endRow = totalRows > 0 ? totalRows : Math.max(this.rows().length, this.pageSize());
+    const options = this.dataSvc.buildGetAllOptions({
+      searchStr: this.searchSvc.getFilterText(),
+      startRow: 0,
+      endRow,
+      tags: this.limitToTags(),
+      filterModel: this.buildFilterModel(),
+      sortState: this.sorting(),
+      sortCol: this.sortCol(),
+      sortDir: this.sortDir(),
+    });
+    const fetch = this.archiveMode()
+      ? this.gridSvc.getAllArchived.bind(this.gridSvc)
+      : this.gridSvc.getAll.bind(this.gridSvc);
+    const result = await fetch(options);
+    const rows = result?.rows ?? [];
+    return rows.map((row: any) => ({ ...row }));
   }
 
   // Persistence handled by GridStoreService
