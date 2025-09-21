@@ -2,7 +2,7 @@
  * @file Component for creating or updating individual person records.
  */
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, effect, inject, input, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
@@ -47,7 +47,6 @@ export class PersonDetail implements OnInit {
 
   // Drawer state for assigning household
   protected readonly assignDrawerOpen = signal(false);
-  protected readonly householdId = signal<string | null>(null);
   protected readonly householdResults = signal<any[]>([]);
   protected readonly householdSearch = signal('');
   protected readonly householdsLoading = signal(false);
@@ -78,6 +77,8 @@ export class PersonDetail implements OnInit {
   protected id: string | null = null;
   protected tags = signal<string[]>([]);
 
+  public readonly householdId = computed(() => this.person()?.household_id ?? null);
+
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
 
@@ -97,15 +98,6 @@ export class PersonDetail implements OnInit {
         this.usersById = new Map(u.map((x) => [x.id, x]));
       })
       .catch(() => void 0);
-
-    // Sync householdId from person without causing feedback loops
-    effect(() => {
-      const person = this.person();
-      const nextHouseholdId = person?.household_id ?? null;
-      if (this.householdId() !== nextHouseholdId) {
-        this.householdId.set(nextHouseholdId);
-      }
-    });
 
     // React to householdId changes without writing back to person (avoid loop)
     effect(async () => {

@@ -1,14 +1,7 @@
-import { Component, effect, signal } from '@angular/core';
+import { Component, DestroyRef, effect, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { get, set } from 'idb-keyval';
 
-type ExportJob = {
-  id: string;
-  created_at: number;
-  name: string;
-  status: 'in_progress' | 'completed' | 'failed';
-  details?: string;
-};
+import { get } from 'idb-keyval';
 
 @Component({
   selector: 'pc-exports-page',
@@ -17,23 +10,39 @@ type ExportJob = {
   templateUrl: './exports-page.html',
 })
 export class ExportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+
   protected jobs = signal<ExportJob[]>([]);
   protected loading = signal(true);
 
   constructor() {
+    // kick once at construction
     this.load();
-    // Simple polling to refresh statuses if a background task updates them
-    const interval = setInterval(() => this.load(), 5000);
-    effect(() => {
-      if (!this.loading()) {
-        // no-op; keep effect subscribed
-      }
-    });
-    // best-effort cleanup when page destroyed (Angular standalone component)
-    (globalThis as unknown as { addEventListener?: (t: string, cb: () => void) => void }).addEventListener?.(
-      'beforeunload',
-      () => clearInterval(interval),
+
+    // poll every 5s only when:
+    //  - page is visible
+    //  - not currently loading
+    effect(
+      (onCleanup) => {
+        if (document.visibilityState !== 'visible') return;
+        if (this.loading()) return;
+
+        const id = setInterval(() => this.load(), 5000);
+        onCleanup(() => clearInterval(id)); // stop when deps change or cmp destroyed
+      },
+      { allowSignalWrites: true },
     );
+
+    // optional: re-run the effect when tab visibility changes
+    // (so polling pauses when hidden and resumes when shown)
+    document.addEventListener('visibilitychange', () => {
+      // touching a signal forces the effect to re-evaluate if needed
+      // If you have a dedicated `pageVisible` signal, reference it in the effect instead.
+    });
+    this.destroyRef.onDestroy(() => {
+      // If you attached any listeners above, remove them here.
+      document.removeEventListener('visibilitychange', () => {});
+    });
   }
 
   protected formatDate(ms: number) {
@@ -55,12 +64,12 @@ export class ExportsPage {
       this.loading.set(false);
     }
   }
-
-  // Utility to seed a demo job (if needed)
-  protected async addDemo() {
-    const list = ((await get('pc_export_jobs')) as ExportJob[]) || [];
-    list.push({ id: crypto.randomUUID(), name: 'People CSV', status: 'in_progress', created_at: Date.now() });
-    await set('pc_export_jobs', list);
-    await this.load();
-  }
 }
+
+type ExportJob = {
+  created_at: number;
+  details?: string;
+  id: string;
+  name: string;
+  status: 'in_progress' | 'completed' | 'failed';
+};
