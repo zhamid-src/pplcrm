@@ -1,11 +1,9 @@
-import { Component, effect, inject, signal } from '@angular/core';
-import { NavigationEnd, Router } from '@angular/router';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 
 import { Icon } from '../icons/icon';
 import { ISidebarItem } from 'apps/frontend/src/app/layout/sidebar/sidebar-items';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { filter, map } from 'rxjs/operators';
 
 /**
  * Breadcrumb component for displaying and navigating
@@ -47,14 +45,15 @@ export class Breadcrumb {
    */
   private readonly sidebarSvc = inject(SidebarService);
 
-  // TODO: can we use the new currentNavigation?
-  private readonly navigationUrl = toSignal(
-    this.router.events.pipe(
-      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-      map((event) => event.urlAfterRedirects),
-    ),
-    { initialValue: this.router.url },
-  );
+  private readonly navigationUrl = computed(() => {
+    const navigation = this.router.currentNavigation();
+    if (navigation) {
+      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
+      return finalUrl.toString();
+    }
+
+    return this.router.url;
+  });
 
   private currentItem?: ISidebarItem;
   private favourite = signal(false);
