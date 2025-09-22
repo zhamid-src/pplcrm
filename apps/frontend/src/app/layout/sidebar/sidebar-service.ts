@@ -5,6 +5,9 @@ import { Injectable } from '@angular/core';
 
 import { ISidebarItem, SidebarItems } from './sidebar-items';
 
+const DRAWER_STATE_KEY = 'pc-drawerState';
+const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
+
 @Injectable({
   providedIn: 'root',
 })
@@ -17,9 +20,11 @@ export class SidebarService {
   private items = SidebarItems;
   private readonly collapsedSections = new Set<string>();
   private readonly initializedSections = new Set<string>();
+  private favourites = new Set<string>();
 
   constructor() {
     this.initializeCollapsedDefaults(this.items);
+    this.loadFavourites();
   }
 
   /**
@@ -43,6 +48,49 @@ export class SidebarService {
    */
   public getItems() {
     return this.items;
+  }
+
+  public findItemForUrl(url: string): ISidebarItem | undefined {
+    const normalizedUrl = this.normalizeRoute(url);
+    const flatItems = this.flattenItems(this.items).filter((item) => !!item.route);
+
+    return flatItems
+      .sort((a, b) => this.normalizeRoute(b.route!).length - this.normalizeRoute(a.route!).length)
+      .find((item) => this.matchesRoute(normalizedUrl, item.route!));
+  }
+
+  public isFavourite(route?: string) {
+    if (!route) {
+      return false;
+    }
+
+    return this.favourites.has(this.normalizeRoute(route));
+  }
+
+  public setFavourite(route: string, favourite: boolean) {
+    const normalizedRoute = this.normalizeRoute(route);
+
+    if (!normalizedRoute) {
+      return favourite;
+    }
+
+    if (favourite) {
+      this.favourites.add(normalizedRoute);
+    } else {
+      this.favourites.delete(normalizedRoute);
+    }
+
+    this.updateItemFavourite(normalizedRoute, favourite);
+    this.persistFavourites();
+    this.rebuildFavouritesSection();
+
+    return favourite;
+  }
+
+  public toggleFavourite(route: string) {
+    const next = !this.isFavourite(route);
+    this.setFavourite(route, next);
+    return next;
   }
 
   public isCollapsed(name: string) {
@@ -99,6 +147,7 @@ export class SidebarService {
   public setItems(items: ISidebarItem[]) {
     this.items = items;
     this.initializeCollapsedDefaults(items);
+    this.applyFavouritesToItems(items);
   }
 
   /**
@@ -135,7 +184,7 @@ export class SidebarService {
    * @returns The persisted drawer state.
    */
   private getState(): DrawerStates {
-    const state = localStorage.getItem('pc-drawerState');
+    const state = localStorage.getItem(DRAWER_STATE_KEY);
     return state === 'full' ? 'full' : 'half';
   }
 
@@ -147,7 +196,7 @@ export class SidebarService {
    */
   private setState(state: DrawerStates) {
     this.drawerState = state;
-    localStorage.setItem('pc-drawerState', this.drawerState);
+    localStorage.setItem(DRAWER_STATE_KEY, this.drawerState);
     return this.drawerState;
   }
 
@@ -173,6 +222,100 @@ export class SidebarService {
         this.walkItems(item.children, cb);
       }
     });
+  }
+
+  private loadFavourites() {
+    const raw = localStorage.getItem(SIDEBAR_FAVOURITES_KEY);
+
+    if (raw) {
+      try {
+        const stored = JSON.parse(raw) as string[];
+        this.favourites = new Set(stored.map((route) => this.normalizeRoute(route)).filter(Boolean));
+      } catch {
+        this.favourites.clear();
+      }
+    }
+
+    this.applyFavouritesToItems(this.items);
+  }
+
+  private persistFavourites() {
+    localStorage.setItem(SIDEBAR_FAVOURITES_KEY, JSON.stringify([...this.favourites]));
+  }
+
+  private applyFavouritesToItems(items: ISidebarItem[]) {
+    this.walkItems(items, (item) => {
+      if (!item.route) {
+        item.favourite = false;
+        return;
+      }
+
+      item.favourite = this.favourites.has(this.normalizeRoute(item.route));
+    });
+
+    this.rebuildFavouritesSection();
+  }
+
+  private updateItemFavourite(route: string, favourite: boolean) {
+    this.walkItems(this.items, (item) => {
+      if (item.route && this.normalizeRoute(item.route) === route) {
+        item.favourite = favourite;
+      }
+    });
+  }
+
+  private rebuildFavouritesSection() {
+    const favouritesSection = this.items.find(
+      (item) => item.type === 'subheading' && item.name === 'FAVOURITES'
+    );
+
+    if (!favouritesSection) {
+      return;
+    }
+
+    const favouriteRoutes = new Set(this.favourites);
+
+    const favouriteItems = this.flattenItems(this.items)
+      .filter((item) => item !== favouritesSection && item.parent !== favouritesSection)
+      .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
+      .map((item) => this.cloneForFavourite(item, favouritesSection));
+
+    favouritesSection.children = favouriteItems;
+    favouritesSection.hidden = favouriteItems.length === 0;
+  }
+
+  private cloneForFavourite(item: ISidebarItem, parent: ISidebarItem): ISidebarItem {
+    const { children, parent: _originalParent, ...rest } = item;
+
+    return {
+      ...rest,
+      parent,
+      children: undefined,
+      hidden: false,
+      type: 'item',
+      favourite: true,
+    };
+  }
+
+  private normalizeRoute(route: string) {
+    if (!route) {
+      return '';
+    }
+
+    const [pathWithHash] = route.split('?');
+    const path = pathWithHash.split('#')[0];
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
+  }
+
+  private matchesRoute(url: string, route: string) {
+    const normalizedRoute = this.normalizeRoute(route);
+
+    if (normalizedRoute === '/') {
+      return url === '/';
+    }
+
+    return url === normalizedRoute || url.startsWith(`${normalizedRoute}/`);
   }
 }
 

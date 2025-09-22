@@ -1,7 +1,11 @@
-import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, effect, inject, signal } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
 
+import { Icon } from '../icons/icon';
+import { ISidebarItem } from 'apps/frontend/src/app/layout/sidebar/sidebar-items';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs/operators';
 
 /**
  * Breadcrumb component for displaying and navigating
@@ -9,7 +13,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
  */
 @Component({
   selector: 'pc-breadcrumb',
-  imports: [],
+  imports: [Icon],
   template: `
     <div class="breadcrumbs mt-auto pl-2 text-sm font-light text-gray-500">
       <ul>
@@ -19,6 +23,15 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
             <span class="cursor-pointer" (click)="navigate(crumb)">{{ crumb }}</span>
           </li>
         }
+        <li>
+          <pc-icon
+            [name]="getIcon()"
+            [size]="4"
+            class="cursor-pointer"
+            [class.opacity-40]="!canToggleFavourite()"
+            (click)="toggleFavourite()"
+          ></pc-icon>
+        </li>
       </ul>
     </div>
   `,
@@ -34,16 +47,25 @@ export class Breadcrumb {
    */
   private readonly sidebarSvc = inject(SidebarService);
 
+  // TODO: can we use the new currentNavigation?
+  private readonly navigationUrl = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  private currentItem?: ISidebarItem;
+  private favourite = signal(false);
+
   /**
    * Array of current breadcrumb segments based on URL.
    */
   protected crumbs: string[] = [];
 
   constructor() {
-    // Subscribe to route changes and update breadcrumb segments accordingly.
-    this.router.events.subscribe(() => {
-      this.crumbs = this.router.url.split('/').slice(1);
-    });
+    effect(() => this.handleNavigationChange(this.navigationUrl()));
   }
 
   /**
@@ -58,5 +80,30 @@ export class Breadcrumb {
     if (route) {
       this.router.navigateByUrl(route);
     }
+  }
+
+  public toggleFavourite() {
+    if (!this.currentItem?.route) {
+      return;
+    }
+
+    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
+    this.favourite.set(next);
+    this.currentItem.favourite = next;
+  }
+
+  protected canToggleFavourite() {
+    return !!this.currentItem?.route;
+  }
+
+  protected getIcon() {
+    return this.favourite() ? 'star-filled' : 'star';
+  }
+
+  private handleNavigationChange(url: string) {
+    const cleanUrl = url.split('?')[0].split('#')[0];
+    this.crumbs = cleanUrl.split('/').slice(1).filter(Boolean);
+    this.currentItem = this.sidebarSvc.findItemForUrl(url);
+    this.favourite.set(!!this.currentItem?.favourite);
   }
 }
