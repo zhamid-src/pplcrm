@@ -23,6 +23,7 @@ export interface ISidebarItem {
   badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
   children?: ISidebarItem[];
   collapsed?: boolean;
+  favourite?: boolean;
 
   /**
    * Whether the component should be hidden or not
@@ -78,14 +79,9 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `Tasks`,
-    route: '/tasks',
-    icon: 'rectangle-stack',
-  },
-  {
-    name: `Board`,
-    route: '/board',
-    icon: 'view-kanban',
+    name: `FAVOURITES`,
+    type: 'subheading',
+    hidden: true,
   },
   {
     name: `PEOPLE`,
@@ -116,11 +112,6 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/newsletter',
         icon: 'megaphone',
       },
-      {
-        name: 'Map',
-        route: '/map',
-        icon: 'globe-americas',
-      },
     ],
   },
   {
@@ -129,14 +120,24 @@ export const SidebarItems: ISidebarItem[] = [
     collapsed: true,
     children: [
       {
-        name: 'Volunteers',
-        route: '/volunteers',
-        icon: 'volunteer',
-      },
-      {
         name: 'Teams',
         route: '/teams',
         icon: 'user-group',
+      },
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'rectangle-stack',
+      },
+      {
+        name: `Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
+      {
+        name: 'Volunteers',
+        route: '/volunteers',
+        icon: 'volunteer',
       },
       {
         name: 'Schedule',
