@@ -35,6 +35,27 @@ export const AddListObj = z.object({
   /** Optional explicit member IDs to include on create (people or household IDs based on object) */
   member_ids: z.array(z.string()).optional(),
 });
+
+/**
+ * Payload for inviting (creating) a user within a tenant.
+ */
+export const InviteAuthUserObj = z.object({
+  email: z.string().max(320).email(),
+  first_name: z.string().max(100),
+  last_name: z.string().max(100).nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+});
+
+/**
+ * Payload for updating user account attributes.
+ */
+export const UpdateAuthUserObj = z.object({
+  email: z.string().max(320).email().optional(),
+  first_name: z.string().max(100).optional(),
+  last_name: z.string().max(100).nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+  verified: z.boolean().optional(),
+});
 export const EmailCommentObj = z.object({
   id: z.string(),
   email_id: z.string(),
