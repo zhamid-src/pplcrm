@@ -1,7 +1,17 @@
 import * as bcrypt from 'bcrypt';
 
-import { IAuthKeyPayload, INow, IToken, signInInputType, signUpInputType } from '@common';
+import {
+  IAuthKeyPayload,
+  INow,
+  IToken,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+  signInInputType,
+  signUpInputType,
+} from '@common';
 
+import { randomBytes } from 'crypto';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import nodemailer from 'nodemailer';
@@ -16,12 +26,12 @@ import {
   ServerMisconfigError,
   UnauthorizedError,
 } from '../../errors/app-errors';
-import { AuthUsersRepo } from './repositories/authusers.repo';
+import { BaseController } from '../../lib/base.controller';
 import { QueryParams } from '../../lib/base.repo';
+import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
+import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
-import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { BaseController } from '../../lib/base.controller';
 import {
   AuthUsersType,
   GetOperandType,
@@ -68,6 +78,64 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
     }
+  }
+
+  public async getAllUsers(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const sanitizedOptions = options ? ({ ...options, columns: undefined } as any) : undefined;
+    const result = await this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+      options: sanitizedOptions,
+    });
+    return {
+      rows: result.rows.map((row) => this.sanitizeUser(row)),
+      count: result.count,
+    };
+  }
+
+  public async getUserById(auth: IAuthKeyPayload, id: string) {
+    const record = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
+    if (!record) throw new NotFoundError('User not found');
+    const authUser = record as AuthUsersType;
+    const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
+    return this.sanitizeUser({ ...authUser, profile });
+  }
+
+  public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
+    const email = input.email.toLowerCase();
+    await this.verifyUserDoesNotExist(email);
+
+    const password = await this.hashPassword(this.generateTempPassword());
+    const repo = this.getRepo();
+
+    const created = await repo.transaction().execute(async (trx) => {
+      const row = {
+        tenant_id: auth.tenant_id,
+        email,
+        password,
+        first_name: input.first_name,
+        last_name: input.last_name ?? null,
+        role: input.role ?? null,
+        verified: false,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'authusers', 'insert'>;
+      const user = await repo.add({ row }, trx);
+      if (!user) throw new InternalError('User creation failed');
+
+      const profileRow = {
+        id: user.id,
+        tenant_id: auth.tenant_id,
+        auth_id: user.id,
+        last_name: input.last_name ?? null,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'profiles', 'insert'>;
+      await this.profiles.add({ row: profileRow }, trx);
+
+      return user;
+    });
+
+    return this.sanitizeUser({ ...created, last_name: input.last_name });
   }
 
   /**
@@ -220,6 +288,64 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
+  public async updateUser(auth: IAuthKeyPayload, id: string, data: UpdateAuthUserType) {
+    const userId = String(id);
+    const existing = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
+    if (!existing) throw new NotFoundError('User not found');
+    const existingUser = existing as AuthUsersType;
+
+    const row: Record<string, any> = {};
+
+    if (data.email) {
+      const nextEmail = data.email.toLowerCase();
+      if (nextEmail !== existingUser.email.toLowerCase()) {
+        const other = await this.getRepo().getByEmail(nextEmail as any, { columns: ['id'] as any });
+        const otherUser = other as AuthUsersType | undefined;
+        if (otherUser && String(otherUser.id) !== userId) {
+          throw new ConflictError('Email already exists');
+        }
+        row['email'] = nextEmail as any;
+      }
+    }
+    if (data.first_name !== undefined) row['first_name'] = data.first_name as any;
+    if (data.last_name !== undefined) row['last_name'] = (data.last_name ?? null) as any;
+    if (data.role !== undefined) row['role'] = (data.role ?? null) as any;
+    if (data.verified !== undefined) row['verified'] = data.verified as any;
+    if (Object.keys(row).length > 0) {
+      row['updated_at'] = new Date() as any;
+      row['updatedby_id'] = auth.user_id as any;
+    }
+
+    let updated = existingUser;
+    if (Object.keys(row).length > 0) {
+      const result = await this.update({
+        tenant_id: auth.tenant_id,
+        id: userId,
+        row: row as OperationDataType<'authusers', 'update'>,
+      });
+      if (!result) throw new InternalError('Update failed');
+      updated = result as unknown as AuthUsersType;
+    }
+
+    await this.syncProfile(auth, userId, data);
+    const profile = (await this.profiles.getOneByAuthId(userId)) as Models['profiles'] | undefined;
+    return this.sanitizeUser({ ...updated, profile });
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
+    return false;
+  }
+
+  private coerceDate(value: unknown): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return new Date(value.getTime());
+    const date = new Date(value as string);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
   /**
    * Creates a new user profile.
    * @private
@@ -342,6 +468,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
+  private generateTempPassword(length = 18) {
+    return randomBytes(Math.max(12, Math.ceil(length / 2)))
+      .toString('base64url')
+      .slice(0, length);
+  }
+
   /**
    * Calculates the age (in milliseconds) of the password reset code.
    * @private
@@ -393,6 +525,47 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new InternalError('Something went wrong, please try again');
     }
     return hashedPassword;
+  }
+
+  private sanitizeUser(record: any) {
+    const lastName =
+      record.last_name ?? record.profile_last_name ?? record.effective_last_name ?? record.profile?.last_name ?? '';
+    return {
+      id: record.id != null ? String(record.id) : '',
+      email: record.email ?? '',
+      first_name: record.first_name ?? '',
+      last_name: lastName ?? '',
+      role: record.role != null ? String(record.role) : null,
+      verified: this.coerceBoolean(record.verified),
+      created_at: this.coerceDate(record.created_at),
+      updated_at: this.coerceDate(record.updated_at),
+    };
+  }
+
+  private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {
+    if (data.last_name === undefined) return;
+    const lastName = data.last_name ?? null;
+    const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
+    if (existingProfile) {
+      const profileId = existingProfile.id != null ? String(existingProfile.id) : authUserId;
+      const row = {
+        last_name: lastName,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      } as OperationDataType<'profiles', 'update'>;
+      await this.profiles.update({ tenant_id: auth.tenant_id as any, id: profileId as any, row });
+      return;
+    }
+
+    const insertRow = {
+      id: authUserId,
+      tenant_id: auth.tenant_id,
+      auth_id: authUserId,
+      last_name: lastName,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'profiles', 'insert'>;
+    await this.profiles.add({ row: insertRow });
   }
 
   /**

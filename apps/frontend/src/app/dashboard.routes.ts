@@ -142,6 +142,20 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/tasks/ui/task-detail').then((m) => m.TaskDetail),
   },
   {
+    path: 'users',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+      },
+    ],
+  },
+  {
     path: 'export',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
   },

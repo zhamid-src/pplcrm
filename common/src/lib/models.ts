@@ -25,6 +25,8 @@ import type {
   exportCsvInput,
   exportCsvResponse,
   sortModelItem,
+  InviteAuthUserObj,
+  UpdateAuthUserObj,
 } from './schema';
 
 /**
@@ -76,9 +78,13 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 
 export type AddListType = z.infer<typeof AddListObj>;
 
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
 export type ListsType = z.infer<typeof ListsObj>;
 
 export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
 
 export type AddTaskType = z.infer<typeof AddTaskObj>;
 export type TasksType = z.infer<typeof TasksObj>;

@@ -2,7 +2,7 @@
  * tRPC router defining authentication-related procedures such as
  * sign-up, sign-in, token renewal, and password reset flows.
  */
-import { signInInputObj, signUpInputObj } from '@common';
+import { InviteAuthUserObj, UpdateAuthUserObj, getAllOptions, signInInputObj, signUpInputObj } from '@common';
 
 import z from 'zod';
 
@@ -20,6 +20,13 @@ function currentUser() {
 }
 
 /**
+ * Count total auth users for the current tenant.
+ */
+function count() {
+  return authProcedure.query(wrapTrpc(({ ctx }) => controller.getCount(ctx.auth.tenant_id)));
+}
+
+/**
  * Retrieve all auth users for the current tenant.
  * Only minimal fields are returned.
  */
@@ -27,6 +34,15 @@ function getUsers() {
   return authProcedure.query(
     wrapTrpc(({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name'] })),
   );
+}
+
+/**
+ * Retrieve auth users with extended counts data.
+ */
+function getAllWithCounts() {
+  return authProcedure
+    .input(getAllOptions)
+    .query(wrapTrpc(({ input, ctx }) => controller.getAllUsers(ctx.auth, input)));
 }
 
 /**
@@ -54,6 +70,13 @@ function resetPassword() {
 }
 
 /**
+ * Retrieve a specific auth user by id.
+ */
+function getById() {
+  return authProcedure.input(z.string()).query(wrapTrpc(({ input, ctx }) => controller.getUserById(ctx.auth, input)));
+}
+
+/**
  * Send password reset email to user.
  *
  * @input An object containing the user’s `email`.
@@ -76,12 +99,30 @@ function signIn() {
 }
 
 /**
+ * Invite a new auth user for the tenant.
+ */
+function invite() {
+  return authProcedure
+    .input(InviteAuthUserObj)
+    .mutation(wrapTrpc(({ input, ctx }) => controller.inviteUser(ctx.auth, input)));
+}
+
+/**
  * Sign out the currently authenticated user.
  *
  * @returns A success confirmation.
  */
 function signOut() {
   return authProcedure.mutation(wrapTrpc(({ ctx }) => controller.signOut(ctx.auth)));
+}
+
+/**
+ * Update an existing auth user.
+ */
+function update() {
+  return authProcedure
+    .input(z.object({ id: z.string(), data: UpdateAuthUserObj }))
+    .mutation(wrapTrpc(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data)));
 }
 
 /**
@@ -100,13 +141,10 @@ const controller = new AuthController();
  * AuthRouter endpoints
  *
  * Provides procedures for:
- * - signUp
- * - signIn
- * - signOut
- * - currentUser
- * - resetPassword
- * - renewAuthToken
- * - sendPasswordResetEmail
+ * - signUp / signIn / signOut
+ * - currentUser / getUsers / getAllWithCounts
+ * - getById / invite / update / count
+ * - resetPassword / renewAuthToken / sendPasswordResetEmail
  */
 export const AuthRouter = router({
   signUp: signUp(),
@@ -114,6 +152,11 @@ export const AuthRouter = router({
   signOut: signOut(),
   currentUser: currentUser(),
   getUsers: getUsers(),
+  getAllWithCounts: getAllWithCounts(),
+  getById: getById(),
+  invite: invite(),
+  update: update(),
+  count: count(),
   resetPassword: resetPassword(),
   renewAuthToken: renewAuthToken(),
   sendPasswordResetEmail: sendPasswordResetEmail(),

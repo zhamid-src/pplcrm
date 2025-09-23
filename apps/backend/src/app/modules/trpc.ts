@@ -4,14 +4,19 @@
  */
 import { router } from '../../trpc';
 import { AuthRouter } from './auth/trpc.router';
+import { EmailsRouter } from './emails/trpc.router';
 import { HouseholdsRouter } from './households/trpc.router';
+import { ListsRouter } from './lists/trpc.router';
+import { NewslettersRouter } from './newsletters/trpc.router';
 import { PersonsRouter } from './persons/trpc.router';
 import { TagsRouter } from './tags/trpc.router';
-import { UserProfilesRouter } from './userprofiles/trpc.router';
-import { EmailsRouter } from './emails/trpc.router';
-import { ListsRouter } from './lists/trpc.router';
 import { TasksRouter } from './tasks/trpc.router';
-import { NewslettersRouter } from './newsletters/trpc.router';
+import { UserProfilesRouter } from './userprofiles/trpc.router';
+
+/**
+ * Inferred type representing the full structure of the tRPC API.
+ */
+export type TRPCRouter = typeof trpcRouter;
 
 /**
  * Registers and groups all tRPC routers for the application.
@@ -25,6 +30,7 @@ import { NewslettersRouter } from './newsletters/trpc.router';
  */
 export const trpcRouter = router({
   auth: AuthRouter,
+  authusers: AuthRouter,
   userProfiles: UserProfilesRouter,
   households: HouseholdsRouter,
   persons: PersonsRouter,
@@ -35,18 +41,21 @@ export const trpcRouter = router({
   newsletters: NewslettersRouter,
 });
 
-/**
- * Inferred type representing the full structure of the tRPC API.
- */
-export type TRPCRouter = typeof trpcRouter;
-
 // Re-export individual routers for convenience.
 export { AuthRouter } from './auth/trpc.router';
+
 export { HouseholdsRouter } from './households/trpc.router';
+
 export { PersonsRouter } from './persons/trpc.router';
+
 export { TagsRouter } from './tags/trpc.router';
+
 export { UserProfilesRouter } from './userprofiles/trpc.router';
+
 export { EmailsRouter } from './emails/trpc.router';
+
 export { ListsRouter } from './lists/trpc.router';
+
 export { TasksRouter } from './tasks/trpc.router';
+
 export { NewslettersRouter } from './newsletters/trpc.router';
