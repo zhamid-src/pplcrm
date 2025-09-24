@@ -50,8 +50,22 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
         ? await this.getArchivedTasks(auth, input?.options)
         : await this.getAllTasks(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      return this.buildCsvResponse(rows, input);
+      const response = this.buildCsvResponse(rows, input);
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: includeArchived ? 'tasks_archived' : 'tasks',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+          include_archived: includeArchived,
+        },
+      });
+      return response;
     }
-    return super.exportCsv(input);
+    return super.exportCsv(input, auth);
   }
 }

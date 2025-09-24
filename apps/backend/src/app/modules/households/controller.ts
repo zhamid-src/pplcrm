@@ -194,9 +194,22 @@ export class HouseholdsController extends BaseController<'households', Household
     if (auth) {
       const result = await this.getAllWithPeopleCount(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      return this.buildCsvResponse(rows, input);
+      const response = this.buildCsvResponse(rows, input);
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'households',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
     }
-    return super.exportCsv(input);
+    return super.exportCsv(input, auth);
   }
 
   /**

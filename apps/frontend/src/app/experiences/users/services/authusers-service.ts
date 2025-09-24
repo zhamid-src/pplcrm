@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import {
   ExportCsvInputType,
   ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
   InviteAuthUserType,
   UpdateAuthUserType,
   getAllOptionsType,
@@ -12,7 +14,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Injectable({ providedIn: 'root' })
 export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
   public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<any>)(row, {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
       meta: { skipErrorHandler: true },
     });
   }
@@ -42,7 +44,10 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal });
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: IAuthUserRecord[];
+      count: number;
+    }>;
   }
 
   public getAllArchived(_options?: getAllOptionsType) {
@@ -50,7 +55,7 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
   }
 
   public getById(id: string) {
-    return this.api.authusers.getById.query(id);
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
   }
 
   public getTags(_id: string) {
@@ -58,7 +63,7 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
   }
 
   public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data });
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
   }
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {

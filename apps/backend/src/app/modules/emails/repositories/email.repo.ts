@@ -191,6 +191,24 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
+  public async getAssignmentStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [
+        sql<number>`count(*)`.as('total'),
+        sql<number>`count(*) filter (where status = 'open')`.as('open'),
+        sql<number>`count(*) filter (where status = 'closed')`.as('closed'),
+      ])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('assigned_to', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number((row as any)?.total ?? 0),
+      open: Number((row as any)?.open ?? 0),
+      closed: Number((row as any)?.closed ?? 0),
+    };
+  }
+
   /**
    * Move emails to Trash folder and remember their original folder.
    */

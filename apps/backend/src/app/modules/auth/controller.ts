@@ -32,6 +32,8 @@ import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
+import { EmailRepo } from '../emails/repositories/email.repo';
+import { PersonsRepo } from '../persons/repositories/persons.repo';
 import {
   AuthUsersType,
   GetOperandType,
@@ -49,6 +51,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private profiles: UserProfiles = new UserProfiles();
   private sessions: SessionsRepo = new SessionsRepo();
   private tenants: TenantsRepo = new TenantsRepo();
+  private emailsRepo: EmailRepo = new EmailRepo();
+  private personsRepo: PersonsRepo = new PersonsRepo();
 
   constructor() {
     super(new AuthUsersRepo());
@@ -97,7 +101,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (!record) throw new NotFoundError('User not found');
     const authUser = record as AuthUsersType;
     const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
-    return this.sanitizeUser({ ...authUser, profile });
+    const stats = await this.buildUserStats(auth, String(authUser.id));
+    const sanitized = this.sanitizeUser({ ...authUser, profile });
+    return { ...sanitized, stats };
   }
 
   public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
@@ -540,6 +546,44 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       created_at: this.coerceDate(record.created_at),
       updated_at: this.coerceDate(record.updated_at),
     };
+  }
+
+  private async buildUserStats(auth: IAuthKeyPayload, userId: string) {
+    const defaults = {
+      emails_assigned: { total: 0, open: 0, closed: 0 },
+      contacts_added: { total: 0, last_created_at: null as Date | null },
+      files_imported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+      files_exported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+    };
+
+    try {
+      const [emails, contacts, activity] = await Promise.all([
+        this.emailsRepo.getAssignmentStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.personsRepo.getCreatedStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.userActivity.getStats({ tenant_id: auth.tenant_id, user_id: userId }),
+      ]);
+
+      const importActivity = activity['import'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+      const exportActivity = activity['export'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+
+      return {
+        emails_assigned: emails,
+        contacts_added: contacts,
+        files_imported: {
+          count: importActivity.count ?? 0,
+          total_rows: importActivity.total_quantity ?? 0,
+          last_activity_at: importActivity.last_activity_at ?? null,
+        },
+        files_exported: {
+          count: exportActivity.count ?? 0,
+          total_rows: exportActivity.total_quantity ?? 0,
+          last_activity_at: exportActivity.last_activity_at ?? null,
+        },
+      };
+    } catch (err) {
+      console.error('Failed to build user stats', err);
+      return defaults;
+    }
   }
 
   private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {

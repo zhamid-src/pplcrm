@@ -153,6 +153,10 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
       },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-detail').then((m) => m.UserDetailComponent),
+      },
     ],
   },
   {

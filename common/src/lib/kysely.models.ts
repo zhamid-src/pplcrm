@@ -59,6 +59,7 @@ export interface Models {
   task_comments: TaskComments;
   task_subtasks: TaskSubtasks;
   task_attachments: TaskAttachments;
+  user_activity: UserActivity;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -396,6 +397,14 @@ interface EmailTrash extends RecordType {
   email_id: string;
   from_folder_id: string;
   trashed_at: Timestamp;
+}
+
+interface UserActivity extends RecordType {
+  user_id: string;
+  activity: string;
+  entity: string;
+  quantity: number;
+  metadata: Json | null;
 }
 
 export interface TaskComments extends RecordType {

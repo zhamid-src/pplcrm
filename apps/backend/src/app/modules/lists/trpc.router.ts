@@ -60,7 +60,7 @@ function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => lists.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }));
+    .mutation(({ input, ctx }) => lists.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
 }
 
 const lists = new ListsController();

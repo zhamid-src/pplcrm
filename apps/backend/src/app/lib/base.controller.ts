@@ -1,4 +1,4 @@
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
 
 import { OperandValueExpressionOrList, ReferenceExpression, Transaction } from 'kysely';
 
@@ -11,6 +11,7 @@ import {
 } from '../../../../../common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
+import { UserActivityRepo } from './user-activity.repo';
 
 /**
  * Abstract base controller for all domain entities (e.g. persons, households, tags).
@@ -34,6 +35,8 @@ import { rowsToCsv } from './csv';
  * ```
  */
 export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
+  protected readonly userActivity = new UserActivityRepo();
+
   constructor(private repo: R) {}
 
   /**
@@ -175,12 +178,37 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return this.repo;
   }
 
-  public async exportCsv(input: ExportCsvInputType & { tenant_id: string }): Promise<ExportCsvResponseType> {
+  public async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
     const tenant = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     const options = (input?.options ?? {}) as QueryParams<T>;
     const rows = await this.repo.getAll({ tenant_id: tenant, options });
     const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
-    return this.buildCsvResponse(records, input);
+    const response = this.buildCsvResponse(records, input);
+
+    if (auth) {
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'export',
+          entity: String(this.repo.getTableName()),
+          quantity: response.rowCount,
+          metadata: {
+            requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+            returned_columns: response.columns.slice(0, 12),
+            file_name: response.fileName,
+          },
+        });
+      } catch (err) {
+        // Logging failures should never break export flow; swallow silently
+        console.error('Failed to log export activity', err);
+      }
+    }
+
+    return response;
   }
 
   protected buildCsvResponse(
