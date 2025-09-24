@@ -1,32 +1,20 @@
 /**
  * @file Component handling comments for an email.
  */
-import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ViewChild,
-  computed,
-  effect,
-  inject,
-  input,
-  signal,
-  untracked,
-} from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { CommonModule } from "@angular/common";
+import { ChangeDetectionStrategy, Component, ViewChild, computed, effect, inject, input, signal, untracked } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import type { IAuthUser } from "@common";
+import { Icon } from "@uxcommon/components/icons/icon";
+import { TimeAgoPipe } from "@uxcommon/pipes/timeago.pipe";
 
- 
-
-import { AuthService } from '../../../../auth/auth-service';
-import { MentionController, userDisplay } from '../../../../uxcommon/mentions/mention-controller';
-import { MentionifyPipe } from '../../../../uxcommon/pipes/mention.pipe';
-import { SanitizeHtmlPipe } from '../../../../uxcommon/pipes/sanitize-html.pipe';
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailCommentType, EmailType } from 'common/src/lib/models';
+import { AuthService } from "../../../../auth/auth-service";
+import { ConfirmDialogService } from "../../../../services/shared-dialog.service";
+import { MentionController, userDisplay } from "../../../../uxcommon/mentions/mention-controller";
+import { MentionifyPipe } from "../../../../uxcommon/pipes/mention.pipe";
+import { SanitizeHtmlPipe } from "../../../../uxcommon/pipes/sanitize-html.pipe";
+import { EmailsStore } from "../../services/store/emailstore";
+import type { EmailCommentType, EmailType } from "common/src/lib/models";
 
 @Component({
   selector: 'pc-email-comments',
@@ -77,8 +65,6 @@ export class EmailComments {
 
   /** New comment input */
   public newComment = '';
-
-  /** Optional for *ngFor trackBy when not using new control flow */
   public trackByComment = (_: number, c: Partial<EmailCommentType>) => (c as any).id ?? _;
 
   // expose util for templates
@@ -185,15 +171,10 @@ export class EmailComments {
     }
   }
 
-  protected onComposerKeydown(ev: KeyboardEvent) {
-    // Submit on Cmd/Ctrl+Enter
-    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      this.addComment();
-      return;
-    }
-    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
+  protected onComposerClick(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    const caret = el.selectionStart ?? 0;
+    this.mc.updateFromInput(this.newComment, caret);
   }
 
   // ===== Mention autocomplete handlers (textarea) =====
@@ -203,10 +184,16 @@ export class EmailComments {
     const caret = el.selectionStart ?? this.newComment.length;
     this.mc.updateFromInput(this.newComment, caret);
   }
-  protected onComposerClick(ev: Event) {
-    const el = ev.target as HTMLTextAreaElement;
-    const caret = el.selectionStart ?? 0;
-    this.mc.updateFromInput(this.newComment, caret);
+
+  protected onComposerKeydown(ev: KeyboardEvent) {
+    // Submit on Cmd/Ctrl+Enter
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.addComment();
+      return;
+    }
+    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
   }
 
   protected selectMention(u: IAuthUser, ev?: Event) {

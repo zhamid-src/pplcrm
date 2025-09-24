@@ -21,7 +21,6 @@ export class EmailFolderList implements OnInit {
   /** App store */
   protected readonly store = inject(EmailsStore);
 
-  /** trackBy for *ngFor */
   protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
 
   /** Emits selected folder to parent component */
