@@ -70,8 +70,8 @@ import { AuthUsersService } from '../services/authusers-service';
           />
         </div>
 
-        if (error()) {
-        <p class="text-sm text-danger">{{ error() }}</p>
+        @if (error()) {
+          <p class="text-sm text-danger">{{ error() }}</p>
         }
 
         <div class="flex gap-3 float-right">
