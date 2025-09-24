@@ -27,7 +27,9 @@ import { AuthUsersService } from '../services/authusers-service';
             formControlName="email"
             autocomplete="email"
           />
-          <p *ngIf="isInvalid('email')" class="text-sm text-danger">Please enter a valid email address.</p>
+          @if (isInvalid('email')) {
+            <p class="text-sm text-danger">Please enter a valid email address.</p>
+          }
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
@@ -40,7 +42,9 @@ import { AuthUsersService } from '../services/authusers-service';
               formControlName="first_name"
               autocomplete="given-name"
             />
-            <p *ngIf="isInvalid('first_name')" class="text-sm text-danger">First name is required.</p>
+            @if (isInvalid('first_name')) {
+              <p class="text-sm text-danger">First name is required.</p>
+            }
           </div>
 
           <div class="space-y-1">
@@ -66,7 +70,9 @@ import { AuthUsersService } from '../services/authusers-service';
           />
         </div>
 
-        <p *ngIf="error()" class="text-sm text-danger">{{ error() }}</p>
+        if (error()) {
+        <p class="text-sm text-danger">{{ error() }}</p>
+        }
 
         <div class="flex gap-3 float-right">
           <button
