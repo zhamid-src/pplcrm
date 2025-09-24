@@ -1,17 +1,21 @@
-import { AddTeamType, type IAuthKeyPayload, UpdateTeamType, getAllOptionsType } from "@common";
+import { AddTeamType, type IAuthKeyPayload, UpdateTeamType, getAllOptionsType } from '@common';
 
-import type { Transaction } from "kysely";
+import type { Transaction } from 'kysely';
 
-import { BadRequestError, NotFoundError } from "../../errors/app-errors";
-import { BaseController } from "../../lib/base.controller";
-import { PersonsRepo } from "../persons/repositories/persons.repo";
-import { MapTeamsPersonsRepo } from "./repositories/map-teams-persons.repo";
-import { TeamsRepo } from "./repositories/teams.repo";
-import { Models, OperationDataType } from "common/src/lib/kysely.models";
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../persons/repositories/persons.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
+import { TeamsRepo } from './repositories/teams.repo';
+import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 
 export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly mapRepo = new MapTeamsPersonsRepo();
   private readonly personsRepo = new PersonsRepo();
+  private readonly personsTagRepo = new MapPersonsTagRepo();
+  private readonly tagsRepo = new TagsRepo();
   private readonly volunteerTag = 'volunteer';
 
   constructor() {
@@ -22,6 +26,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const repo = this.getRepo();
     return repo.transaction().execute(async (trx) => {
       const volunteerIds = this.normalizeVolunteerIds(input.volunteer_ids, input.team_captain_id);
+      await this.ensureVolunteerTag(auth.tenant_id, volunteerIds, auth.user_id, trx);
       const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds, trx);
       if (volunteers.length !== volunteerIds.length) {
         throw new BadRequestError('Volunteers must have the Volunteer tag');
@@ -78,6 +83,17 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 
   public getAllTeams(tenant: string, options?: getAllOptionsType) {
     return this.getRepo().getAllWithCounts({ tenant_id: tenant, options: options as any });
+  }
+
+  public async getTeamsForVolunteer(auth: IAuthKeyPayload, personId: string) {
+    const rows = await this.mapRepo.getTeamsForPerson({ tenant_id: auth.tenant_id, person_id: personId });
+    return rows
+      .filter((row) => row.team_id)
+      .map((row) => ({
+        id: row.team_id,
+        name: row.team_name,
+        is_captain: row.is_captain,
+      }));
   }
 
   public async getById(auth: IAuthKeyPayload, id: string) {
@@ -143,6 +159,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 
       volunteerIds = this.normalizeVolunteerIds(volunteerIds, targetCaptainId ?? null);
 
+      await this.ensureVolunteerTag(auth.tenant_id, volunteerIds, auth.user_id, trx);
       const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds, trx);
       if (volunteers.length !== volunteerIds.length) {
         throw new BadRequestError('Volunteers must have the Volunteer tag');
@@ -165,7 +182,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         );
       }
 
-      const captainName = targetCaptainId ? this.resolveCaptainName(result, volunteers, targetCaptainId) : undefined;
+      const captainName = this.resolveCaptainName(result, volunteers, targetCaptainId);
 
       return {
         ...this.sanitizeTeam(result, captainName ?? undefined),
@@ -199,12 +216,64 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     return Array.from(set);
   }
 
-  private resolveCaptainName(record: any, volunteers: Array<{ id: string; first_name: string; last_name: string }>, fallbackId?: string | null) {
-    const captainId = fallbackId !== undefined ? (fallbackId ? String(fallbackId) : null) : record.team_captain_id != null ? String(record.team_captain_id) : null;
+  private async ensureVolunteerTag(
+    tenant_id: string,
+    personIds: string[],
+    user_id: string,
+    trx?: Transaction<Models>,
+  ) {
+    const ids = Array.from(new Set(personIds.filter(Boolean)));
+    if (!ids.length) return;
+
+    const tag = await this.tagsRepo.addOrGet(
+      {
+        row: {
+          tenant_id,
+          name: this.volunteerTag,
+          description: null,
+          deletable: false,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        } as OperationDataType<'tags', 'insert'>,
+        onConflictColumn: 'name',
+      },
+      trx,
+    );
+
+    if (!tag?.id) return;
+    const tagId = String(tag.id);
+
+    for (const personId of ids) {
+      const existing = await this.personsTagRepo.getId({ tenant_id, person_id: personId, tag_id: tagId }, trx);
+      if (existing) continue;
+      const row = {
+        tenant_id,
+        person_id: personId,
+        tag_id: tagId,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      } as OperationDataType<'map_peoples_tags', 'insert'>;
+      await this.personsTagRepo.add({ row }, trx);
+    }
+  }
+
+  private resolveCaptainName(
+    record: any,
+    volunteers: Array<{ id: string; first_name: string; last_name: string }>,
+    fallbackId?: string | null,
+  ) {
+    const captainId = fallbackId !== undefined
+      ? fallbackId
+        ? String(fallbackId)
+        : null
+      : record?.team_captain_id != null
+        ? String(record.team_captain_id)
+        : null;
     if (!captainId) return null;
     const captain = volunteers.find((v) => v.id === captainId);
     if (!captain) return null;
-    return `${captain.first_name ?? ''} ${captain.last_name ?? ''}`.trim();
+    const full = `${captain.first_name ?? ''} ${captain.last_name ?? ''}`.trim();
+    return full || null;
   }
 
   private sanitizeTeam(record: any, captainName?: string | null) {

@@ -10,6 +10,8 @@ import { TagsRepo } from '../tags/repositories/tags.repo';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
+import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
+import { TeamsRepo } from '../teams/repositories/teams.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
@@ -20,6 +22,8 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapListsPersonsRepo = new MapListsPersonsRepo();
   private settingsController = new SettingsController();
   private tagsRepo = new TagsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+  private teamsRepo = new TeamsRepo();
 
   constructor() {
     super(new PersonsRepo());
@@ -114,6 +118,41 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         await this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
       }
     }
+
+    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
+    if (!isVolunteerTag) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+    });
+
+    if (!teams.length) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
+
+    for (const team of teams) {
+      if (team.is_captain && team.team_id) {
+        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
+      }
+    }
+
+    const removedTeams = teams
+      .filter((team) => team.team_id)
+      .map((team) => ({
+        id: team.team_id,
+        name: team.team_name ?? '',
+        was_captain: team.is_captain,
+      }));
+
+    return {
+      removed_team_ids: removedTeams.map((team) => team.id),
+      removed_teams: removedTeams,
+    };
   }
 
   /**

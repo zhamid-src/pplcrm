@@ -22,8 +22,8 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
    * @param input - An object containing tenant_id, person_id, and tag_id.
    * @returns The ID of the matching mapping entry, or undefined if not found.
    */
-  public async getId(input: { tenant_id: string; person_id: string; tag_id: string }) {
-    const payload = await this.getSelect()
+  public async getId(input: { tenant_id: string; person_id: string; tag_id: string }, trx?: Transaction<Models>) {
+    const payload = await this.getSelect(trx)
       .select('id')
       .where('person_id', '=', input.person_id)
       .where('tag_id', '=', input.tag_id)

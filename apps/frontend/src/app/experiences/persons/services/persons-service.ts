@@ -4,9 +4,21 @@
  * through type-safe tRPC communication with the backend.
  */
 import { Injectable } from '@angular/core';
-import { ExportCsvInputType, ExportCsvResponseType, PERSONINHOUSEHOLDTYPE, UpdatePersonsType, getAllOptionsType } from '@common';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
+  getAllOptionsType,
+} from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+export interface DetachTagResult {
+  removed_team_ids?: string[];
+  removed_teams?: Array<{ id: string; name: string; was_captain: boolean }>;
+  [key: string]: unknown;
+}
 
 /**
  * Service for comprehensive person record management in the CRM system.
@@ -122,7 +134,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param tag_name - Tag to detach
    */
   public detachTag(id: string, tag_name: string) {
-    return this.api.persons.detachTag.mutate({ id: id, tag_name });
+    return this.api.persons.detachTag.mutate({ id, tag_name }) as Promise<DetachTagResult>;
   }
 
   /**

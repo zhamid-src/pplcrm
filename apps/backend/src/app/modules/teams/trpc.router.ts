@@ -38,10 +38,17 @@ function remove() {
     .mutation(wrapTrpc(({ ctx, input }) => controller.deleteTeam(ctx.auth, input)));
 }
 
+function getForVolunteer() {
+  return authProcedure
+    .input(z.string())
+    .query(wrapTrpc(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input)));
+}
+
 export const TeamsRouter = router({
   getAll: getAll(),
   getById: getById(),
   add: add(),
   update: update(),
   delete: remove(),
+  getForVolunteer: getForVolunteer(),
 });

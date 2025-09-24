@@ -18,6 +18,7 @@ import { ColumnType } from 'kysely';
 import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
+import { TeamsService } from '../../teams/services/teams-service';
 import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
@@ -37,6 +38,7 @@ export class PersonDetail implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
+  private readonly teamsSvc = inject(TeamsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -284,9 +286,57 @@ export class PersonDetail implements OnInit {
   }
 
   /** Detaches a tag from the person */
-  protected tagRemoved(tag: string) {
+  protected async tagRemoved(tag: string) {
     if (!this.id) return;
-    void this.personsSvc.detachTag(this.id, tag);
+
+    const normalized = tag.trim().toLowerCase();
+    const restoreTag = () =>
+      this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
+
+    try {
+      if (normalized === 'volunteer') {
+        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
+        try {
+          teams = await this.teamsSvc.getTeamsForVolunteer(this.id);
+        } catch (err) {
+          console.error('Failed to load teams for volunteer tag removal', err);
+        }
+
+        if (teams.length) {
+          const details = teams
+            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
+            .join('\n');
+          const confirmed = await this.confirmDlg.confirm({
+            title: 'Remove volunteer tag?',
+            message:
+              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
+              details +
+              '\n\nDo you want to continue?',
+            confirmText: 'Remove tag',
+            cancelText: 'Keep tag',
+            variant: 'warning',
+          });
+          if (!confirmed) {
+            restoreTag();
+            return;
+          }
+        }
+
+        const result = await this.personsSvc.detachTag(this.id, tag);
+        await this.updateTags();
+        if (result?.removed_teams && result.removed_teams.length > 0) {
+          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
+          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
+        }
+        return;
+      }
+
+      await this.personsSvc.detachTag(this.id, tag);
+      await this.updateTags();
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+      restoreTag();
+    }
   }
 
   /**

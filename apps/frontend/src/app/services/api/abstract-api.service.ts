@@ -98,7 +98,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param tag_name - The name of the tag to detach
    * @returns Promise resolving to true if detachment was successful, never if operation fails
    */
-  public abstract detachTag(id: string, tag_name: string): Promise<never | boolean>;
+  public abstract detachTag(id: string, tag_name: string): Promise<boolean | Record<string, unknown>>;
 
   /**
    * Retrieves all records from the database with optional filtering and pagination.
