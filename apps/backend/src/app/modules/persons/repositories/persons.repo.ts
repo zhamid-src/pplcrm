@@ -21,6 +21,42 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     super('persons');
   }
 
+  public async getByIds(
+    input: { tenant_id: string; ids: string[]; tags?: string[] },
+    trx?: Transaction<Models>,
+  ) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
+
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
+
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags as any);
+    }
+
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows as any[]) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
+    }
+    return Array.from(map.values());
+  }
+
   public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
     const row = await this.getSelect()
       .select(() => [

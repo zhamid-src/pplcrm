@@ -39,6 +39,8 @@ export interface Models {
   lists: Lists;
   map_lists_persons: MapListsPersons;
   map_lists_households: MapListsHouseholds;
+  teams: Teams;
+  map_teams_persons: MapTeamsPersons;
   tasks: Tasks;
   persons: Persons;
   profiles: Profiles;
@@ -210,6 +212,17 @@ export interface MapPeoplesTags extends RecordType {
 interface MapRolesUsers extends RecordType {
   role_id: string;
   user_id: string;
+}
+
+interface Teams extends RecordType {
+  name: string;
+  description: string | null;
+  team_captain_id: string | null;
+}
+
+interface MapTeamsPersons extends RecordType {
+  team_id: string;
+  person_id: string;
 }
 
 export interface MapListsPersons extends RecordType {

@@ -142,6 +142,26 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/tasks/ui/task-detail').then((m) => m.TaskDetail),
   },
   {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-detail').then((m) => m.TeamDetailComponent),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-detail').then((m) => m.TeamDetailComponent),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+  {
     path: 'users',
     children: [
       {

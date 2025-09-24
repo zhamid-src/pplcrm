@@ -12,6 +12,7 @@ import { PersonsRouter } from './persons/trpc.router';
 import { TagsRouter } from './tags/trpc.router';
 import { TasksRouter } from './tasks/trpc.router';
 import { UserProfilesRouter } from './userprofiles/trpc.router';
+import { TeamsRouter } from './teams/trpc.router';
 
 /**
  * Inferred type representing the full structure of the tRPC API.
@@ -39,6 +40,7 @@ export const trpcRouter = router({
   tasks: TasksRouter,
   emails: EmailsRouter,
   newsletters: NewslettersRouter,
+  teams: TeamsRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -59,3 +61,5 @@ export { ListsRouter } from './lists/trpc.router';
 export { TasksRouter } from './tasks/trpc.router';
 
 export { NewslettersRouter } from './newsletters/trpc.router';
+
+export { TeamsRouter } from './teams/trpc.router';

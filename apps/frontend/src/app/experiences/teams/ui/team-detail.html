@@ -1,0 +1,123 @@
+@if (!loading()) {
+<section class="m-4 space-y-6">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex items-center gap-3">
+      <button class="btn btn-ghost btn-sm" type="button" (click)="goBack()">
+        <pc-icon name="arrow-left" class="text-base-content" [size]="4"></pc-icon>
+        Back
+      </button>
+      <div class="divider divider-horizontal hidden sm:block"></div>
+      <div>
+        <h1 class="text-2xl font-semibold">
+          @if (isNew()) {
+            New Team
+          } @else {
+            {{ detail()?.name || 'Team' }}
+          }
+        </h1>
+        <p class="text-sm text-base-content/70">Teams group volunteers for easier coordination.</p>
+      </div>
+    </div>
+    @if (!isNew() && detail()) {
+      <button class="btn btn-error btn-sm" type="button" (click)="deleteTeam()" [disabled]="saving()">
+        Delete Team
+      </button>
+    }
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-error">
+      <span>{{ error() }}</span>
+    </div>
+  }
+
+  <form class="grid gap-6" [formGroup]="form" (ngSubmit)="save()">
+    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="team-name">Team Name</label>
+          <input id="team-name" type="text" class="input input-bordered w-full" formControlName="name" placeholder="Community Outreach" />
+          @if (form.controls.name.invalid && (form.controls.name.dirty || form.controls.name.touched)) {
+            <p class="text-sm text-error">Team name is required.</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="team-captain">Team Captain</label>
+          <select id="team-captain" class="select select-bordered w-full" formControlName="team_captain_id">
+            <option value="">No captain</option>
+            @for (person of people(); track person.id) {
+              <option [value]="person.id">{{ person.label }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-base-content/80" for="team-description">Description</label>
+        <textarea
+          id="team-description"
+          rows="3"
+          class="textarea textarea-bordered w-full"
+          placeholder="Describe this team's focus"
+          formControlName="description"
+        ></textarea>
+      </div>
+    </section>
+
+    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">Volunteers</h2>
+          <p class="text-sm text-base-content/70">Select volunteers who belong to this team.</p>
+        </div>
+        <div class="text-sm text-base-content/60">
+          Captain: {{ captainLabel(form.controls.team_captain_id.value || null) }}
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
+          <select id="volunteer-select" class="select select-bordered h-40 w-full" formControlName="volunteer_ids" multiple>
+            @for (person of people(); track person.id) {
+              <option [value]="person.id">{{ person.label }}</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (volunteers().length === 0) {
+              <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            } @else {
+              <ul class="divide-y divide-base-200">
+                @for (volunteer of volunteers(); track volunteer.id) {
+                  <li class="flex items-center justify-between p-3 text-sm">
+                    <div>
+                      <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                      @if (volunteer.email) {
+                        <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                      }
+                    </div>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="flex justify-end gap-3">
+      <button type="button" class="btn" (click)="goBack()">Cancel</button>
+      <button type="submit" class="btn btn-primary" [disabled]="form.invalid || saving()">
+        {{ saving() ? 'Saving…' : isNew() ? 'Create Team' : 'Save Changes' }}
+      </button>
+    </div>
+  </form>
+</section>
+}
+@else {
+  <div class="p-6 text-sm text-base-content/70">Loading team…</div>
+}

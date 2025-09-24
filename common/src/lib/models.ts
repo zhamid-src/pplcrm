@@ -5,6 +5,7 @@ import type {
   AddListObj,
   AddMarketingEmailObj,
   AddTaskObj,
+  AddTeamObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
@@ -20,6 +21,7 @@ import type {
   UpdateMarketingEmailObj,
   UpdateListObj,
   UpdateTaskObj,
+  UpdateTeamObj,
   TasksObj,
   getAllOptions,
   exportCsvInput,
@@ -78,11 +80,15 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 
 export type AddListType = z.infer<typeof AddListObj>;
 
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
 export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
 
 export type ListsType = z.infer<typeof ListsObj>;
 
 export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
 
 export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
 
