@@ -1,4 +1,13 @@
-export type { IAuthKeyPayload, IAuthUser, IToken, signInInputType, signUpInputType } from './lib/auth';
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
 
 export { signInInputObj, signUpInputObj } from './lib/auth';
 

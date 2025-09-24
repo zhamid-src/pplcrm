@@ -83,7 +83,7 @@ function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => tags.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }));
+    .mutation(({ input, ctx }) => tags.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
 }
 
 const tags = new TagsController();

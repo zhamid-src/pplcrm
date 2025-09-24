@@ -381,6 +381,20 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       });
 
     const personsAfter = await this.getRepo().count(auth.tenant_id);
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'import',
+      entity: 'persons',
+      quantity: results.inserted,
+      metadata: {
+        rows_received: input.rows.length,
+        tags_applied: tags.slice(0, 10),
+        auto_tag: autoTag,
+        households_created: results.households_created,
+        errors: results.errors,
+      },
+    });
     return { ...results, tag: autoTag, tenant_id: auth.tenant_id, campaign_id, persons_total_after: personsAfter, persons_total_before: personsBefore } as any;
   }
 
@@ -544,8 +558,21 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     if (auth) {
       const result = await this.getAllWithAddress(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      return this.buildCsvResponse(rows, input);
+      const response = this.buildCsvResponse(rows, input);
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'persons',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
     }
-    return super.exportCsv(input);
+    return super.exportCsv(input, auth);
   }
 }

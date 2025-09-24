@@ -46,6 +46,40 @@ export interface IAuthUser {
   id: string;
 }
 
+export interface IUserStatsSnapshot {
+  emails_assigned: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  contacts_added: {
+    total: number;
+    last_created_at: Date | null;
+  };
+  files_imported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+  files_exported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+}
+
+export interface IAuthUserRecord extends IAuthUser {
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  created_at: Date | null;
+  updated_at: Date | null;
+}
+
+export interface IAuthUserDetail extends IAuthUserRecord {
+  stats: IUserStatsSnapshot;
+}
+
 /**
  * The set of auth token and refresh token that are typically used
  * to refresh the authentication token. The given auth token is

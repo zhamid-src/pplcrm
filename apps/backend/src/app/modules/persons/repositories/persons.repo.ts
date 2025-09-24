@@ -21,6 +21,22 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     super('persons');
   }
 
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [
+        sql<number>`count(*)`.as('total'),
+        sql<Date>`max(created_at)`.as('last_created_at'),
+      ])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number((row as any)?.total ?? 0),
+      last_created_at: (row as any)?.last_created_at ? new Date((row as any).last_created_at) : null,
+    };
+  }
+
   /**
    * Create a new blank household and reassign the person to it.
    * Returns the new household_id.

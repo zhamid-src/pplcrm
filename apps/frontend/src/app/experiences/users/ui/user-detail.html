@@ -1,0 +1,133 @@
+@if (loading()) {
+<div class="p-6 text-sm text-base-content/70">Loading user…</div>
+} @else {
+<section class="m-4 space-y-6">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex items-center gap-3">
+      <button class="btn btn-ghost btn-sm" type="button" (click)="goBack()">
+        <pc-icon name="arrow-left" class="text-base-content" [size]="4"></pc-icon>
+        Back
+      </button>
+      <div class="divider divider-horizontal hidden sm:block"></div>
+      <div>
+        <h1 class="text-2xl font-semibold">{{ displayName() }}</h1>
+        <p class="text-sm text-base-content/70">{{ detail()?.email }}</p>
+      </div>
+    </div>
+  </div>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Profile</h2>
+    <form class="mt-4 space-y-4" [formGroup]="form" (ngSubmit)="save()">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-1">
+          <label for="email" class="text-sm font-medium text-base-content/80">Email</label>
+          <input
+            id="email"
+            type="email"
+            class="input input-bordered w-full"
+            formControlName="email"
+            autocomplete="email"
+          />
+          @if (controls.email.invalid && (controls.email.dirty || controls.email.touched)) {
+          <p class="text-sm text-error">Please enter a valid email address.</p>
+          }
+        </div>
+
+        <div class="space-y-1">
+          <label for="role" class="text-sm font-medium text-base-content/80">Role</label>
+          <input id="role" type="text" class="input input-bordered w-full" formControlName="role" placeholder="e.g. admin" />
+        </div>
+
+        <div class="space-y-1">
+          <label for="first_name" class="text-sm font-medium text-base-content/80">First name</label>
+          <input id="first_name" type="text" class="input input-bordered w-full" formControlName="first_name" autocomplete="given-name" />
+          @if (controls.first_name.invalid && (controls.first_name.dirty || controls.first_name.touched)) {
+          <p class="text-sm text-error">First name is required.</p>
+          }
+        </div>
+
+        <div class="space-y-1">
+          <label for="last_name" class="text-sm font-medium text-base-content/80">Last name</label>
+          <input id="last_name" type="text" class="input input-bordered w-full" formControlName="last_name" autocomplete="family-name" />
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <label class="flex items-center gap-2 text-sm font-medium text-base-content/80">
+          <input type="checkbox" class="checkbox checkbox-primary" formControlName="verified" />
+          Verified account
+        </label>
+        <div class="flex gap-2">
+          <button
+            class="btn btn-ghost"
+            type="button"
+            (click)="resetForm()"
+            [disabled]="saving() || form.pristine"
+          >
+            Reset
+          </button>
+          <button
+            class="btn btn-primary"
+            type="submit"
+            [disabled]="saving() || loading() || form.invalid || form.pristine"
+          >
+            {{ saving() ? 'Saving…' : 'Save changes' }}
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  @if (stats()) {
+  <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    @for (card of activityCards(); track card.key) {
+    <div class="stats stats-vertical rounded border border-base-300 bg-base-100 shadow-sm">
+      <div class="stat">
+        <div class="stat-title text-sm text-base-content/70">{{ card.title }}</div>
+        <div class="stat-value text-2xl font-semibold">{{ card.value }}</div>
+        <div class="stat-desc text-xs text-base-content/60">
+          {{ card.subtitle }}
+          @if (card.asOf) {
+          <span class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </section>
+  }
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Account Metadata</h2>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-base-content/60">User ID</p>
+        <p class="text-sm font-medium text-base-content/90">{{ detail()?.id }}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-base-content/60">Role</p>
+        <p class="text-sm font-medium text-base-content/90">{{ detail()?.role || '—' }}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-base-content/60">Created</p>
+        <p class="text-sm font-medium text-base-content/90">
+          {{ detail()?.created_at ? (detail()?.created_at | date: 'medium') : '—' }}
+        </p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-base-content/60">Last updated</p>
+        <p class="text-sm font-medium text-base-content/90">
+          {{ detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : '—' }}
+        </p>
+      </div>
+    </div>
+  </section>
+</section>
+}

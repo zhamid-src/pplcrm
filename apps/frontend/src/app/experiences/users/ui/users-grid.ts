@@ -12,7 +12,7 @@ import { AuthUsersService } from '../services/authusers-service';
     <pc-datagrid
       [colDefs]="col"
       [disableDelete]="true"
-      [disableView]="true"
+      [disableView]="false"
       [disableExport]="true"
       [disableImport]="true"
       [addRoute]="'add'"
