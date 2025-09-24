@@ -68,8 +68,9 @@ describe('PersonsService behavior', () => {
     await expect(service.deleteMany(['1','2'])).resolves.toBe(true);
   });
 
-  it('detachTag calls mutation', async () => {
-    await service.detachTag('id1', 'vip');
+  it('detachTag calls mutation and returns result', async () => {
+    api.persons.detachTag.mutate.mockResolvedValue({ removed_team_ids: ['1'] });
+    await expect(service.detachTag('id1', 'vip')).resolves.toEqual({ removed_team_ids: ['1'] });
     expect(api.persons.detachTag.mutate).toHaveBeenCalledWith({ id: 'id1', tag_name: 'vip' });
   });
 

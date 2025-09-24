@@ -1,4 +1,4 @@
-import { Transaction } from 'kysely';
+import { Transaction, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
@@ -17,10 +17,34 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
     return rows.map((row) => String((row as any).person_id));
   }
 
+  public async getTeamsForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const rows = await this.getSelect(trx)
+      .select(['map_teams_persons.team_id'])
+      .innerJoin('teams', 'teams.id', 'map_teams_persons.team_id')
+      .select('teams.name as team_name')
+      .select(sql<boolean>`teams.team_captain_id = map_teams_persons.person_id`.as('is_captain'))
+      .where('map_teams_persons.tenant_id', '=', input.tenant_id)
+      .where('map_teams_persons.person_id', '=', input.person_id)
+      .execute();
+
+    return rows.map((row: any) => ({
+      team_id: row.team_id != null ? String(row.team_id) : '',
+      team_name: row.team_name ?? '',
+      is_captain: Boolean(row.is_captain),
+    }));
+  }
+
   public async deleteByTeam(input: { tenant_id: string; team_id: string }, trx?: Transaction<Models>) {
     await this.getDelete(trx)
       .where('tenant_id', '=', input.tenant_id)
       .where('team_id', '=', input.team_id)
+      .executeTakeFirst();
+  }
+
+  public async deleteByPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    await this.getDelete(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
       .executeTakeFirst();
   }
 

@@ -30,6 +30,12 @@ export interface TeamDetail extends Omit<TeamListItem, 'volunteer_count'> {
   volunteers: TeamVolunteer[];
 }
 
+export interface TeamAssignmentInfo {
+  id: string;
+  name: string;
+  is_captain: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   public add(row: AddTeamType) {
@@ -67,6 +73,10 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
       rows: TeamListItem[];
       count: number;
     }>;
+  }
+
+  public getTeamsForVolunteer(personId: string) {
+    return this.api.teams.getForVolunteer.query(personId, { signal: this.ac.signal }) as Promise<TeamAssignmentInfo[]>;
   }
 
   public getAllArchived(_options?: getAllOptionsType) {

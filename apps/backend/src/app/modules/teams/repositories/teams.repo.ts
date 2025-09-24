@@ -112,4 +112,12 @@ export class TeamsRepo extends BaseRepository<'teams'> {
 
     return { rows, count };
   }
+
+  public async clearCaptain(input: { tenant_id: string; team_id: string }, trx?: Transaction<Models>) {
+    await this.getUpdate(trx)
+      .set({ team_captain_id: null })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.team_id)
+      .executeTakeFirst();
+  }
 }
