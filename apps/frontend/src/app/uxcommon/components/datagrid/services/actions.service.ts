@@ -58,15 +58,18 @@ export class DataGridActionsService {
     const containsNonDeletable = deletableRows.length !== rows.length;
     if (containsNonDeletable) {
       ctx.alertSvc.showError(messages.deleteSystemValues);
+      return;
     }
-    if (!deletableRows.length) return;
+    if (!deletableRows.length) {
+      return;
+    }
 
     const end = ctx._loading.begin();
     try {
       const ids = deletableRows.map((r) => r.id);
       const ok2 = await ctx.gridSvc.deleteMany(ids);
       if (!ok2) {
-        ctx.alertSvc.showError(containsNonDeletable ? messages.deleteSystemValues : messages.deleteFailed);
+        ctx.alertSvc.showError(messages.deleteFailed);
         return;
       }
       ctx.alertSvc.showSuccess(messages.deleteSuccess);
