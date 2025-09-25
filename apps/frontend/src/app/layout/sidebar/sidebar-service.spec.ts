@@ -26,9 +26,9 @@ describe('SidebarService', () => {
   });
 
   it('should toggle mobile drawer', () => {
-    expect(service.isMobileOpen).toBe(false);
+    expect(service.isMobileOpen()).toBe(false);
     service.toggleMobile();
-    expect(service.isMobileOpen).toBe(true);
+    expect(service.isMobileOpen()).toBe(true);
   });
 
   it('should toggle drawer state and persist', () => {

@@ -1,9 +1,9 @@
 /**
  * Service responsible for managing sidebar items and drawer open state.
  */
-import { Injectable } from "@angular/core";
+import { Injectable, computed, signal } from '@angular/core';
 
-import { ISidebarItem, SidebarItems } from "./sidebar-items";
+import { ISidebarItem, SidebarItems } from './sidebar-items';
 
 @Injectable({
   providedIn: 'root',
@@ -15,10 +15,11 @@ export class SidebarService {
   private readonly collapsedSections = new Set<string>();
   private readonly initializedSections = new Set<string>();
 
-  private _isMobileOpen = false;
-  private drawerState: DrawerStates = this.getState();
+  private readonly drawerState = signal<DrawerStates>(this.getState());
   private favourites = new Set<string>();
   private items = SidebarItems;
+
+  public readonly isMobileOpen = signal(false);
 
   constructor() {
     this.initializeCollapsedDefaults(this.items);
@@ -26,17 +27,10 @@ export class SidebarService {
   }
 
   /**
-   * Indicates whether the drawer is open on mobile devices.
-   */
-  public get isMobileOpen() {
-    return this._isMobileOpen;
-  }
-
-  /**
    * Closes the sidebar when viewed on mobile.
    */
   public closeMobile() {
-    this._isMobileOpen = false;
+    this.isMobileOpen.set(false);
   }
 
   public findItemForUrl(url: string): ISidebarItem | undefined {
@@ -89,18 +83,14 @@ export class SidebarService {
    *
    * @returns `true` when the drawer is open.
    */
-  public isFull() {
-    return this.drawerState === 'full';
-  }
+  public readonly isFull = computed(() => this.drawerState() === 'full');
 
   /**
    * Determines if the drawer is half open, showing only icons.
    *
    * @returns `true` when the drawer is half expanded.
    */
-  public isHalf() {
-    return this.drawerState === 'half';
-  }
+  public readonly isHalf = computed(() => this.drawerState() === 'half');
 
   public setFavourite(route: string, favourite: boolean) {
     const normalizedRoute = this.normalizeRoute(route);
@@ -148,7 +138,7 @@ export class SidebarService {
    * @returns The updated drawer state.
    */
   public toggleDrawer() {
-    return this.setState(this.drawerState === 'full' ? 'half' : 'full');
+    return this.setState(this.drawerState() === 'full' ? 'half' : 'full');
   }
 
   public toggleFavourite(route: string) {
@@ -161,7 +151,7 @@ export class SidebarService {
    * Toggles the mobile drawer open or closed.
    */
   public toggleMobile() {
-    this._isMobileOpen = !this._isMobileOpen;
+    this.isMobileOpen.update((isOpen) => !isOpen);
   }
 
   private applyFavouritesToItems(items: ISidebarItem[]) {
@@ -267,9 +257,7 @@ export class SidebarService {
   }
 
   private rebuildFavouritesSection() {
-    const favouritesSection = this.items.find(
-      (item) => item.type === 'subheading' && item.name === 'STARRED'
-    );
+    const favouritesSection = this.items.find((item) => item.type === 'subheading' && item.name === 'STARRED');
 
     if (!favouritesSection) {
       return;
@@ -293,9 +281,9 @@ export class SidebarService {
    * @returns The stored drawer state.
    */
   private setState(state: DrawerStates) {
-    this.drawerState = state;
-    localStorage.setItem(DRAWER_STATE_KEY, this.drawerState);
-    return this.drawerState;
+    this.drawerState.set(state);
+    localStorage.setItem(DRAWER_STATE_KEY, state);
+    return state;
   }
 
   private updateItemFavourite(route: string, favourite: boolean) {

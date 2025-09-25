@@ -4,11 +4,11 @@
 import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Swap } from '@uxcommon/components/swap/swap';
-
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
@@ -23,12 +23,11 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
  */
 export class Navbar {
   private readonly auth = inject(AuthService);
+  private readonly fullscreen = inject(FullScreenService);
   private readonly searchSvc = inject(SearchService);
   private readonly sideBarSvc = inject(SidebarService);
 
-  private fullscreen = inject(FullScreenService);
-
-  /** Indicates whether the search input is visible or not */
+  protected readonly isMobileOpen = this.sideBarSvc.isMobileOpen;
   protected readonly searchBarVisible = signal(false);
   protected readonly themeSvc = inject(ThemeService);
 
@@ -92,21 +91,20 @@ export class Navbar {
   }
 
   /**
-   * Returns whether the mobile sidebar is currently open.
-   *
-   * @returns `true` if the mobile sidebar is visible, otherwise `false`.
-   */
-  protected isMobileOpen(): boolean {
-    return this.sideBarSvc.isMobileOpen;
-  }
-
-  /**
    * Hides the search bar when it loses focus and the input is empty.
    */
   protected onBlurSearchBar() {
     if (!this.searchStr.length) {
       this.hideSearchBar();
     }
+  }
+
+  /**
+   * Handles Enter key in the search input to trigger an immediate search
+   * (bypasses debounce).
+   */
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr);
   }
 
   /**
@@ -119,14 +117,6 @@ export class Navbar {
     const input = event.target as HTMLInputElement;
     this.searchStr = input.value;
     this.search();
-  }
-
-  /**
-   * Handles Enter key in the search input to trigger an immediate search
-   * (bypasses debounce).
-   */
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr);
   }
 
   /**
@@ -173,7 +163,6 @@ export class Navbar {
    * Switches the visual theme between light and dark mode.
    */
   protected toggleTheme(): void {
-    console.log('Toggling theme');
     this.themeSvc.toggleTheme();
   }
 }
