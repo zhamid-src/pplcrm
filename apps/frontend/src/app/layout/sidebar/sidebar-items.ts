@@ -79,7 +79,7 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `FAVOURITES`,
+    name: `STARRED`,
     type: 'subheading',
     hidden: true,
   },
