@@ -1,4 +1,5 @@
-import { Component, effect, input, signal } from '@angular/core';
+import { NgIf } from '@angular/common';
+import { Component, effect, input, signal, WritableSignal } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 import { PcIconNameType, loadIconSvg } from './icons.index';
@@ -6,14 +7,25 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
 @Component({
   selector: 'pc-icon',
   standalone: true,
-  imports: [BypassHtmlSanitizerPipe],
-  template: ` <div [class]="class()" [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div> `,
+  imports: [BypassHtmlSanitizerPipe, NgIf],
+  template: `
+    <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">
+      @if (!hover() || !hovering()) {
+        <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
+      } @else {
+        <div [innerHTML]="hoverSvgHtml() | bypassHtmlSanitizer"></div>
+      }
+    </div>
+  `,
 })
 export class Icon {
   /** Holds the final SVG markup (with class injected). */
   private _svgHtml = signal<string>('');
+  private _hoverSvgHtml = signal<string>('');
 
   public class = input<string>('');
+  public hover = input<PcIconNameType | null>();
+  public hovering = signal(false);
 
   /** The name of the icon to render (must exist in icons map). */
   public name = input.required<PcIconNameType>();
@@ -21,11 +33,22 @@ export class Icon {
   /** Tailwind size (used for both height and width), default 6 -> w-6 h-6 */
   public size = input<number>(6);
   public svgHtml = this._svgHtml.asReadonly();
+  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
 
   constructor() {
     // Re-load whenever name or size changes
     effect(() => {
-      void this.loadSvg(this.name(), this.size());
+      void this.loadSvg(this.name(), this.size(), this._svgHtml);
+    });
+
+    effect(() => {
+      const hoverName = this.hover();
+      const size = this.size();
+      if (!hoverName) {
+        this._hoverSvgHtml.set('');
+        return;
+      }
+      void this.loadSvg(hoverName, size, this._hoverSvgHtml);
     });
   }
 
@@ -47,15 +70,15 @@ export class Icon {
     }
   }
 
-  private async loadSvg(name: PcIconNameType, size: number) {
+  private async loadSvg(name: PcIconNameType, size: number, target: WritableSignal<string>) {
     if (name === 'none') {
-      this._svgHtml.set('');
+      target.set('');
     } else {
       // Fetch raw SVG text from /assets
       const raw = await loadIconSvg(name);
       // Inject Tailwind classes into the <svg> element
       const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
-      this._svgHtml.set(withClass);
+      target.set(withClass);
     }
   }
 }
