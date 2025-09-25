@@ -718,12 +718,27 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Utility: returns selected rows from grid */
   protected getSelectedRows() {
+    const currentRows = this.rows();
+    const rowById = new Map<string, RowOf<T>>();
+    for (const row of currentRows) {
+      const id = this.toId(row);
+      if (id) rowById.set(id, row as RowOf<T>);
+    }
+
+    const toRow = (id: string) => {
+      const fromPage = rowById.get(id);
+      if (fromPage) {
+        return { ...(fromPage as unknown as Record<string, unknown>), id } as unknown as RowOf<T>;
+      }
+      return { id } as unknown as RowOf<T>;
+    };
+
     if (this.allSelected()) {
       const ids = this.allSelectedIds();
-      return ids.map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
+      return ids.map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
     }
     const ids = this.selectedIdSet();
-    return Array.from(ids).map((id) => ({ id })) as unknown as (Partial<RowOf<T>> & { id: string })[];
+    return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
   /** Bridge for column-level double-click handlers */
