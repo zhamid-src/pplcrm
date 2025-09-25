@@ -15,7 +15,7 @@
           placeholder="Search"
           class="grow w-full"
           (blur)="onBlurSearchBar()"
-          [value]="searchStr"
+          [value]="searchStr()"
           (input)="onSearchInput($event)"
           (keydown.enter)="onSearchEnter()"
         />

@@ -29,13 +29,10 @@ export class Navbar {
 
   protected readonly isMobileOpen = this.sideBarSvc.isMobileOpen;
   protected readonly searchBarVisible = signal(false);
-  protected readonly themeSvc = inject(ThemeService);
-
-  /** Indicates whether the search input is visible on mobile view. */
-  protected searchOnMobile = false;
 
   /** Two-way bound string input for search bar. */
-  protected searchStr = '';
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
 
   @ViewChild('searchInput') public searchInputRef!: ElementRef<HTMLInputElement>;
 
@@ -53,8 +50,7 @@ export class Navbar {
    * Clears the current search input and resets the mobile search bar state.
    */
   public clearSearch(): void {
-    this.searchOnMobile = false;
-    this.searchStr = '';
+    this.searchStr.set('');
     this.searchSvc.clearSearch();
   }
 
@@ -94,7 +90,7 @@ export class Navbar {
    * Hides the search bar when it loses focus and the input is empty.
    */
   protected onBlurSearchBar() {
-    if (!this.searchStr.length) {
+    if (!this.searchStr().length) {
       this.hideSearchBar();
     }
   }
@@ -104,7 +100,7 @@ export class Navbar {
    * (bypasses debounce).
    */
   protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr);
+    this.searchSvc.doSearchImmediate(this.searchStr());
   }
 
   /**
@@ -115,7 +111,7 @@ export class Navbar {
    */
   protected onSearchInput(event: Event) {
     const input = event.target as HTMLInputElement;
-    this.searchStr = input.value;
+    this.searchStr.set(input.value);
     this.search();
   }
 
@@ -123,7 +119,7 @@ export class Navbar {
    * Triggers the search using the current value in the search bar.
    */
   protected search(): void {
-    this.searchSvc.doSearch(this.searchStr);
+    this.searchSvc.doSearch(this.searchStr());
   }
 
   /**
