@@ -2,7 +2,7 @@ import { Component, ViewChild, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { TRPCError } from '@trpc/server';
+import { TRPCClientError } from '@trpc/client';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -69,8 +69,10 @@ export class AddTag {
       this.alertSvc.showSuccess('Tag added successfully.');
       this.addBtnRow.stayOrCancel();
     } catch (err: unknown) {
-      if (err instanceof TRPCError) {
+      if (err instanceof TRPCClientError) {
         this.alertSvc.showError(err.message);
+      } else if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
+        this.alertSvc.showError((err as { message: string }).message);
       } else {
         this.alertSvc.showError("We've hit an unknown error. Please try again.");
       }

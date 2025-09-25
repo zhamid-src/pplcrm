@@ -4,7 +4,8 @@
 import { OperandValueExpressionOrList, SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
+import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
 /**
  * Repository for interacting with the `tags` table and related mapping tables.
@@ -27,26 +28,93 @@ export class TagsRepo extends BaseRepository<'tags'> {
    */
   public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'>[] }) {
     return await this.transaction().execute(async (trx) => {
-      const tag_ids = input.ids as OperandValueExpressionOrList<Models, 'tags', 'id'>;
+      if (!input.ids.length) return false;
+
+      const tagIds = input.ids as OperandValueExpressionOrList<Models, 'tags', 'id'>;
+
+      const deletableRows = await trx
+        .selectFrom(this.table)
+        .select(['id'])
+        .where('tenant_id', '=', input.tenant_id as OperandValueExpressionOrList<Models, 'tags', 'tenant_id'>)
+        .where('id', 'in', tagIds)
+        .where('deletable', '=', true)
+        .execute();
+
+      if (!deletableRows.length) return false;
+
+      const deletableIds = deletableRows.map((row) => row.id);
 
       await trx
         .deleteFrom('map_households_tags')
-        .where('tag_id', 'in', tag_ids as TypeId<'map_households_tags'>)
+        .where(
+          'tag_id',
+          'in',
+          deletableIds as OperandValueExpressionOrList<Models, 'map_households_tags', 'tag_id'>,
+        )
+        .where('tenant_id', '=', input.tenant_id as TypeTenantId<'map_households_tags'>)
         .execute();
 
       await trx
         .deleteFrom('map_peoples_tags')
-        .where('tag_id', 'in', tag_ids as TypeId<'map_peoples_tags'>)
+        .where(
+          'tag_id',
+          'in',
+          deletableIds as OperandValueExpressionOrList<Models, 'map_peoples_tags', 'tag_id'>,
+        )
+        .where('tenant_id', '=', input.tenant_id as TypeTenantId<'map_peoples_tags'>)
         .execute();
 
       const result = await trx
         .deleteFrom(this.table)
-        .where('id', 'in', tag_ids)
-        .where('deletable', '=', true)
+        .where('id', 'in', deletableIds as OperandValueExpressionOrList<Models, 'tags', 'id'>)
+        .where('tenant_id', '=', input.tenant_id as OperandValueExpressionOrList<Models, 'tags', 'tenant_id'>)
         .executeTakeFirst();
 
       return Number(result?.numDeletedRows ?? 0) > 0;
     });
+  }
+
+  public async ensureSystemTags(
+    input: { tenant_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    for (const seed of SYSTEM_TAG_SEED_DATA) {
+      const existing = await this.getSelect(trx)
+        .select(['id', 'deletable'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('name', '=', seed.name)
+        .executeTakeFirst();
+
+      if (!existing) {
+        const row = {
+          tenant_id: input.tenant_id,
+          name: seed.name,
+          description: seed.description,
+          deletable: false,
+          createdby_id: input.user_id,
+          updatedby_id: input.user_id,
+        } as OperationDataType<'tags', 'insert'>;
+
+        await this.add({ row }, trx);
+        continue;
+      }
+
+      if (existing.deletable !== false) {
+        const updateRow = {
+          deletable: false,
+          updatedby_id: input.user_id,
+        } as OperationDataType<'tags', 'update'>;
+
+        await this.update(
+          {
+            tenant_id: input.tenant_id as TypeTenantId<'tags'>,
+            id: String(existing.id) as TypeId<'tags'>,
+            row: updateRow,
+          },
+          trx,
+        );
+      }
+    }
   }
 
   /**

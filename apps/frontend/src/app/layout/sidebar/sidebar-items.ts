@@ -174,7 +174,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Tags',
         route: '/tags',
-        icon: 'tag',
+        icon: 'label',
       },
       {
         name: 'Forms',
