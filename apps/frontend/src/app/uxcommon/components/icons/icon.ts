@@ -1,5 +1,4 @@
-import { NgIf } from '@angular/common';
-import { Component, effect, input, signal, WritableSignal } from '@angular/core';
+import { Component, WritableSignal, effect, input, signal } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 import { PcIconNameType, loadIconSvg } from './icons.index';
@@ -7,7 +6,7 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
 @Component({
   selector: 'pc-icon',
   standalone: true,
-  imports: [BypassHtmlSanitizerPipe, NgIf],
+  imports: [BypassHtmlSanitizerPipe],
   template: `
     <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">
       @if (!hover() || !hovering()) {
@@ -19,12 +18,14 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
   `,
 })
 export class Icon {
+  private _hoverSvgHtml = signal<string>('');
+
   /** Holds the final SVG markup (with class injected). */
   private _svgHtml = signal<string>('');
-  private _hoverSvgHtml = signal<string>('');
 
   public class = input<string>('');
   public hover = input<PcIconNameType | null>();
+  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
   public hovering = signal(false);
 
   /** The name of the icon to render (must exist in icons map). */
@@ -33,7 +34,6 @@ export class Icon {
   /** Tailwind size (used for both height and width), default 6 -> w-6 h-6 */
   public size = input<number>(6);
   public svgHtml = this._svgHtml.asReadonly();
-  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
 
   constructor() {
     // Re-load whenever name or size changes
