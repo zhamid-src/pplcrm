@@ -824,6 +824,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col?.editable;
   }
 
+  protected isPointerInteractive(col: ColDef | undefined): boolean {
+    if (!col) return false;
+    if (this.isEditable(col)) return false;
+    if (typeof col.onCellDoubleClicked === 'function') return true;
+    return !this.disableView();
+  }
+
   public isOptionChecked(field: string, option: string): boolean {
     return this.getFilterArray(field).includes(option);
   }
