@@ -42,10 +42,21 @@ export class DataGridActionsService {
       return;
     }
 
-    const deletableRows = rows.filter(
-      (row) => !('deletable' in row) || (row as { deletable?: boolean }).deletable !== false,
-    );
-    if (deletableRows.length !== rows.length) {
+    const isNonDeletable = (row: Record<string, unknown>) => {
+      if (!('deletable' in row)) return false;
+      const value = (row as { deletable?: unknown }).deletable;
+      if (typeof value === 'boolean') return value === false;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'false' || normalized === '0';
+      }
+      if (typeof value === 'number') return value === 0;
+      return false;
+    };
+
+    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
+    const containsNonDeletable = deletableRows.length !== rows.length;
+    if (containsNonDeletable) {
       ctx.alertSvc.showError(messages.deleteSystemValues);
     }
     if (!deletableRows.length) return;
@@ -55,7 +66,7 @@ export class DataGridActionsService {
       const ids = deletableRows.map((r) => r.id);
       const ok2 = await ctx.gridSvc.deleteMany(ids);
       if (!ok2) {
-        ctx.alertSvc.showError(messages.deleteFailed);
+        ctx.alertSvc.showError(containsNonDeletable ? messages.deleteSystemValues : messages.deleteFailed);
         return;
       }
       ctx.alertSvc.showSuccess(messages.deleteSuccess);

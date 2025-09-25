@@ -34,6 +34,7 @@ import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
 import {
   AuthUsersType,
   GetOperandType,
@@ -53,6 +54,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private tenants: TenantsRepo = new TenantsRepo();
   private emailsRepo: EmailRepo = new EmailRepo();
   private personsRepo: PersonsRepo = new PersonsRepo();
+  private tagsRepo: TagsRepo = new TagsRepo();
 
   constructor() {
     super(new AuthUsersRepo());
@@ -278,8 +280,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.tenants.transaction().execute(async (trx) => {
         const tenant_id = await this.createTenant(trx, input.organization);
         const user = await this.createUser(trx, tenant_id, password, email, input);
+        const userId = String(user.id);
         const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
+        await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
         token = await this.createTokens({
           user_id: profile.id,
           tenant_id: user.tenant_id,

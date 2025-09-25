@@ -56,7 +56,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @returns `true` if successful, otherwise `false`.
    */
   public async delete(id: string): Promise<boolean> {
-    return (await this.api.tags.delete.mutate(id)) !== null;
+    return Boolean(await this.api.tags.delete.mutate(id));
   }
 
   /**
@@ -66,7 +66,7 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @returns `true` if deletion was successful, otherwise `false`.
    */
   public async deleteMany(ids: string[]): Promise<boolean> {
-    return (await this.api.tags.deleteMany.mutate(ids)) !== null;
+    return Boolean(await this.api.tags.deleteMany.mutate(ids));
   }
 
   /**

@@ -1,5 +1,6 @@
 import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
 
+import { ConflictError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { TagsRepo } from './repositories/tags.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -19,14 +20,22 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
    * @param auth - Authenticated user's context
    * @returns The inserted tag
    */
-  public addTag(payload: AddTagType, auth: IAuthKeyPayload) {
+  public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
       description: payload.description,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
-    return this.add(row as OperationDataType<'tags', 'insert'>);
+    try {
+      return await this.add(row as OperationDataType<'tags', 'insert'>);
+    } catch (err) {
+      if ((err as { code?: string })?.code === '23505') {
+        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
+      }
+      throw err;
+    }
   }
 
   /**

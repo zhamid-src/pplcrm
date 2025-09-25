@@ -7,6 +7,7 @@ import { BaseController } from '../../lib/base.controller';
 import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
+import { getCanonicalSystemTagName } from '../tags/system-tags';
 import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
 import { TeamsRepo } from './repositories/teams.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
@@ -16,7 +17,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly personsRepo = new PersonsRepo();
   private readonly personsTagRepo = new MapPersonsTagRepo();
   private readonly tagsRepo = new TagsRepo();
-  private readonly volunteerTag = 'volunteer';
+  private readonly volunteerTag = getCanonicalSystemTagName('volunteer') ?? 'volunteer';
 
   constructor() {
     super(new TeamsRepo());
