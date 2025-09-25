@@ -87,7 +87,7 @@ export class Sidebar {
    * Returns whether the sidebar is open in mobile view.
    */
   protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen;
+    return this.sidebarSvc.isMobileOpen();
   }
 
   /**

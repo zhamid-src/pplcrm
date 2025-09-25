@@ -20,17 +20,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
  * Container component used as the shell for dashboard pages.
  */
 export class Dashboard {
-  /**
-   * Service that manages the sidebar visibility and toggling logic.
-   */
   private readonly sidebarSvc = inject(SidebarService);
 
-  /**
-   * Indicates whether the sidebar is open in mobile view.
-   *
-   * @returns `true` if the sidebar is open on mobile, otherwise `false`.
-   */
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen;
-  }
+  protected readonly isMobileOpen = this.sidebarSvc.isMobileOpen;
 }
