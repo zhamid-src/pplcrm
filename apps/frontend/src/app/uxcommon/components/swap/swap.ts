@@ -18,7 +18,8 @@ import { PcIconNameType } from '@icons/icons.index';
     (click)="emitClick($event)"
   >
     <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-    <pc-icon [name]="swapOffIcon()!" class="swap-off" [size]="size()" />
+
+    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
   </label> `,
 })
 export class Swap {
@@ -39,6 +40,7 @@ export class Swap {
    * Indicates whether the toggle is currently checked/on.
    */
   public checked = input<boolean>(false);
+  public hoverIcon = input<PcIconNameType | null>(null);
   public size = input(6);
 
   /**
