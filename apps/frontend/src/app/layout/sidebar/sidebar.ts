@@ -1,7 +1,7 @@
 /**
  * Sidebar component rendering navigation links and managing drawer state.
  */
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -28,7 +28,7 @@ export class Sidebar {
 
   protected readonly router = inject(Router);
 
-  public hoveringSidebar = false;
+  protected hoveringSidebar = signal(false);
 
   /**
    * List of sidebar items to render.
@@ -75,15 +75,6 @@ export class Sidebar {
   }
 
   /**
-   * Indicates whether the mouse is hovering over the sidebar.
-   *
-   * @returns Hovering state of the sidebar.
-   */
-  protected isHoveringSidebar() {
-    return this.hoveringSidebar;
-  }
-
-  /**
    * Returns whether the sidebar is open in mobile view.
    */
   protected isMobileOpen() {
@@ -96,7 +87,7 @@ export class Sidebar {
    * @param state - `true` when the sidebar is being hovered.
    */
   protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar = state;
+    this.hoveringSidebar.set(state);
   }
 
   /**
