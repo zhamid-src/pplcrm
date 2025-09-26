@@ -13,7 +13,9 @@ import type {
   marketingEmailTopLinkObj,
   EmailDraftObj,
   PersonsObj,
+  SettingsEntryObj,
   SettingsObj,
+  UpsertSettingsInputObj,
   UpdateHouseholdsObj,
   UpdatePersonsObj,
   UpdateTagObj,
@@ -67,6 +69,10 @@ export type PERSONINHOUSEHOLDTYPE = {
 export type PersonsType = z.infer<typeof PersonsObj>;
 
 export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
 
 export type SortModelType = z.infer<typeof sortModelItem>;
 
