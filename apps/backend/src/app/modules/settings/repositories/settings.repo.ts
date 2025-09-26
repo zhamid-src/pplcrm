@@ -1,7 +1,7 @@
 /**
  * Repository for application settings stored per tenant.
  */
-import { OperandValueExpressionOrList } from 'kysely';
+import { Insertable, OperandValueExpressionOrList, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import { Models } from 'common/src/lib/kysely.models';
@@ -24,16 +24,44 @@ export class SettingsRepo extends BaseRepository<'settings'> {
    * @returns The associated value or `0` if the key is not found.
    */
   public async getByKey(input: { tenant_id: string; key: string }) {
-    const row = await this.getSelect()
-      .selectAll()
-      .where(
-        'tenant_id',
-        '=',
-        input.tenant_id as unknown as OperandValueExpressionOrList<Models, 'settings', 'tenant_id'>,
-      )
-      .where('key', '=', input.key)
-      .executeTakeFirst();
+    const tenant = input.tenant_id as OperandValueExpressionOrList<Models, 'settings', 'tenant_id'>;
 
-    return row?.value || 0;
+    return this.getSelect().selectAll().where('tenant_id', '=', tenant).where('key', '=', input.key).executeTakeFirst();
+  }
+
+  public async getAllForTenant(tenant_id: string) {
+    const tenant = tenant_id as OperandValueExpressionOrList<Models, 'settings', 'tenant_id'>;
+
+    return this.getSelect().select(['key', 'value', 'updated_at']).where('tenant_id', '=', tenant).execute();
+  }
+
+  public async upsertMany(input: {
+    tenant_id: string;
+    user_id: string;
+    entries: { key: string; value: Models['settings']['value'] }[];
+  }) {
+    if (!input.entries.length) return [] as Models['settings'][];
+
+    const rows = input.entries.map((entry) => ({
+      tenant_id: input.tenant_id,
+      key: entry.key,
+      value: entry.value,
+      createdby_id: input.user_id,
+      updatedby_id: input.user_id,
+    }));
+
+    return this.getInsert()
+      .values(rows as Insertable<Models['settings']>[])
+      .onConflict((oc) =>
+        oc
+          .columns(['tenant_id', 'key'])
+          .doUpdateSet({
+            value: (eb) => eb.ref('excluded.value'),
+            updatedby_id: (eb) => eb.ref('excluded.updatedby_id'),
+            updated_at: sql`now()`,
+          }),
+      )
+      .returningAll()
+      .execute();
   }
 }

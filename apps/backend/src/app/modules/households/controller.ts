@@ -1,4 +1,4 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, SettingsType, UpdateHouseholdsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, UpdateHouseholdsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { QueryParams } from '../../lib/base.repo';
@@ -30,7 +30,7 @@ export class HouseholdsController extends BaseController<'households', Household
    * @returns The created household
    */
   public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as SettingsType;
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
 
     const fp_street = fingerprintStreet({
       street_num: payload.street_num,

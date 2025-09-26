@@ -1,4 +1,4 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, SettingsType, UpdatePersonsType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, UpdatePersonsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
@@ -37,7 +37,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
    * @returns The newly created person
    */
   public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as SettingsType;
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
     const households = new HouseholdRepo();
 
     // Ensure a household_id exists: reuse an existing blank household or create one if missing

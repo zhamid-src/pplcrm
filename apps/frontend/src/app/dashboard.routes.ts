@@ -180,6 +180,10 @@ export const dashboardRoutes: Routes = [
     ],
   },
   {
+    path: 'settings',
+    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+  },
+  {
     path: 'export',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
   },

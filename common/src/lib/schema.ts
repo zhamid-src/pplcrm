@@ -203,7 +203,16 @@ export const SettingsObj = z.object({
   createdby_id: z.string().optional(),
   updatedby_id: z.string().optional(),
   key: z.string().optional(),
-  value: z.object().optional(),
+  value: z.unknown().optional(),
+});
+
+export const SettingsEntryObj = z.object({
+  key: z.string().min(1),
+  value: z.unknown(),
+});
+
+export const UpsertSettingsInputObj = z.object({
+  entries: z.array(SettingsEntryObj).min(1),
 });
 export const UpdateHouseholdsObj = z.object({
   home_phone: z.string().optional(),
