@@ -1,7 +1,9 @@
 /**
  * @file Reusable dialog service for confirm/alert/prompt using <dialog>.
  */
-import { Injectable, signal } from '@angular/core';
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+import { map } from 'rxjs/operators';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 
 export interface BaseDialogOptions {
@@ -39,11 +41,11 @@ export class ConfirmDialogService {
   /** Internal resolver for the pending promise */
   private _resolve: ((value?: any) => void) | null = null;
 
-  /** Open/close flag observed by the host component */
-  public readonly isOpen = signal(false);
+  /** Stream of dialog state */
+  private readonly stateSubject = new BehaviorSubject<DialogState | null>(null);
 
-  /** Current dialog state */
-  public readonly state = signal<DialogState | null>(null);
+  public readonly state$ = this.stateSubject.asObservable();
+  public readonly isOpen$ = this.state$.pipe(map((st) => st !== null));
 
   /** Open an alert dialog. Resolves when the user clicks OK or backdrop if allowed. */
   public alert(opts: BaseDialogOptions): Promise<void> {
@@ -62,7 +64,7 @@ export class ConfirmDialogService {
 
   public cancel(): void {
     // Normalize cancel values per dialog type
-    const st = this.state();
+    const st = this.stateSubject.value;
     if (st?.type === 'confirm') this._resolve?.(false);
     else if (st?.type === 'alert') this._resolve?.();
     else if (st?.type === 'prompt') this._resolve?.(null);
@@ -130,14 +132,12 @@ export class ConfirmDialogService {
   }
 
   private close(): void {
-    this.isOpen.set(false);
-    this.state.set(null);
+    this.stateSubject.next(null);
     this._resolve = null;
   }
 
   private open(st: DialogState): void {
-    this.state.set(st);
-    this.isOpen.set(true);
+    this.stateSubject.next(st);
   }
 }
 

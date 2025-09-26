@@ -22,5 +22,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 export class Dashboard {
   private readonly sidebarSvc = inject(SidebarService);
 
-  protected readonly isMobileOpen = this.sidebarSvc.isMobileOpen;
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
 }

@@ -4,6 +4,7 @@
  * and support for various alert types including success, error, warning, and info.
  */
 import { Injectable, signal } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 
 /**
  * Configuration class for alert messages with reactive properties and callbacks.
@@ -116,8 +117,9 @@ export class AlertMessage {
   providedIn: 'root',
 })
 export class AlertService {
-  /** Reactive signal containing all currently active alerts */
-  private readonly alerts = signal<AlertMessage[]>([]);
+  /** Reactive stream containing all currently active alerts */
+  private readonly alertsSubject = new BehaviorSubject<AlertMessage[]>([]);
+  public readonly alerts$ = this.alertsSubject.asObservable();
 
   /**
    * Invokes the OK button callback for the alert with the specified ID.
@@ -153,14 +155,17 @@ export class AlertService {
     alert.visible.set(false);
 
     // Have to let the animation do its thing first
-    setTimeout(() => this.alerts.update((alerts) => alerts.filter((alert) => alert.id !== id)), 300);
+    setTimeout(() => {
+      const next = this.alertsSubject.value.filter((msg) => msg.id !== id);
+      this.alertsSubject.next(next);
+    }, 300);
   }
 
   /**
    * Returns a list of all currently active alerts.
    */
   public getAlerts(): AlertMessage[] {
-    return this.alerts();
+    return this.alertsSubject.value;
   }
 
   /**
@@ -169,7 +174,7 @@ export class AlertService {
    */
   public show(alert: Partial<AlertMessage>): void {
     // If the same text is shown then ignore it. // TODO: right behaviour?
-    const existing = this.alerts().find((m) => m.text === alert.text);
+    const existing = this.alertsSubject.value.find((m) => m.text === alert.text);
 
     if (existing) {
       // Retrigger the pulse animation
@@ -183,7 +188,7 @@ export class AlertService {
       existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration + 1000);
     } else {
       const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-      this.alerts.update((arr: AlertMessage[]) => [messageWithMeta, ...arr]);
+      this.alertsSubject.next([messageWithMeta, ...this.alertsSubject.value]);
       messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
     }
   }
@@ -221,7 +226,7 @@ export class AlertService {
   }
 
   private findById(id: string) {
-    return this.alerts().find((m) => m.id === id);
+    return this.alertsSubject.value.find((m) => m.id === id);
   }
 }
 

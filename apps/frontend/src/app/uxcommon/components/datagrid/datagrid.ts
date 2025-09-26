@@ -15,6 +15,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
@@ -137,6 +138,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
+  private readonly searchTerm = toSignal(this.searchSvc.search$, {
+    initialValue: this.searchSvc.getFilterText(),
+  });
   private readonly hasEditableColumns = signal(false);
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
@@ -314,7 +318,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     // React to global search (SSRM: trigger server-side filter)
     effect(() => {
-      const quickFilterText = this.searchSvc.getFilterText();
+      const quickFilterText = this.searchTerm();
 
       // Keep track of the old filter text to avoid unnecessary roundtrip
       if (quickFilterText != this.oldFilterText) {

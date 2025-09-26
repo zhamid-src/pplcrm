@@ -27,7 +27,9 @@ export class Navbar {
   private readonly searchSvc = inject(SearchService);
   private readonly sideBarSvc = inject(SidebarService);
 
-  protected readonly isMobileOpen = this.sideBarSvc.isMobileOpen;
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
+  }
   protected readonly searchBarVisible = signal(false);
 
   /** Two-way bound string input for search bar. */

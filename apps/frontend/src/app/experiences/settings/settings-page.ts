@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType } from '@common';
@@ -27,6 +28,7 @@ interface SectionState {
 export class SettingsPage implements OnInit {
   private readonly fb = inject(FormBuilder);
   protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = toSignal(this.settingsSvc.snapshot$, { initialValue: this.settingsSvc.snapshot() });
 
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
@@ -38,7 +40,7 @@ export class SettingsPage implements OnInit {
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
 
     effect(() => {
-      const snapshot = this.settingsSvc.snapshot();
+      const snapshot = this.snapshotSignal();
       this.applySnapshot(snapshot, false);
     });
   }
