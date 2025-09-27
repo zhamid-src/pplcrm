@@ -172,18 +172,34 @@
             [style.width.px]="colWidths()[cell.column.id]"
             [style.minWidth.px]="colWidths()[cell.column.id]"
           >
-            @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let editorOpts =
-            getEditorOptions(col); @if (editorOpts?.length) {
+            @let ec = editingCell();
+            @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field;
+            @if (isEditing) {
+            @let editorCfg = selectEditorOptions(col);
+            @let textCfg = getTextEditorConfig(col);
+            @if (editorCfg) {
             <select
-              class="select select-bordered select-xs w-full"
+              class="select select-bordered w-full"
               [ngModel]="editingValue()"
               (ngModelChange)="editingValue.set($event)"
+              [multiple]="editorCfg.multiple"
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              [class.select-xs]="!editorCfg.multiple"
               autofocus
             >
-              @for (opt of editorOpts; track opt.value) {
+              @for (opt of editorCfg.choices; track opt.value) {
               <option [value]="opt.value">{{ opt.label }}</option>
               }
             </select>
+            } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
             } @else {
             <input
               [type]="inputTypeFor(col)"
@@ -194,8 +210,17 @@
             />
             } } @else if (hasCellRenderer(col)) {
             <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{
-            getCellValue(r.original, col) }} }
+            } @else {
+            @let rawValue = getCellValue(r.original, col);
+            @let tagList = tagsAsStrings(rawValue);
+            @if (col.field === 'tags' && tagList.length) {
+            <pc-tags [tags]="tagList" [readonly]="true" [canDelete]="false"></pc-tags>
+            } @else if (col.valueFormatter) {
+              {{ callValueFormatter(r.original, col) }}
+            } @else {
+              {{ rawValue }}
+            }
+            }
           </td>
           } }
         </tr>

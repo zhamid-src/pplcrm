@@ -3,6 +3,7 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   OnDestroy,
@@ -21,6 +22,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { Tags } from '@uxcommon/components/tags/tags';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { SearchService } from '../../../services/api/search-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -34,7 +36,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DataGridColumnsService } from './services/columns.service';
 import { PinningController } from './controllers/pinning.controller';
 import { DataGridDataService } from './services/data.service';
-import { DataGridFiltersService, type EditorChoice } from './services/filters.service';
+import { DataGridFiltersService, type SelectEditorOptions } from './services/filters.service';
 import { DataGridSelectionService } from './services/selection.service';
 import { DataGridTableService } from './services/table.service';
 import { DataGridActionsService } from './services/actions.service';
@@ -63,7 +65,7 @@ import { Models } from 'common/src/lib/kysely.models';
     FormsModule,
     DataGridToolbarComponent,
     DataGridFilterPanelComponent,
-    
+    Tags,
     EditableCellDirective,
     HeaderResizeDirective,
   ],
@@ -138,6 +140,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
+  private readonly cdr = inject(ChangeDetectorRef);
   private readonly searchTerm = toSignal(this.searchSvc.search$, {
     initialValue: this.searchSvc.getFilterText(),
   });
@@ -263,7 +266,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     col,
     toId: this.toIdFn,
     coerce: this.coerceFn,
-    value: () => this.editingValue(),
+    value: () => {
+      const current = this.editingValue();
+      return Array.isArray(current) ? [...current] : current;
+    },
     setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
     setEditingValue: (v: any) => this.editingValue.set(v),
     getCellValue: (r: any, c: any) => this.getCellValue(r, c),
@@ -721,9 +727,35 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.getFilterOptionsForCol(col);
   }
 
-  protected getEditorOptions(col: ColDef): EditorChoice[] | null {
-    const opts = this.filtersSvc.getEditorChoices(col);
-    return opts.length ? opts : null;
+  protected selectEditorOptions(col: ColDef): SelectEditorOptions | null {
+    return this.filtersSvc.getSelectEditorOptions(col);
+  }
+
+  protected tagsAsStrings(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    const tags: string[] = [];
+    for (const entry of value) {
+      const normalized = entry == null ? '' : String(entry).trim();
+      if (normalized) tags.push(normalized);
+    }
+    return tags;
+  }
+
+  protected multiSelectHeight(options: SelectEditorOptions | null): string | null {
+    if (!options?.multiple) return null;
+    const rows = options.size && options.size > 0 ? Math.floor(options.size) : 5;
+    const rowHeightRem = 1.6;
+    const paddingRem = 0.75;
+    return `${rows * rowHeightRem + paddingRem}rem`;
+  }
+
+  protected getTextEditorConfig(col: ColDef): { textarea: boolean; rows: number } {
+    const params = this.resolveEditorParams(col);
+    const multilineFlag = Boolean(params?.textarea ?? params?.multiline);
+    const rowsRaw = params?.rows ?? params?.textareaRows ?? params?.lines;
+    const rowsNum = Number(rowsRaw);
+    const rows = Number.isFinite(rowsNum) && rowsNum > 0 ? Math.floor(rowsNum) : 5;
+    return { textarea: multilineFlag, rows: multilineFlag ? rows : 1 };
   }
 
   public getFilterValue(field: string): string {
@@ -1267,7 +1299,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const id = this.toId(row);
     if (!id) return;
     this.editingCell.set({ id, field: col.field });
-    this.editingValue.set(this.getEditingDisplayValue(row, col));
+    const value = this.getEditingDisplayValue(row, col);
+    this.editingValue.set(Array.isArray(value) ? [...value] : value);
+    queueMicrotask(() => this.cdr.detectChanges());
   }
 
   protected startIndex(): number {
@@ -1390,6 +1424,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return v.length > 10 ? v.slice(0, 10) : v;
     }
     return raw;
+  }
+
+  private resolveEditorParams(col: ColDef): any {
+    const cep = col?.cellEditorParams;
+    if (!cep) return null;
+    try {
+      return typeof cep === 'function' ? cep() : cep;
+    } catch {
+      return null;
+    }
   }
 
   // selection resize handled by ResizingController

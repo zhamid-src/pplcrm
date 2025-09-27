@@ -7,6 +7,8 @@ import { UpdateHouseholdsObj } from '@common';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
@@ -63,6 +65,8 @@ interface ParamsType {
  */
 export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private tagOptionValues: string[] = [];
 
   protected readonly mappableFields: string[] = [
     'street_num',
@@ -130,14 +134,14 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     {
       field: 'tags',
       headerName: 'Tags',
+      editable: true,
       cellDataType: 'object',
       cellRendererParams: {
         type: 'households',
         obj: UpdateHouseholdsObj,
         service: this.gridSvc,
       },
-      // cellRenderer removed; valueFormatter renders tags
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
       /**
        * Compares two tag arrays for equality.
        * @param tagsA First array of tags
@@ -163,13 +167,83 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     { field: 'zip', headerName: 'Zip/Province', editable: true },
     { field: 'country', headerName: 'Country', editable: true },
     { field: 'home_phone', headerName: 'Home phone', editable: true },
-    { field: 'notes', headerName: 'Notes', editable: true },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
   ];
   protected importSummary = signal<CsvImportSummary | null>(null);
 
   // Importer state
   protected importerOpen = signal(false);
   protected tagsInput = '';
+
+  public override async ngOnInit() {
+    await this.loadTagOptions();
+    await super.ngOnInit();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames();
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  protected override async commitEdit(row: any, col: ColDef) {
+    if (col.field === 'tags') {
+      await this.commitTags(row);
+      return;
+    }
+    await super.commitEdit(row, col);
+  }
+
+  private async commitTags(row: any) {
+    const id = this.toId(row);
+    if (!id) {
+      this.editingCell.set(null);
+      return;
+    }
+
+    const previous = Array.isArray(row?.tags)
+      ? this.utils.normalizeTagSelection(row.tags)
+      : [];
+    const next = this.utils.normalizeTagSelection(this.editingValue());
+
+    const toAdd = next.filter((tag) => !previous.includes(tag));
+    const toRemove = previous.filter((tag) => !next.includes(tag));
+
+    if (!toAdd.length && !toRemove.length) {
+      this.editingCell.set(null);
+      return;
+    }
+
+    try {
+      await this.syncHouseholdTags(id, toAdd, toRemove);
+      const refreshed = await this.gridSvc.getTags(id);
+      (row as Record<string, unknown>)['tags'] = refreshed;
+      this.updateEditedRowInCachesFn(id, 'tags', refreshed);
+      this.updateTableWindowFn(this.startIndex(), this.endIndex());
+      this.alertSvc.showSuccess('Tags updated');
+    } catch {
+      (row as Record<string, unknown>)['tags'] = previous;
+      this.alertSvc.showError('Failed to update tags');
+    } finally {
+      this.editingCell.set(null);
+    }
+  }
+
+  private async syncHouseholdTags(id: string, add: string[], remove: string[]) {
+    for (const tag of remove) {
+      await this.gridSvc.detachTag(id, tag);
+    }
+    for (const tag of add) {
+      await this.gridSvc.attachTag(id, tag);
+    }
+  }
 
   /**
    * Constructor: Calls the parent constructor of DataGrid

@@ -11,6 +11,7 @@ import { Icon } from '@icons/icon';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
@@ -69,6 +70,7 @@ interface ParamsType {
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
 
   /**
    * Stores the household ID when a user tries to change an address,
@@ -76,6 +78,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    */
   private addressChangeModalId: string | null = null;
   private importProgressTimer: any;
+  private tagOptionValues: string[] = [];
 
   protected readonly mappableFields = [
     'first_name',
@@ -114,14 +117,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     {
       field: 'tags',
       headerName: 'Tags',
+      editable: true,
       cellDataType: 'object',
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,
         service: this.gridSvc,
       },
-      // cellRenderer removed; valueFormatter renders tags
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
       equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
       valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
       comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
@@ -174,7 +177,12 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       editable: false,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
-    { field: 'notes', headerName: 'Notes', editable: true },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
   ];
 
   // Generic CSV importer integration
@@ -184,6 +192,71 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
   protected tagsInput = '';
+
+  public override async ngOnInit() {
+    await this.loadTagOptions();
+    await super.ngOnInit();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames();
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  protected override async commitEdit(row: any, col: ColDef) {
+    if (col.field === 'tags') {
+      await this.commitTags(row);
+      return;
+    }
+    await super.commitEdit(row, col);
+  }
+
+  private async commitTags(row: any) {
+    const id = this.toId(row);
+    if (!id) {
+      this.editingCell.set(null);
+      return;
+    }
+
+    const previous = Array.isArray(row?.tags)
+      ? this.utils.normalizeTagSelection(row.tags)
+      : [];
+    const next = this.utils.normalizeTagSelection(this.editingValue());
+
+    const toAdd = next.filter((tag) => !previous.includes(tag));
+    const toRemove = previous.filter((tag) => !next.includes(tag));
+
+    if (!toAdd.length && !toRemove.length) {
+      this.editingCell.set(null);
+      return;
+    }
+
+    try {
+      await this.syncPersonTags(id, toAdd, toRemove);
+      const refreshed = await this.gridSvc.getTags(id);
+      (row as Record<string, unknown>)['tags'] = refreshed;
+      this.updateEditedRowInCachesFn(id, 'tags', refreshed);
+      this.updateTableWindowFn(this.startIndex(), this.endIndex());
+      this.alertSvc.showSuccess('Tags updated');
+    } catch {
+      (row as Record<string, unknown>)['tags'] = previous;
+      this.alertSvc.showError('Failed to update tags');
+    } finally {
+      this.editingCell.set(null);
+    }
+  }
+
+  private async syncPersonTags(id: string, add: string[], remove: string[]) {
+    for (const tag of remove) {
+      await this.gridSvc.detachTag(id, tag);
+    }
+    for (const tag of add) {
+      await this.gridSvc.attachTag(id, tag);
+    }
+  }
 
   /**
    * Initializes the grid and retrieves tag filter data from the route.
@@ -228,7 +301,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     }
   }
 
-
   protected async onImportSubmit(rows: Array<Record<string, string>>, skippedArg?: number): Promise<void>;
   protected async onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }): Promise<void>;
   protected async onImportSubmit(a: any, b?: any) {
@@ -256,7 +328,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       if (res?.tenant_id) diag.push(`Tenant: ${res.tenant_id}`);
       if (res?.campaign_id) diag.push(`Campaign: ${res.campaign_id}`);
       const msg = diag.join(' • ');
-      this.importSummary.set({ inserted, errors, skipped: skippedComputed, tag: res?.tag, failed: false, message: msg });
+      this.importSummary.set({
+        inserted,
+        errors,
+        skipped: skippedComputed,
+        tag: res?.tag,
+        failed: false,
+        message: msg,
+      });
       this.importerOpen.set(false);
       await this.refresh();
     } catch (e: any) {
@@ -334,6 +413,4 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.showModal();
   }
-
-  // worker-based parsing; old incremental parser removed
 }
