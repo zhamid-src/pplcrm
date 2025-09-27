@@ -184,6 +184,10 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
   {
+    path: 'billing',
+    loadComponent: () => import('./experiences/billing/billing-page').then((m) => m.BillingPage),
+  },
+  {
     path: 'export',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
   },

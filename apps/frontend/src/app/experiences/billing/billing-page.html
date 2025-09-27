@@ -1,0 +1,55 @@
+<div class="mx-auto w-full max-w-3xl space-y-6 py-8">
+  <header class="space-y-2">
+    <h1 class="text-3xl font-semibold">Billing &amp; Usage</h1>
+    <p class="text-base-content/70">Manage your subscription details, invoicing contacts, and usage caps.</p>
+  </header>
+
+  <form [formGroup]="form" (ngSubmit)="save()" class="space-y-6">
+    <div class="grid gap-4 md:grid-cols-2">
+      <label class="form-control">
+        <span class="label-text font-medium">Plan Tier</span>
+        <select formControlName="plan" class="select select-bordered">
+          <option value="starter">Starter</option>
+          <option value="growth">Growth</option>
+          <option value="scale">Scale</option>
+        </select>
+      </label>
+
+      <label class="form-control">
+        <span class="label-text font-medium">Renewal Date</span>
+        <input type="date" formControlName="renewal_date" class="input input-bordered" />
+      </label>
+
+      <label class="form-control">
+        <span class="label-text font-medium">Invoice Email</span>
+        <input type="email" formControlName="invoice_email" class="input input-bordered" placeholder="billing@example.com" />
+        @if (form.get('invoice_email')?.invalid && form.get('invoice_email')?.touched) {
+          <span class="text-xs text-error">Please provide a valid email address.</span>
+        }
+      </label>
+
+      <label class="form-control">
+        <span class="label-text font-medium">Payment Method Last 4</span>
+        <input type="text" maxlength="4" formControlName="payment_last4" class="input input-bordered" placeholder="4242" />
+        @if (form.get('payment_last4')?.invalid && form.get('payment_last4')?.touched) {
+          <span class="text-xs text-error">Enter the last four digits.</span>
+        }
+      </label>
+
+      <label class="form-control md:col-span-2">
+        <span class="label-text font-medium">Contacts Limit</span>
+        <input type="number" min="0" formControlName="contacts_limit" class="input input-bordered" />
+      </label>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 border-t border-base-200 pt-4">
+      <button type="button" class="btn btn-ghost" (click)="resetForm()" [disabled]="saving() || !form.dirty">
+        Reset
+      </button>
+      <button type="submit" class="btn btn-primary" [disabled]="saving() || form.invalid || !form.dirty">
+        <span *ngIf="saving()" class="loading loading-spinner loading-xs mr-2"></span>
+        Save Changes
+      </button>
+    </div>
+  </form>
+</div>
