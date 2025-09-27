@@ -34,7 +34,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DataGridColumnsService } from './services/columns.service';
 import { PinningController } from './controllers/pinning.controller';
 import { DataGridDataService } from './services/data.service';
-import { DataGridFiltersService } from './services/filters.service';
+import { DataGridFiltersService, type EditorChoice } from './services/filters.service';
 import { DataGridSelectionService } from './services/selection.service';
 import { DataGridTableService } from './services/table.service';
 import { DataGridActionsService } from './services/actions.service';
@@ -267,6 +267,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
     setEditingValue: (v: any) => this.editingValue.set(v),
     getCellValue: (r: any, c: any) => this.getCellValue(r, c),
+    getEditingDisplayValue: (r: any, c: any) => this.getEditingDisplayValue(r, c),
     createPayload: this.createPayloadFn,
     applyEdit: (id: string, data: any) =>
       this.gridSvc
@@ -690,6 +691,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return field ? row?.[field] : undefined;
   }
 
+  protected getEditingDisplayValue(row: any, col: ColDef): any {
+    return this.getCellValue(row, col);
+  }
+
   public getColDefById(id: string): ColDef | undefined {
     return this.colDefsWithEdit.find((c) => c.field === id);
   }
@@ -714,6 +719,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Helper to derive filter select options from a column definition
   public getFilterOptionsForCol(col: ColDef): string[] | null {
     return this.filtersSvc.getFilterOptionsForCol(col);
+  }
+
+  protected getEditorOptions(col: ColDef): EditorChoice[] | null {
+    const opts = this.filtersSvc.getEditorChoices(col);
+    return opts.length ? opts : null;
   }
 
   public getFilterValue(field: string): string {
@@ -1257,7 +1267,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const id = this.toId(row);
     if (!id) return;
     this.editingCell.set({ id, field: col.field });
-    this.editingValue.set(this.getCellValue(row, col));
+    this.editingValue.set(this.getEditingDisplayValue(row, col));
   }
 
   protected startIndex(): number {
