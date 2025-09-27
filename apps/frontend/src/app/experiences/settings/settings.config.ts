@@ -253,27 +253,4 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       { key: 'integrations.sandbox_mode', label: 'Use Sandbox Mode', type: 'toggle', defaultValue: false },
     ],
   },
-  {
-    id: 'billing',
-    title: 'Billing & Usage',
-    description: 'Subscription, invoicing, and usage caps.',
-    icon: 'credit-card',
-    fields: [
-      {
-        key: 'billing.plan',
-        label: 'Plan Tier',
-        type: 'select',
-        defaultValue: 'starter',
-        options: [
-          { label: 'Starter', value: 'starter' },
-          { label: 'Growth', value: 'growth' },
-          { label: 'Scale', value: 'scale' },
-        ],
-      },
-      { key: 'billing.renewal_date', label: 'Renewal Date', type: 'date', defaultValue: '' },
-      { key: 'billing.invoice_email', label: 'Invoice Email', type: 'email', placeholder: 'billing@example.com', defaultValue: '' },
-      { key: 'billing.payment_last4', label: 'Payment Method Last 4', type: 'text', placeholder: '4242', defaultValue: '' },
-      { key: 'billing.contacts_limit', label: 'Contacts Limit', type: 'number', defaultValue: 10000 },
-    ],
-  },
 ];
