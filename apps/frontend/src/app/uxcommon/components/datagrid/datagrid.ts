@@ -741,6 +741,59 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return tags;
   }
 
+  protected async handleTagRemoved(row: any, col: ColDef, tagName: string) {
+    if (!col?.field) return;
+    const trimmed = typeof tagName === 'string' ? tagName.trim() : '';
+    if (!trimmed) return;
+
+    const id = this.toId(row);
+    if (!id) return;
+
+    const current = this.getCellValue(row, col);
+    const previous = Array.isArray(current) ? [...current] : [];
+    if (!previous.some((tag) => tag === trimmed)) return;
+
+    const field = col.field as string;
+    const updateRowTags = (tags: string[]) => {
+      const safe = Array.isArray(tags) ? [...tags] : [];
+      (row as Record<string, unknown>)[field] = safe;
+      this.updateEditedRowInCachesFn(id, field, safe);
+      this.updateTableWindowFn(this.startIndex(), this.endIndex());
+    };
+
+    const next = previous.filter((tag) => tag !== trimmed);
+    updateRowTags(next);
+
+    try {
+      const detachResult = await this.gridSvc.detachTag(id, trimmed);
+      if (detachResult === false) {
+        throw new Error('Tag removal was rejected');
+      }
+
+      let finalTags = next;
+      try {
+        const refreshed = await this.gridSvc.getTags(id);
+        if (Array.isArray(refreshed)) {
+          finalTags = [...refreshed];
+        }
+      } catch {
+        // If fetching fresh tags fails, keep optimistic state
+      }
+
+      updateRowTags(finalTags);
+      const removedTeams = (detachResult as any)?.removed_teams;
+      if (Array.isArray(removedTeams) && removedTeams.length > 0) {
+        const names = removedTeams.map((team: any) => team?.name || 'Unnamed team');
+        this.alertSvc.showSuccess(`Removed tag "${trimmed}"; removed from teams: ${names.join(', ')}`);
+      } else {
+        this.alertSvc.showSuccess(`Removed tag "${trimmed}"`);
+      }
+    } catch (err) {
+      updateRowTags(previous);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
+
   protected multiSelectHeight(options: SelectEditorOptions | null): string | null {
     if (!options?.multiple) return null;
     const rows = options.size && options.size > 0 ? Math.floor(options.size) : 5;
