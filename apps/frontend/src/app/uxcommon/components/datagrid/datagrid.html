@@ -172,16 +172,16 @@
             [style.width.px]="colWidths()[cell.column.id]"
             [style.minWidth.px]="colWidths()[cell.column.id]"
           >
-            @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let opts =
-            getFilterOptionsForCol(col); @if (opts?.length) {
+            @let ec = editingCell(); @if (ec && ec.id === toId(r.original) && ec.field === col.field) { @let editorOpts =
+            getEditorOptions(col); @if (editorOpts?.length) {
             <select
               class="select select-bordered select-xs w-full"
               [ngModel]="editingValue()"
               (ngModelChange)="editingValue.set($event)"
               autofocus
             >
-              @for (o of opts; track o) {
-              <option [value]="o">{{ o }}</option>
+              @for (opt of editorOpts; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
               }
             </select>
             } @else {

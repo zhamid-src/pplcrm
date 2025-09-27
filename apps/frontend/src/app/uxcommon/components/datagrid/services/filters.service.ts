@@ -1,6 +1,11 @@
 import { Injectable } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
 
+export interface EditorChoice {
+  value: string;
+  label: string;
+}
+
 export type Op = 'contains' | 'equals' | 'in';
 
 @Injectable({ providedIn: 'root' })
@@ -24,17 +29,39 @@ export class DataGridFiltersService {
     return out;
   }
 
-  getFilterOptionsForCol(col: ColDef): string[] | null {
-    const cep = col?.cellEditorParams;
-    let cfg: any = null;
-    if (!cep) return null;
-    try {
-      cfg = typeof cep === 'function' ? cep() : cep;
-    } catch {
-      cfg = null;
+  getEditorChoices(col: ColDef): EditorChoice[] {
+    const cfg = this.resolveEditorConfig(col);
+    if (!cfg || !Array.isArray(cfg.values)) return [];
+    const raw = cfg.values as any[];
+    const labels = Array.isArray(cfg.labels) ? cfg.labels : null;
+    const choices: EditorChoice[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const entry = raw[i];
+      const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
+      if (entry && typeof entry === 'object') {
+        const value = 'value' in entry ? entry.value : entry;
+        const labelCandidate =
+          'label' in entry
+            ? (entry as { label: unknown }).label
+            : 'name' in entry
+              ? (entry as { name: unknown }).name
+              : fallbackLabel;
+        const valueStr = value != null ? String(value) : '';
+        const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      } else {
+        const valueStr = entry != null ? String(entry) : '';
+        const labelStr = fallbackLabel != null ? String(fallbackLabel) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      }
     }
-    const vals = cfg?.values;
-    return Array.isArray(vals) && vals.length ? (vals as string[]) : null;
+    return choices;
+  }
+
+  getFilterOptionsForCol(col: ColDef): string[] | null {
+    const choices = this.getEditorChoices(col);
+    if (!choices.length) return null;
+    return choices.map((c) => c.label);
   }
 
   getFilterValue(filterValues: Record<string, any>, field: string): string {
@@ -66,5 +93,15 @@ export class DataGridFiltersService {
       else panel[k] = { op: 'contains', value: v };
     }
     return panel;
+  }
+
+  private resolveEditorConfig(col: ColDef): any {
+    const cep = col?.cellEditorParams;
+    if (!cep) return null;
+    try {
+      return typeof cep === 'function' ? cep() : cep;
+    } catch {
+      return null;
+    }
   }
 }

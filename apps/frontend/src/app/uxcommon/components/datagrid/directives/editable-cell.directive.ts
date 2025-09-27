@@ -19,6 +19,7 @@ export class EditableCellDirective {
     setEditingCell: (v: { id: string; field: string } | null) => void;
     setEditingValue: (v: any) => void;
     getCellValue: (row: any, col: any) => any;
+    getEditingDisplayValue: (row: any, col: any) => any;
     createPayload: (row: any, key: string) => any;
     applyEdit: (id: string, data: any) => Promise<boolean>;
     updateEditedRow: (id: string, field: string | undefined, v: any) => void;
@@ -32,14 +33,14 @@ export class EditableCellDirective {
 
   @HostListener('dblclick')
   onDblClick() {
-    const { row, col, toId, setEditingCell, setEditingValue, getCellValue } = this.pcEditable;
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = this.pcEditable;
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
     if (!col?.editable) return;
     const id = toId(row);
     if (!id) return;
     try {
-      const cur = getCellValue(row, col);
+      const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
       setEditingValue(cur);
     } catch {}
     setEditingCell({ id, field: col.field });

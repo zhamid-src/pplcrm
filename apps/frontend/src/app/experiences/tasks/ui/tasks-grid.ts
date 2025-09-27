@@ -70,7 +70,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       headerName: 'Status',
       editable: true,
       cellRenderer: (p: any) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusLabels },
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
       valueSetter: (p: any) => this.statusValueSetter(p),
     },
     {
@@ -78,7 +78,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       headerName: 'Priority',
       editable: true,
       cellRenderer: (p: any) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityLabels },
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
       valueSetter: (p: any) => this.priorityValueSetter(p),
     },
     {
@@ -215,14 +215,24 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     return due < today;
   }
 
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
   private parsePriorityLabel(label: string) {
-    const idx = this.priorityLabels.indexOf(label);
-    return idx >= 0 ? this.priorityOptions[idx] : label;
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
   }
 
   private parseStatusLabel(label: string) {
-    const idx = this.statusLabels.indexOf(label);
-    return idx >= 0 ? this.statusOptions[idx] : label;
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
   }
 
   private priorityValueSetter(p: any) {
@@ -287,7 +297,8 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
 
   private toTitle(v: string) {
     return v
-      .split('_')
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
       .map((s) => (s ? s[0].toUpperCase() + s.slice(1) : s))
       .join(' ');
   }
