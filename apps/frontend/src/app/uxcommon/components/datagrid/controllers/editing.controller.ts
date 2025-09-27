@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class EditingController {
-  coerceEditingValue(col: { cellDataType?: string }, raw: any): any {
+  public coerceEditingValue(col: { cellDataType?: string }, raw: any): any {
     const t = String(col?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') {
       const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
@@ -15,11 +15,7 @@ export class EditingController {
     return raw;
   }
 
-  shouldBlockEdit(row: any, key: string): boolean {
-    return !!(row && typeof row === 'object' && 'deletable' in row && (row as { deletable?: boolean }).deletable === false && key === 'name');
-  }
-
-  async commitSingleCell(opts: {
+  public async commitSingleCell(opts: {
     row: any;
     col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean };
     currentValue: any;
@@ -52,7 +48,8 @@ export class EditingController {
         changed = false;
       }
     } else {
-      const equal = prev === opts.currentValue || (prev == null && (opts.currentValue == null || opts.currentValue === ''));
+      const equal =
+        prev === opts.currentValue || (prev == null && (opts.currentValue == null || opts.currentValue === ''));
       changed = !equal;
       if (changed) Object.assign(row as object, { [key]: opts.currentValue });
     }
@@ -81,5 +78,15 @@ export class EditingController {
       opts.showError('Update failed');
       return false;
     }
+  }
+
+  public shouldBlockEdit(row: any, key: string): boolean {
+    return !!(
+      row &&
+      typeof row === 'object' &&
+      'deletable' in row &&
+      (row as { deletable?: boolean }).deletable === false &&
+      key === 'name'
+    );
   }
 }

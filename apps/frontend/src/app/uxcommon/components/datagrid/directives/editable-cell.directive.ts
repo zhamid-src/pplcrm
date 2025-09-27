@@ -41,7 +41,8 @@ export class EditableCellDirective {
     if (!id) return;
     try {
       const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
-      setEditingValue(cur);
+      const cloned = Array.isArray(cur) ? [...cur] : cur;
+      setEditingValue(cloned);
     } catch {}
     setEditingCell({ id, field: col.field });
     this.isEditing = true;

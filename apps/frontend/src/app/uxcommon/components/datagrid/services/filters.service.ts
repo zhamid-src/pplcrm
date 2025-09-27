@@ -1,12 +1,18 @@
 import { Injectable } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
 
-export interface EditorChoice {
+export type Op = 'contains' | 'equals' | 'in';
+
+export interface SelectOption {
   value: string;
   label: string;
 }
 
-export type Op = 'contains' | 'equals' | 'in';
+export interface SelectEditorOptions {
+  choices: SelectOption[];
+  multiple: boolean;
+  size?: number;
+}
 
 @Injectable({ providedIn: 'root' })
 export class DataGridFiltersService {
@@ -29,14 +35,14 @@ export class DataGridFiltersService {
     return out;
   }
 
-  getEditorChoices(col: ColDef): EditorChoice[] {
+  getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
     const cfg = this.resolveEditorConfig(col);
-    if (!cfg || !Array.isArray(cfg.values)) return [];
-    const raw = cfg.values as any[];
+    if (!cfg) return null;
+    const rawValues = Array.isArray(cfg.values) ? (cfg.values as any[]) : [];
     const labels = Array.isArray(cfg.labels) ? cfg.labels : null;
-    const choices: EditorChoice[] = [];
-    for (let i = 0; i < raw.length; i++) {
-      const entry = raw[i];
+    const choices: SelectOption[] = [];
+    for (let i = 0; i < rawValues.length; i++) {
+      const entry = rawValues[i];
       const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
       if (entry && typeof entry === 'object') {
         const value = 'value' in entry ? entry.value : entry;
@@ -55,13 +61,18 @@ export class DataGridFiltersService {
         choices.push({ value: valueStr, label: labelStr });
       }
     }
-    return choices;
+    const multiple = !!cfg.multiple;
+    if (!choices.length && !multiple) return null;
+    const sizeRaw = cfg.size ?? cfg.listSize ?? cfg.rows ?? cfg.lines;
+    const parsed = Number(sizeRaw);
+    const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
+    return { choices, multiple, size };
   }
 
   getFilterOptionsForCol(col: ColDef): string[] | null {
-    const choices = this.getEditorChoices(col);
-    if (!choices.length) return null;
-    return choices.map((c) => c.label);
+    const options = this.getSelectEditorOptions(col);
+    if (!options || !options.choices.length) return null;
+    return options.choices.map((c) => c.label);
   }
 
   getFilterValue(filterValues: Record<string, any>, field: string): string {

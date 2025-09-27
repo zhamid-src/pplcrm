@@ -25,4 +25,19 @@ export class DataGridUtilsService {
   tagArrayEquals(tagsA: string[], tagsB: string[]): number {
     return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
   }
+
+  normalizeTagSelection(value: unknown): string[] {
+    const input = Array.isArray(value) ? value : value == null ? [] : [value];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of input) {
+      if (entry == null) continue;
+      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
+      if (!tag) continue;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      result.push(tag);
+    }
+    return result;
+  }
 }
