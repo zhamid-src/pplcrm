@@ -118,6 +118,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       field: 'tags',
       headerName: 'Tags',
       editable: true,
+      tagColumn: true,
       cellDataType: 'object',
       cellRendererParams: {
         type: 'persons',
@@ -203,58 +204,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       this.tagOptionValues = await this.tagOptionsSvc.getTagNames();
     } catch {
       this.tagOptionValues = [];
-    }
-  }
-
-  protected override async commitEdit(row: any, col: ColDef) {
-    if (col.field === 'tags') {
-      await this.commitTags(row);
-      return;
-    }
-    await super.commitEdit(row, col);
-  }
-
-  private async commitTags(row: any) {
-    const id = this.toId(row);
-    if (!id) {
-      this.editingCell.set(null);
-      return;
-    }
-
-    const previous = Array.isArray(row?.tags)
-      ? this.utils.normalizeTagSelection(row.tags)
-      : [];
-    const next = this.utils.normalizeTagSelection(this.editingValue());
-
-    const toAdd = next.filter((tag) => !previous.includes(tag));
-    const toRemove = previous.filter((tag) => !next.includes(tag));
-
-    if (!toAdd.length && !toRemove.length) {
-      this.editingCell.set(null);
-      return;
-    }
-
-    try {
-      await this.syncPersonTags(id, toAdd, toRemove);
-      const refreshed = await this.gridSvc.getTags(id);
-      (row as Record<string, unknown>)['tags'] = refreshed;
-      this.updateEditedRowInCachesFn(id, 'tags', refreshed);
-      this.updateTableWindowFn(this.startIndex(), this.endIndex());
-      this.alertSvc.showSuccess('Tags updated');
-    } catch {
-      (row as Record<string, unknown>)['tags'] = previous;
-      this.alertSvc.showError('Failed to update tags');
-    } finally {
-      this.editingCell.set(null);
-    }
-  }
-
-  private async syncPersonTags(id: string, add: string[], remove: string[]) {
-    for (const tag of remove) {
-      await this.gridSvc.detachTag(id, tag);
-    }
-    for (const tag of add) {
-      await this.gridSvc.attachTag(id, tag);
     }
   }
 

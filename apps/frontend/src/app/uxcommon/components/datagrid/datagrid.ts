@@ -597,6 +597,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected async commitEdit(row: any, col: ColDef) {
     if (!col.field) return;
+
+    if (this.isTagColumn(col)) {
+      await this.commitTagColumn(row, col);
+      return;
+    }
+
     const value = this.editingValue();
     await this.editingCtrl.commitSingleCell({
       row,
@@ -742,18 +748,58 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected async handleTagRemoved(row: any, col: ColDef, tagName: string) {
-    if (!col?.field) return;
+    if (!col?.field || !this.isTagColumn(col)) return;
     const trimmed = typeof tagName === 'string' ? tagName.trim() : '';
     if (!trimmed) return;
+
+    const current = this.getCellValue(row, col);
+    const previous = this.utilsSvc.normalizeTagSelection(current);
+    if (!previous.includes(trimmed)) return;
+
+    const next = previous.filter((tag) => tag !== trimmed);
+    await this.persistTagSelection(row, col, next, {
+      optimistic: true,
+      successMessage: `Removed tag "${trimmed}"`,
+    });
+  }
+
+  protected isTagColumn(col: ColDef): boolean {
+    if (!col) return false;
+    if (col.tagColumn) return true;
+    return (col.field ?? '').toLowerCase() === 'tags';
+  }
+
+  protected async commitTagColumn(row: any, col: ColDef) {
+    try {
+      const next = this.utilsSvc.normalizeTagSelection(this.editingValue());
+      await this.persistTagSelection(row, col, next, { successMessage: 'Tags updated' });
+    } finally {
+      this.editingCell.set(null);
+    }
+  }
+
+  protected async persistTagSelection(
+    row: any,
+    col: ColDef,
+    desired: string[],
+    opts?: { optimistic?: boolean; successMessage?: string },
+  ) {
+    const field = col.field;
+    if (!field) return;
 
     const id = this.toId(row);
     if (!id) return;
 
-    const current = this.getCellValue(row, col);
-    const previous = Array.isArray(current) ? [...current] : [];
-    if (!previous.some((tag) => tag === trimmed)) return;
+    const previous = this.utilsSvc.normalizeTagSelection(this.getCellValue(row, col));
+    const next = this.utilsSvc.normalizeTagSelection(desired);
 
-    const field = col.field as string;
+    const toAdd = next.filter((tag) => !previous.includes(tag));
+    const toRemove = previous.filter((tag) => !next.includes(tag));
+
+    if (!toAdd.length && !toRemove.length) {
+      return;
+    }
+
     const updateRowTags = (tags: string[]) => {
       const safe = Array.isArray(tags) ? [...tags] : [];
       (row as Record<string, unknown>)[field] = safe;
@@ -761,13 +807,28 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.updateTableWindowFn(this.startIndex(), this.endIndex());
     };
 
-    const next = previous.filter((tag) => tag !== trimmed);
-    updateRowTags(next);
+    if (opts?.optimistic) {
+      updateRowTags(next);
+    }
 
     try {
-      const detachResult = await this.gridSvc.detachTag(id, trimmed);
-      if (detachResult === false) {
-        throw new Error('Tag removal was rejected');
+      const removedTeamNames: string[] = [];
+
+      for (const tag of toRemove) {
+        const detachResult = await this.gridSvc.detachTag(id, tag);
+        if (detachResult === false) {
+          throw new Error('Tag removal was rejected');
+        }
+        const teams = (detachResult as any)?.removed_teams;
+        if (Array.isArray(teams)) {
+          for (const team of teams) {
+            removedTeamNames.push(team?.name || 'Unnamed team');
+          }
+        }
+      }
+
+      for (const tag of toAdd) {
+        await this.gridSvc.attachTag(id, tag);
       }
 
       let finalTags = next;
@@ -777,20 +838,25 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           finalTags = [...refreshed];
         }
       } catch {
-        // If fetching fresh tags fails, keep optimistic state
+        // Keep optimistic tags if refresh fails
       }
 
       updateRowTags(finalTags);
-      const removedTeams = (detachResult as any)?.removed_teams;
-      if (Array.isArray(removedTeams) && removedTeams.length > 0) {
-        const names = removedTeams.map((team: any) => team?.name || 'Unnamed team');
-        this.alertSvc.showSuccess(`Removed tag "${trimmed}"; removed from teams: ${names.join(', ')}`);
-      } else {
-        this.alertSvc.showSuccess(`Removed tag "${trimmed}"`);
+      const success = opts?.successMessage ?? '';
+      if (success) {
+        if (removedTeamNames.length) {
+          this.alertSvc.showSuccess(`${success}; removed from teams: ${removedTeamNames.join(', ')}`);
+        } else {
+          this.alertSvc.showSuccess(success);
+        }
+      } else if (removedTeamNames.length) {
+        this.alertSvc.showSuccess(`Removed from teams: ${removedTeamNames.join(', ')}`);
       }
     } catch (err) {
-      updateRowTags(previous);
-      this.alertSvc.showError('Failed to remove tag');
+      if (opts?.optimistic) {
+        updateRowTags(previous);
+      }
+      this.alertSvc.showError('Failed to update tags');
     }
   }
 
