@@ -3,6 +3,7 @@ export interface ColumnDef {
   field?: string;
   headerName?: string;
   editable?: boolean;
+  tagColumn?: boolean;
   cellDataType?: string;
   cellRenderer?: (p: { data: any; value: any; colDef: ColumnDef }) => string;
   cellRendererParams?: any;

@@ -213,11 +213,11 @@
             } @else {
             @let rawValue = getCellValue(r.original, col);
             @let tagList = tagsAsStrings(rawValue);
-            @if (col.field === 'tags' && tagList.length) {
+            @if (isTagColumn(col) && tagList.length) {
             <pc-tags
               [tags]="tagList"
               [readonly]="true"
-              [canDelete]="isEditable(col)"
+              [canDelete]="isEditable(col) && isTagColumn(col)"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
             } @else if (col.valueFormatter) {
