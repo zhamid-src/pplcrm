@@ -29,6 +29,7 @@ export class EditableCellDirective {
     showSuccess: (m: string) => void;
     showError: (m: string) => void;
     undo: () => void;
+    customCommit?: (currentValue: any) => Promise<unknown>;
   };
 
   @HostListener('dblclick')
@@ -74,21 +75,26 @@ export class EditableCellDirective {
   private async commit() {
     const p = this.pcEditable;
     if (!p?.col?.field) return;
-    await this.editing.commitSingleCell({
-      row: p.row,
-      col: p.col,
-      currentValue: p.coerce(p.col, p.value()),
-      toId: p.toId,
-      createPayload: p.createPayload,
-      applyEdit: p.applyEdit,
-      updateEditedRowInCaches: p.updateEditedRow,
-      updateTableWindow: p.updateWindow,
-      startIndex: p.startIndex,
-      endIndex: p.endIndex,
-      showSuccess: p.showSuccess,
-      showError: p.showError,
-      undo: p.undo,
-    });
+    const currentValue = p.coerce(p.col, p.value());
+    if (typeof p.customCommit === 'function') {
+      await p.customCommit(currentValue);
+    } else {
+      await this.editing.commitSingleCell({
+        row: p.row,
+        col: p.col,
+        currentValue,
+        toId: p.toId,
+        createPayload: p.createPayload,
+        applyEdit: p.applyEdit,
+        updateEditedRowInCaches: p.updateEditedRow,
+        updateTableWindow: p.updateWindow,
+        startIndex: p.startIndex,
+        endIndex: p.endIndex,
+        showSuccess: p.showSuccess,
+        showError: p.showError,
+        undo: p.undo,
+      });
+    }
     p.setEditingCell(null);
     this.isEditing = false;
   }
