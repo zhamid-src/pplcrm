@@ -157,9 +157,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const current = this.pageSize();
     return base.includes(current) ? base : [current, ...base];
   });
-  protected readonly totalPages = computed(() =>
-    this.dataSvc.computeTotalPages(this.totalCountAll(), this.pageSize()),
-  );
+  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll(), this.pageSize()));
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
@@ -287,6 +285,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     showSuccess: (m: string) => this.alertSvc.showSuccess(m),
     showError: (m: string) => this.alertSvc.showError(m),
     undo: () => this.undoMgr.undo(),
+    customCommit: this.isTagColumn(col)
+      ? async () => {
+          await this.commitTagColumn(row, col);
+        }
+      : undefined,
   });
 
   // Inputs & Outputs
@@ -758,7 +761,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const next = previous.filter((tag) => tag !== trimmed);
     await this.persistTagSelection(row, col, next, {
-      optimistic: true,
       successMessage: `Removed tag "${trimmed}"`,
     });
   }
@@ -772,18 +774,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected async commitTagColumn(row: any, col: ColDef) {
     try {
       const next = this.utilsSvc.normalizeTagSelection(this.editingValue());
-      await this.persistTagSelection(row, col, next, { successMessage: 'Tags updated' });
+      await this.persistTagSelection(row, col, next);
     } finally {
       this.editingCell.set(null);
     }
   }
 
-  protected async persistTagSelection(
-    row: any,
-    col: ColDef,
-    desired: string[],
-    opts?: { optimistic?: boolean; successMessage?: string },
-  ) {
+  protected async persistTagSelection(row: any, col: ColDef, desired: string[], opts?: { successMessage?: string }) {
     const field = col.field;
     if (!field) return;
 
@@ -793,71 +790,115 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const previous = this.utilsSvc.normalizeTagSelection(this.getCellValue(row, col));
     const next = this.utilsSvc.normalizeTagSelection(desired);
 
-    const toAdd = next.filter((tag) => !previous.includes(tag));
-    const toRemove = previous.filter((tag) => !next.includes(tag));
-
-    if (!toAdd.length && !toRemove.length) {
-      return;
-    }
-
-    const updateRowTags = (tags: string[]) => {
+    const diff = this.diffTagSelection(previous, next);
+    if (!diff.hasChanges) return;
+    const applyTags = (tags: string[]) => {
       const safe = Array.isArray(tags) ? [...tags] : [];
       (row as Record<string, unknown>)[field] = safe;
       this.updateEditedRowInCachesFn(id, field, safe);
       this.updateTableWindowFn(this.startIndex(), this.endIndex());
     };
 
-    if (opts?.optimistic) {
-      updateRowTags(next);
-    }
+    applyTags(next);
 
     try {
-      const removedTeamNames: string[] = [];
-
-      for (const tag of toRemove) {
-        const detachResult = await this.gridSvc.detachTag(id, tag);
-        if (detachResult === false) {
-          throw new Error('Tag removal was rejected');
-        }
-        const teams = (detachResult as any)?.removed_teams;
-        if (Array.isArray(teams)) {
-          for (const team of teams) {
-            removedTeamNames.push(team?.name || 'Unnamed team');
-          }
-        }
-      }
-
-      for (const tag of toAdd) {
-        await this.gridSvc.attachTag(id, tag);
-      }
-
-      let finalTags = next;
-      try {
-        const refreshed = await this.gridSvc.getTags(id);
-        if (Array.isArray(refreshed)) {
-          finalTags = [...refreshed];
-        }
-      } catch {
-        // Keep optimistic tags if refresh fails
-      }
-
-      updateRowTags(finalTags);
-      const success = opts?.successMessage ?? '';
-      if (success) {
-        if (removedTeamNames.length) {
-          this.alertSvc.showSuccess(`${success}; removed from teams: ${removedTeamNames.join(', ')}`);
-        } else {
-          this.alertSvc.showSuccess(success);
-        }
-      } else if (removedTeamNames.length) {
-        this.alertSvc.showSuccess(`Removed from teams: ${removedTeamNames.join(', ')}`);
-      }
-    } catch (err) {
-      if (opts?.optimistic) {
-        updateRowTags(previous);
-      }
+      const removedTeamNames = await this.applyTagDiff(id, diff);
+      const finalTags = await this.refreshTagsFromServer(id, next);
+      applyTags(finalTags);
+      this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
+    } catch {
+      applyTags(previous);
       this.alertSvc.showError('Failed to update tags');
     }
+  }
+
+  private diffTagSelection(previous: string[], next: string[]): TagDiff {
+    const toAdd = next.filter((tag) => !previous.includes(tag));
+    const toRemove = previous.filter((tag) => !next.includes(tag));
+    return {
+      toAdd,
+      toRemove,
+      hasChanges: toAdd.length > 0 || toRemove.length > 0,
+    };
+  }
+
+  private async applyTagDiff(id: string, diff: TagDiff): Promise<string[]> {
+    const removedTeamNames: string[] = [];
+
+    for (const tag of diff.toRemove) {
+      const detachResult = await this.gridSvc.detachTag(id, tag);
+      if (detachResult === false) {
+        throw new Error('Tag removal was rejected');
+      }
+      const teams = (detachResult as any)?.removed_teams;
+      if (Array.isArray(teams)) {
+        for (const team of teams) {
+          removedTeamNames.push(team?.name || 'Unnamed team');
+        }
+      }
+    }
+
+    for (const tag of diff.toAdd) {
+      await this.gridSvc.attachTag(id, tag);
+    }
+
+    return removedTeamNames;
+  }
+
+  private async refreshTagsFromServer(id: string, fallback: string[]): Promise<string[]> {
+    try {
+      const refreshed = await this.gridSvc.getTags(id);
+      if (Array.isArray(refreshed)) {
+        return [...refreshed];
+      }
+    } catch {
+      // ignore refresh errors; fall back to optimistic state
+    }
+    return fallback;
+  }
+
+  private notifyTagSuccess(successMessage: string | undefined, removedTeamNames: string[], diff: TagDiff) {
+    const hasRemovedTeams = removedTeamNames.length > 0;
+    const message = successMessage ?? this.buildTagSuccessMessage(diff);
+    if (!message && !hasRemovedTeams) return;
+
+    if (message) {
+      if (hasRemovedTeams) {
+        this.alertSvc.showSuccess(`${message}; removed from teams: ${removedTeamNames.join(', ')}`);
+      } else {
+        this.alertSvc.showSuccess(message);
+      }
+      return;
+    }
+
+    this.alertSvc.showSuccess(`Removed from teams: ${removedTeamNames.join(', ')}`);
+  }
+
+  private buildTagSuccessMessage(diff: TagDiff): string | undefined {
+    const additions = diff.toAdd;
+    const removals = diff.toRemove;
+    if (!additions.length && !removals.length) return undefined;
+
+    if (additions.length && !removals.length) {
+      return additions.length === 1 ? `Added tag "${additions[0]}"` : `Added ${additions.length} tags`;
+    }
+
+    if (removals.length && !additions.length) {
+      return removals.length === 1 ? `Removed tag "${removals[0]}"` : `Removed ${removals.length} tags`;
+    }
+
+    const parts: string[] = [];
+    if (additions.length) {
+      parts.push(
+        additions.length === 1 ? `added "${additions[0]}"` : `added ${additions.length} tags`,
+      );
+    }
+    if (removals.length) {
+      parts.push(
+        removals.length === 1 ? `removed "${removals[0]}"` : `removed ${removals.length} tags`,
+      );
+    }
+    return `Tags updated (${parts.join('; ')})`;
   }
 
   protected multiSelectHeight(options: SelectEditorOptions | null): string | null {
@@ -1058,7 +1099,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.pageIndex() >= last) return;
     await this.loadPage(last, false);
   }
-
 
   // Keyboard navigation between cells
   protected onCellKeydown(ev: KeyboardEvent) {
@@ -1670,3 +1710,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 }
 
 type RowOf<K extends keyof Models> = Models[K];
+type TagDiff = {
+  toAdd: string[];
+  toRemove: string[];
+  hasChanges: boolean;
+};
