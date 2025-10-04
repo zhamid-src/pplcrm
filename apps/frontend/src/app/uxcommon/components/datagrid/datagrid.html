@@ -17,7 +17,12 @@
       <thead>
         <tr>
           @if (enableSelection()) {
-          <th class="border-r border-base-300 pl-2">
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -30,16 +35,17 @@
           <th
             role="columnheader"
             class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column?.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
             (dragstart)="onHeaderDragStart(h, $event)"
             (dragover)="onHeaderDragOver(h, $event)"
             (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="colWidths()[h.column.id]"
-            [style.minWidth.px]="colWidths()[h.column.id]"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
           >
-            <div class="flex items-center gap-2">
-              <span class="flex-grow" (click)="toggleHeaderSort(h, $event)">
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
                 {{ h.column?.columnDef?.header || h.column?.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
@@ -135,7 +141,13 @@
           [class.bg-base-200]="(i % 2) === 1"
         >
           @if (enableSelection()) {
-          <td class="sticky left-0 z-20 border-r border-base-300 pl-2" [style.background]="rowBgForIndex(i)">
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
             <div class="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -169,8 +181,8 @@
             [class.cursor-text]="isEditable(col)"
             [class.cursor-pointer]="isPointerInteractive(col)"
             [attr.data-col-id]="cell.column.id"
-            [style.width.px]="colWidths()[cell.column.id]"
-            [style.minWidth.px]="colWidths()[cell.column.id]"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
           >
             @let ec = editingCell();
             @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field;

@@ -56,11 +56,11 @@ export class PinningController {
     this.pinStateVer.update((x) => x + 1);
   }
 
-  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null } {
+  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null; headerMap: Map<string, number> } {
     const measured = this.columnsSvc.measureHeaderWidths(table);
     this.headerWidthMap = measured.headerMap;
     this.headerWidthVer.update((x) => x + 1);
-    return { selectionWidth: measured.selectionWidth };
+    return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
   }
 
   updatePinOffsets(tsTable: any, getColWidth: (id: string) => number | null, selectionStickyWidth: number) {

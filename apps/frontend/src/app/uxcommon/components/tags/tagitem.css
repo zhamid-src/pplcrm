@@ -1,0 +1,32 @@
+:host {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  min-height: 1.5rem;
+  height: auto;
+  line-height: 1.2;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tag-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.tag-remove {
+  align-self: flex-start;
+  margin-top: 0.125rem;
+}
