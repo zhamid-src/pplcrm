@@ -120,6 +120,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     requestAnimationFrame(() => {
       const measured = this.pctrl.measureHeaderWidths(table);
       if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
+      const minMap = this.computeHeaderMinWidths(table);
+      if (Object.keys(minMap).length > 0) {
+        this.headerMinWidths.set(minMap);
+        this.enforceWidthMinimums(minMap);
+      }
     });
   };
   // Virtualizer disabled for paginated grid
@@ -145,9 +150,33 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     initialValue: this.searchSvc.getFilterText(),
   });
   private readonly hasEditableColumns = signal(false);
+  private readonly headerMinWidths = signal<Record<string, number>>({});
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
+
+  private readonly selectionColumnWidthPx = 72;
+  private readonly headerAutoSizeBufferPx = 8;
+
+  protected columnWidthPx(colId: string | null | undefined): number {
+    if (!colId) return this.columnMinWidthPx(colId);
+    return this.getColWidth(colId) ?? this.columnMinWidthPx(colId);
+  }
+
+  protected columnMinWidthPx(colId: string | null | undefined): number {
+    if (!colId) return 40;
+    const minMap = this.headerMinWidths();
+    const measured = minMap[colId];
+    if (typeof measured === 'number' && measured > 0) {
+      return Math.max(40, Math.ceil(measured));
+    }
+    return 40;
+  }
+
+  private clampColumnWidth(id: string, px: number): number {
+    const base = Math.max(40, Math.floor(px));
+    return Math.max(this.columnMinWidthPx(id), base);
+  }
 
   // Computed derivations
   // Page size selection (persisted via GridStoreService)
@@ -403,6 +432,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public async ngOnInit() {
+    this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
     this._persistKey = `pcdg:${urlKey}`;
@@ -479,6 +509,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Set default page size from config; loadState may override with persisted value
     if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
     this.store.loadState();
+    this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     await this.loadPage(0);
     this._initialized = true;
   }
@@ -717,8 +748,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public getColWidth(id: string): number | null {
     const col = this.tsTable?.getColumn?.(id);
     const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
-    if (size && size > 0) return size;
-    return this.colWidths()[id] ?? null;
+    const min = this.columnMinWidthPx(id);
+    if (size && size > 0) return Math.max(size, min);
+    const stored = this.colWidths()[id];
+    if (typeof stored === 'number') return Math.max(stored, min);
+    return min;
   }
 
   // displayedCount is computed
@@ -1324,10 +1358,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       header: h,
       getColWidth: (id: string) => this.getColWidth(id),
       setWidth: (col: any, id: string, w: number) => {
+        const width = this.clampColumnWidth(id, w);
         try {
-          if (typeof col?.setSize === 'function') col.setSize(w);
+          if (typeof col?.setSize === 'function') col.setSize(width);
         } catch {}
-        this.setColWidth(id, w);
+        this.setColWidth(id, width);
       },
       requestPersist: () => this.store.requestPersist(),
       selectionWidth: () => this.selectionStickyWidth(),
@@ -1391,7 +1426,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected setColWidth(id: string, px: number) {
     const next = { ...this.colWidths() };
-    const width = Math.max(40, Math.floor(px));
+    const width = this.clampColumnWidth(id, px);
     next[id] = width;
     this.colWidths.set(next);
     if (this.tsTable) {
@@ -1409,6 +1444,72 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     } catch {}
     // After width change, recompute sticky offsets
     this.updateHeaderWidths();
+  }
+
+  private computeHeaderMinWidths(table: HTMLTableElement): Record<string, number> {
+    const map: Record<string, number> = {};
+    const headers = table.querySelectorAll('thead th[data-col-id]');
+    headers.forEach((node) => {
+      const el = node as HTMLElement;
+      const id = (el.dataset?.['colId'] ?? el.getAttribute('data-col-id')) || '';
+      if (!id) return;
+      const width = this.measureHeaderPreferredWidth(el);
+      if (width > 0) map[id] = width;
+    });
+    return map;
+  }
+
+  private measureHeaderPreferredWidth(headerEl: HTMLElement): number {
+    const doc = headerEl.ownerDocument;
+    if (!doc) return 0;
+    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
+    if (!content) {
+      const rect = headerEl.getBoundingClientRect();
+      return Math.max(0, Math.ceil(rect.width));
+    }
+    const clone = content.cloneNode(true) as HTMLElement;
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.flex = '0 0 auto';
+    clone.style.whiteSpace = 'nowrap';
+    clone.style.width = 'auto';
+    clone.style.height = 'auto';
+    clone.style.maxWidth = 'unset';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
+    if (labelClone) {
+      labelClone.style.flex = '0 0 auto';
+      labelClone.style.whiteSpace = 'nowrap';
+    }
+    doc.body.appendChild(clone);
+    const contentWidth = clone.getBoundingClientRect().width;
+    clone.remove();
+    if (contentWidth <= 0) return 0;
+    const view = doc.defaultView;
+    const style = view ? view.getComputedStyle(headerEl) : null;
+    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
+    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
+    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
+    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
+    const total =
+      contentWidth +
+      paddingLeft +
+      paddingRight +
+      borderLeft +
+      borderRight +
+      this.headerAutoSizeBufferPx;
+    return Math.max(0, Math.ceil(total));
+  }
+
+  private enforceWidthMinimums(mins: Record<string, number>) {
+    for (const [id, min] of Object.entries(mins)) {
+      const current = this.colWidths()[id];
+      if (typeof current === 'number' && current > 0 && current < min) {
+        this.setColWidth(id, min);
+      }
+    }
   }
 
   // Column visibility bulk actions

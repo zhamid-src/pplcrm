@@ -21,10 +21,11 @@ import { Icon } from '@icons/icon';
 @Component({
   selector: 'pc-tagitem',
   imports: [Icon],
-  template: `<div class="badge rounded-lg px-0 gap-1 pl-2 h-6 bordered border-gray-300 animate-flash">
+  styleUrl: './tagitem.css',
+  template: `<div class="badge rounded-lg px-0 gap-1 pl-2 bordered border-gray-300 animate-flash">
     <span
       (click)="emitClick()"
-      class="text-gray-400 hover:text-primary cursor-pointer font-light pr-1"
+      class="tag-label text-gray-400 hover:text-primary cursor-pointer font-light pr-1"
       [class.pr-2]="!canDelete()"
     >
       {{ name() }}</span
@@ -32,7 +33,7 @@ import { Icon } from '@icons/icon';
     <pc-icon
       name="x-mark"
       [size]="3"
-      class="text-gray-500 hover:text-error cursor-pointer pr-1 mr-0"
+      class="tag-remove text-gray-500 hover:text-error cursor-pointer pr-1 mr-0"
       [class.hidden]="!canDelete()"
       (click)="emitClose()"
     />
