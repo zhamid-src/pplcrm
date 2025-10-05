@@ -3,6 +3,12 @@ import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 
 import { TagItem } from './tagitem';
+import { TagPaletteService } from './tag-palette.service';
+
+interface TagView {
+  name: string;
+  color: string | null;
+}
 
 @Component({
   selector: 'pc-tags',
@@ -14,19 +20,21 @@ import { TagItem } from './tagitem';
         [filterSvc]="enableAutoComplete() ? tagSvc : null"
       ></pc-autocomplete>
     }
-    @if (tags().length) {
+    @let tagViews = displayTags();
+    @if (tagViews.length) {
       <div class="my-1"></div>
       <div class="contents" [class.mt-2]="!readonly()">
         @if (!readonly()) {
           <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
         }
-        @for (tag of tags(); track tag) {
+        @for (tag of tagViews; track tag.name) {
           <pc-tagitem
             class="mr-1 mb-1"
-            [name]="tag"
+            [name]="tag.name"
+            [color]="tag.color"
             [canDelete]="canDelete()"
-            (click)="clicked(tag)"
-            (close)="closed(tag)"
+            (click)="clicked(tag.name)"
+            (close)="closed(tag.name)"
           ></pc-tagitem>
         }
       </div>
@@ -34,6 +42,7 @@ import { TagItem } from './tagitem';
 })
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];
+  private readonly paletteSvc = inject(TagPaletteService);
 
   /**
    * If the user adds a new tag then this event is emitted with the new tag.
@@ -85,6 +94,23 @@ export class Tags implements OnInit {
   public readonly = input<boolean>(false);
   public tagSvc = inject(TagsService);
   public tags = input<string[]>([]);
+
+  protected displayTags(): TagView[] {
+    const raw = this.tags() ?? [];
+    const palette = this.paletteSvc.palette();
+    const seen = new Set<string>();
+    const out: TagView[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const name = entry.trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const lower = name.toLowerCase();
+      const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
+      out.push({ name, color: color ?? null });
+    }
+    return out;
+  }
 
   constructor() {
     /*

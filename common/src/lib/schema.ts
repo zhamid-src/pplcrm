@@ -15,6 +15,15 @@ export const AddTagObj = z.object({
    * The optional field that describes the tag.
    */
   description: z.string().nullable().optional(),
+  /**
+   * Optional hex colour (e.g. #ff0000) used when displaying the tag.
+   */
+  color: z
+    .string()
+    .trim()
+    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
+    .nullable()
+    .optional(),
 });
 
 /**
@@ -257,6 +266,15 @@ export const UpdateTagObj = z.object({
    * The optional field that describes the tag.
    */
   description: z.string().nullable().optional(),
+  /**
+   * Optional hex colour (e.g. #ff0000) used when displaying the tag.
+   */
+  color: z
+    .string()
+    .trim()
+    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
+    .nullable()
+    .optional(),
 });
 
 /**

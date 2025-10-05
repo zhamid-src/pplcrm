@@ -80,7 +80,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
   ) {
     for (const seed of SYSTEM_TAG_SEED_DATA) {
       const existing = await this.getSelect(trx)
-        .select(['id', 'deletable'])
+        .select(['id', 'deletable', 'color'])
         .where('tenant_id', '=', input.tenant_id)
         .where('name', '=', seed.name)
         .executeTakeFirst();
@@ -90,6 +90,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
           tenant_id: input.tenant_id,
           name: seed.name,
           description: seed.description,
+          color: seed.color ?? null,
           deletable: false,
           createdby_id: input.user_id,
           updatedby_id: input.user_id,
@@ -99,10 +100,14 @@ export class TagsRepo extends BaseRepository<'tags'> {
         continue;
       }
 
-      if (existing.deletable !== false) {
+      const desiredColor = seed.color ?? null;
+      const needsDeletableUpdate = existing.deletable !== false;
+      const needsColorUpdate = existing.color !== desiredColor;
+      if (needsDeletableUpdate || needsColorUpdate) {
         const updateRow = {
-          deletable: false,
           updatedby_id: input.user_id,
+          ...(needsDeletableUpdate ? { deletable: false } : {}),
+          ...(needsColorUpdate ? { color: desiredColor } : {}),
         } as OperationDataType<'tags', 'update'>;
 
         await this.update(
@@ -182,11 +187,12 @@ export class TagsRepo extends BaseRepository<'tags'> {
         'tags.id',
         'tags.name',
         'tags.description',
+        'tags.color',
         'tags.deletable',
         fn.count('map_peoples_tags.person_id').as('use_count_people'),
         fn.count('map_households_tags.household_id').as('use_count_households'),
       ])
-      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.deletable'])
+      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable'])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
       )

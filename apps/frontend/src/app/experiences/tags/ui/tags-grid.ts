@@ -38,6 +38,13 @@ export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
   protected col = [
     { field: 'name', headerName: 'Tag Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'color',
+      headerName: 'Colour',
+      editable: true,
+      cellDataType: 'color',
+      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
+    },
     { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
     { field: 'use_count_people', headerName: 'People' },
     { field: 'use_count_households', headerName: 'Households' },
@@ -45,5 +52,19 @@ export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
 
   constructor() {
     super();
+  }
+
+  protected renderColorCell(raw: unknown): string {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+      return '<span class="text-xs text-neutral">None</span>';
+    }
+    const color = v.toLowerCase();
+
+    return `
+    <span class="inline-block h-4 w-8 rounded border shadow-sm"
+          style="background-color:${color}; border-color:${color}"
+          title="${color}"></span>
+  `;
   }
 }

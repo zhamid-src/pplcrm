@@ -12,6 +12,11 @@ export class EditingController {
       const v = String(raw ?? '').trim();
       return v.length > 10 ? v.slice(0, 10) : v;
     }
+    if (t === 'color' || t === 'colour') {
+      const v = String(raw ?? '').trim();
+      const pattern = /^#([0-9a-fA-F]{6})$/;
+      return pattern.test(v) ? v.toLowerCase() : null;
+    }
     return raw;
   }
 

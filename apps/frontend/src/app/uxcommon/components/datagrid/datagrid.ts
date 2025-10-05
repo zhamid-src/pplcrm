@@ -57,6 +57,7 @@ import { EditingController } from './controllers/editing.controller';
 import { FetchController } from './controllers/fetch.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
 @Component({
   selector: 'pc-datagrid',
@@ -564,13 +565,26 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.buildFilterModel(this.filterValues());
   }
 
-  protected callCellRenderer(row: any, col: ColDef): string {
+  protected readonly sanitizer = inject(DomSanitizer);
+
+  /** Trust cell renderer HTML so [innerHTML] won't strip styles. */
+  protected callCellRenderer(row: any, col: ColDef): SafeHtml {
     const fn: any = col.cellRenderer;
     if (typeof fn === 'function') {
       const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
-      return String(fn({ data: row, value, colDef: col }));
+
+      const raw = fn({ data: row, value, colDef: col });
+
+      // If renderers return strings (your current setup), trust them here.
+      if (typeof raw === 'string') {
+        return this.sanitizer.bypassSecurityTrustHtml(raw);
+      }
+
+      // If you later allow SafeHtml from some renderers, just return it.
+      return raw as SafeHtml;
     }
-    return '';
+    // Empty string is still valid SafeHtml
+    return this.sanitizer.bypassSecurityTrustHtml('');
   }
 
   protected callValueFormatter(row: any, col: ColDef): any {
@@ -923,14 +937,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const parts: string[] = [];
     if (additions.length) {
-      parts.push(
-        additions.length === 1 ? `added "${additions[0]}"` : `added ${additions.length} tags`,
-      );
+      parts.push(additions.length === 1 ? `added "${additions[0]}"` : `added ${additions.length} tags`);
     }
     if (removals.length) {
-      parts.push(
-        removals.length === 1 ? `removed "${removals[0]}"` : `removed ${removals.length} tags`,
-      );
+      parts.push(removals.length === 1 ? `removed "${removals[0]}"` : `removed ${removals.length} tags`);
     }
     return `Tags updated (${parts.join('; ')})`;
   }
@@ -1032,10 +1042,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.inlineFilterLabel(this.filterValues(), field);
   }
 
-  protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' {
+  protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' | 'color' {
     const t = String(col?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') return 'number';
     if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
+    if (t === 'color' || t === 'colour') return 'color';
     return 'text';
   }
 
@@ -1493,13 +1504,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
     const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
     const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
-    const total =
-      contentWidth +
-      paddingLeft +
-      paddingRight +
-      borderLeft +
-      borderRight +
-      this.headerAutoSizeBufferPx;
+    const total = contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + this.headerAutoSizeBufferPx;
     return Math.max(0, Math.ceil(total));
   }
 
@@ -1682,6 +1687,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const v = String(raw ?? '').trim();
       // normalize to YYYY-MM-DD if possible
       return v.length > 10 ? v.slice(0, 10) : v;
+    }
+    if (t === 'color') {
+      const v = String(raw ?? '').trim();
+      const pattern = /^#([0-9a-fA-F]{6})$/;
+      return pattern.test(v) ? v.toLowerCase() : null;
     }
     return raw;
   }

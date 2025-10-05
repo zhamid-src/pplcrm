@@ -23,6 +23,13 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
         </label>
         <input class="input" placeholder="Tag Name" formControlName="name" />
         <input class="input" placeholder="Optional description" formControlName="description" />
+        <div class="flex items-center gap-2">
+          <label class="label-text font-light text-sm">Colour</label>
+          <input class="input input-bordered input-sm w-24" type="color" formControlName="color" />
+          @if (form.get('color')?.invalid && form.get('color')?.touched) {
+            <span class="text-error text-xs">Use a value like #3366ff</span>
+          }
+        </div>
         <pc-add-btn-row [isLoading]="isLoading()" (btn1Clicked)="add()"></pc-add-btn-row>
       </div>
     </form>
@@ -46,6 +53,7 @@ export class AddTag {
   protected form = this.fb.group({
     name: ['', [Validators.required]],
     description: [''],
+    color: ['#0ea5e9', [Validators.pattern(/^#([0-9a-fA-F]{6})$/)]],
   });
   protected isLoading = this._loading.visible;
 

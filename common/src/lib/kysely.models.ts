@@ -294,6 +294,7 @@ export interface Lists extends RecordType {
 export interface Tags extends RecordType {
   name: string;
   description: string | null;
+  color: string | null;
   deletable: boolean;
 }
 
