@@ -18,7 +18,14 @@ describe('TagsController', () => {
     await controller.addTag({ name: 't', description: 'd' } as any, auth);
     expect(spy).toHaveBeenCalled();
     expect(spy.mock.calls[0][0]).toEqual({
-      row: { name: 't', description: 'd', tenant_id: 't1', createdby_id: 'u1' },
+      row: {
+        name: 't',
+        description: 'd',
+        color: null,
+        tenant_id: 't1',
+        createdby_id: 'u1',
+        updatedby_id: 'u1',
+      },
     });
   });
 
@@ -36,11 +43,11 @@ describe('TagsController', () => {
 
   it('updates a tag with updatedby info', async () => {
     const spy = jest.spyOn(TagsController.prototype, 'update').mockResolvedValue({ id: '1' } as any);
-    await controller.updateTag('1', { name: 'n' } as any, auth);
+    await controller.updateTag('1', { name: 'n', color: '#ffffff' } as any, auth);
     expect(spy).toHaveBeenCalledWith({
       tenant_id: 't1',
       id: '1',
-      row: { name: 'n', updatedby_id: 'u1' },
+      row: { name: 'n', color: '#ffffff', updatedby_id: 'u1' },
     });
   });
 });

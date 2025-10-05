@@ -24,6 +24,7 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     const row = {
       name: payload.name,
       description: payload.description,
+      color: payload.color ?? null,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
