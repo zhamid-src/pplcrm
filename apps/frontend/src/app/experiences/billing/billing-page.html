@@ -47,7 +47,9 @@
         Reset
       </button>
       <button type="submit" class="btn btn-primary" [disabled]="saving() || form.invalid || !form.dirty">
-        <span *ngIf="saving()" class="loading loading-spinner loading-xs mr-2"></span>
+        @if (saving()) {
+          <span class="loading loading-spinner loading-xs mr-2"></span>
+        }
         Save Changes
       </button>
     </div>

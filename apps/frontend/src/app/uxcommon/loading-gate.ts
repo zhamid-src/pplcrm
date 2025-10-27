@@ -2,7 +2,7 @@
 import { signal } from '@angular/core';
 
 export type loadingGate = {
-  /** Signal you bind to the UI (e.g., *ngIf="visible()" to show _loading). */
+  /** Signal you bind to the UI (e.g., @if (visible()) { … } to show _loading). */
   visible: ReturnType<typeof signal<boolean>>;
 
   /** Call when an async op starts; returns a disposer you MUST call when it finishes. */
