@@ -250,11 +250,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     }
   }
 
-  protected async onImportSubmit(rows: Array<Record<string, string>>, skippedArg?: number): Promise<void>;
-  protected async onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }): Promise<void>;
-  protected async onImportSubmit(a: any, b?: any) {
-    const rows: Array<Record<string, string>> = Array.isArray(a) ? a : a?.rows;
-    const skippedComputed: number = Array.isArray(a) ? Number(b) || 0 : Number(a?.skipped) || 0;
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
     // Merge route-derived filter tags (e.g., 'volunteer', 'donor') with user-provided tags
     const inputTags = this.tagsInput
       .split(',')
@@ -264,9 +267,15 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const tags = Array.from(combined);
 
     try {
-      const res = await (this.gridSvc as unknown as PersonsService).import(rows, tags);
+      const res = await (this.gridSvc as unknown as PersonsService).import(
+        rows,
+        tags,
+        skippedReported,
+        fileName || undefined,
+      );
       const inserted = res?.inserted ?? 0;
       const errors = res?.errors ?? 0;
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const diag: string[] = [];
       if (typeof res?.persons_total_before === 'number' && typeof res?.persons_total_after === 'number') {
         diag.push(`Total before/after: ${res.persons_total_before} → ${res.persons_total_after}`);
@@ -274,13 +283,14 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       if (typeof res?.households_created === 'number') {
         diag.push(`Households created: ${res.households_created}`);
       }
+      if (res?.file_name) diag.push(`File: ${res.file_name}`);
       if (res?.tenant_id) diag.push(`Tenant: ${res.tenant_id}`);
       if (res?.campaign_id) diag.push(`Campaign: ${res.campaign_id}`);
       const msg = diag.join(' • ');
       this.importSummary.set({
         inserted,
         errors,
-        skipped: skippedComputed,
+        skipped,
         tag: res?.tag,
         failed: false,
         message: msg,
@@ -289,7 +299,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       await this.refresh();
     } catch (e: any) {
       const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedComputed, failed: true, message: msg });
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
   }

@@ -1,0 +1,170 @@
+<section class="px-6 py-4 space-y-4">
+  <div class="flex items-center justify-between gap-4">
+    <h1 class="text-lg font-semibold text-slate-900">Imports</h1>
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost"
+        (click)="refresh()"
+        [disabled]="loading()"
+      >
+        <pc-icon name="arrow-path"></pc-icon>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <p class="text-sm text-slate-600">
+    Review files that have been imported. Deleting an import removes the file record. You can also remove the
+    associated contacts when the import tag is still present.
+  </p>
+
+  <div class="rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+    <div class="min-h-[160px]">
+      <ng-container *ngIf="!loading(); else loadingState">
+        <ng-container *ngIf="!error(); else errorState">
+          <ng-container *ngIf="items().length > 0; else emptyState">
+            <div class="w-full overflow-x-auto">
+              <table class="w-full min-w-[720px] text-sm">
+              <thead class="bg-slate-50 text-slate-700 uppercase text-xs">
+                <tr>
+                  <th class="px-4 py-3 text-left font-medium">File</th>
+                  <th class="px-4 py-3 text-left font-medium">Imported</th>
+                  <th class="px-4 py-3 text-left font-medium">Errors</th>
+                  <th class="px-4 py-3 text-left font-medium">Skipped</th>
+                  <th class="px-4 py-3 text-left font-medium">Contacts</th>
+                  <th class="px-4 py-3 text-left font-medium">Tag</th>
+                  <th class="px-4 py-3 text-left font-medium">Processed</th>
+                  <th class="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200">
+                @for (item of items(); track item.id) {
+                <tr class="bg-white">
+                  <td class="px-4 py-3">
+                    <div class="font-medium text-slate-900">{{ item.fileName }}</div>
+                    <div class="text-xs text-slate-500">{{ item.rowCount }} rows</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="text-slate-900 font-medium">{{ item.insertedCount }}</div>
+                    <div class="text-xs text-slate-500">Households: {{ item.householdsCreated }}</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="text-slate-900">{{ item.errorCount }}</span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="text-slate-900">{{ item.skippedCount }}</span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="text-slate-900 font-medium">{{ item.contactCount }}</div>
+                    <div class="text-xs text-slate-500">Households: {{ item.householdCount }}</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="text-slate-900">{{ item.tagName || '—' }}</div>
+                    <div class="text-xs" [class.text-amber-600]="item.tagMissing" [class.text-slate-500]="!item.tagMissing">
+                      {{ item.tagMissing ? 'Tag removed' : 'Tag active' }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="text-slate-900">{{ formatDate(item.processedAt) }}</div>
+                    <div class="text-xs text-slate-500" *ngIf="item.createdBy as creator">
+                      Imported by {{ creator.name || creator.email || 'Unknown' }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-error"
+                      (click)="openDeleteDialog(item, deleteDialog)"
+                      [disabled]="deleting()"
+                    >
+                      <pc-icon name="trash"></pc-icon>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+            </div>
+          </ng-container>
+        </ng-container>
+      </ng-container>
+    </div>
+  </div>
+
+  <dialog #deleteDialog class="modal">
+    <div class="modal-box space-y-4">
+      <h2 class="text-base font-semibold text-slate-900">Delete import</h2>
+      <p class="text-sm text-slate-600" *ngIf="pendingDelete() as item">
+        This removes <strong>{{ item.fileName }}</strong> from the import history.
+        <ng-container *ngIf="item.canDeleteContacts; else noContactsOption">
+          You can also delete the contacts created by this import.
+        </ng-container>
+      </p>
+
+      <ng-template #noContactsOption>
+        <p class="mt-2 text-sm text-amber-600">
+          The automatic tag for this import is no longer available, so contacts cannot be identified for removal.
+        </p>
+      </ng-template>
+
+      <label class="flex items-start gap-2 text-sm" *ngIf="pendingDelete() as item">
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm mt-1"
+          [disabled]="!item.canDeleteContacts"
+          [checked]="item.canDeleteContacts && deleteContacts()"
+          (change)="deleteContacts.set($any($event.target).checked)"
+        />
+        <span>
+          Also delete contacts that came from this import
+        </span>
+      </label>
+
+      <div class="modal-action flex gap-2">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          (click)="closeDeleteDialog(deleteDialog)"
+          [disabled]="deleting()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-error"
+          (click)="confirmDelete(deleteDialog)"
+          [disabled]="deleting()"
+        >
+          <pc-icon name="trash"></pc-icon>
+          Delete
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
+      <button type="submit">close</button>
+    </form>
+  </dialog>
+
+  <ng-template #loadingState>
+    <div class="flex items-center justify-center py-12 text-sm text-slate-500">
+      <pc-icon name="arrow-path" class="mr-2 animate-spin"></pc-icon>
+      Loading imports…
+    </div>
+  </ng-template>
+
+  <ng-template #errorState>
+    <div class="flex flex-col items-center gap-2 py-12 text-sm text-amber-600">
+      <pc-icon name="exclamation-triangle"></pc-icon>
+      {{ error() }}
+    </div>
+  </ng-template>
+
+  <ng-template #emptyState>
+    <div class="flex flex-col items-center gap-2 py-12 text-sm text-slate-500">
+      <pc-icon name="document-text"></pc-icon>
+      No imports recorded yet.
+    </div>
+  </ng-template>
+</section>

@@ -188,6 +188,10 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/billing/billing-page').then((m) => m.BillingPage),
   },
   {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
     path: 'export',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
   },

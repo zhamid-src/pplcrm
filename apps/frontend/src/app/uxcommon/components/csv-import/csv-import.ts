@@ -32,7 +32,7 @@ export class CsvImportComponent {
   public readonly summary = input<CsvImportSummary | null>(null);
 
   // Outputs
-  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number }>();
+  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number; fileName?: string | null }>();
   public readonly close = output<void>();
   public readonly closeSummary = output<void>();
 
@@ -43,6 +43,7 @@ export class CsvImportComponent {
   protected readonly mapping = signal<string[]>([]);
   protected readonly pageIndex = signal(0);
   protected readonly submitted = signal(false);
+  protected readonly fileName = signal<string | null>(null);
 
   private getNonEmptyMappedRows() {
     const map = this.mapping();
@@ -112,6 +113,7 @@ export class CsvImportComponent {
     if (!file) return;
 
     this.zone.run(() => this.parsing.set(true));
+    this.fileName.set(file.name || null);
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -158,7 +160,7 @@ export class CsvImportComponent {
       return;
     }
     this.submitted.set(true);
-    this.submit.emit({ rows: nonEmpty, skipped });
+    this.submit.emit({ rows: nonEmpty, skipped, fileName: this.fileName() });
   }
 
   protected requestClose() {
@@ -173,8 +175,14 @@ export class CsvImportComponent {
     this.pageIndex.set(0);
     this.parsing.set(false);
     this.submitted.set(false);
+    this.fileName.set(null);
     // Propagate close so parent can clear any summary state
     this.close.emit();
+  }
+
+  protected onSummaryClosed() {
+    this.submitted.set(false);
+    this.closeSummary.emit();
   }
 
   protected closeDialog() {

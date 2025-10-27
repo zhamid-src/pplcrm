@@ -96,6 +96,8 @@ psql -U pplcrm
 
 **Docker:**
 
+Make sure docker is running, then:
+
 ```bash
 docker run --name pplcrm-db \
   -e POSTGRES_PASSWORD=postgres \

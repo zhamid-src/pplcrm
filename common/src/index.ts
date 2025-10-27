@@ -40,6 +40,7 @@ export type {
   getAllOptionsType,
   ExportCsvInputType,
   ExportCsvResponseType,
+  ImportListItem,
 } from './lib/models';
 
 export {
@@ -69,6 +70,7 @@ export {
   getAllOptions,
   exportCsvInput,
   exportCsvResponse,
+  ImportListItemObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

@@ -139,7 +139,11 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     return map[key] || '';
   };
 
-  protected onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }) {
+  protected onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }) {
     // No backend support yet; report helpful message
     const msg = 'Tasks import is not available yet.';
     this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: msg });

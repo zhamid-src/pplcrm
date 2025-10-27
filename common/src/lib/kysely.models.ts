@@ -62,6 +62,7 @@ export interface Models {
   task_subtasks: TaskSubtasks;
   task_attachments: TaskAttachments;
   user_activity: UserActivity;
+  data_imports: DataImports;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -419,6 +420,20 @@ interface UserActivity extends RecordType {
   entity: string;
   quantity: number;
   metadata: Json | null;
+}
+
+interface DataImports extends RecordType {
+  file_name: string;
+  source: string;
+  tag_name: string | null;
+  tag_id: string | null;
+  row_count: number;
+  inserted_count: number;
+  error_count: number;
+  skipped_count: number;
+  households_created: number;
+  metadata: Json | null;
+  processed_at: Timestamp;
 }
 
 export interface TaskComments extends RecordType {

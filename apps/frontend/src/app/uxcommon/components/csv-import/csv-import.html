@@ -85,7 +85,7 @@
 </dialog>
 
 <!-- Summary Modal controlled by parent-provided summary input -->
-<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="closeSummary.emit()">
+<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="onSummaryClosed()">
   <div class="modal-box">
     @if (!!summary() && !summary()!.failed) {
     <h3 class="text-lg font-bold mb-2">Import Summary</h3>
@@ -109,7 +109,7 @@
     }
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn" (click)="closeSummary.emit()">OK</button>
+        <button class="btn" type="submit">OK</button>
       </form>
     </div>
   </div>
