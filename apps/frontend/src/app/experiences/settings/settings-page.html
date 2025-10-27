@@ -4,133 +4,143 @@
     <p class="text-base-content/70">Control tenant-wide defaults for PeopleCRM.</p>
   </header>
 
-  <ng-container *ngIf="hasLoaded(); else loadingState">
+  @if (hasLoaded()) {
     <div role="tablist" class="tabs tabs-lifted overflow-x-auto rounded-box bg-base-200 p-1">
-      <button
-        role="tab"
-        type="button"
-        class="tab whitespace-nowrap transition"
-        [class.tab-active]="isSelected(section.config.id)"
-        [attr.aria-selected]="isSelected(section.config.id)"
-        [attr.tabindex]="isSelected(section.config.id) ? 0 : -1"
-        *ngFor="let section of sectionStates; trackBy: trackSection"
-        (click)="selectSection(section.config.id)"
-      >
-        <span class="flex items-center gap-2">
-          <pc-icon [name]="section.config.icon" class="h-5 w-5" />
-          <span>{{ section.config.title }}</span>
-        </span>
-      </button>
+      @for (section of sectionStates; track trackSection($index, section)) {
+        <button
+          role="tab"
+          type="button"
+          class="tab whitespace-nowrap transition"
+          [class.tab-active]="isSelected(section.config.id)"
+          [attr.aria-selected]="isSelected(section.config.id)"
+          [attr.tabindex]="isSelected(section.config.id) ? 0 : -1"
+          (click)="selectSection(section.config.id)"
+        >
+          <span class="flex items-center gap-2">
+            <pc-icon [name]="section.config.icon" class="h-5 w-5" />
+            <span>{{ section.config.title }}</span>
+          </span>
+        </button>
+      }
     </div>
 
-    <ng-container *ngFor="let section of sectionStates; trackBy: trackSection">
-      <section
-        *ngIf="isSelected(section.config.id)"
-        role="tabpanel"
-        class="mt-4 space-y-6 rounded-2xl border border-base-200 bg-base-200/60 p-6"
-      >
-        <header class="space-y-1">
-          <h2 class="text-2xl font-semibold">{{ section.config.title }}</h2>
-          <p class="text-base-content/70">{{ section.config.description }}</p>
-        </header>
+    @for (section of sectionStates; track trackSection($index, section)) {
+      @if (isSelected(section.config.id)) {
+        <section
+          role="tabpanel"
+          class="mt-4 space-y-6 rounded-2xl border border-base-200 bg-base-200/60 p-6"
+        >
+          <header class="space-y-1">
+            <h2 class="text-2xl font-semibold">{{ section.config.title }}</h2>
+            <p class="text-base-content/70">{{ section.config.description }}</p>
+          </header>
 
-        <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-6">
-          <div class="grid gap-4 md:grid-cols-2">
-            <ng-container *ngFor="let field of section.fields; trackBy: trackField">
-              <div [ngClass]="{ 'md:col-span-2': field.config.type === 'textarea' }" class="space-y-2">
-                <label class="flex flex-col gap-2 text-sm font-medium">
-                  <span>{{ field.config.label }}</span>
-                  <ng-container [ngSwitch]="field.config.type">
-                    <textarea
-                      *ngSwitchCase="'textarea'"
-                      class="textarea textarea-bordered"
-                      [attr.placeholder]="field.config.placeholder ?? ''"
-                      [formControlName]="field.controlName"
-                      rows="4"
-                    ></textarea>
+          <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-6">
+            <div class="grid gap-4 md:grid-cols-2">
+              @for (field of section.fields; track trackField($index, field)) {
+                <div [ngClass]="{ 'md:col-span-2': field.config.type === 'textarea' }" class="space-y-2">
+                  <label class="flex flex-col gap-2 text-sm font-medium">
+                    <span>{{ field.config.label }}</span>
+                    <ng-container [ngSwitch]="field.config.type">
+                      <textarea
+                        *ngSwitchCase="'textarea'"
+                        class="textarea textarea-bordered"
+                        [attr.placeholder]="field.config.placeholder ?? ''"
+                        [formControlName]="field.controlName"
+                        rows="4"
+                      ></textarea>
 
-                    <label *ngSwitchCase="'toggle'" class="flex items-center gap-3">
-                      <input type="checkbox" class="toggle toggle-primary" [formControlName]="field.controlName" />
-                      <span class="text-sm font-normal text-base-content/70">
-                        {{ field.config.placeholder ?? 'Enable' }}
-                      </span>
-                    </label>
+                      <label *ngSwitchCase="'toggle'" class="flex items-center gap-3">
+                        <input type="checkbox" class="toggle toggle-primary" [formControlName]="field.controlName" />
+                        <span class="text-sm font-normal text-base-content/70">
+                          {{ field.config.placeholder ?? 'Enable' }}
+                        </span>
+                      </label>
 
-                    <select
-                      *ngSwitchCase="'select'"
-                      class="select select-bordered"
-                      [formControlName]="field.controlName"
-                    >
-                      <option *ngFor="let option of field.config.options ?? []" [value]="option.value">
-                        {{ option.label }}
-                      </option>
-                    </select>
+                      <select
+                        *ngSwitchCase="'select'"
+                        class="select select-bordered"
+                        [formControlName]="field.controlName"
+                      >
+                        @for (option of field.config.options ?? []) {
+                          <option [value]="option.value">
+                            {{ option.label }}
+                          </option>
+                        }
+                      </select>
 
-                    <input
-                      *ngSwitchCase="'number'"
-                      type="number"
-                      class="input input-bordered"
-                      [attr.placeholder]="field.config.placeholder ?? ''"
-                      [formControlName]="field.controlName"
-                    />
+                      <input
+                        *ngSwitchCase="'number'"
+                        type="number"
+                        class="input input-bordered"
+                        [attr.placeholder]="field.config.placeholder ?? ''"
+                        [formControlName]="field.controlName"
+                      />
 
-                    <input
-                      *ngSwitchCase="'date'"
-                      type="date"
-                      class="input input-bordered"
-                      [formControlName]="field.controlName"
-                    />
+                      <input
+                        *ngSwitchCase="'date'"
+                        type="date"
+                        class="input input-bordered"
+                        [formControlName]="field.controlName"
+                      />
 
-                    <input
-                      *ngSwitchDefault
-                      [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                      class="input input-bordered"
-                      [attr.placeholder]="field.config.placeholder ?? ''"
-                      [formControlName]="field.controlName"
-                    />
-                  </ng-container>
-                </label>
-                <p *ngIf="field.config.helper" class="text-xs text-base-content/60">{{ field.config.helper }}</p>
-                <p *ngIf="section.form.get(field.controlName)?.invalid && section.form.get(field.controlName)?.touched" class="text-xs text-error">
-                  Please provide a valid value.
-                </p>
+                      <input
+                        *ngSwitchDefault
+                        [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                        class="input input-bordered"
+                        [attr.placeholder]="field.config.placeholder ?? ''"
+                        [formControlName]="field.controlName"
+                      />
+                    </ng-container>
+                  </label>
+                  @if (field.config.helper) {
+                    <p class="text-xs text-base-content/60">{{ field.config.helper }}</p>
+                  }
+                  @if (section.form.get(field.controlName)?.invalid && section.form.get(field.controlName)?.touched) {
+                    <p class="text-xs text-error">
+                      Please provide a valid value.
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+
+            <div class="flex items-center justify-between gap-4 border-t border-base-200 pt-4">
+              @if (isSaving(section)) {
+                <div class="text-sm text-base-content/60">
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                  Saving changes…
+                </div>
+              }
+
+              <div class="ml-auto flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  (click)="resetSection(section)"
+                  [disabled]="!isSectionDirty(section)"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  class="btn btn-primary"
+                  [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+                >
+                  @if (isSaving(section)) {
+                    <span class="loading loading-spinner loading-xs mr-2"></span>
+                  }
+                  Save Changes
+                </button>
               </div>
-            </ng-container>
-          </div>
-
-          <div class="flex items-center justify-between gap-4 border-t border-base-200 pt-4">
-            <div class="text-sm text-base-content/60" *ngIf="isSaving(section)">
-              <span class="loading loading-spinner loading-xs mr-2"></span>
-              Saving changes…
             </div>
-
-            <div class="ml-auto flex gap-2">
-              <button
-                type="button"
-                class="btn btn-ghost"
-                (click)="resetSection(section)"
-                [disabled]="!isSectionDirty(section)"
-              >
-                Reset
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-              >
-                <span *ngIf="isSaving(section)" class="loading loading-spinner loading-xs mr-2"></span>
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
-    </ng-container>
-  </ng-container>
-
-  <ng-template #loadingState>
+          </form>
+        </section>
+      }
+    }
+  } @else {
     <div class="rounded-lg border border-dashed border-base-300 p-6 text-center text-base-content/60">
       Loading settings…
     </div>
-  </ng-template>
+  }
 </div>
