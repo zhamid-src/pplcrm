@@ -241,11 +241,14 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * Import multiple people with optional common tags.
    * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
    */
-  public import(rows: any[], tags: string[] = []) {
+  public import(rows: any[], tags: string[] = [], skipped = 0, fileName?: string | null) {
     // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return (this.api.persons.import.mutate as unknown as (input: any, opts: any) => Promise<any>)({ rows, tags }, {
-      meta: { skipErrorHandler: true },
-    });
+    return (this.api.persons.import.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { rows, tags, skipped, file_name: fileName },
+      {
+        meta: { skipErrorHandler: true },
+      },
+    );
   }
 
   /**

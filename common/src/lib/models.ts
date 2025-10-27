@@ -31,6 +31,7 @@ import type {
   sortModelItem,
   InviteAuthUserObj,
   UpdateAuthUserObj,
+  ImportListItemObj,
 } from './schema';
 
 /**
@@ -57,6 +58,8 @@ export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
 export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
 
 export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
 
 export type PERSONINHOUSEHOLDTYPE = {
   first_name: string;

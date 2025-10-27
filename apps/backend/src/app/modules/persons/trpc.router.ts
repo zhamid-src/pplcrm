@@ -160,7 +160,12 @@ function importMany() {
     country: z.string().optional(),
   });
 
-  const Input = z.object({ rows: z.array(ImportRow), tags: z.array(z.string()).optional() });
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string()).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+  });
 
   return authProcedure.input(Input).mutation(({ input, ctx }) => persons.importRows(input, ctx.auth));
 }

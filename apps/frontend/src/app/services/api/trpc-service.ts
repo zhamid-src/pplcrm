@@ -103,6 +103,7 @@ export class TRPCService<T> {
    */
   public abort() {
     this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
   }
 
   /**

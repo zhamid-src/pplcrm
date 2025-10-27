@@ -4,7 +4,7 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 
 /**
  * Repository for the `households` table.
@@ -17,6 +17,48 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    */
   constructor() {
     super('households');
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    let query = this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id);
+
+    if (input.onlyEmpty) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('persons')
+              .select('id')
+              .whereRef('persons.household_id', '=', 'households.id')
+              .limit(1),
+          ),
+        ),
+      );
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()` as any,
+      } as OperationDataType<'households', 'update'>)
+      .where('tenant_id', '=', input.tenant_id as any)
+      .where('file_id', '=', input.import_id as any)
+      .executeTakeFirst();
   }
 
   /**

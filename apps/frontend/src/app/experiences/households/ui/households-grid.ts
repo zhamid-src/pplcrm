@@ -201,7 +201,11 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     super();
   }
 
-  protected onImportSubmit(payload: { rows: Array<Record<string, string>>; skipped: number }) {
+  protected onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }) {
     // Backend households import endpoint not implemented yet; show informative summary
     const diag = 'Households import is not available yet.';
     this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });

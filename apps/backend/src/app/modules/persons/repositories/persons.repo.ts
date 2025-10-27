@@ -21,6 +21,33 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     super('persons');
   }
 
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()` as any,
+      } as OperationDataType<'persons', 'update'>)
+      .where('tenant_id', '=', input.tenant_id as any)
+      .where('file_id', '=', input.import_id as any)
+      .executeTakeFirst();
+  }
+
   public async getByIds(
     input: { tenant_id: string; ids: string[]; tags?: string[] },
     trx?: Transaction<Models>,
