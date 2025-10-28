@@ -62,7 +62,7 @@
                         class="select select-bordered"
                         [formControlName]="field.controlName"
                       >
-                        @for (option of field.config.options ?? []) {
+                        @for (option of field.config.options ?? []; track option.value ?? $index) {
                           <option [value]="option.value">
                             {{ option.label }}
                           </option>
