@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
@@ -23,6 +23,7 @@ export class ImportsPage {
   protected readonly loading = signal(false);
   protected readonly deleting = signal(false);
   protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
   protected readonly pendingDelete = signal<ImportListItem | null>(null);
   protected readonly deleteContacts = signal(false);
   protected readonly error = signal<string | null>(null);
