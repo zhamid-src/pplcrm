@@ -259,7 +259,23 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
     const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
     const totalRows = input.rows.length + skippedFromClient;
-    const baseFileName = (input.file_name ?? '').trim() || `${autoTag}.csv`;
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+
+    if (totalRows <= 0) {
+      return {
+        inserted: 0,
+        errors: 0,
+        skipped: 0,
+        tag: null,
+        file_name: requestedFileName || null,
+        import_id: null,
+        tenant_id: auth.tenant_id,
+        campaign_id,
+        persons_total_after: personsBefore,
+        persons_total_before: personsBefore,
+      } as any;
+    }
 
     let importRecordId: string | null = null;
     let autoTagId: string | null = null;
