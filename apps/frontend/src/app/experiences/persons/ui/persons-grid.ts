@@ -273,6 +273,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         skippedReported,
         fileName || undefined,
       );
+      if (res?.errorMessages?.length) {
+        console.error('Import errors', res.errorMessages);
+      }
       const inserted = res?.inserted ?? 0;
       const errors = res?.errors ?? 0;
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
