@@ -12,7 +12,13 @@
     <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
   </div>
   }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded" (scroll)="onScroll($event)">
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    @if (isEmptyState()) {
+    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
+      <img class="max-w-64" src="assets/waiting.svg" alt="No results" />
+      <span>No more rows</span>
+    </div>
+    }
     <table #gridTable class="table w-full">
       <thead>
         <tr>
@@ -184,12 +190,9 @@
             [style.width.px]="columnWidthPx(cell.column.id)"
             [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
           >
-            @let ec = editingCell();
-            @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field;
-            @if (isEditing) {
-            @let editorCfg = selectEditorOptions(col);
-            @let textCfg = getTextEditorConfig(col);
-            @if (editorCfg) {
+            @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field; @if
+            (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (editorCfg) {
             <select
               class="select select-bordered w-full"
               [ngModel]="editingValue()"
@@ -222,22 +225,15 @@
             />
             } } @else if (hasCellRenderer(col)) {
             <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else {
-            @let rawValue = getCellValue(r.original, col);
-            @let tagList = tagsAsStrings(rawValue);
-            @if (isTagColumn(col) && tagList.length) {
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
             <pc-tags
               [tags]="tagList"
               [readonly]="true"
               [canDelete]="isEditable(col) && isTagColumn(col)"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
-            } @else if (col.valueFormatter) {
-              {{ callValueFormatter(r.original, col) }}
-            } @else {
-              {{ rawValue }}
-            }
-            }
+            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{ rawValue }} } }
           </td>
           } }
         </tr>

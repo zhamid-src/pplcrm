@@ -191,6 +191,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
+  protected readonly isEmptyState = computed(() => !this.isLoading() && this.totalCountAll() === 0);
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
