@@ -162,7 +162,9 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         ],
       },
       { key: 'access.invite_requires_approval', label: 'Require Admin Approval for Invites', type: 'toggle', defaultValue: false },
-      { key: 'access.mfa_required', label: 'Require MFA', type: 'toggle', defaultValue: false },
+      { key: 'access.mfa_required', label: 'Require MFA for all users', type: 'toggle', defaultValue: false },
+      { key: 'access.enforce_strong_passwords', label: 'Enforce Strong Passwords', type: 'toggle', defaultValue: true },
+      { key: 'access.allowed_ips', label: 'Allowed IP Ranges (comma separated)', type: 'text', placeholder: '192.168.1.1/24', defaultValue: '' },
       { key: 'access.session_timeout_minutes', label: 'Session Timeout (minutes)', type: 'number', defaultValue: 60 },
       { key: 'access.volunteer_self_signup', label: 'Allow Volunteer Self-signup', type: 'toggle', defaultValue: true },
     ],
@@ -237,7 +239,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   {
     id: 'integrations',
     title: 'Integrations & API',
-    description: 'Storage, webhooks, and external vendor keys.',
+    description: 'Storage, webhooks, analytics, and external vendor keys.',
     icon: 'cloud-arrow-up',
     fields: [
       {
@@ -250,7 +252,41 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       { key: 'integrations.webhook_url', label: 'Webhook Endpoint URL', type: 'url', placeholder: 'https://example.com/hooks/pplcrm', defaultValue: '' },
       { key: 'integrations.fundraising_api_key', label: 'Fundraising Platform API Key', type: 'password', defaultValue: '' },
       { key: 'integrations.dialer_api_key', label: 'Dialer API Key', type: 'password', defaultValue: '' },
+      { key: 'integrations.fb_pixel_id', label: 'Facebook Pixel ID', type: 'text', placeholder: '123456789012345', defaultValue: '' },
+      { key: 'integrations.ga_measurement_id', label: 'Google Analytics Measurement ID', type: 'text', placeholder: 'G-XXXXXXXXXX', defaultValue: '' },
       { key: 'integrations.sandbox_mode', label: 'Use Sandbox Mode', type: 'toggle', defaultValue: false },
     ],
   },
+  {
+    id: 'billing',
+    title: 'Billing & Usage',
+    description: 'Manage your subscription and track tenant usage.',
+    icon: 'credit-card',
+    fields: [
+      {
+        key: 'billing.subscription_tier',
+        label: 'Subscription Tier',
+        type: 'select',
+        defaultValue: 'pro',
+        options: [
+          { label: 'Free Trial', value: 'trial' },
+          { label: 'Pro', value: 'pro' },
+          { label: 'Enterprise', value: 'enterprise' },
+        ],
+      },
+      { key: 'billing.overage_alerts', label: 'Enable Overage Alerts', type: 'toggle', defaultValue: true },
+      { key: 'billing.billing_email', label: 'Billing Email Address', type: 'email', placeholder: 'billing@example.com', defaultValue: '' },
+    ]
+  },
+  {
+    id: 'advanced',
+    title: 'Advanced & Labs',
+    description: 'Experimental features and low-level configuration.',
+    icon: 'square-3-stack-3d',
+    fields: [
+      { key: 'advanced.enable_ai_assistant', label: 'Enable AI Assistant (Beta)', type: 'toggle', defaultValue: false },
+      { key: 'advanced.enable_volunteer_portal', label: 'Enable Volunteer Portal (Beta)', type: 'toggle', defaultValue: false },
+      { key: 'advanced.debug_logging', label: 'Verbose Debug Logging', type: 'toggle', defaultValue: false },
+    ]
+  }
 ];
