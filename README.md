@@ -46,25 +46,49 @@
 
 ---
 
-## 🚀 Getting Started
+## 🏃 Daily Development
 
-### Prerequisites
+For day-to-day work, assuming you've already completed the first-time setup:
 
-- Node.js 18+
-- Yarn or npm
-- PostgreSQL (local or Docker)
-- SMTP provider for email features
+### 1. Start Background Services
 
-### Quick Setup (macOS)
+Make sure Docker Desktop is running, then start your existing containers:
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+docker start pplcrm-db
+docker start pplcrm-azurite
 ```
 
-> Installs dependencies, sets up PostgreSQL (`zeehamid` role and `pplcrm` database), and initializes Nx.
+### 2. Run the Apps
 
-### Manual Setup
+Start the backend and frontend in two separate terminal windows:
+
+**Terminal 1 (Backend):**
+```bash
+nx serve backend
+```
+
+**Terminal 2 (Frontend):**
+```bash
+nx serve frontend
+```
+
+---
+
+## 🚀 First-Time Setup
+
+If you are setting up the project for the very first time on a new machine, follow these steps.
+
+### 1. Prerequisites
+
+Ensure you have the following installed:
+- Node.js 18+
+- Yarn or npm
+- Docker Desktop (recommended for database and storage emulation)
+
+*(Note: macOS users can alternately run `./setup.sh` for an automated native setup instead of using Docker).*
+
+### 2. Clone and Install Dependencies
 
 ```bash
 git clone https://github.com/zhamid-src/pplcrm.git
@@ -72,10 +96,9 @@ cd pplcrm
 npm install
 ```
 
-### Environment Variables
+### 3. Environment Variables
 
-Create environment files like `.env.development` or `.env.production` in the project root or inside `apps/backend/`.
-The backend loads these using Node's built-in `--env-file` option:
+Create an environment file named `.env.development` in the root of the project:
 
 ```env
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/pplcrm
@@ -86,18 +109,11 @@ SMTP_USER=username@example.com
 SMTP_PASS=password
 ```
 
-### PostgreSQL
+### 4. Create Background Services (Docker)
 
-**Local:**
+Make sure Docker Desktop is open and running.
 
-```bash
-psql -U pplcrm
-```
-
-**Docker:**
-
-Make sure docker is running, then:
-
+**Database (PostgreSQL):**
 ```bash
 docker run --name pplcrm-db \
   -e POSTGRES_PASSWORD=postgres \
@@ -106,33 +122,19 @@ docker run --name pplcrm-db \
   -p 5432:5432 -d postgres
 ```
 
-### Azure Blob Storage (Azurite)
-
-Run Azurite locally to emulate Azure Blob Storage:
-
+**Blob Storage (Azurite):**
 ```bash
 docker run --name pplcrm-azurite -p 10000:10000 -p 10001:10001 -p 10002:10002 -d mcr.microsoft.com/azure-storage/azurite
 npm run azurite:init
 ```
+*(The init script creates an `uploads` container, applies CORS, and outputs a SAS URL valid for one hour).*
 
-The init script creates an `uploads` container, applies permissive CORS, and outputs a SAS URL valid for one hour that can be used for browser uploads.
+### 5. Run Database Migrations
 
-Override defaults with `AZURE_STORAGE_CONNECTION_STRING` or `AZURE_STORAGE_CONTAINER` environment variables.
-
-### Migrations
+With the database running, build your tables:
 
 ```bash
 npm run db:migrate
-```
-
----
-
-## 🏃 Running the Apps
-
-```bash
-nx serve backend                    # Fastify API (.env.development)
-nx serve backend --configuration=production  # Fastify API (.env.production)
-nx serve frontend                   # Angular SPA
 ```
 
 ---
