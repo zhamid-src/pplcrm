@@ -386,7 +386,7 @@ export class BaseRepository<T extends keyof Models> {
   /**
    * Get update query builder for this table.
    */
-  protected getUpdate(trx?: Transaction<Models>) {
+  public getUpdate(trx?: Transaction<Models>) {
     const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
     return ret as unknown as UpdateQueryBuilder<Models, T, keyof Models, object>;
   }

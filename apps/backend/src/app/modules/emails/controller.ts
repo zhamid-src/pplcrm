@@ -48,11 +48,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   /** Assign an email to a user */
   public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
     try {
-      const updated = await this.update({
-        tenant_id,
-        id,
-        row: { assigned_to: user_id } as OperationDataType<'emails', 'insert'>,
-      });
+      const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
+
       if (!updated) throw new NotFoundError('Email not found');
       return updated;
     } catch (err) {

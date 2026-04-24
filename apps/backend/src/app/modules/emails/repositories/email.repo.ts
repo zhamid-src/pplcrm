@@ -191,6 +191,18 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
+  /**
+   * Assign an email to a user directly via Kysely
+   */
+  public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
+    return this.getUpdate()
+      .set({ assigned_to: user_id })
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
   public async getAssignmentStats(input: { tenant_id: string; user_id: string }) {
     const row = await this.getSelect()
       .select(() => [
