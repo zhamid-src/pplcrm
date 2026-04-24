@@ -258,27 +258,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     ],
   },
   {
-    id: 'billing',
-    title: 'Billing & Usage',
-    description: 'Manage your subscription and track tenant usage.',
-    icon: 'credit-card',
-    fields: [
-      {
-        key: 'billing.subscription_tier',
-        label: 'Subscription Tier',
-        type: 'select',
-        defaultValue: 'pro',
-        options: [
-          { label: 'Free Trial', value: 'trial' },
-          { label: 'Pro', value: 'pro' },
-          { label: 'Enterprise', value: 'enterprise' },
-        ],
-      },
-      { key: 'billing.overage_alerts', label: 'Enable Overage Alerts', type: 'toggle', defaultValue: true },
-      { key: 'billing.billing_email', label: 'Billing Email Address', type: 'email', placeholder: 'billing@example.com', defaultValue: '' },
-    ]
-  },
-  {
     id: 'advanced',
     title: 'Advanced & Labs',
     description: 'Experimental features and low-level configuration.',
