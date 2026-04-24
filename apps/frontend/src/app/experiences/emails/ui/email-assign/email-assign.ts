@@ -15,22 +15,25 @@ import { EmailType } from 'common/src/lib/models';
   selector: 'pc-email-assign',
   standalone: true,
   imports: [CommonModule, Icon],
-  template: `<div class="dropdown mt-1">
-    <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
-      <span>{{ getUserName(assignedTo()) }}</span>
-      <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
-    </div>
+  template: `<div class="flex items-center gap-2 mt-1">
+    <span class="text-xs text-base-content/70">Assign to:</span>
+    <div class="dropdown">
+      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
+        <span>{{ getUserName(assignedTo()) }}</span>
+        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
+      </div>
 
-    <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
-      @for (user of users(); track user.id) {
-        <li>
-          <a (click)="assign(user.id); closeDropdown()"> {{ user.first_name }} </a>
-        </li>
-      }
-      @if (assignedTo()) {
-        <li><a (click)="assign(null); closeDropdown()"> Unassign </a></li>
-      }
-    </ul>
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+        @for (user of users(); track user.id) {
+          <li>
+            <button type="button" (click)="assign(user.id); closeDropdown()"> {{ user.first_name }} </button>
+          </li>
+        }
+        @if (assignedTo()) {
+          <li><button type="button" (click)="assign(null); closeDropdown()"> Unassign </button></li>
+        }
+      </ul>
+    </div>
   </div>`,
 })
 export class EmailAssign {
@@ -49,22 +52,27 @@ export class EmailAssign {
   constructor() {
     this.auth.getUsers().then((u) => this.users.set(u));
     // Can't use computed because assignedTo is settable
-    effect(() => {
-      this.assignedTo.set(this.email()?.assigned_to || null);
-    });
+    effect(
+      () => {
+        this.assignedTo.set(this.email()?.assigned_to || null);
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   /**
    * Assign the selected email to a user or unassign if `null`.
    */
-  public async assign(userId: string | null) {
+  public async assign(userId: string | number | null) {
     const email = this.email();
     if (!email) return;
 
+    const normalizedUserId = userId != null ? String(userId) : null;
+
     try {
-      await this.store.assignEmailToUser(email.id, userId);
-      this.assignedTo.set(userId);
-    } catch {
+      await this.store.assignEmailToUser(email.id, normalizedUserId);
+      this.assignedTo.set(normalizedUserId);
+    } catch (e) {
       this.alertSvc.showError('Something went wrong, please try again');
       this.assignedTo.set(null);
     }
@@ -80,6 +88,6 @@ export class EmailAssign {
    */
   public getUserName(id: string | null = null) {
     if (!id) return 'Not Assigned';
-    return this.users().find((u) => u.id === id)?.first_name || 'Not Assigned';
+    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Not Assigned';
   }
 }
