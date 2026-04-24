@@ -1,14 +1,31 @@
+import { z } from 'zod';
+
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  DB_SSL: z.string().optional().transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+});
+
+const parsedEnv = envSchema.parse(process.env);
+
 export const env = {
-  host: process.env['HOST'] ?? 'localhost',
-  port: process.env['PORT'] ? Number(process.env['PORT']) : 3000,
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
   db: {
-    user: process.env['DB_USER'] ?? '',
-    database: process.env['DB_NAME'] ?? '',
-    password: process.env['DB_PASSWORD'] ?? '',
-    port: process.env['DB_PORT'] ? Number(process.env['DB_PORT']) : 5432,
-    host: process.env['DB_HOST'] ?? 'localhost',
-    ssl: process.env['DB_SSL'] === 'true',
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
   },
-  apiUrl: process.env['API_URL'] ?? 'http://localhost:3000',
-  sharedSecret: process.env['SHARED_SECRET'] ?? '',
+  apiUrl: parsedEnv.API_URL,
+  sharedSecret: parsedEnv.SHARED_SECRET,
 };

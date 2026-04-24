@@ -101,12 +101,13 @@ npm install
 Create an environment file named `.env.development` in the root of the project:
 
 ```env
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/pplcrm
-JWT_SECRET=your-super-secret
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=username@example.com
-SMTP_PASS=password
+DB_USER=postgres
+DB_NAME=pplcrm
+DB_PASSWORD=postgres
+DB_PORT=5432
+DB_HOST=localhost
+DB_SSL=false
+SHARED_SECRET=your-super-secret
 ```
 
 ### 4. Create Background Services (Docker)
