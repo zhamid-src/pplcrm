@@ -11,3 +11,9 @@ package-lock.json
 # Environment files
 .env
 .env.*
+azurite-data/__azurite_db_blob__.json
+azurite-data/__azurite_db_blob_extent__.json
+azurite-data/__azurite_db_queue__.json
+azurite-data/__azurite_db_queue_extent__.json
+azurite-data/__azurite_db_table__.json
+azurite-data/AzuriteConfig
