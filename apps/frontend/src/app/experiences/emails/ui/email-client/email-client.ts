@@ -1,7 +1,7 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { ChangeDetectionStrategy, Component, HostListener, ViewChild, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
@@ -15,14 +15,16 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-client',
-  standalone: true,
   imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'block h-full' },
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
   templateUrl: 'email-client.html',
 })
 export class EmailClient {
-  @ViewChild('composer') private composer?: ComposeEmailComponent;
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
 
   /** App-level email store */
   protected readonly store = inject(EmailsStore);
@@ -67,8 +69,9 @@ export class EmailClient {
     const folderId = this.store.currentSelectedFolderId();
     if (this.isComposing()) {
       try {
-        if (this.composer?.form.dirty) {
-          await this.composer.saveDraft();
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
         }
       } catch (e) {
         console.error('Failed to save draft', e);
@@ -125,7 +128,6 @@ export class EmailClient {
   }
 
   /** Collapse the full-screen overlay when Escape is pressed */
-  @HostListener('document:keydown', ['$event'])
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
       this.store.toggleBodyExpanded();

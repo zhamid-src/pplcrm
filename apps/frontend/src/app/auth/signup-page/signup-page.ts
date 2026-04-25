@@ -1,7 +1,7 @@
 /**
  * Component and form logic for user registration.
  */
-import { CommonModule } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -26,7 +26,7 @@ import {
  */
 @Component({
   selector: 'pc-signup',
-  imports: [CommonModule, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent],
+  imports: [DecimalPipe, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {

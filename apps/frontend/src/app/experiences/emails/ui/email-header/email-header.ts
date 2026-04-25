@@ -1,8 +1,8 @@
 /**
  * @file Component displaying header information for an email.
  */
-import { CommonModule } from '@angular/common';
-import { Component, HostListener, computed, effect, inject, input, output, signal } from '@angular/core';
+import { DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
@@ -13,9 +13,11 @@ import { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-header',
-  standalone: true,
   // include swap for expand/collapse control
-  imports: [CommonModule, EmailAssign, Icon],
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon],
+  host: {
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
   templateUrl: 'email-header.html',
 })
 export class EmailHeader {
@@ -116,7 +118,6 @@ export class EmailHeader {
   /**
    * Handle Escape key to collapse the expanded view when active.
    */
-  @HostListener('document:keydown', ['$event'])
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && this.isExpanded()) {
       this.store.toggleBodyExpanded();

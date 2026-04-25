@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, NgZone, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -14,13 +14,11 @@ export type CsvImportSummary = {
 
 @Component({
   selector: 'pc-csv-importer',
-  standalone: true,
   imports: [FormsModule, Icon],
   templateUrl: './csv-import.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CsvImportComponent {
-  private readonly zone = inject(NgZone);
   private readonly alerts = inject(AlertService);
 
   // Inputs
@@ -112,7 +110,7 @@ export class CsvImportComponent {
     const file = input?.files?.[0];
     if (!file) return;
 
-    this.zone.run(() => this.parsing.set(true));
+    this.parsing.set(true);
     this.fileName.set(file.name || null);
 
     const reader = new FileReader();
@@ -123,19 +121,15 @@ export class CsvImportComponent {
         const handle = (e: MessageEvent) => {
           const data: any = e.data || {};
           if (data.type === 'result') {
-            this.zone.run(() => {
-              this.csvHeaders.set(data.headers || []);
-              this.csvRows.set(data.rows || []);
-              this.pageIndex.set(0);
-              this.parsing.set(false);
-            });
+            this.csvHeaders.set(data.headers || []);
+            this.csvRows.set(data.rows || []);
+            this.pageIndex.set(0);
+            this.parsing.set(false);
             worker.onmessage = null;
             worker.terminate();
           } else if (data.type === 'error') {
-            this.zone.run(() => {
-              this.alerts.showError(data.message || 'Failed to parse CSV');
-              this.parsing.set(false);
-            });
+            this.alerts.showError(data.message || 'Failed to parse CSV');
+            this.parsing.set(false);
             worker.onmessage = null;
             worker.terminate();
           }
@@ -143,13 +137,11 @@ export class CsvImportComponent {
         worker.onmessage = handle;
         worker.postMessage({ type: 'parse', text });
       } catch {
-        this.zone.run(() => {
-          this.alerts.showError('Failed to parse CSV');
-          this.parsing.set(false);
-        });
+        this.alerts.showError('Failed to parse CSV');
+        this.parsing.set(false);
       }
     };
-    reader.onerror = () => this.zone.run(() => this.parsing.set(false));
+    reader.onerror = () => this.parsing.set(false);
     reader.readAsText(file);
   }
 

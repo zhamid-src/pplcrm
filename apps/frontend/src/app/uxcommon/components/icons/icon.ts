@@ -5,7 +5,6 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
 
 @Component({
   selector: 'pc-icon',
-  standalone: true,
   imports: [BypassHtmlSanitizerPipe],
   template: `
     <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">

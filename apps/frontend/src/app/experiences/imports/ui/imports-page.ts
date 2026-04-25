@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
@@ -10,8 +9,7 @@ import { ImportsService } from '../services/imports-service';
 
 @Component({
   selector: 'pc-imports-page',
-  standalone: true,
-  imports: [CommonModule, FormsModule, Icon],
+  imports: [FormsModule, Icon],
   templateUrl: './imports-page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

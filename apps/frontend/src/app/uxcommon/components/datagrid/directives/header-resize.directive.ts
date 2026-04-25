@@ -1,85 +1,88 @@
-import { Directive, ElementRef, HostListener, Input, inject } from '@angular/core';
+import { Directive, ElementRef, inject, input } from '@angular/core';
 import { ResizingController } from '../controllers/resizing.controller';
 import { PinningController } from '../controllers/pinning.controller';
 import type { HeaderRef } from '../types';
 
 @Directive({
   selector: '[pcHeaderResize]',
-  standalone: true,
+  host: {
+    '(mousedown)': 'onMouseDown($event)',
+    '(touchstart)': 'onTouchStart($event)',
+    '(dragstart)': 'onDragStart($event)',
+    '(dblclick)': 'onDoubleClick($event)',
+  },
 })
 export class HeaderResizeDirective {
   private readonly resizing = inject(ResizingController);
   private readonly pinning = inject(PinningController);
-  private readonly host = inject(ElementRef) as ElementRef<HTMLElement>;
+  private readonly hostEl = inject(ElementRef) as ElementRef<HTMLElement>;
 
-  @Input({ required: true }) pcHeaderResize!: {
+  public readonly pcHeaderResize = input.required<{
     header: HeaderRef; // TanStack header ref
     getColWidth: (id: string) => number | null;
     setWidth: (col: any, id: string, px: number) => void;
     requestPersist: () => void;
     selectionWidth: () => number;
     setSuppressHeaderDrag: (v: boolean) => void;
-  };
+  }>();
 
-  @HostListener('mousedown', ['$event'])
-  onMouseDown(ev: MouseEvent) {
+  protected onMouseDown(ev: MouseEvent) {
     ev.stopPropagation();
     if (ev.detail > 1) return; // let double-click handler manage autosize
-    const h = this.pcHeaderResize.header;
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
     // prevent column drag while resizing
-    try { this.pcHeaderResize.setSuppressHeaderDrag(true); } catch {}
+    try { cfg.setSuppressHeaderDrag(true); } catch {}
     this.resizing.beginHeaderResize(
       h,
       ev.clientX,
-      this.pcHeaderResize.getColWidth,
+      cfg.getColWidth,
       (col, id, w) => {
-        this.pcHeaderResize.setWidth(col, id, w);
+        cfg.setWidth(col, id, w);
         this.pinning.updatePinOffsets(
           h?.table,
-          (cid) => this.pcHeaderResize.getColWidth(cid) ?? 0,
-          this.pcHeaderResize.selectionWidth()
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth()
         );
       },
       () => {
-        try { this.pcHeaderResize.requestPersist(); } catch {}
-        try { this.pcHeaderResize.setSuppressHeaderDrag(false); } catch {}
+        try { cfg.requestPersist(); } catch {}
+        try { cfg.setSuppressHeaderDrag(false); } catch {}
       },
     );
   }
 
-  @HostListener('touchstart', ['$event'])
-  onTouchStart(ev: TouchEvent) {
+  protected onTouchStart(ev: TouchEvent) {
     ev.stopPropagation();
     const x = ev.touches?.[0]?.clientX ?? 0;
-    const h = this.pcHeaderResize.header;
-    try { this.pcHeaderResize.setSuppressHeaderDrag(true); } catch {}
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
+    try { cfg.setSuppressHeaderDrag(true); } catch {}
     this.resizing.beginHeaderResizeTouch(
       h,
       x,
-      this.pcHeaderResize.getColWidth,
+      cfg.getColWidth,
       (col, id, w) => {
-        this.pcHeaderResize.setWidth(col, id, w);
+        cfg.setWidth(col, id, w);
         this.pinning.updatePinOffsets(
           h?.table,
-          (cid) => this.pcHeaderResize.getColWidth(cid) ?? 0,
-          this.pcHeaderResize.selectionWidth()
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth()
         );
       },
       () => {
-        try { this.pcHeaderResize.requestPersist(); } catch {}
-        try { this.pcHeaderResize.setSuppressHeaderDrag(false); } catch {}
+        try { cfg.requestPersist(); } catch {}
+        try { cfg.setSuppressHeaderDrag(false); } catch {}
       },
     );
   }
 
-  @HostListener('dragstart', ['$event'])
-  onDragStart(ev: DragEvent) {
+  protected onDragStart(ev: DragEvent) {
     ev.preventDefault();
     ev.stopPropagation();
   }
 
-  @HostListener('dblclick', ['$event'])
-  onDoubleClick(ev: MouseEvent) {
+  protected onDoubleClick(ev: MouseEvent) {
     ev.preventDefault();
     ev.stopPropagation();
     const width = this.measureHeaderAutoWidth();
@@ -88,22 +91,23 @@ export class HeaderResizeDirective {
   }
 
   private applyWidth(nextWidth: number) {
-    const header = this.pcHeaderResize.header;
+    const cfg = this.pcHeaderResize();
+    const header = cfg.header;
     const col = header?.column as { id?: string; setSize?: (value: number) => void } | undefined;
     const id = col?.id == null ? '' : String(col.id);
     if (!id || !col) return;
 
-    this.pcHeaderResize.setWidth(col, id, nextWidth);
+    cfg.setWidth(col, id, nextWidth);
     this.pinning.updatePinOffsets(
       header?.table,
-      (cid) => this.pcHeaderResize.getColWidth(cid) ?? 0,
-      this.pcHeaderResize.selectionWidth(),
+      (cid) => cfg.getColWidth(cid) ?? 0,
+      cfg.selectionWidth(),
     );
-    try { this.pcHeaderResize.requestPersist(); } catch {}
+    try { cfg.requestPersist(); } catch {}
   }
 
   private measureHeaderAutoWidth(): number | null {
-    const headerEl = this.host.nativeElement.closest('th');
+    const headerEl = this.hostEl.nativeElement.closest('th');
     if (!headerEl) return null;
 
     const doc = headerEl.ownerDocument;

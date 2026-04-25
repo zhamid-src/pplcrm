@@ -1,7 +1,6 @@
 /**
  * @file Container component for email details view.
  */
-import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,8 +22,7 @@ import type { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-details',
-  standalone: true,
-  imports: [CommonModule, EmailHeader, EmailBody, EmailComments],
+  imports: [EmailHeader, EmailBody, EmailComments],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-details.html',
 })

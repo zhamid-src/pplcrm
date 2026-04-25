@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 @Component({
   selector: 'tr[pc-dg-row]',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: ''
 })

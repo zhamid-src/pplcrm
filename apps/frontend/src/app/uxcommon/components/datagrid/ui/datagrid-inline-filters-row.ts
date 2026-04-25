@@ -5,7 +5,6 @@ import type { ColumnDef as ColDef } from '../grid-defaults';
 
 @Component({
   selector: 'pc-dg-inline-filters-row',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-inline-filters-row.html',
 })

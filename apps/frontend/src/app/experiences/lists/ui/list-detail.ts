@@ -1,4 +1,4 @@
-import { Component, ViewChild, effect, inject, input, signal } from '@angular/core';
+import { Component, effect, inject, input, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddListType, UpdateHouseholdsType, UpdatePersonsType, debounce } from '@common';
@@ -112,8 +112,8 @@ export class ListDetail {
 
   private _loading = createLoadingGate();
   private debouncedRecount = debounce(() => this.recount());
-  @ViewChild(HouseholdFilterGrid) private householdGrid?: HouseholdFilterGrid;
-  @ViewChild(PeopleFilterGrid) private peopleGrid?: PeopleFilterGrid;
+  private readonly householdGrid = viewChild(HouseholdFilterGrid);
+  private readonly peopleGrid = viewChild(PeopleFilterGrid);
 
   protected readonly tagSvc = inject(TagsService);
 
@@ -147,9 +147,9 @@ export class ListDetail {
       const type = this.listType();
       const isDynamic = this.form.get('is_dynamic')!.value === true;
       if (type === 'people') {
-        this.countRowSelected.set(this.peopleGrid?.getCountRowSelected() ?? 0);
+        this.countRowSelected.set(this.peopleGrid()?.getCountRowSelected() ?? 0);
       } else {
-        this.countRowSelected.set(this.householdGrid?.getCountRowSelected() ?? 0);
+        this.countRowSelected.set(this.householdGrid()?.getCountRowSelected() ?? 0);
       }
 
       // Update button label: only show selected count for static lists
@@ -163,11 +163,11 @@ export class ListDetail {
     // Keep preview grids in sync with tag rules (use only positive eq tags for quick preview)
     effect(() => {
       const tags = this.flattenPositiveTags(this.rulesRoot());
-      if (this.peopleGrid) this.peopleGrid.tags = tags;
-      if (this.householdGrid) this.householdGrid.tags = tags;
+      if (this.peopleGrid()) this.peopleGrid()!.tags = tags;
+      if (this.householdGrid()) this.householdGrid()!.tags = tags;
       // Refresh external filter consumers
-      this.peopleGrid?.triggerFilterChanged();
-      this.householdGrid?.triggerFilterChanged();
+      this.peopleGrid()?.triggerFilterChanged();
+      this.householdGrid()?.triggerFilterChanged();
     });
 
     // Recompute count whenever rules or object type change
@@ -214,8 +214,8 @@ export class ListDetail {
   protected onRulesChanged() {
     // trigger effects; nothing else required as we use signals
     this.rulesRoot.update((g) => ({ ...g }));
-    this.peopleGrid?.triggerFilterChanged();
-    this.householdGrid?.triggerFilterChanged();
+    this.peopleGrid()?.triggerFilterChanged();
+    this.householdGrid()?.triggerFilterChanged();
   }
 
   /** Save the list using selection for static, or filters for dynamic */
@@ -231,7 +231,7 @@ export class ListDetail {
 
     if (payload.is_dynamic) {
       // Dynamic lists: use current filters/search as definition
-      const def = payload.object === 'people' ? this.peopleGrid?.getDefinition() : this.householdGrid?.getDefinition();
+      const def = payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
       const tags_expression = this.rulesRoot();
       payload.definition = {
         ...(def ?? {}),
@@ -241,7 +241,7 @@ export class ListDetail {
       };
     } else {
       // Static lists: persist a snapshot based on the full filter definition
-      const def = payload.object === 'people' ? this.peopleGrid?.getDefinition() : this.householdGrid?.getDefinition();
+      const def = payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
       const tags_expression = this.rulesRoot();
       payload.definition = {
         ...(def ?? {}),

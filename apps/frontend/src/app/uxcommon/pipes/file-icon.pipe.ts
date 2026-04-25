@@ -5,7 +5,6 @@ import { ICON_FOR_KEY, iconKeyForFilename } from './file-icon.util';
 
 @Pipe({
   name: 'fileIcon',
-  standalone: true,
 })
 export class FileIconPipe implements PipeTransform {
   public transform(filename: string | null | undefined): string {

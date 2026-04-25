@@ -1,13 +1,12 @@
-import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  ViewChild,
   computed,
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -15,8 +14,7 @@ import { ConfirmDialogService, DialogVariant } from '../../services/shared-dialo
 
 @Component({
   selector: 'pc-dialog-host',
-  standalone: true,
-  imports: [CommonModule, Icon],
+  imports: [Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <dialog #dlg class="modal">
@@ -44,7 +42,7 @@ import { ConfirmDialogService, DialogVariant } from '../../services/shared-dialo
             @if (showCancel()) {
               <button class="btn" (click)="onCancel()">{{ state()!.cancelText }}</button>
             }
-            <button class="btn" [ngClass]="confirmBtnClass()" (click)="onConfirm()">
+            <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">
               {{ state()!.confirmText }}
             </button>
           </div>
@@ -80,14 +78,14 @@ export class ConfirmDialogHost {
         return '';
     }
   });
-  @ViewChild('dlg', { static: true }) public dlgRef!: ElementRef<HTMLDialogElement>;
+  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
   public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
   public showCancel = computed(() => !!this.state()?.cancelText && this.state()!.type !== 'alert');
 
   constructor() {
     effect(() => {
       const open = this.openSignal();
-      const dlg = this.dlgRef?.nativeElement;
+      const dlg = this.dlgRef()?.nativeElement;
       if (!dlg) return;
 
       if (open) {

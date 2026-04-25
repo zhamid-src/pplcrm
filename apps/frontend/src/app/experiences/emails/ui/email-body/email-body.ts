@@ -1,7 +1,6 @@
 /**
  * @file Component displaying the body of an email.
  */
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
@@ -14,8 +13,7 @@ import type { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-body',
-  standalone: true,
-  imports: [CommonModule, SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
+  imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
     <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>

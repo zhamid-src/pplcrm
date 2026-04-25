@@ -6,7 +6,6 @@ import { Icon } from './icon';
 
 @Component({
   selector: 'pc-attachment-icon',
-  standalone: true,
   imports: [Icon],
   template: ` <pc-icon [name]="icon()" [size]="size()" [class]="className()" [attr.title]="title()"></pc-icon> `,
   changeDetection: ChangeDetectionStrategy.OnPush,

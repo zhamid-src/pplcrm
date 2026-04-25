@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
@@ -21,8 +20,7 @@ interface SectionState {
 
 @Component({
   selector: 'pc-settings-page',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, Icon],
+  imports: [ReactiveFormsModule, Icon],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {

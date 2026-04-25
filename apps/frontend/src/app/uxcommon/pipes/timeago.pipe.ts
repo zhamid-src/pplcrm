@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
 
 export interface TimeAgoOptions {
   /** Absolute date format for fallback (Intl options) */
@@ -17,13 +17,11 @@ export interface TimeAgoOptions {
 
 @Pipe({
   name: 'timeAgo',
-  standalone: true,
   pure: false, // update when change detection runs + we also markForCheck on our own timer
 })
 export class TimeAgoPipe implements PipeTransform, OnDestroy {
+  private readonly cdr = inject(ChangeDetectorRef);
   private timerId: any;
-
-  constructor(private cdr: ChangeDetectorRef) {}
 
   public ngOnDestroy(): void {
     if (this.timerId) clearTimeout(this.timerId);

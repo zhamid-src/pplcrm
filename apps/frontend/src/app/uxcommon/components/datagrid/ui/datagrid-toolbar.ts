@@ -6,7 +6,6 @@ import { GridActionComponent } from '../tool-button';
 
 @Component({
   selector: 'pc-dg-toolbar',
-  standalone: true,
   imports: [GridActionComponent, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-toolbar.html',

@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, input, output, signal } from '@angular/core';
+import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { debounce } from '@common';
 
 @Component({
@@ -43,7 +43,7 @@ export class AutoComplete {
    * Must implement a `filter()` method that returns a list of matches.
    */
   public filterSvc = input<TFILTER | null>(null);
-  @ViewChild('inputEl') public inputRef!: ElementRef<HTMLInputElement>;
+  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
 
   /**
    * The placeholder text for the input element.
@@ -100,8 +100,8 @@ export class AutoComplete {
   protected reset(key: string) {
     this.valueChange.emit(key);
     this.matches.set([]);
-    if (this.inputRef?.nativeElement) {
-      this.inputRef.nativeElement.value = '';
+    if (this.inputRef()?.nativeElement) {
+      this.inputRef().nativeElement.value = '';
     }
   }
 

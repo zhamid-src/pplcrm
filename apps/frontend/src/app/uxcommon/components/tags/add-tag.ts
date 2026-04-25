@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject } from '@angular/core';
+import { Component, inject, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -61,8 +61,7 @@ export class AddTag {
    * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
    * Populated after view initialization.
    */
-  @ViewChild(AddBtnRow)
-  public addBtnRow!: AddBtnRow;
+  public readonly addBtnRow = viewChild(AddBtnRow);
 
   /**
    * Submits the form to create a new tag.
@@ -75,7 +74,7 @@ export class AddTag {
     try {
       await this.tagSvc.add(formObj);
       this.alertSvc.showSuccess('Tag added successfully.');
-      this.addBtnRow.stayOrCancel();
+      this.addBtnRow()?.stayOrCancel();
     } catch (err: unknown) {
       if (err instanceof TRPCClientError) {
         this.alertSvc.showError(err.message);

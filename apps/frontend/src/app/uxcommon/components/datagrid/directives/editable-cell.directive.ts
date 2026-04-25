@@ -1,16 +1,21 @@
-import { Directive, ElementRef, HostListener, Input, inject } from '@angular/core';
+import { Directive, ElementRef, inject, input } from '@angular/core';
 import { EditingController } from '../controllers/editing.controller';
 
 @Directive({
   selector: '[pcEditable]',
-  standalone: true,
+  host: {
+    '(dblclick)': 'onDblClick()',
+    '(keydown.enter)': 'onEnter()',
+    '(keydown.esc)': 'onEsc()',
+    '(focusout)': 'onFocusOut($event)',
+  },
 })
 export class EditableCellDirective {
   private readonly editing = inject(EditingController);
   private readonly host = inject(ElementRef<HTMLElement>);
   private isEditing = false;
 
-  @Input({ required: true }) pcEditable!: {
+  public readonly pcEditable = input.required<{
     row: any;
     col: any;
     toId: (r: any) => string;
@@ -30,11 +35,10 @@ export class EditableCellDirective {
     showError: (m: string) => void;
     undo: () => void;
     customCommit?: (currentValue: any) => Promise<unknown>;
-  };
+  }>();
 
-  @HostListener('dblclick')
-  onDblClick() {
-    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = this.pcEditable;
+  protected onDblClick() {
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = this.pcEditable();
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
     if (!col?.editable) return;
@@ -49,22 +53,19 @@ export class EditableCellDirective {
     this.isEditing = true;
   }
 
-  @HostListener('keydown.enter')
-  async onEnter() {
+  protected async onEnter() {
     if (!this.isEditing) return;
     await this.commit();
   }
 
-  @HostListener('keydown.esc')
-  onEsc() {
+  protected onEsc() {
     if (!this.isEditing) return;
     this.isEditing = false;
-    this.pcEditable.setEditingCell(null);
+    this.pcEditable().setEditingCell(null);
   }
 
   // Commit only when focus leaves the cell subtree
-  @HostListener('focusout', ['$event'])
-  async onFocusOut(ev: FocusEvent) {
+  protected async onFocusOut(ev: FocusEvent) {
     if (!this.isEditing) return;
     const container = this.host.nativeElement;
     const next = ev.relatedTarget as Node | null;
@@ -73,7 +74,7 @@ export class EditableCellDirective {
   }
 
   private async commit() {
-    const p = this.pcEditable;
+    const p = this.pcEditable();
     if (!p?.col?.field) return;
     const currentValue = p.coerce(p.col, p.value());
     if (typeof p.customCommit === 'function') {

@@ -1,33 +1,34 @@
-import { Directive, HostListener, Input, inject } from '@angular/core';
+import { Directive, inject, input } from '@angular/core';
 import { DataGrid } from '../datagrid';
 
 @Directive({
   selector: '[pcHeaderReorder]',
-  standalone: true,
+  host: {
+    '(dragstart)': 'onDragStart($event)',
+    '(dragover)': 'onDragOver($event)',
+    '(drop)': 'onDrop($event)',
+  },
 })
 export class HeaderReorderDirective {
-  @Input('pcHeaderReorder') header: any;
+  public readonly header = input<any>(undefined, { alias: 'pcHeaderReorder' });
 
   private readonly grid: any = inject(DataGrid);
 
-  @HostListener('dragstart', ['$event'])
-  onDragStart(ev: DragEvent) {
+  protected onDragStart(ev: DragEvent) {
     try {
-      this.grid.onHeaderDragStart(this.header, ev);
+      this.grid.onHeaderDragStart(this.header(), ev);
     } catch {}
   }
 
-  @HostListener('dragover', ['$event'])
-  onDragOver(ev: DragEvent) {
+  protected onDragOver(ev: DragEvent) {
     try {
-      this.grid.onHeaderDragOver(this.header, ev);
+      this.grid.onHeaderDragOver(this.header(), ev);
     } catch {}
   }
 
-  @HostListener('drop', ['$event'])
-  onDrop(ev: DragEvent) {
+  protected onDrop(ev: DragEvent) {
     try {
-      this.grid.onHeaderDrop(this.header, ev);
+      this.grid.onHeaderDrop(this.header(), ev);
     } catch {}
   }
 }
