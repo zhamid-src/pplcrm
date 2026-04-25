@@ -8,13 +8,13 @@ import {
   ElementRef,
   OnDestroy,
   OnInit,
-  ViewChild,
   computed,
   effect,
   inject,
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -100,7 +100,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Selection resize handled by ResizingController
   // dragColId handled in ReorderController
   // Infinite append state handled by controller
-  @ViewChild('gridTable', { static: false }) private gridTable?: ElementRef<HTMLTableElement>;
+  private readonly gridTable = viewChild<ElementRef<HTMLTableElement>>('gridTable');
 
   // Sticky pin offsets
   // header widths tracked by PinningController
@@ -111,12 +111,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // pin offsets tracked by PinningController
 
   // Optional cache placeholder removed (unused in current implementation)
-  @ViewChild('scroller', { static: false }) private scroller?: ElementRef<HTMLDivElement>;
+  private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
   private tsColumns: TSColumnDef<any, any>[] = [];
   private tsTable: any;
   private readonly pctrl = inject(PinningController);
   private updateHeaderWidths = () => {
-    const table = this.gridTable?.nativeElement;
+    const table = this.gridTable()?.nativeElement;
     if (!table) return;
     requestAnimationFrame(() => {
       const measured = this.pctrl.measureHeaderWidths(table);
@@ -412,7 +412,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public ngAfterViewInit() {
     // Virtualizer disabled for paged grid; no attach
-    const el = this.scroller?.nativeElement as HTMLDivElement | undefined;
+    const el = this.scrollerRef()?.nativeElement as HTMLDivElement | undefined;
     void el; // reserved for future use
     // Attach controllers to the table once
     this.pctrl.attachTable(this.tsTable);
@@ -552,7 +552,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public autoSizeColumn(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
-    const table = this.gridTable?.nativeElement;
+    const table = this.gridTable()?.nativeElement;
     if (!table) return;
     const px = this.columnsSvc.computeAutoSizeWidth(table, id);
     if (px > 0) this.setColWidth(id, px);

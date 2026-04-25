@@ -4,7 +4,6 @@ import type { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-input-shell',
-  standalone: true,
   imports: [Icon],
   template: `
     <div>

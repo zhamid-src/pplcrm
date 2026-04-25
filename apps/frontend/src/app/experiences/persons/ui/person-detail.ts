@@ -1,7 +1,7 @@
 /**
  * @file Component for creating or updating individual person records.
  */
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, effect, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -28,7 +28,7 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [CommonModule, ReactiveFormsModule, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
+  imports: [DatePipe, ReactiveFormsModule, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {

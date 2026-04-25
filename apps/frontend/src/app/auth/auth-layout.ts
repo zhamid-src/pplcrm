@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 
@@ -7,8 +6,7 @@ import { Alerts } from '@uxcommon/components/alerts/alerts';
  */
 @Component({
   selector: 'pc-auth-layout',
-  standalone: true,
-  imports: [CommonModule, Alerts],
+  imports: [Alerts],
   template: `
     <div class="bg-image flex min-h-screen font-light" data-theme="light">
       <div class="card card-compact glass m-auto w-96 shadow-xl">

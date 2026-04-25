@@ -1,7 +1,6 @@
 /**
  * @file Component for assigning an email to a user.
  */
-import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -13,8 +12,7 @@ import { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-assign',
-  standalone: true,
-  imports: [CommonModule, Icon],
+  imports: [Icon],
   template: `<div class="flex items-center gap-2 mt-1">
     <span class="text-xs text-base-content/70">Assign to:</span>
     <div class="dropdown">

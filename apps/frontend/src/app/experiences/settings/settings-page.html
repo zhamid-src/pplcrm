@@ -42,62 +42,64 @@
         <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-8">
           <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) {
-            <div [ngClass]="{ 'md:col-span-2': field.config.type === 'textarea' }" class="flex flex-col gap-1.5">
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
               <label class="text-sm font-semibold text-base-content/90"> {{ field.config.label }} </label>
 
-              <ng-container [ngSwitch]="field.config.type">
-                <textarea
-                  *ngSwitchCase="'textarea'"
-                  class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [formControlName]="field.controlName"
-                  rows="4"
-                ></textarea>
-
-                <label *ngSwitchCase="'toggle'" class="flex items-center gap-3 cursor-pointer py-1">
+              @switch (field.config.type) {
+                @case ('textarea') {
+                  <textarea
+                    class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                    [attr.placeholder]="field.config.placeholder ?? ''"
+                    [formControlName]="field.controlName"
+                    rows="4"
+                  ></textarea>
+                }
+                @case ('toggle') {
+                  <label class="flex items-center gap-3 cursor-pointer py-1">
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-primary toggle-md"
+                      [formControlName]="field.controlName"
+                    />
+                    <span class="text-sm font-normal text-base-content/70">
+                      {{ field.config.placeholder ?? 'Enabled' }}
+                    </span>
+                  </label>
+                }
+                @case ('select') {
+                  <select
+                    class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                    [formControlName]="field.controlName"
+                  >
+                    @for (option of field.config.options ?? []; track option.value ?? $index) {
+                      <option [value]="option.value">{{ option.label }}</option>
+                    }
+                  </select>
+                }
+                @case ('number') {
                   <input
-                    type="checkbox"
-                    class="toggle toggle-primary toggle-md"
+                    type="number"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                    [attr.placeholder]="field.config.placeholder ?? ''"
                     [formControlName]="field.controlName"
                   />
-                  <span class="text-sm font-normal text-base-content/70">
-                    {{ field.config.placeholder ?? 'Enabled' }}
-                  </span>
-                </label>
-
-                <select
-                  *ngSwitchCase="'select'"
-                  class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                  [formControlName]="field.controlName"
-                >
-                  @for (option of field.config.options ?? []; track option.value ?? $index) {
-                  <option [value]="option.value">{{ option.label }}</option>
-                  }
-                </select>
-
-                <input
-                  *ngSwitchCase="'number'"
-                  type="number"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [formControlName]="field.controlName"
-                />
-
-                <input
-                  *ngSwitchCase="'date'"
-                  type="date"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                  [formControlName]="field.controlName"
-                />
-
-                <input
-                  *ngSwitchDefault
-                  [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [formControlName]="field.controlName"
-                />
-              </ng-container>
+                }
+                @case ('date') {
+                  <input
+                    type="date"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                    [formControlName]="field.controlName"
+                  />
+                }
+                @default {
+                  <input
+                    [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                    [attr.placeholder]="field.config.placeholder ?? ''"
+                    [formControlName]="field.controlName"
+                  />
+                }
+              }
 
               @if (field.config.helper) {
               <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>

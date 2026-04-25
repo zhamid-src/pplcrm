@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 
@@ -17,23 +17,22 @@ export interface TagGroup {
 
 @Component({
   selector: 'pc-tag-rule-builder',
-  standalone: true,
   imports: [AutoComplete],
   template: `
     <div class="border border-base-300 rounded p-3">
-      @if (showSummary) {
+      @if (showSummary()) {
         <div class="text-xs text-base-content/70 mb-2 flex items-center justify-between gap-3">
           <div>
             Summary:
-            <span class="font-mono break-words">{{ summarizeGroup(group) }}</span>
+            <span class="font-mono break-words">{{ summarizeGroup(group()) }}</span>
           </div>
           <div class="whitespace-nowrap">
-            @if (summaryError) {
-              <span class="text-warning">Error: {{ summaryError }}</span>
-            } @else if (summaryCounting) {
+            @if (summaryError()) {
+              <span class="text-warning">Error: {{ summaryError() }}</span>
+            } @else if (summaryCounting()) {
               <span>Matches: Counting...</span>
             } @else {
-              <span>Matches: {{ summaryMatches ?? 0 }} {{ objectType === 'households' ? 'households' : 'people' }}</span>
+              <span>Matches: {{ summaryMatches() ?? 0 }} {{ objectType() === 'households' ? 'households' : 'people' }}</span>
             }
           </div>
         </div>
@@ -44,7 +43,7 @@ export interface TagGroup {
           <button
             type="button"
             class="btn btn-xs join-item"
-            [class.btn-primary]="group.bool === 'and'"
+            [class.btn-primary]="group().bool === 'and'"
             (click)="setBool('and')"
           >
             All (AND)
@@ -52,7 +51,7 @@ export interface TagGroup {
           <button
             type="button"
             class="btn btn-xs join-item"
-            [class.btn-primary]="group.bool === 'or'"
+            [class.btn-primary]="group().bool === 'or'"
             (click)="setBool('or')"
           >
             Any (OR)
@@ -65,7 +64,7 @@ export interface TagGroup {
       </div>
 
       <div class="flex flex-col gap-2">
-        @for (item of group.items; track item; let i = $index) {
+        @for (item of group().items; track item; let i = $index) {
           @if (isRule(item)) {
             <div class="flex items-center gap-2">
               <select
@@ -74,7 +73,7 @@ export interface TagGroup {
                 (change)="setField(i, $any($event.target).value)"
               >
                 <option value="tag">Tag</option>
-                @if (objectType !== 'households') {
+                @if (objectType() !== 'households') {
                   <option value="email">Email</option>
                   <option value="mobile">Mobile</option>
                 }
@@ -91,7 +90,7 @@ export interface TagGroup {
                 </select>
                 <div class="w-64">
                   <pc-autocomplete
-                    [filterSvc]="tagSvc"
+                    [filterSvc]="tagSvc()"
                     placeholder="Type a tag..."
                     (valueChange)="setRuleValue(i, $event)"
                   />
@@ -117,8 +116,8 @@ export interface TagGroup {
             <div class="ml-4">
               <pc-tag-rule-builder
                 [group]="asGroup(item)"
-                [tagSvc]="tagSvc"
-                [objectType]="objectType"
+                [tagSvc]="tagSvc()"
+                [objectType]="objectType()"
                 [showSummary]="false"
                 (changed)="emitChange()"
               ></pc-tag-rule-builder>
@@ -133,22 +132,22 @@ export interface TagGroup {
   `,
 })
 export class TagRuleBuilderComponent {
-  @Output() public changed = new EventEmitter<void>();
-  @Input({ required: true }) public group!: TagGroup;
-  @Input({ required: false }) public objectType: 'people' | 'households' = 'people';
-  @Input() public showSummary: boolean = true;
-  @Input({ required: true }) public tagSvc!: TagsService;
-  @Input() public summaryMatches: number | null = null;
-  @Input() public summaryCounting: boolean = false;
-  @Input() public summaryError: string | null = null;
+  public readonly changed = output<void>();
+  public readonly group = input.required<TagGroup>();
+  public readonly objectType = input<'people' | 'households'>('people');
+  public readonly showSummary = input(true);
+  public readonly tagSvc = input.required<TagsService>();
+  public readonly summaryMatches = input<number | null>(null);
+  public readonly summaryCounting = input(false);
+  public readonly summaryError = input<string | null>(null);
 
   public addGroup() {
-    this.group.items.push({ kind: 'group', bool: 'and', items: [] });
+    this.group().items.push({ kind: 'group', bool: 'and', items: [] });
     this.emitChange();
   }
 
   public addRule() {
-    this.group.items.push({ kind: 'rule', field: 'tag', op: 'eq', value: '' });
+    this.group().items.push({ kind: 'rule', field: 'tag', op: 'eq', value: '' });
     this.emitChange();
   }
 
@@ -182,17 +181,17 @@ export class TagRuleBuilderComponent {
   }
 
   public removeItem(index: number) {
-    this.group.items.splice(index, 1);
+    this.group().items.splice(index, 1);
     this.emitChange();
   }
 
   public setBool(bool: 'and' | 'or') {
-    this.group.bool = bool;
+    this.group().bool = bool;
     this.emitChange();
   }
 
   public setField(index: number, value: string) {
-    const item = this.group.items[index];
+    const item = this.group().items[index];
     if (this.isRule(item)) {
       const rule = item as Rule;
       rule.field = value === 'email' || value === 'mobile' ? (value as RuleField) : 'tag';
@@ -209,7 +208,7 @@ export class TagRuleBuilderComponent {
   }
 
   public setOp(index: number, value: string) {
-    const item = this.group.items[index];
+    const item = this.group().items[index];
     if (this.isRule(item)) {
       const rule = item as Rule;
       if (rule.field === 'tag') {
@@ -222,7 +221,7 @@ export class TagRuleBuilderComponent {
   }
 
   public setRuleValue(index: number, value: string) {
-    const item = this.group.items[index];
+    const item = this.group().items[index];
     if (this.isRule(item)) {
       (item as Rule).value = value;
       this.emitChange();

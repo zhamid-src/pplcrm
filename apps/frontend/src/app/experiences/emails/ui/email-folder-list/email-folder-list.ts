@@ -1,7 +1,6 @@
 /**
  * @file Component displaying list of email folders and handling selection.
  */
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
@@ -12,8 +11,7 @@ import type { EmailFolderType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-folder-list',
-  standalone: true,
-  imports: [CommonModule, Swap, Icon],
+  imports: [Swap, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-folder-list.html',
 })

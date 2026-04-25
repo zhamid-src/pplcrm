@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { CUSTOM_ELEMENTS_SCHEMA, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -11,8 +10,7 @@ import { Tags } from '@uxcommon/components/tags/tags';
 
 @Component({
   selector: 'pc-newsletter-add',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, Icon, Tags, TagItem],
+  imports: [ReactiveFormsModule, Icon, Tags, TagItem],
   templateUrl: './newsletter-add.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })

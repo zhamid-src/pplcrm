@@ -1,7 +1,7 @@
 /**
  * Component allowing a user to set a new password using a reset code.
  */
-import { CommonModule } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,7 +15,7 @@ import { passwordBreachNumber, passwordControl, passwordInBreach } from 'apps/fr
 
 @Component({
   selector: 'pc-new-password',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, AuthLayoutComponent, Icon],
+  imports: [DecimalPipe, ReactiveFormsModule, RouterLink, AuthLayoutComponent, Icon],
   templateUrl: './new-password-page.html',
 })
 /**

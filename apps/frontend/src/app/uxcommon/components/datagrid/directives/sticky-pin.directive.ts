@@ -1,29 +1,19 @@
-import { Directive, HostBinding, Input } from '@angular/core';
+import { Directive, input } from '@angular/core';
 
 @Directive({
   selector: '[pcStickyPin]',
-  standalone: true,
+  host: {
+    '[class.sticky]': 'state() !== false',
+    '[style.left.px]': 'state() === "left" ? left() : null',
+    '[style.right.px]': 'state() === "right" ? right() : null',
+    '[style.zIndex]': 'state() !== false ? z() || 10 : null',
+    '[style.background]': 'bg() && state() !== false ? "var(--fallback-b1,oklch(var(--b1)))" : null',
+  },
 })
 export class StickyPinDirective {
-  @Input('pcStickyState') state: 'left' | 'right' | false = false;
-  @Input('pcStickyLeft') left = 0;
-  @Input('pcStickyRight') right = 0;
-  @Input('pcStickyZ') z = 0;
-  @Input('pcStickyBg') bg = true;
-
-  @HostBinding('class.sticky') get stickyClass() {
-    return this.state !== false;
-  }
-  @HostBinding('style.left.px') get leftPx() {
-    return this.state === 'left' ? this.left : null;
-  }
-  @HostBinding('style.right.px') get rightPx() {
-    return this.state === 'right' ? this.right : null;
-  }
-  @HostBinding('style.zIndex') get zIndex() {
-    return this.state !== false ? this.z || 10 : null;
-  }
-  @HostBinding('style.background') get background() {
-    return this.bg && this.state !== false ? 'var(--fallback-b1,oklch(var(--b1)))' : null;
-  }
+  public readonly state = input<'left' | 'right' | false>(false, { alias: 'pcStickyState' });
+  public readonly left = input(0, { alias: 'pcStickyLeft' });
+  public readonly right = input(0, { alias: 'pcStickyRight' });
+  public readonly z = input(0, { alias: 'pcStickyZ' });
+  public readonly bg = input(true, { alias: 'pcStickyBg' });
 }

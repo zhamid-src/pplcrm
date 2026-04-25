@@ -1,4 +1,3 @@
-import { CommonModule } from "@angular/common";
 import { Component, OnInit, computed, effect, inject, signal } from "@angular/core";
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
 import { ActivatedRoute, Router, RouterModule } from "@angular/router";
@@ -17,8 +16,7 @@ interface PersonOption {
 
 @Component({
   selector: 'pc-team-detail',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule, Icon],
+  imports: [ReactiveFormsModule, RouterModule, Icon],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {

@@ -1,8 +1,8 @@
 /**
  * @file Component handling comments for an email.
  */
-import { CommonModule } from "@angular/common";
-import { ChangeDetectionStrategy, Component, ViewChild, computed, effect, inject, input, signal, untracked } from "@angular/core";
+import { DatePipe, SlicePipe } from "@angular/common";
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked, viewChild } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import type { IAuthUser } from "@common";
 import { Icon } from "@uxcommon/components/icons/icon";
@@ -18,8 +18,7 @@ import type { EmailCommentType, EmailType } from "common/src/lib/models";
 
 @Component({
   selector: 'pc-email-comments',
-  standalone: true,
-  imports: [CommonModule, FormsModule, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
+  imports: [DatePipe, SlicePipe, FormsModule, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-comments.html',
 })
@@ -29,8 +28,7 @@ export class EmailComments {
 
   private dialogs = inject(ConfirmDialogService);
 
-  // mention autocomplete (shared controller)
-  @ViewChild('emailComposer') private emailComposer?: any;
+  private readonly emailComposer = viewChild<any>('emailComposer');
 
   /** Track in-flight deletions: comment ids */
   protected readonly deleting = signal<Set<string>>(new Set());
@@ -200,7 +198,7 @@ export class EmailComments {
     ev?.preventDefault();
     const res = this.mc.select(u, this.newComment);
     this.newComment = res.text;
-    const el = this.emailComposer?.nativeElement as HTMLTextAreaElement | undefined;
+    const el = this.emailComposer()?.nativeElement as HTMLTextAreaElement | undefined;
     setTimeout(() => {
       if (el) {
         el.focus();

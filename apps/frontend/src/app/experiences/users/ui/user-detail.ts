@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -10,8 +10,7 @@ import { AuthUsersService } from '../services/authusers-service';
 
 @Component({
   selector: 'pc-user-detail',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule, Icon],
+  imports: [DatePipe, ReactiveFormsModule, RouterModule, Icon],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent implements OnInit {

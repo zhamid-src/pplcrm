@@ -1,13 +1,13 @@
 import {
   Directive,
+  DestroyRef,
   EmbeddedViewRef,
-  Input,
-  OnDestroy,
   Signal,
   TemplateRef,
   ViewContainerRef,
   effect,
   inject,
+  input,
 } from '@angular/core';
 
 /**
@@ -32,71 +32,56 @@ import {
  */
 @Directive({
   selector: '[pcAnimateIf]',
-  standalone: true,
 })
-export class AnimateIfDirective implements OnDestroy {
+export class AnimateIfDirective {
   private readonly template = inject(TemplateRef<unknown>);
   private readonly vcr = inject(ViewContainerRef);
-
-  private animationDuration = 300;
-  private condition = false;
-  private conditionSignal?: Signal<boolean>;
-  private enterClass = 'animate-left';
-  private exitClass = 'animate-exit-right';
-  private timeoutId: NodeJS.Timeout | undefined;
-  private view: EmbeddedViewRef<unknown> | null = null;
-
-  constructor() {
-    effect(() => {
-      if (this.conditionSignal) {
-        this.toggle(this.conditionSignal());
-      }
-    });
-  }
+  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * Duration in milliseconds to wait before destroying the element after the exit animation.
    * Default: `300`.
    */
-  @Input() public set duration(ms: number) {
-    this.animationDuration = ms;
-  }
+  public readonly duration = input(300);
 
   /**
    * CSS class applied on element entry (insertion).
    * Default: `'animate-left'`.
    */
-  @Input('pcAnimateIfEnter') public set enter(className: string) {
-    this.enterClass = className;
-  }
+  public readonly pcAnimateIfEnter = input('animate-left');
 
   /**
    * CSS class applied on element exit (removal).
    * Default: `'animate-exit-right'`.
    */
-  @Input('pcAnimateIfExit') public set exit(className: string) {
-    this.exitClass = className;
-  }
+  public readonly pcAnimateIfExit = input('animate-exit-right');
 
   /**
    * Main reactive condition controlling visibility.
    * Must be a `Signal<boolean>`.
    */
-  @Input()
-  public set pcAnimateIf(condition: Signal<boolean>) {
-    this.conditionSignal = condition;
-  }
+  public readonly pcAnimateIf = input.required<Signal<boolean>>();
 
-  /**
-   * Cleanup any pending timeouts and remove animation classes.
-   */
-  public ngOnDestroy(): void {
-    clearTimeout(this.timeoutId);
+  private condition = false;
+  private timeoutId: NodeJS.Timeout | undefined;
+  private view: EmbeddedViewRef<unknown> | null = null;
 
-    if (this.view?.rootNodes[0]) {
-      const el = this.view.rootNodes[0] as HTMLElement;
-      el?.classList.remove(this.enterClass, this.exitClass);
-    }
+  constructor() {
+    effect(() => {
+      const conditionSignal = this.pcAnimateIf();
+      if (conditionSignal) {
+        this.toggle(conditionSignal());
+      }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      clearTimeout(this.timeoutId);
+
+      if (this.view?.rootNodes[0]) {
+        const el = this.view.rootNodes[0] as HTMLElement;
+        el?.classList.remove(this.pcAnimateIfEnter(), this.pcAnimateIfExit());
+      }
+    });
   }
 
   /**
@@ -105,8 +90,9 @@ export class AnimateIfDirective implements OnDestroy {
   private animatedEntry() {
     this.vcr.clear();
     this.view = this.vcr.createEmbeddedView(this.template);
+    const enterClass = this.pcAnimateIfEnter();
     const el = this.view.rootNodes[0] as HTMLElement;
-    requestAnimationFrame(() => el?.classList.add(this.enterClass));
+    requestAnimationFrame(() => el?.classList.add(enterClass));
   }
 
   /**
@@ -116,19 +102,21 @@ export class AnimateIfDirective implements OnDestroy {
     if (!this.view?.rootNodes[0]) return;
 
     const el = this.view.rootNodes[0] as HTMLElement;
+    const enterClass = this.pcAnimateIfEnter();
+    const exitClass = this.pcAnimateIfExit();
 
     // Remove entry animation in case it's still applied
-    el.classList.remove(this.enterClass);
+    el.classList.remove(enterClass);
 
     // Add exit animation
-    el.classList.add(this.exitClass);
+    el.classList.add(exitClass);
 
     this.timeoutId = setTimeout(() => {
       // Cleanup all animation classes before removal
-      el.classList.remove(this.enterClass, this.exitClass);
+      el.classList.remove(enterClass, exitClass);
       this.vcr.clear();
       this.view = null;
-    }, this.animationDuration);
+    }, this.duration());
   }
 
   /**

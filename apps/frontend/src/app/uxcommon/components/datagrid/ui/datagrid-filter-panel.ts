@@ -3,7 +3,6 @@ import { Icon } from '@icons/icon';
 
 @Component({
   selector: 'pc-dg-filter-panel',
-  standalone: true,
   imports: [Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-filter-panel.html',

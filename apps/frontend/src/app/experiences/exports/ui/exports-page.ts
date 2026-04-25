@@ -5,7 +5,6 @@ import { get } from 'idb-keyval';
 
 @Component({
   selector: 'pc-exports-page',
-  standalone: true,
   imports: [Icon],
   templateUrl: './exports-page.html',
 })

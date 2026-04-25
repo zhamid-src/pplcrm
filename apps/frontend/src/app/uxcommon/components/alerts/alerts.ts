@@ -6,7 +6,6 @@ import { ALERTTYPE, AlertService } from './alert-service';
 
 @Component({
   selector: 'pc-alerts',
-  standalone: true,
   imports: [Icon, AnimateIfDirective],
   templateUrl: './alerts.html',
 })

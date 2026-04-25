@@ -4,7 +4,6 @@ import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-grid-action',
-  standalone: true,
   template: `
     <li
       class="tooltip tooltip-accent"

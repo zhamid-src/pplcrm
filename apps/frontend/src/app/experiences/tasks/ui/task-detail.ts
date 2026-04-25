@@ -1,5 +1,5 @@
-import { CommonModule } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { IAuthUser } from '@common';
@@ -15,7 +15,7 @@ import { MentionController, userDisplay } from '../../../uxcommon/mentions/menti
 
 @Component({
   selector: 'pc-task-detail',
-  imports: [CommonModule, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
+  imports: [DatePipe, DecimalPipe, SlicePipe, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
   templateUrl: './task-detail.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
@@ -45,7 +45,7 @@ export class TaskDetail implements OnInit {
   protected showAttachments = signal(true);
 
   // mention autocomplete (shared controller)
-  @ViewChild('taskComposer') private taskComposer?: any;
+  private readonly taskComposer = viewChild<any>('taskComposer');
   public mc = new MentionController(() => this.users());
 
   public ngOnInit() {
@@ -230,7 +230,7 @@ export class TaskDetail implements OnInit {
     ev?.preventDefault();
     const res = this.mc.select(u, this.newComment);
     this.newComment = res.text;
-    const el = this.taskComposer?.nativeElement as HTMLTextAreaElement | undefined;
+    const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
     setTimeout(() => {
       if (el) {
         el.focus();

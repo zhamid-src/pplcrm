@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
@@ -14,8 +13,7 @@ interface DetailMetric {
 
 @Component({
   selector: 'pc-newsletter-detail',
-  standalone: true,
-  imports: [CommonModule, Icon],
+  imports: [Icon],
   templateUrl: './newsletter-detail.html',
 })
 export class NewsletterDetailComponent implements OnInit {

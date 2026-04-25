@@ -1,7 +1,7 @@
 /**
  * Navigation bar component providing search, theme switching, and user actions.
  */
-import { Component, ElementRef, HostListener, ViewChild, effect, inject, signal } from '@angular/core';
+import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -17,6 +17,9 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
   selector: 'pc-navbar',
   imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective],
   templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
 })
 /**
  * Top-level navigation bar displayed across the application.
@@ -36,14 +39,14 @@ export class Navbar {
   protected readonly searchStr = signal('');
   protected readonly themeSvc = inject(ThemeService);
 
-  @ViewChild('searchInput') public searchInputRef!: ElementRef<HTMLInputElement>;
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
 
   constructor() {
     // Move focus to the search bar whenever it becomes visible
     effect(() => {
       if (this.searchBarVisible())
         queueMicrotask(() => {
-          this.searchInputRef?.nativeElement?.focus();
+          this.searchInputRef()?.nativeElement?.focus();
         });
     });
   }
@@ -62,7 +65,6 @@ export class Navbar {
    *
    * @param event - Keyboard event triggered from the window.
    */
-  @HostListener('window:keydown', ['$event'])
   public handleKeyDown(event: KeyboardEvent): void {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
     const isK = event.key.toLowerCase() === 'k';

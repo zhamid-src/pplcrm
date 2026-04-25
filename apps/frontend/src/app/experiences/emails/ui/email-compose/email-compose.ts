@@ -1,6 +1,6 @@
 // pc-compose-email.component.ts
 import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, Input, ViewChild, computed, inject, output, signal } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
@@ -15,7 +15,6 @@ import { EmailActionsStore } from '../../services/store/email-actions.store';
 
 @Component({
   selector: 'pc-compose-email',
-  standalone: true,
   imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
   host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
   templateUrl: './email-compose.html',
@@ -30,9 +29,12 @@ export class ComposeEmailComponent {
 
   public readonly finished = output<void>();
 
+  public readonly draftId = input<string | null>(null);
+  public readonly initial = input<ComposeInitial | null>(null);
+
   public attachments = signal<File[]>([]);
   public dragOver = signal(false);
-  @ViewChild('fileInput', { static: false }) public fileInput?: ElementRef<HTMLInputElement>;
+  public readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   public form = this.fb.group({
     to: [''],
     cc: [''],
@@ -57,24 +59,30 @@ export class ComposeEmailComponent {
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
-  @Input() public set draftId(id: string | null) {
-    if (id) {
-      void this.loadDraft(id);
-    } else {
-      this.draftIdSignal.set(null);
-      this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
-      this.attachments.set([]);
-    }
-  }
+  constructor() {
+    // Replaces the @Input() set draftId setter
+    effect(() => {
+      const id = this.draftId();
+      if (id) {
+        void this.loadDraft(id);
+      } else {
+        this.draftIdSignal.set(null);
+        this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
+        this.attachments.set([]);
+      }
+    });
 
-  @Input() public set initial(value: ComposeInitial | null) {
-    if (!value) return;
-    this.form.patchValue({
-      to: value.to ?? '',
-      cc: value.cc ?? '',
-      bcc: value.bcc ?? '',
-      subject: value.subject ?? '',
-      html: value.html ?? '',
+    // Replaces the @Input() set initial setter
+    effect(() => {
+      const value = this.initial();
+      if (!value) return;
+      this.form.patchValue({
+        to: value.to ?? '',
+        cc: value.cc ?? '',
+        bcc: value.bcc ?? '',
+        subject: value.subject ?? '',
+        html: value.html ?? '',
+      });
     });
   }
 
@@ -232,7 +240,7 @@ export class ComposeEmailComponent {
   }
 
   private triggerAttach() {
-    this.fileInput?.nativeElement.click();
+    this.fileInput()?.nativeElement.click();
   }
 }
 
