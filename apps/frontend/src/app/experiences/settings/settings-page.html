@@ -5,157 +5,156 @@
   </header>
 
   @if (hasLoaded()) {
-    <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
-      <!-- Sidebar Navigation -->
-      <aside class="w-full md:sticky md:top-8 md:w-64 lg:w-72 shrink-0">
-        <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
-          @for (section of sectionStates; track trackSection($index, section)) {
-            <button
-              type="button"
-              class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-              [class.bg-base-200]="isSelected(section.config.id)"
-              [class.text-base-content]="isSelected(section.config.id)"
-              [class.text-base-content]="!isSelected(section.config.id)"
-              [class.opacity-70]="!isSelected(section.config.id)"
-              (click)="selectSection(section.config.id)"
-            >
-              <pc-icon [name]="section.config.icon" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected(section.config.id)" />
-              {{ section.config.title }}
-            </button>
-          }
-        </nav>
-      </aside>
-
-      <!-- Main Content Area -->
-      <main class="flex-1 w-full max-w-4xl">
+  <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
+    <!-- Sidebar Navigation -->
+    <aside class="w-48 md:sticky md:top-8 shrink-0">
+      <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
         @for (section of sectionStates; track trackSection($index, section)) {
-          @if (isSelected(section.config.id)) {
-            <section
-              class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8"
-            >
-              <header class="border-b border-base-200 pb-5">
-                <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
-              </header>
-
-              <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-8">
-                <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
-                  @for (field of section.fields; track trackField($index, field)) {
-                    <div [ngClass]="{ 'md:col-span-2': field.config.type === 'textarea' }" class="flex flex-col gap-1.5">
-                      <label class="text-sm font-semibold text-base-content/90">
-                        {{ field.config.label }}
-                      </label>
-                      
-                      <ng-container [ngSwitch]="field.config.type">
-                        <textarea
-                          *ngSwitchCase="'textarea'"
-                          class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                          [attr.placeholder]="field.config.placeholder ?? ''"
-                          [formControlName]="field.controlName"
-                          rows="4"
-                        ></textarea>
-
-                        <label *ngSwitchCase="'toggle'" class="flex items-center gap-3 cursor-pointer py-1">
-                          <input type="checkbox" class="toggle toggle-primary toggle-md" [formControlName]="field.controlName" />
-                          <span class="text-sm font-normal text-base-content/70">
-                            {{ field.config.placeholder ?? 'Enabled' }}
-                          </span>
-                        </label>
-
-                        <select
-                          *ngSwitchCase="'select'"
-                          class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                          [formControlName]="field.controlName"
-                        >
-                          @for (option of field.config.options ?? []; track option.value ?? $index) {
-                            <option [value]="option.value">
-                              {{ option.label }}
-                            </option>
-                          }
-                        </select>
-
-                        <input
-                          *ngSwitchCase="'number'"
-                          type="number"
-                          class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                          [attr.placeholder]="field.config.placeholder ?? ''"
-                          [formControlName]="field.controlName"
-                        />
-
-                        <input
-                          *ngSwitchCase="'date'"
-                          type="date"
-                          class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                          [formControlName]="field.controlName"
-                        />
-
-                        <input
-                          *ngSwitchDefault
-                          [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                          class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                          [attr.placeholder]="field.config.placeholder ?? ''"
-                          [formControlName]="field.controlName"
-                        />
-                      </ng-container>
-
-                      @if (field.config.helper) {
-                        <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-                      }
-                      
-                      @if (section.form.get(field.controlName)?.invalid && section.form.get(field.controlName)?.touched) {
-                        <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
-                          <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
-                          Please provide a valid value.
-                        </p>
-                      }
-                    </div>
-                  }
-                </div>
-
-                <!-- Sticky Action Footer inside the card -->
-                <div class="sticky bottom-4 z-10 mt-8 -mx-6 -mb-6 md:-mx-8 md:-mb-8 border-t border-base-200 bg-base-100/95 backdrop-blur px-6 py-4 md:px-8 rounded-b-2xl flex items-center justify-between gap-4">
-                  <div>
-                    @if (isSaving(section)) {
-                      <span class="text-sm font-medium text-base-content/60 flex items-center">
-                        <span class="loading loading-spinner loading-xs mr-2"></span>
-                        Saving changes…
-                      </span>
-                    }
-                  </div>
-
-                  <div class="flex items-center gap-3">
-                    <button
-                      type="button"
-                      class="btn btn-ghost hover:bg-base-200"
-                      (click)="resetSection(section)"
-                      [disabled]="!isSectionDirty(section) || isSaving(section)"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      type="submit"
-                      class="btn btn-primary min-w-[120px]"
-                      [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-                    >
-                      @if (isSaving(section)) {
-                        <span class="loading loading-spinner loading-xs mr-2"></span>
-                      }
-                      Save Changes
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </section>
-          }
+        <button
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected(section.config.id)"
+          [class.text-base-content]="isSelected(section.config.id)"
+          [class.text-base-content]="!isSelected(section.config.id)"
+          [class.opacity-70]="!isSelected(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            class="h-5 w-5 mr-2 opacity-80"
+            [class.text-primary]="isSelected(section.config.id)"
+          />
+          {{ section.config.title }}
+        </button>
         }
-      </main>
-    </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of sectionStates; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
+        </header>
+
+        <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-8">
+          <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) {
+            <div [ngClass]="{ 'md:col-span-2': field.config.type === 'textarea' }" class="flex flex-col gap-1.5">
+              <label class="text-sm font-semibold text-base-content/90"> {{ field.config.label }} </label>
+
+              <ng-container [ngSwitch]="field.config.type">
+                <textarea
+                  *ngSwitchCase="'textarea'"
+                  class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [formControlName]="field.controlName"
+                  rows="4"
+                ></textarea>
+
+                <label *ngSwitchCase="'toggle'" class="flex items-center gap-3 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    class="toggle toggle-primary toggle-md"
+                    [formControlName]="field.controlName"
+                  />
+                  <span class="text-sm font-normal text-base-content/70">
+                    {{ field.config.placeholder ?? 'Enabled' }}
+                  </span>
+                </label>
+
+                <select
+                  *ngSwitchCase="'select'"
+                  class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                  [formControlName]="field.controlName"
+                >
+                  @for (option of field.config.options ?? []; track option.value ?? $index) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+
+                <input
+                  *ngSwitchCase="'number'"
+                  type="number"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [formControlName]="field.controlName"
+                />
+
+                <input
+                  *ngSwitchCase="'date'"
+                  type="date"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                  [formControlName]="field.controlName"
+                />
+
+                <input
+                  *ngSwitchDefault
+                  [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [formControlName]="field.controlName"
+                />
+              </ng-container>
+
+              @if (field.config.helper) {
+              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form.get(field.controlName)?.invalid && section.form.get(field.controlName)?.touched) {
+              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                Please provide a valid value.
+              </p>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Sticky Action Footer inside the card -->
+          <div
+            class="sticky bottom-4 z-10 mt-8 -mx-6 -mb-6 md:-mx-8 md:-mb-8 border-t border-base-200 bg-base-100/95 backdrop-blur px-6 py-4 md:px-8 rounded-b-2xl flex items-center justify-between gap-4"
+          >
+            <div>
+              @if (isSaving(section)) {
+              <span class="text-sm font-medium text-base-content/60 flex items-center">
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                Saving changes…
+              </span>
+              }
+            </div>
+
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                class="btn btn-ghost hover:bg-base-200"
+                (click)="resetSection(section)"
+                [disabled]="!isSectionDirty(section) || isSaving(section)"
+              >
+                Reset
+              </button>
+              <button
+                type="submit"
+                class="btn btn-primary min-w-[120px]"
+                [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+              >
+                @if (isSaving(section)) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Save Changes
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+      } }
+    </main>
+  </div>
   } @else {
-    <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-      <div class="flex flex-col items-center gap-3 text-base-content/50">
-        <span class="loading loading-spinner loading-lg"></span>
-        <p class="font-medium">Loading your settings…</p>
-      </div>
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
     </div>
+  </div>
   }
 </div>
