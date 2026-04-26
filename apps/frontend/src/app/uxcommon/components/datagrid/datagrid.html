@@ -201,6 +201,7 @@
               [attr.size]="editorCfg.size ?? null"
               [style.height]="multiSelectHeight(editorCfg)"
               [class.select-xs]="!editorCfg.multiple"
+              (change)="!editorCfg.multiple && onSelectChange(r.original, col, $any($event.target).value)"
               autofocus
             >
               @for (opt of editorCfg.choices; track opt.value) {

@@ -789,6 +789,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.getSelectEditorOptions(col);
   }
 
+  /**
+   * Called when the user picks a value from a single-select dropdown editor.
+   * Immediately commits so the backend is updated without requiring Enter/blur.
+   */
+  protected async onSelectChange(row: any, col: ColDef, newValue: any) {
+    // Update the editing value first so commitEdit reads the correct value
+    this.editingValue.set(newValue);
+    await this.commitEdit(row, col);
+  }
+
   protected tagsAsStrings(value: unknown): string[] {
     if (!Array.isArray(value)) return [];
     const tags: string[] = [];
