@@ -4,6 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, effect, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -79,10 +80,29 @@ export class PersonDetail implements OnInit {
   protected id: string | null = null;
   protected tags = signal<string[]>([]);
 
+  /**
+   * Signal that tracks the live form value. Used by computed signals to avoid
+   * calling form.get().value imperatively inside template expressions.
+   */
+  protected readonly formValues = toSignal(this.form.valueChanges, {
+    initialValue: this.form.getRawValue(),
+  });
+
   public readonly householdId = computed(() => this.person()?.household_id ?? null);
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
+
+  /** Reactive display name derived from live form values — avoids method calls in template */
+  protected readonly formName = computed(() => {
+    const v = this.formValues();
+    return `${v?.first_name || ''} ${v?.middle_names || ''} ${v?.last_name || ''}`.trim();
+  });
+
+  /** Whether to show 'two' or 'three' buttons — depends on whether person is already saved */
+  protected readonly buttonsToShow = computed<'two' | 'three'>(() =>
+    this.person()?.id ? 'two' : 'three'
+  );
 
   /**
    * Initializes the component and determines edit mode via route params.
@@ -202,13 +222,6 @@ export class PersonDetail implements OnInit {
   /** Returns the creation date of the person as a Date (for pipes) */
   protected getCreatedAt(): Date | null {
     return this.getDateFrom(this.person()?.created_at);
-  }
-
-  /** Returns the full name of the person constructed from form inputs */
-  protected getFormName() {
-    return `${this.form.get('first_name')?.value || ''} ${this.form.get('middle_names')?.value || ''} ${
-      this.form.get('last_name')?.value || ''
-    }`;
   }
 
   protected getId() {

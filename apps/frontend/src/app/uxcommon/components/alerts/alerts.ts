@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
@@ -36,9 +36,11 @@ export class Alerts {
    *
    * @returns Array of active alerts
    */
-  protected alerts() {
-    return this.position() === 'top' ? this.alertSvc.getAlerts().slice().reverse() : this.alertSvc.getAlerts();
-  }
+  /** Reactive alerts list — derived from the service signal so template reads are always fresh */
+  protected readonly alerts = computed(() => {
+    const list = this.alertSvc.alertList();
+    return this.position() === 'top' ? list.slice().reverse() : list;
+  });
 
   /**
    * Handles click on the second button of an alert.

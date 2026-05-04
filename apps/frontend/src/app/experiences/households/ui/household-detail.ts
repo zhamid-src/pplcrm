@@ -147,7 +147,21 @@ export class HouseholdDetail implements OnInit {
    * Save the household, calling either update or add depending on mode
    */
   protected save() {
-    const data = this.form.getRawValue() as UpdateHouseholdsType;
+    const raw = this.form.getRawValue();
+    // Explicitly pick only schema-valid fields — extra form fields
+    // (formatted_address, type, lat, lng, tags, metadata) would cause Zod errors.
+    const data: UpdateHouseholdsType = {
+      home_phone: raw.home_phone,
+      street_num: raw.street_num,
+      street1: raw.street1,
+      street2: raw.street2,
+      apt: raw.apt,
+      city: raw.city,
+      state: raw.state,
+      zip: raw.zip,
+      country: raw.country,
+      notes: raw.notes,
+    };
     return this.id ? this.update(data) : this.add(data);
   }
 

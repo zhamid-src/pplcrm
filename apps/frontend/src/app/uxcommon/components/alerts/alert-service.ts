@@ -4,7 +4,7 @@
  * and support for various alert types including success, error, warning, and info.
  */
 import { Injectable, signal } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { toObservable } from '@angular/core/rxjs-interop';
 
 /**
  * Configuration class for alert messages with reactive properties and callbacks.
@@ -117,9 +117,12 @@ export class AlertMessage {
   providedIn: 'root',
 })
 export class AlertService {
-  /** Reactive stream containing all currently active alerts */
-  private readonly alertsSubject = new BehaviorSubject<AlertMessage[]>([]);
-  public readonly alerts$ = this.alertsSubject.asObservable();
+  /** Signal containing all currently active alerts — reactive for template reads */
+  private readonly alertsSignal = signal<AlertMessage[]>([]);
+  public readonly alerts$ = toObservable(this.alertsSignal);
+
+  /** Expose the signal directly for component reads */
+  public readonly alertList = this.alertsSignal.asReadonly();
 
   /**
    * Invokes the OK button callback for the alert with the specified ID.
@@ -156,8 +159,8 @@ export class AlertService {
 
     // Have to let the animation do its thing first
     setTimeout(() => {
-      const next = this.alertsSubject.value.filter((msg) => msg.id !== id);
-      this.alertsSubject.next(next);
+      const next = this.alertsSignal().filter((msg) => msg.id !== id);
+      this.alertsSignal.set(next);
     }, 300);
   }
 
@@ -165,7 +168,7 @@ export class AlertService {
    * Returns a list of all currently active alerts.
    */
   public getAlerts(): AlertMessage[] {
-    return this.alertsSubject.value;
+    return this.alertsSignal();
   }
 
   /**
@@ -174,7 +177,7 @@ export class AlertService {
    */
   public show(alert: Partial<AlertMessage>): void {
     // If the same text is shown then ignore it. // TODO: right behaviour?
-    const existing = this.alertsSubject.value.find((m) => m.text === alert.text);
+    const existing = this.alertsSignal().find((m) => m.text === alert.text);
 
     if (existing) {
       // Retrigger the pulse animation
@@ -188,7 +191,7 @@ export class AlertService {
       existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration + 1000);
     } else {
       const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-      this.alertsSubject.next([messageWithMeta, ...this.alertsSubject.value]);
+      this.alertsSignal.update((list) => [messageWithMeta, ...list]);
       messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
     }
   }
@@ -226,7 +229,7 @@ export class AlertService {
   }
 
   private findById(id: string) {
-    return this.alertsSubject.value.find((m) => m.id === id);
+    return this.alertsSignal().find((m) => m.id === id);
   }
 }
 

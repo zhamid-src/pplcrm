@@ -15,17 +15,17 @@ export const PersonsObj = z.object({
 });
 
 export const UpdateHouseholdsObj = z.object({
-  home_phone: z.string().optional(),
-  street_num: z.string().optional(),
-  street1: z.string().optional(),
-  street2: z.string().optional(),
-  apt: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zip: z.string().optional(),
-  country: z.string().optional(),
-  notes: z.string().optional(),
-  json: z.string().optional(),
+  home_phone: z.string().nullish(),
+  street_num: z.string().nullish(),
+  street1: z.string().nullish(),
+  street2: z.string().nullish(),
+  apt: z.string().nullish(),
+  city: z.string().nullish(),
+  state: z.string().nullish(),
+  zip: z.string().nullish(),
+  country: z.string().nullish(),
+  notes: z.string().nullish(),
+  json: z.string().nullish(),
 });
 
 export const UpdatePersonsObj = z.object({

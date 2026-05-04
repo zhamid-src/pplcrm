@@ -69,33 +69,49 @@ export class HouseholdsController extends BaseController<'households', Household
 
   /**
    * Override update to recompute address fingerprints when address fields change.
+   * The fingerprint update is attempted in a separate step so that the main update
+   * always succeeds — even if the address_fp_* columns have not been migrated yet.
    */
   public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'households', 'update'> }) {
     const keys = Object.keys(input.row || {});
     const affectsAddress = keys.some((k) =>
       ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
     );
+
+    // Perform the main update without fingerprint columns first
+    const result = await super.update(input);
+
+    // Attempt fingerprint recompute in a separate, non-fatal step
     if (affectsAddress) {
-      const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
-      const merged = { ...current, ...(input.row as any) };
-      (input.row as any).address_fp_street = fingerprintStreet({
-        street_num: merged.street_num,
-        street1: merged.street1,
-        street2: merged.street2,
-      });
-      (input.row as any).address_fp_full = fingerprintFull({
-        apt: merged.apt,
-        street_num: merged.street_num,
-        street1: merged.street1,
-        street2: merged.street2,
-        city: merged.city,
-        state: merged.state,
-        zip: merged.zip,
-        country: merged.country,
-      });
+      try {
+        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+        const merged = { ...current, ...(input.row as any) };
+        const fpRow: any = {
+          address_fp_street: fingerprintStreet({
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+          }),
+          address_fp_full: fingerprintFull({
+            apt: merged.apt,
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+            city: merged.city,
+            state: merged.state,
+            zip: merged.zip,
+            country: merged.country,
+          }),
+        };
+        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
+      } catch {
+        // Fingerprint columns may not exist yet (migration pending) — safe to ignore
+      }
     }
-    return super.update(input);
+
+    return result;
   }
+
 
   /**
    * Attach a tag to a household. Creates the tag if it doesn't exist.
