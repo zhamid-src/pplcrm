@@ -3,7 +3,6 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
-  ChangeDetectorRef,
   Component,
   ElementRef,
   OnDestroy,
@@ -146,7 +145,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
-  private readonly cdr = inject(ChangeDetectorRef);
   private readonly searchTerm = toSignal(this.searchSvc.search$, {
     initialValue: this.searchSvc.getFilterText(),
   });
@@ -1577,7 +1575,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.editingCell.set({ id, field: col.field });
     const value = this.getEditingDisplayValue(row, col);
     this.editingValue.set(Array.isArray(value) ? [...value] : value);
-    queueMicrotask(() => this.cdr.detectChanges());
   }
 
   protected startIndex(): number {
