@@ -150,6 +150,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   });
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
+  /** Set of row IDs currently showing the green "saved" flash animation */
+  protected readonly flashedRowIds = signal<Set<string>>(new Set());
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
@@ -1800,6 +1802,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!field) return;
     // Update visible rows array
     this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
+    // Trigger green flash on the updated row
+    this.flashedRowIds.update((s) => { const n = new Set(s); n.add(id); return n; });
+    setTimeout(() => {
+      this.flashedRowIds.update((s) => { const n = new Set(s); n.delete(id); return n; });
+    }, 1300);
   }
 
   // pin offsets handled by PinningController

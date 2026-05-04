@@ -23,3 +23,14 @@
 .flex-1.overflow-auto {
   scrollbar-gutter: stable both-edges;
 }
+
+/* ── Row saved flash ─────────────────────────────────────────────── */
+@keyframes row-saved-flash {
+  0%   { background-color: color-mix(in srgb, var(--color-success) 50%, transparent); }
+  60%  { background-color: color-mix(in srgb, var(--color-success) 20%, transparent); }
+  100% { background-color: transparent; }
+}
+
+:host tr.row-flash {
+  animation: row-saved-flash 1.2s ease-out forwards;
+}
