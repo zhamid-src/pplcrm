@@ -8,7 +8,17 @@
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
         } @else {
         <div>
-          <div class="divider mb-1">{{ formName() }}</div>
+          <!-- Initiahls avatar + name header -->
+          <div class="flex items-center justify-center gap-3 mb-2">
+            <div class="avatar placeholder">
+              <div
+                class="bg-primary text-primary-content rounded-full w-10 h-10 text-sm font-semibold flex items-center justify-center"
+              >
+                {{ formInitials() }}
+              </div>
+            </div>
+            <span class="text-lg font-medium">{{ formName() }}</span>
+          </div>
           <div class="font-light text-xs text-center text-gray-500">
             <span>
               (Added by {{ getUserName(person()?.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}. Last
@@ -98,8 +108,14 @@
           <pc-icon (click)="removeAddress()" class="link font-light hover:text-error" name="trash" [size]="4"></pc-icon>
         </div>
         } @else {
-        <!-- TODO: select address with autocomplete (or add a link to a new address )-->
-
+        <div class="flex items-center gap-2 text-sm pl-1">
+          <pc-icon name="map-pin" [size]="4" class="text-base-content/50"></pc-icon>
+          <span class="text-base-content/60 italic">No address assigned</span>
+          <button type="button" class="btn btn-xs btn-outline btn-primary gap-1" (click)="openAssignDrawer()">
+            <pc-icon name="plus" [size]="3"></pc-icon>
+            Assign household
+          </button>
+        </div>
         }
         <pc-tags
           [tags]="tags()"
@@ -119,6 +135,7 @@
           [isLoading]="isLoading()"
           (btn1Clicked)="save()"
           [buttonsToShow]="buttonsToShow()"
+          [btn1Text]="person()?.id ? 'SAVE' : 'ADD PERSON'"
         ></pc-add-btn-row>
       </div>
     </fieldset>

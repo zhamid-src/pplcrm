@@ -8,6 +8,7 @@ import { ActivatedRoute } from '@angular/router';
 import { UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -22,7 +23,7 @@ import { Households } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [ReactiveFormsModule, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold],
+  imports: [ReactiveFormsModule, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold, Icon],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
