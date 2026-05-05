@@ -37,31 +37,46 @@
         </div>
         }
 
-        <input
-          type="text"
-          class="input w-full"
-          placeholder="Autocomplete Address"
-          [options]="options"
-          ngx-gp-autocomplete
-          (onAddressChange)="handleAddressChange($event)"
-        />
-        <div class="divider mb-1">OR</div>
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-base-content/70">Search address</label>
+          <input
+            type="text"
+            class="input w-full"
+            placeholder="Start typing an address…"
+            [options]="options"
+            ngx-gp-autocomplete
+            (onAddressChange)="handleAddressChange($event)"
+          />
+        </div>
 
-        <div class="flex flex-col md:flex-row gap-2">
-          <input class="input" placeholder="Unit" formControlName="apt" />
-          <input class="input" placeholder="Street Number" formControlName="street_num" />
-          <input class="input basis-1/2" placeholder="Street" formControlName="street1" />
-        </div>
-        <div class="flex flex-col md:flex-row gap-2">
-          <input class="input" placeholder="City" formControlName="city" />
-          <input class="input" placeholder="State / Province" formControlName="state" />
-          <input class="input basis-1/2" placeholder="Country" formControlName="country" />
-        </div>
-        <div class="flex flex-col md:flex-row gap-2">
-          <input class="input" placeholder="Zip / Postal Code" formControlName="zip" />
-          <input class="input" type="tel" placeholder="Home Phone" formControlName="home_phone" />
-          <div class="basis-1/2"></div>
-        </div>
+        <!-- Collapsible manual entry -->
+        <details class="group">
+          <summary class="cursor-pointer list-none flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content select-none py-1">
+            <pc-icon
+              name="chevron-right"
+              [size]="3"
+              class="transition-transform group-open:rotate-90"
+            ></pc-icon>
+            Enter address manually
+          </summary>
+          <div class="flex flex-col gap-2 mt-3 pl-1 border-l-2 border-base-300">
+            <div class="flex flex-col md:flex-row gap-2">
+              <input class="input" placeholder="Unit" formControlName="apt" />
+              <input class="input" placeholder="Street Number" formControlName="street_num" />
+              <input class="input basis-1/2" placeholder="Street" formControlName="street1" />
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <input class="input" placeholder="City" formControlName="city" />
+              <input class="input" placeholder="State / Province" formControlName="state" />
+              <input class="input basis-1/2" placeholder="Country" formControlName="country" />
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <input class="input" placeholder="Zip / Postal Code" formControlName="zip" />
+              <input class="input" type="tel" placeholder="Home Phone" formControlName="home_phone" />
+              <div class="basis-1/2"></div>
+            </div>
+          </div>
+        </details>
 
         <div class="divider mb-1">ADDITIONAL</div>
         <pc-tags
@@ -88,6 +103,7 @@
           [isLoading]="isLoading()"
           (btn1Clicked)="save()"
           [buttonsToShow]="household()?.id ? 'two' : 'three'"
+          [btn1Text]="household()?.id ? 'SAVE' : 'ADD HOUSEHOLD'"
         ></pc-add-btn-row>
       </div>
     </fieldset>

@@ -13,10 +13,17 @@
   </div>
   }
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    @if (isEmptyState()) {
+    @if (isEmptyState() && !isFilteredEmpty()) {
     <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
-      <img class="max-w-64" src="assets/waiting.svg" alt="No results" />
-      <span>No more rows</span>
+      <img class="max-w-52 opacity-70" src="assets/waiting.svg" alt="No results" />
+      <span class="text-base font-medium">Nothing here yet</span>
+      <span class="text-sm opacity-70">Add your first record using the + button above</span>
+    </div>
+    } @else if (isFilteredEmpty()) {
+    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
+      <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+      <span class="text-base font-medium">No results match your filters</span>
+      <span class="text-sm opacity-70">Try clearing or adjusting your filters</span>
     </div>
     }
     <table #gridTable class="table w-full">
@@ -145,7 +152,7 @@
           (mouseover)="onCellMouseOver(r.original)"
           [attr.data-row-id]="toId(r.original)"
           [class.bg-base-200]="(i % 2) === 1"
-          [class.row-flash]="flashedRowIds().has(toId(r.original) ?? '')"
+          [class.row-flash]="flashedRowIds().has(toId(r.original))"
         >
           @if (enableSelection()) {
           <td
@@ -185,7 +192,7 @@
             [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
             [style.zIndex]="pinState(cell) !== false ? 10 : null"
             class="overflow-hidden min-w-0 px-2 border-r border-base-300"
-            [class.cursor-text]="isEditable(col)"
+            [class.cursor-pencil]="isEditable(col)"
             [class.cursor-pointer]="isPointerInteractive(col)"
             [attr.data-col-id]="cell.column.id"
             [style.width.px]="columnWidthPx(cell.column.id)"
@@ -235,7 +242,19 @@
               [canDelete]="isEditable(col) && isTagColumn(col)"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
-            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { {{ rawValue }} } }
+            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else {
+            <span class="flex items-center gap-1 w-full">
+              <span class="flex-1 truncate">{{ rawValue }}</span>
+              @if (isEditable(col)) {
+              <pc-icon
+                name="pencil-square"
+                [size]="3"
+                class="shrink-0 opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity cursor-pencil text-base-content"
+                (click)="startEdit(r.original, col); $event.stopPropagation()"
+              ></pc-icon>
+              }
+            </span>
+            } }
           </td>
           } }
         </tr>
@@ -270,7 +289,7 @@
         [disabled]="!canPrev()"
         (click)="firstPage()"
       >
-        |&lt;
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
@@ -278,7 +297,7 @@
         [disabled]="!canPrev()"
         (click)="prevPage()"
       >
-        &lt;
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
       </button>
       <button class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap">
         Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
@@ -290,7 +309,7 @@
         [disabled]="!canNext()"
         (click)="nextPage()"
       >
-        &gt;
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
@@ -298,7 +317,7 @@
         [disabled]="!canNext()"
         (click)="lastPage()"
       >
-        &gt;|
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
       </button>
     </div>
   </div>

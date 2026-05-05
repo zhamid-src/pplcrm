@@ -191,7 +191,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
-  protected readonly isEmptyState = computed(() => !this.isLoading() && this.totalCountAll() === 0);
+  protected readonly isEmptyState = computed(() =>
+    this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0,
+  );
+  /** True when the grid has data but active filters reduced the visible count to zero */
+  protected readonly isFilteredEmpty = computed(() => {
+    if (!this.hasInitiatedLoad() || this.isLoading() || this.totalCountAll() > 0) return false;
+    const pf = this.panelFilters();
+    const fv = this.filterValues();
+    return Object.keys(pf).length > 0 || Object.keys(fv).length > 0;
+  });
+  /** Becomes true the moment loading first starts — prevents empty-state flash on init */
+  protected readonly hasInitiatedLoad = signal(false);
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
@@ -343,6 +354,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private _lastPageSize: number | null = null;
 
   constructor() {
+    // Mark that a load has started — prevents empty-state flash before first fetch
+    effect(() => { if (this.isLoading()) this.hasInitiatedLoad.set(true); });
+
     // Prevents being stuck on an out-of-range page after filters change.
     effect(() => {
       if (this._squelch) return;

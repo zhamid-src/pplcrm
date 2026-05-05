@@ -99,6 +99,18 @@ export class PersonDetail implements OnInit {
     return `${v?.first_name || ''} ${v?.middle_names || ''} ${v?.last_name || ''}`.trim();
   });
 
+  /** Two-letter initials derived from formName for the avatar chip */
+  protected readonly formInitials = computed(() => {
+    const name = this.formName() || '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+
   /** Whether to show 'two' or 'three' buttons — depends on whether person is already saved */
   protected readonly buttonsToShow = computed<'two' | 'three'>(() =>
     this.person()?.id ? 'two' : 'three'
