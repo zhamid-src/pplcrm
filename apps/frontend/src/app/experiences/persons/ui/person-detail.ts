@@ -53,7 +53,16 @@ export class PersonDetail implements OnInit {
   protected readonly householdResults = signal<any[]>([]);
   protected readonly householdSearch = signal('');
   protected readonly householdsLoading = signal(false);
+
+  /**
+   * Tracks the household selected in the drawer when creating a NEW person
+   * (before the record is saved and `this.id` exists).
+   */
+  protected readonly pendingHouseholdId = signal<string | null>(null);
   protected readonly isLoading = this._loading.visible;
+
+  /** Inline error shown under the email field when a duplicate is detected */
+  protected readonly emailError = signal<string | null>(null);
   protected readonly person = signal<Persons | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
 
@@ -88,7 +97,9 @@ export class PersonDetail implements OnInit {
     initialValue: this.form.getRawValue(),
   });
 
-  public readonly householdId = computed(() => this.person()?.household_id ?? null);
+  public readonly householdId = computed(
+    () => (this.person()?.household_id ?? null) || this.pendingHouseholdId()
+  );
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
@@ -173,7 +184,13 @@ export class PersonDetail implements OnInit {
 
   /** Assign current person to the selected household */
   protected async assignToHousehold(household_id: string) {
-    if (!this.id) return;
+    // NEW PERSON: just store the pending selection; it will be sent on save
+    if (!this.id) {
+      this.pendingHouseholdId.set(household_id);
+      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
+      this.closeAssignDrawer();
+      return;
+    }
 
     // Ask scope: just this person vs everyone in current household
     const applyToAll = await this.confirmDlg.confirm({
@@ -278,11 +295,20 @@ export class PersonDetail implements OnInit {
   }
 
   /**
-   * Remove the current address by moving the person to a new blank household.
-   * This preserves DB constraints (non-null household_id) while clearing address fields.
+   * Remove the current address.
+   * - New person (unsaved): just clears the pending household selection.
+   * - Existing person: calls the backend to move the person to a blank household.
    */
   protected async removeAddress() {
-    if (!this.id || !this.person()) return;
+    // New person: just clear the pending household — no API call needed yet
+    if (!this.id) {
+      this.pendingHouseholdId.set(null);
+      this.addressString.set(null);
+      return;
+    }
+
+    if (!this.person()) return;
+
     const confirmed = await this.confirmDlg.confirm({
       title: 'Remove Address',
       message: 'This will move the person to a new blank household (clearing address). Continue?',
@@ -294,9 +320,10 @@ export class PersonDetail implements OnInit {
 
     const end = this._loading.begin();
     try {
-      this.person.update((p) => (p ? { ...p, householdId: null } : p));
-
-      this.alertSvc.showSuccess('Address removed');
+      await this.personsSvc.removeHousehold(this.id);
+      this.person.update((p) => (p ? { ...p, household_id: null as any } : p));
+      this.addressString.set(null);
+      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
       this.alertSvc.showError(String(err));
     } finally {
@@ -369,12 +396,36 @@ export class PersonDetail implements OnInit {
    * @param data - Person data to be added
    */
   private add(data: UpdatePersonsType) {
+    // Include any household selected via the drawer before saving
+    const pendingHousehold = this.pendingHouseholdId();
+    if (pendingHousehold) {
+      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
+    }
+
+    this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
       .add(data)
       .then(() => this.alertSvc.showSuccess('Person added'))
-      .catch((err: unknown) => this.alertSvc.showError(String(err)))
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(String(err));
+        }
+      })
       .finally(() => end());
+  }
+
+  /** Returns true when the error is a backend CONFLICT (duplicate email) */
+  private isDuplicateEmailError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as Record<string, any>;
+    // tRPC wraps backend errors; check both data.httpStatus and message
+    return (
+      e['data']?.['httpStatus'] === 409 ||
+      String(e['message'] ?? '').toLowerCase().includes('already exists')
+    );
   }
 
   /** Fetch households matching the current search */
@@ -463,6 +514,7 @@ export class PersonDetail implements OnInit {
   private update(data: Partial<UpdatePersonsType>) {
     if (!this.id) return;
 
+    this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
       .update(this.id, data)
@@ -470,7 +522,13 @@ export class PersonDetail implements OnInit {
         this.alertSvc.showSuccess('Person updated successfully.');
         this.form.markAsPristine();
       })
-      .catch((err) => this.alertSvc.showError(err))
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(String(err));
+        }
+      })
       .finally(() => end());
   }
 
