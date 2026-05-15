@@ -155,6 +155,8 @@ export class Tags implements OnInit {
    * @param tag - The raw tag string to be added.
    */
   protected add(tagName: string) {
+    if (!tagName || typeof tagName !== 'string') return;
+
     if (tagName.indexOf(',') >= 0) {
       tagName = tagName.replace(',', '').trim();
     }

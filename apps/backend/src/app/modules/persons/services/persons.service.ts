@@ -24,6 +24,18 @@ export class PersonsService {
   private userActivity = new UserActivityRepo();
 
   public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant
+    const emailToCheck = payload.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
     const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
     const households = new HouseholdRepo();
 
@@ -55,6 +67,26 @@ export class PersonsService {
     };
 
     return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+  }
+
+  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant (excluding the person being updated)
+    const emailToCheck = data.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing && String(existing.id) !== String(id)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    return this.personsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: data as OperationDataType<'persons', 'update'>,
+    });
   }
 
   public async attachTag(person_id: string, name: string, auth: IAuthKeyPayload) {

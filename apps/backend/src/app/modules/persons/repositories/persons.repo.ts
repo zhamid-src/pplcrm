@@ -318,4 +318,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .select('tags.name')
       .execute();
   }
+  /**
+   * Find a person by email address (case-insensitive) within a tenant.
+   * Returns minimal id/email fields; used for uniqueness checks.
+   */
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
 }

@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { PersonsController } from './controller';
 import { PersonsService } from './services/persons.service';
-import { OperationDataType } from 'common/src/lib/kysely.models';
 
 const persons = new PersonsController();
 const personsService = new PersonsService();
@@ -85,11 +84,7 @@ function getTags() {
 
 function update() {
   return authProcedure.input(z.object({ id: z.string(), data: UpdatePersonsObj })).mutation(({ input, ctx }) =>
-    persons.update({
-      tenant_id: ctx.auth.tenant_id,
-      id: input.id,
-      row: input.data as OperationDataType<'persons', 'update'>,
-    }),
+    personsService.updatePerson(input.id, input.data as any, ctx.auth),
   );
 }
 
