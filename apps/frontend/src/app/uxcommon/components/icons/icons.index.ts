@@ -113,6 +113,7 @@ export const icons = {
   'file-text': 'assets/icons/file-text.svg',
   'file-video': 'assets/icons/file-video.svg',
   filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
   funnel: 'assets/icons/funnel.svg',
   'globe-americas': 'assets/icons/globe-americas.svg',
   hashtag: 'assets/icons/hashtag.svg',
