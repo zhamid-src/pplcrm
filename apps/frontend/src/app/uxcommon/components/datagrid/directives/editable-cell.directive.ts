@@ -4,7 +4,7 @@ import { EditingController } from '../controllers/editing.controller';
 @Directive({
   selector: '[pcEditable]',
   host: {
-    '(dblclick)': 'onDblClick()',
+    '(click)': 'onClick()',
     '(keydown.enter)': 'onEnter()',
     '(keydown.esc)': 'onEsc()',
     '(focusout)': 'onFocusOut($event)',
@@ -37,7 +37,7 @@ export class EditableCellDirective {
     customCommit?: (currentValue: any) => Promise<unknown>;
   }>();
 
-  protected onDblClick() {
+  protected onClick() {
     const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = this.pcEditable();
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
