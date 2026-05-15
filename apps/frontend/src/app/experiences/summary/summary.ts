@@ -3,6 +3,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { icons } from '@uxcommon/components/icons/icons.index';
 
 @Component({
   selector: 'pc-summary',
@@ -14,8 +15,13 @@ export class Summary {
   private readonly alert = inject(AlertService);
 
   protected readonly isLoading = this._loading.visible;
-
   protected ravenLoaded = signal(false);
+
+  /** All registered icons, sorted alphabetically, for the gallery */
+  protected readonly iconList = Object.keys(icons)
+    .filter((k) => k !== 'none')
+    .sort()
+    .map((name) => ({ name: name as keyof typeof icons }));
 
   public canDelete = true;
   public readonly = false;
