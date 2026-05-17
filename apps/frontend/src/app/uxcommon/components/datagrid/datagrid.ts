@@ -259,6 +259,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Inline edit state
   protected editingCell = signal<{ id: string; field: string } | null>(null);
   protected editingValue = signal<any>('');
+  /** Search text used to filter the tag checkbox panel. Cleared when a new cell opens. */
+  protected tagSearch = signal('');
   protected filterValues = this.store.filterValues;
   protected isLoading = this._loading.visible;
   protected pageIndex = this.store.pageIndex;
@@ -356,6 +358,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   constructor() {
     // Mark that a load has started — prevents empty-state flash before first fetch
     effect(() => { if (this.isLoading()) this.hasInitiatedLoad.set(true); });
+
+    // Clear the tag search box whenever a different cell enters edit mode
+    effect(() => { this.editingCell(); this.tagSearch.set(''); });
 
     // Prevents being stuck on an out-of-range page after filters change.
     effect(() => {
@@ -850,6 +855,35 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       await this.persistTagSelection(row, col, next);
     } finally {
       this.editingCell.set(null);
+    }
+  }
+
+  /** Returns sorted available tag choices for the inline checkbox editor. */
+  protected tagEditorChoices(col: ColDef): string[] {
+    const opts = this.selectEditorOptions(col);
+    return (opts?.choices.map((c) => c.value).filter(Boolean) ?? []).sort();
+  }
+
+  /** tagEditorChoices filtered by the current tagSearch text. */
+  protected filteredTagChoices(col: ColDef): string[] {
+    const q = this.tagSearch().trim().toLowerCase();
+    const all = this.tagEditorChoices(col);
+    return q ? all.filter((t) => t.toLowerCase().includes(q)) : all;
+  }
+
+  /** Whether a tag name is currently checked in the inline editor. */
+  protected isTagChecked(tag: string): boolean {
+    const v = this.editingValue();
+    return Array.isArray(v) && v.includes(tag);
+  }
+
+  /** Adds or removes a tag from the inline editor's working selection. */
+  protected toggleTagInEditor(tag: string, checked: boolean) {
+    const current: string[] = Array.isArray(this.editingValue()) ? [...this.editingValue()] : [];
+    if (checked && !current.includes(tag)) {
+      this.editingValue.set([...current, tag]);
+    } else if (!checked) {
+      this.editingValue.set(current.filter((t) => t !== tag));
     }
   }
 
