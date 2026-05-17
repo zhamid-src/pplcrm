@@ -181,6 +181,8 @@
           </td>
           } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
           isColVisible(col)) {
+          @let ec = editingCell();
+          @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field;
           <td
             [pcEditable]="editableCfg(r.original, col)"
             tabindex="0"
@@ -191,16 +193,60 @@
             [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
             [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
             [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            class="overflow-hidden min-w-0 px-2 border-r border-base-300"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300"
             [class.cursor-pencil]="isEditable(col)"
             [class.cursor-pointer]="isPointerInteractive(col)"
             [attr.data-col-id]="cell.column.id"
             [style.width.px]="columnWidthPx(cell.column.id)"
             [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
           >
-            @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field === col.field; @if
-            (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (editorCfg) {
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  {{ tagSearch() ? 'No tags match "' + tagSearch() + '"' : 'No tags available' }}
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                >Done</button>
+              </div>
+            </div>
+            } @else if (editorCfg) {
             <select
               class="select select-bordered w-full"
               [ngModel]="editingValue()"
@@ -239,7 +285,7 @@
             <pc-tags
               [tags]="tagList"
               [readonly]="true"
-              [canDelete]="isEditable(col) && isTagColumn(col)"
+              [canDelete]="false"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
             } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else {
