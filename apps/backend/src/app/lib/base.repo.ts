@@ -353,6 +353,68 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   /**
+   * Helper to dynamically apply query operators to a where clause based on the filter model.
+   */
+  protected applyColumnFilter(
+    query: any,
+    column: string,
+    filter: { op?: string; value?: any }
+  ) {
+    if (!filter || filter.value === undefined || filter.value === null || String(filter.value).trim() === '') {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    switch (op) {
+      case 'equals':
+        return query.where(column, 'ilike', val);
+      case 'startsWith':
+        return query.where(column, 'ilike', `${val}%`);
+      case 'endsWith':
+        return query.where(column, 'ilike', `%${val}`);
+      case 'notContains':
+        return query.where(column, 'not ilike', `%${val}%`);
+      case 'notEquals':
+        return query.where(column, 'not ilike', val);
+      case 'contains':
+      default:
+        return query.where(column, 'ilike', `%${val}%`);
+    }
+  }
+
+  /**
+   * Helper to dynamically apply query operators to a custom SQL expression based on the filter model.
+   */
+  protected applyCastColumnFilter(
+    query: any,
+    sqlExpression: any,
+    filter: { op?: string; value?: any }
+  ) {
+    if (!filter || filter.value === undefined || filter.value === null || String(filter.value).trim() === '') {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    switch (op) {
+      case 'equals':
+        return query.where(sql`${sqlExpression} ILIKE ${val}` as any);
+      case 'startsWith':
+        return query.where(sql`${sqlExpression} ILIKE ${val + '%'}` as any);
+      case 'endsWith':
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + val}` as any);
+      case 'notContains':
+        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + val + '%'}` as any);
+      case 'notEquals':
+        return query.where(sql`${sqlExpression} NOT ILIKE ${val}` as any);
+      case 'contains':
+      default:
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + val + '%'}` as any);
+    }
+  }
+
+  /**
    * Get delete query builder for this table.
    */
   protected getDelete(trx?: Transaction<Models>) {

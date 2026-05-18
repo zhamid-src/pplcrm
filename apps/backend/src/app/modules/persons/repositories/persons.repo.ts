@@ -171,8 +171,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
         .leftJoin('households', 'persons.household_id', 'households.id')
         .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
         .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
@@ -191,26 +191,22 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             LOWER(tags.name) LIKE ${text}
           )` as any,
           );
-        })
-        // Column filters (contains semantics)
-        .$if(!!filterModel['first_name']?.value, (q) =>
-          q.where('persons.first_name', 'ilike', `%${filterModel['first_name'].value}%`),
-        )
-        .$if(!!filterModel['last_name']?.value, (q) =>
-          q.where('persons.last_name', 'ilike', `%${filterModel['last_name'].value}%`),
-        )
-        .$if(!!filterModel['email']?.value, (q) => q.where('persons.email', 'ilike', `%${filterModel['email'].value}%`))
-        .$if(!!filterModel['mobile']?.value, (q) => q.where('persons.mobile', 'ilike', `%${filterModel['mobile'].value}%`))
-        .$if(!!filterModel['city']?.value, (q) => q.where('households.city', 'ilike', `%${filterModel['city'].value}%`))
-        .$if(!!filterModel['state']?.value, (q) => q.where('households.state', 'ilike', `%${filterModel['state'].value}%`))
-        .$if(!!filterModel['street1']?.value, (q) =>
-          q.where('households.street1', 'ilike', `%${filterModel['street1'].value}%`),
-        )
-        .$if(!!filterModel['street_num']?.value, (q) =>
-          q.where(sql`CAST(households.street_num AS TEXT) ILIKE ${'%' + filterModel['street_num'].value + '%'}` as any),
-        )
-        .$if(!!filterModel['zip']?.value, (q) => q.where('households.zip', 'ilike', `%${filterModel['zip'].value}%`))
-        .$if(!!filterModel['tags']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['tags'].value}%`));
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name']);
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name']);
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email']);
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile']);
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city']);
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state']);
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
+      q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+
+      return q;
+    };
 
     // Count query
     const countResult = await applyFilters(this.getSelect(trx))
