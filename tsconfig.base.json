@@ -20,9 +20,9 @@
     "baseUrl": "./",
     "paths": {
       "@common": ["common/src/index.ts"],
-      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"],
       "@experiences/*": ["apps/frontend/src/app/experiences/*"],
-      "@icons/*": ["apps/frontend/src/app/uxcommon/components/icons/*"]
+      "@icons/*": ["apps/frontend/src/app/uxcommon/components/icons/*"],
+      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]
