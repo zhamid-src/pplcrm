@@ -33,6 +33,7 @@
     tip="Filter the grid"
     [hidden]="!grid.allowFilter()"
     [active]="grid.showFiltersState() || grid.hasActiveFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
     (action)="onToggleFilters()"
   />
 
@@ -86,6 +87,14 @@
     </ul>
   </li>
   }
+
+  <pc-grid-action
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
 
   <li class="dropdown dropdown-end">
     <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">

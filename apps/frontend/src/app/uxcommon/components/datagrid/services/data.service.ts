@@ -18,8 +18,9 @@ export class DataGridDataService {
     sortCol: string | null;
     sortDir: 'asc' | 'desc' | null;
     includeArchived?: boolean;
+    advancedFilterModel?: any;
   }): Partial<getAllOptionsType> {
-    const { searchStr, startRow, endRow, tags, filterModel, sortState, sortCol, sortDir, includeArchived } = args;
+    const { searchStr, startRow, endRow, tags, filterModel, sortState, sortCol, sortDir, includeArchived, advancedFilterModel } = args;
     return {
       searchStr,
       startRow,
@@ -27,6 +28,7 @@ export class DataGridDataService {
       tags,
       filterModel,
       includeArchived,
+      advancedFilterModel,
       sortModel:
         sortState && sortState.length
           ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))

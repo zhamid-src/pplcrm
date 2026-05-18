@@ -385,10 +385,139 @@
   [panelFilters]="panelFilters()"
   [labelFor]="labelForFn"
   [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
   (close)="closePanel()"
   (apply)="applyPanelFilters()"
   (clear)="clearPanelFilters()"
   (changeOp)="onPanelOpChange($event.field, $event.op)"
   (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
 />
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]">
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          Advanced Filter Builder
+        </h3>
+        <p class="text-xs text-neutral-400 mt-1">Build complex matching rules with custom operators and conjunction logic.</p>
+      </div>
+      <button class="btn btn-ghost btn-circle btn-sm" (click)="showAdvancedFilterBuilder.set(false)">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6 space-y-4">
+      <!-- Conjunction Selector -->
+      <div class="flex items-center gap-3 bg-base-200/50 p-3 rounded-lg border border-base-200">
+        <span class="text-sm font-semibold">Match rules using:</span>
+        <div class="join">
+          <button
+            class="btn btn-xs join-item"
+            [class.btn-primary]="advConjunction() === 'AND'"
+            [class.btn-neutral]="advConjunction() !== 'AND'"
+            (click)="advConjunction.set('AND')"
+          >
+            AND (All)
+          </button>
+          <button
+            class="btn btn-xs join-item"
+            [class.btn-primary]="advConjunction() === 'OR'"
+            [class.btn-neutral]="advConjunction() !== 'OR'"
+            (click)="advConjunction.set('OR')"
+          >
+            OR (Any)
+          </button>
+        </div>
+      </div>
+
+      <!-- Rules list -->
+      <div class="space-y-3">
+        @for (rule of advRules(); track rule.id; let idx = $index) {
+        <div class="flex flex-row items-center gap-2 p-3 bg-base-200/20 rounded-xl border border-base-200/40 relative group hover:border-primary/30 transition-all">
+          <span class="text-xs font-bold text-neutral-400 w-6 text-center shrink-0">#{{ idx + 1 }}</span>
+
+          <!-- Column Select -->
+          <div class="flex-1 min-w-0">
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="rule.field"
+              (change)="updateAdvRule(rule.id, { field: $any($event.target).value })"
+            >
+              @for (col of getColDefsForToolbar(); track col.field) {
+                @if (col.field && col.field !== 'actions') {
+                  <option [value]="col.field">{{ col.headerName || col.field }}</option>
+                }
+              }
+            </select>
+          </div>
+
+          <!-- Operator Select -->
+          <div class="w-40 shrink-0">
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="rule.op"
+              (change)="updateAdvRule(rule.id, { op: $any($event.target).value })"
+            >
+              <option value="contains">contains</option>
+              <option value="notContains">does not contain</option>
+              <option value="equals">equals</option>
+              <option value="notEquals">does not equal</option>
+              <option value="startsWith">starts with</option>
+              <option value="endsWith">ends with</option>
+            </select>
+          </div>
+
+          <!-- Value Input -->
+          <div class="flex-1 min-w-0">
+            <input
+              type="text"
+              placeholder="Enter value..."
+              class="input input-bordered input-sm w-full bg-base-100"
+              [value]="rule.value"
+              (input)="updateAdvRule(rule.id, { value: $any($event.target).value })"
+            />
+          </div>
+
+          <!-- Delete Row -->
+          <button
+            class="btn btn-ghost btn-circle btn-sm text-error hover:bg-error/10 shrink-0"
+            title="Delete rule"
+            (click)="removeAdvRule(rule.id)"
+          >
+            <pc-icon name="trash" [size]="4"></pc-icon>
+          </button>
+        </div>
+        }
+      </div>
+
+      <!-- Add Rule Button -->
+      <button class="btn btn-outline btn-xs gap-1" (click)="addAdvRule()">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        Add Condition
+      </button>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button class="btn btn-outline btn-error btn-sm" (click)="clearAdvancedFilter()">
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" (click)="showAdvancedFilterBuilder.set(false)">
+          Cancel
+        </button>
+        <button class="btn btn-primary btn-sm px-6" (click)="applyAdvancedFilter()">
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 }

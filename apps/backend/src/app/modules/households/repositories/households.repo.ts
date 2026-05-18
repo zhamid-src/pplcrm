@@ -175,6 +175,19 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone']);
       q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
 
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street2: { col: 'households.street2' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        home_phone: { col: 'households.home_phone' },
+        tags: { col: 'tags.name' },
+      };
+      q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
+
       return q;
     };
 
