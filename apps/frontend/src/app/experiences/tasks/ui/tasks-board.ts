@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { Router } from '@angular/router';
 import { UpdateTaskType } from '@common';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -6,6 +6,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { TasksService } from '../services/tasks-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tasks-board',
   imports: [Icon],
   template: `

@@ -1,10 +1,11 @@
-import { Component } from '@angular/core';
+import { Component , ChangeDetectionStrategy} from '@angular/core';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 
 /**
  * Shared layout for authentication pages providing logo and alert wrapper.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-auth-layout',
   imports: [Alerts],
   template: `

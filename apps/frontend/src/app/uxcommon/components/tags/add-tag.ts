@@ -1,4 +1,4 @@
-import { Component, inject, viewChild } from '@angular/core';
+import { Component, inject, viewChild , ChangeDetectionStrategy} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -13,6 +13,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
  * and handles validation, submission, and error feedback.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-add-tag',
   imports: [ReactiveFormsModule, AddBtnRow],
   template: `<div class="flex min-h-full flex-col bg-base-100">

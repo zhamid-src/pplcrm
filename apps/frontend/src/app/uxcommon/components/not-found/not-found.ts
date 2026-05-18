@@ -1,10 +1,11 @@
-import { Component } from '@angular/core';
+import { Component , ChangeDetectionStrategy} from '@angular/core';
 
 /**
  * A fallback component rendered when a route is not found.
  * Typically used to display a 404-style message.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-not-found',
   imports: [],
   template: `<section class="min-h-full">

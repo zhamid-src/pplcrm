@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
 import { Icon } from '@icons/icon';
@@ -12,6 +12,7 @@ interface DetailMetric {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-newsletter-detail',
   imports: [Icon],
   templateUrl: './newsletter-detail.html',

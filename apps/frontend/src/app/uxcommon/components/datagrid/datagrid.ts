@@ -15,7 +15,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
@@ -146,9 +146,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
-  private readonly searchTerm = toSignal(this.searchSvc.search$, {
-    initialValue: this.searchSvc.getFilterText(),
-  });
+  private readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   /** Set of row IDs currently showing the green "saved" flash animation */
@@ -501,7 +499,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
       // Keep track of the old filter text to avoid unnecessary roundtrip
       if (quickFilterText != this.oldFilterText) {
-        this.oldFilterText = quickFilterText;
+        this.oldFilterText = quickFilterText as string;
         this.loadPage(0);
       }
     });

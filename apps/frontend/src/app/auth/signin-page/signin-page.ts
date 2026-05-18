@@ -2,7 +2,7 @@
  * @fileoverview Sign-in page component providing user authentication interface.
  * Features reactive forms, validation, password visibility toggle, and token persistence options.
  */
-import { Component, effect, inject } from '@angular/core';
+import { Component, effect, inject , ChangeDetectionStrategy} from '@angular/core';
 import { AbstractControl, FormControl, NonNullableFormBuilder, ReactiveFormsModule, ValidatorFn } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { JSendFailError } from '@common';
@@ -40,6 +40,7 @@ import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-u
  * ```
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-login',
   imports: [ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',

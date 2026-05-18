@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal } from "@angular/core";
+import { Component, OnInit, computed, effect, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
 import { ActivatedRoute, Router, RouterModule } from "@angular/router";
 import { AddTeamType, UpdateTeamType } from "@common";
@@ -15,6 +15,7 @@ interface PersonOption {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-team-detail',
   imports: [ReactiveFormsModule, RouterModule, Icon],
   templateUrl: './team-detail.html',

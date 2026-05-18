@@ -46,7 +46,7 @@
   <div class="mt-4 form-control relative">
     <textarea
       #emailComposer
-      [(ngModel)]="newComment"
+      [ngModel]="newComment()" (ngModelChange)="newComment.set($event)"
       placeholder="Add a comment"
       class="textarea textarea-bordered w-full"
       (input)="onComposerInput($event)"
@@ -73,7 +73,7 @@
     </div>
     }
     <div class="mt-2 flex items-center justify-end gap-2">
-      <button type="button" class="btn btn-sm" (click)="newComment = ''">Clear</button>
+      <button type="button" class="btn btn-sm" (click)="newComment.set('')">Clear</button>
       <button type="button" class="btn btn-sm btn-primary" (click)="addComment()">Add Comment</button>
     </div>
   </div>

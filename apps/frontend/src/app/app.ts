@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject , ChangeDetectionStrategy} from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
 
@@ -23,6 +23,7 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
  * ```
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-root',
   imports: [RouterModule, ConfirmDialogHost],
   template: `

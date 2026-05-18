@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
@@ -6,6 +6,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { icons } from '@uxcommon/components/icons/icons.index';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-summary',
   imports: [Tags, Icon],
   templateUrl: './summary.html',

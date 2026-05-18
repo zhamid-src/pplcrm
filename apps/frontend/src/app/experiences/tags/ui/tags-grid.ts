@@ -1,7 +1,7 @@
 /**
  * @file Data grid component for viewing and editing tags.
  */
-import { Component } from '@angular/core';
+import { Component , ChangeDetectionStrategy} from '@angular/core';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
@@ -29,6 +29,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
  * - `use_count_households`: Number of households using this tag (read-only)
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tags-grid',
   imports: [DataGrid],
   template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>`,

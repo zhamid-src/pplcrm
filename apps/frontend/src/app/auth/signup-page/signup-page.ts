@@ -2,7 +2,7 @@
  * Component and form logic for user registration.
  */
 import { DecimalPipe } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, inject , ChangeDetectionStrategy} from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
@@ -25,6 +25,7 @@ import {
  * and integration with a password breach checker.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-signup',
   imports: [DecimalPipe, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',
