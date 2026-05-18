@@ -146,8 +146,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder (for both queries)
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
         .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
         .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!))
@@ -163,20 +163,20 @@ export class HouseholdRepo extends BaseRepository<'households'> {
               LOWER(tags.name) LIKE ${text}
             )` as any,
           );
-        })
-        // Column filters for address/contact fields
-        .$if(!!filterModel['city']?.value, (q) => q.where('households.city', 'ilike', `%${filterModel['city'].value}%`))
-        .$if(!!filterModel['state']?.value, (q) => q.where('households.state', 'ilike', `%${filterModel['state'].value}%`))
-        .$if(!!filterModel['street1']?.value, (q) => q.where('households.street1', 'ilike', `%${filterModel['street1'].value}%`))
-        .$if(!!filterModel['street2']?.value, (q) => q.where('households.street2', 'ilike', `%${filterModel['street2'].value}%`))
-        .$if(!!filterModel['street_num']?.value, (q) =>
-          q.where(sql`CAST(households.street_num AS TEXT) ILIKE ${'%' + filterModel['street_num'].value + '%'}` as any),
-        )
-        .$if(!!filterModel['zip']?.value, (q) => q.where('households.zip', 'ilike', `%${filterModel['zip'].value}%`))
-        .$if(!!filterModel['home_phone']?.value, (q) =>
-          q.where('households.home_phone', 'ilike', `%${filterModel['home_phone'].value}%`),
-        )
-        .$if(!!filterModel['tags']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['tags'].value}%`));
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city']);
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state']);
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
+      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2']);
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
+      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone']);
+      q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+
+      return q;
+    };
 
     // Count query
     const countResult = await applyFilters(this.getSelect(trx))
