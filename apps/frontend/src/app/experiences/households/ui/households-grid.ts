@@ -52,7 +52,7 @@ interface ParamsType {
       </div>
     </pc-csv-importer>
   `,
-  providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
 })
 
 /**

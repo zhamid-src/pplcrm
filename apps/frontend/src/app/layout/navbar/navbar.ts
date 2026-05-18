@@ -67,7 +67,7 @@ export class Navbar {
    */
   public handleKeyDown(event: KeyboardEvent): void {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event.key.toLowerCase() === 'k';
+    const isK = event?.key?.toLowerCase() === 'k';
 
     if (isCtrlOrCmd && isK) {
       event.preventDefault();

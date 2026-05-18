@@ -147,7 +147,7 @@ export class HouseholdDetail implements OnInit {
   /**
    * Save the household, calling either update or add depending on mode
    */
-  protected save() {
+  protected save(done?: () => void) {
     const raw = this.form.getRawValue();
     // Explicitly pick only schema-valid fields — extra form fields
     // (formatted_address, type, lat, lng, tags, metadata) would cause Zod errors.
@@ -163,7 +163,7 @@ export class HouseholdDetail implements OnInit {
       country: raw.country,
       notes: raw.notes,
     };
-    return this.id ? this.update(data) : this.add(data);
+    return this.id ? this.update(data, done) : this.add(data, done);
   }
 
   /**
@@ -188,11 +188,17 @@ export class HouseholdDetail implements OnInit {
    * Add a new household using the backend service
    * @param data - The household data to submit
    */
-  private add(data: UpdateHouseholdsType) {
+  private add(data: UpdateHouseholdsType, done?: () => void) {
     const end = this._loading.begin();
     this.householdsSvc
       .add(data)
-      .then(() => this.alertSvc.showSuccess('Household added'))
+      .then(() => {
+        this.alertSvc.showSuccess('Household added');
+        this.householdsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => end());
   }
@@ -241,7 +247,7 @@ export class HouseholdDetail implements OnInit {
    * Updates an existing household using the backend service
    * @param data - Partial update object for the household
    */
-  private update(data: Partial<UpdateHouseholdsType>) {
+  private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
     if (!this.id) {
       return;
     }
@@ -252,6 +258,10 @@ export class HouseholdDetail implements OnInit {
       .then(() => {
         this.alertSvc.showSuccess('Household updated successfully.');
         this.form.markAsPristine();
+        this.householdsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
       })
       .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => end());

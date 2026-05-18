@@ -101,7 +101,7 @@
 
         <pc-add-btn-row
           [isLoading]="isLoading()"
-          (btn1Clicked)="save()"
+          (btn1Clicked)="save($event)"
           [buttonsToShow]="household()?.id ? 'two' : 'three'"
           [btn1Text]="household()?.id ? 'SAVE' : 'ADD HOUSEHOLD'"
         ></pc-add-btn-row>
