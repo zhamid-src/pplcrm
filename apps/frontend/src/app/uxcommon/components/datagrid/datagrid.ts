@@ -201,6 +201,30 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const fv = this.filterValues();
     return Object.keys(pf).length > 0 || Object.keys(fv).length > 0;
   });
+  public readonly hasActiveFilters = computed(() => {
+    const pf = this.panelFilters();
+    if (Object.keys(pf).length > 0) return true;
+
+    const fv = this.filterValues();
+    for (const key of Object.keys(fv)) {
+      const val = fv[key];
+      if (Array.isArray(val)) {
+        if (val.length > 0) return true;
+      } else if (val !== undefined && val !== null && val !== '') {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  public isColFiltered(field: string): boolean {
+    const fv = this.filterValues();
+    const val = fv[field];
+    if (Array.isArray(val)) {
+      return val.length > 0;
+    }
+    return val !== undefined && val !== null && val !== '';
+  }
   /** Becomes true the moment loading first starts — prevents empty-state flash on init */
   protected readonly hasInitiatedLoad = signal(false);
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
