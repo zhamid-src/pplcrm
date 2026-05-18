@@ -63,8 +63,14 @@
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label tabindex="0" class="btn btn-ghost btn-xs" title="Column options">
-                  <pc-icon name="ellipsis-vertical"></pc-icon>
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
                 </label>
                 <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
                   @let col = getColDefById(h.column.id);

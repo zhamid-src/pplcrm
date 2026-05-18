@@ -32,7 +32,7 @@
     icon="funnel"
     tip="Filter the grid"
     [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters()"
     (action)="onToggleFilters()"
   />
 

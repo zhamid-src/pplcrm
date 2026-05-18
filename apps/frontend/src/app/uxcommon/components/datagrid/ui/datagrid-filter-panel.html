@@ -1,18 +1,31 @@
 <div class="fixed inset-0 z-40">
   <div class="absolute inset-0 bg-black/30" (click)="close.emit()"></div>
-  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 overflow-auto">
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-lg font-semibold">Advanced Filters</h3>
-      <button class="btn btn-ghost btn-sm" (click)="close.emit()">
-        <pc-icon name="chevron-right"></pc-icon>
-      </button>
+  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
+    <!-- Pinned Header Area -->
+    <div class="shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold">Advanced Filters</h3>
+        <button class="btn btn-ghost btn-sm px-2" (click)="close.emit()">
+          <pc-icon name="chevron-right"></pc-icon>
+        </button>
+      </div>
+      <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
+      
+      <!-- Apply / Clear buttons pinned at top -->
+      <div class="flex gap-2 mb-1">
+        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
+        <button class="btn btn-outline btn-sm flex-1" (click)="clear.emit()">Clear</button>
+      </div>
+      
+      <div class="divider my-3"></div>
     </div>
-    <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
-    <div class="space-y-3">
+
+    <!-- Scrollable Fields Area -->
+    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
       @for (field of panelFields(); track field) {
       <div class="form-control">
-        <label class="label py-0"><span class="label-text">{{ labelFor()(field) }}</span></label>
-        <div class="flex gap-2">
+        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
+        <div class="flex gap-2 mt-1">
           <select
             class="select select-bordered select-xs w-28"
             (change)="changeOp.emit({ field, op: $any($event.target).value })"
@@ -44,11 +57,6 @@
         </div>
       </div>
       }
-    </div>
-    <div class="divider my-3"></div>
-    <div class="flex gap-2">
-      <button class="btn btn-primary btn-sm" (click)="apply.emit()">Apply</button>
-      <button class="btn btn-ghost btn-sm" (click)="clear.emit()">Clear</button>
     </div>
   </aside>
 </div>
