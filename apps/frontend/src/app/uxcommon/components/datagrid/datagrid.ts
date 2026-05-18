@@ -43,6 +43,7 @@ import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
 import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
+import { TagOptionsService } from './services/tag-options.service';
 import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 // Header and inline filters rendered inline in template now
@@ -375,6 +376,41 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
 
+  protected readonly dgTagOptionsSvc = inject(TagOptionsService);
+  public readonly allAvailableTags = signal<string[]>([]);
+  public readonly selectedTags = signal<string[]>([]);
+  public readonly tagSearchQuery = signal<string>('');
+
+  public readonly filteredAvailableTags = computed(() => {
+    const query = this.tagSearchQuery().toLowerCase().trim();
+    const all = this.allAvailableTags();
+    if (!query) return all;
+    return all.filter((tag) => tag.toLowerCase().includes(query));
+  });
+
+  public readonly showTagFilter = computed(() => {
+    const defs = this.colDefs();
+    return defs.some(col => col.field === 'tags' || col.tagColumn === true);
+  });
+
+  public toggleTagFilter(tag: string, checked: boolean) {
+    const current = this.selectedTags();
+    let next: string[];
+    if (checked) {
+      next = [...current, tag];
+    } else {
+      next = current.filter((t) => t !== tag);
+    }
+    this.selectedTags.set(next);
+    this.doRefresh();
+  }
+
+  public clearTagsFilter() {
+    this.selectedTags.set([]);
+    this.tagSearchQuery.set('');
+    this.doRefresh();
+  }
+
   private _squelch = false;
   private _initialized = false;
   private _lastPageSize: number | null = null;
@@ -453,7 +489,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       searchStr: this.searchSvc.getFilterText(),
       sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
       filterModel: this.buildFilterModel(),
-      tags: this.limitToTags(),
+      tags: this.selectedTags(),
     } as getAllOptionsType;
   }
 
@@ -481,6 +517,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public async ngOnInit() {
+    this.selectedTags.set([...this.limitToTags()]);
+    try {
+      const tags = await this.dgTagOptionsSvc.getTagNames();
+      this.allAvailableTags.set(tags);
+    } catch {
+      this.allAvailableTags.set([]);
+    }
     this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
@@ -1502,7 +1545,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const { ids, count } = await this.fetchCtrl.selectAllMatching({
         archiveMode: this.archiveMode(),
         searchText: this.searchSvc.getFilterText(),
-        limitToTags: this.limitToTags(),
+        limitToTags: this.selectedTags(),
         gridSvc: this.gridSvc,
       });
       this.allSelectedIds.set(ids);
@@ -1801,7 +1844,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       pageSize: this.pageSize(),
       archiveMode: this.archiveMode(),
       searchText: this.searchSvc.getFilterText(),
-      limitToTags: this.limitToTags(),
+      limitToTags: this.selectedTags(),
       filterModel: this.buildFilterModel(),
       sortState: this.sorting(),
       sortCol: this.sortCol(),
@@ -1834,7 +1877,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       searchStr: this.searchSvc.getFilterText(),
       startRow: 0,
       endRow,
-      tags: this.limitToTags(),
+      tags: this.selectedTags(),
       filterModel: this.buildFilterModel(),
       sortState: this.sorting(),
       sortCol: this.sortCol(),
