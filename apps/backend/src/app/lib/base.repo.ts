@@ -452,6 +452,56 @@ export class BaseRepository<T extends keyof Models> {
     const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
     return ret as unknown as UpdateQueryBuilder<Models, T, keyof Models, object>;
   }
+
+  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: any) {
+    const pattern = op || 'contains';
+    switch (pattern) {
+      case 'equals':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${val}` : eb(column, 'ilike', val);
+      case 'startsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${val + '%'}` : eb(column, 'ilike', `${val}%`);
+      case 'endsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + val}` : eb(column, 'ilike', `%${val}`);
+      case 'notContains':
+        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${'%' + val + '%'}` : eb(column, 'not ilike', `%${val}%`);
+      case 'notEquals':
+        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${val}` : eb(column, 'not ilike', val);
+      case 'contains':
+      default:
+        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + val + '%'}` : eb(column, 'ilike', `%${val}%`);
+    }
+  }
+
+  protected applyAdvancedFilters(
+    query: any,
+    advancedFilterModel: { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] } | undefined,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>
+  ) {
+    if (!advancedFilterModel || !Array.isArray(advancedFilterModel.rules) || advancedFilterModel.rules.length === 0) {
+      return query;
+    }
+
+    const validRules = advancedFilterModel.rules.filter(
+      (r) => r.field && columnMapping[r.field] && r.value !== undefined && r.value !== null && String(r.value).trim() !== ''
+    );
+
+    if (validRules.length === 0) {
+      return query;
+    }
+
+    return query.where((eb: any) => {
+      const expressions = validRules.map((rule) => {
+        const mapping = columnMapping[rule.field];
+        return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, rule.op, rule.value);
+      });
+
+      if (advancedFilterModel.conjunction === 'OR') {
+        return eb.or(expressions);
+      } else {
+        return eb.and(expressions);
+      }
+    });
+  }
 }
 
 /**
@@ -472,6 +522,10 @@ export type JoinedQueryParams = {
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, keyof Models, object>[];
+  advancedFilterModel?: {
+    conjunction: 'AND' | 'OR';
+    rules: { field: string; op: string; value: any }[];
+  };
 };
 
 /**

@@ -13,6 +13,8 @@ export class DataGridFilterPanelComponent {
   public changeValue = output<{ field: string; value: any }>();
   public clear = output<void>();
   public close = output<void>();
+  public openAdvanced = output<void>();
+  public hasActiveFilters = input<boolean>(false);
   public labelFor = input<(field: string) => string>((f) => f);
   public optionsFor = input<(field: string) => string[] | null>((_f) => null);
   public panelFields = input<string[]>([]);

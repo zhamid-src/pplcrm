@@ -411,6 +411,61 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.doRefresh();
   }
 
+  // Advanced Filter Builder State
+  public readonly showAdvancedFilterBuilder = signal<boolean>(false);
+  public readonly advConjunction = signal<'AND' | 'OR'>('AND');
+  public readonly advRules = signal<Array<{ id: string; field: string; op: string; value: string }>>([]);
+
+  public readonly hasActiveAdvancedFilters = computed(() => {
+    return this.advRules().some(r => r.field && r.value !== undefined && r.value !== null && String(r.value).trim() !== '');
+  });
+
+  public openAdvancedFilterBuilder() {
+    this.showAdvancedFilterBuilder.set(true);
+    if (this.advRules().length === 0) {
+      this.addAdvRule();
+    }
+  }
+
+  public switchToAdvancedFilter() {
+    this.showFilterPanel.set(false);
+    this.openAdvancedFilterBuilder();
+  }
+
+  public addAdvRule() {
+    const fields = this.getColDefsForToolbar().filter(c => c.field && c.field !== 'actions');
+    const defaultField = fields[0]?.field || '';
+    const newRule = {
+      id: Math.random().toString(36).substring(2),
+      field: defaultField,
+      op: 'contains',
+      value: '',
+    };
+    this.advRules.update((rules) => [...rules, newRule]);
+  }
+
+  public removeAdvRule(id: string) {
+    this.advRules.update((rules) => rules.filter((r) => r.id !== id));
+  }
+
+  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) {
+    this.advRules.update((rules) =>
+      rules.map((r) => (r.id === id ? { ...r, ...updates } : r))
+    );
+  }
+
+  public applyAdvancedFilter() {
+    this.showAdvancedFilterBuilder.set(false);
+    this.doRefresh();
+  }
+
+  public clearAdvancedFilter() {
+    this.advConjunction.set('AND');
+    this.advRules.set([]);
+    this.showAdvancedFilterBuilder.set(false);
+    this.doRefresh();
+  }
+
   private _squelch = false;
   private _initialized = false;
   private _lastPageSize: number | null = null;
@@ -1546,6 +1601,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         archiveMode: this.archiveMode(),
         searchText: this.searchSvc.getFilterText(),
         limitToTags: this.selectedTags(),
+        advancedFilterModel: this.hasActiveAdvancedFilters()
+          ? {
+              conjunction: this.advConjunction(),
+              rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+            }
+          : undefined,
         gridSvc: this.gridSvc,
       });
       this.allSelectedIds.set(ids);
@@ -1849,6 +1910,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortState: this.sorting(),
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
+      advancedFilterModel: this.hasActiveAdvancedFilters()
+        ? {
+            conjunction: this.advConjunction(),
+            rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+          }
+        : undefined,
       gridSvc: this.gridSvc,
       dataSvc: this.dataSvc,
       getRows: () => this.rows(),
@@ -1883,6 +1950,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
       includeArchived: this.archiveMode(),
+      advancedFilterModel: this.hasActiveAdvancedFilters()
+        ? {
+            conjunction: this.advConjunction(),
+            rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+          }
+        : undefined,
     });
     return this.gridSvc.exportCsv({
       options,

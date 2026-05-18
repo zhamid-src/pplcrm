@@ -25,6 +25,18 @@ export const getAllOptions = z
     orderBy: z.array(z.string()).optional(),
     groupBy: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
+    advancedFilterModel: z
+      .object({
+        conjunction: z.enum(['AND', 'OR']),
+        rules: z.array(
+          z.object({
+            field: z.string(),
+            op: z.string(),
+            value: z.any(),
+          })
+        ),
+      })
+      .optional(),
   })
   .optional();
 

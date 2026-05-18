@@ -42,6 +42,7 @@ export const icons = {
   'add-label': 'assets/icons/add-label.svg',
   'add-list': 'assets/icons/add-list.svg',
   'add-notes': 'assets/icons/add-notes.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
   'archive-box': 'assets/icons/archive-box.svg',
   'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
   'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',

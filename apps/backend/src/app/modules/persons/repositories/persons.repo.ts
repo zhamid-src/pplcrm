@@ -205,6 +205,21 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
       q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
 
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tags: { col: 'tags.name' },
+      };
+      q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
+
       return q;
     };
 

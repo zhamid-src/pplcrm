@@ -4,12 +4,21 @@
     <!-- Pinned Header Area -->
     <div class="shrink-0">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-lg font-semibold">Advanced Filters</h3>
+        <h3 class="text-lg font-semibold">Filters</h3>
         <button class="btn btn-ghost btn-sm px-2" (click)="close.emit()">
           <pc-icon name="chevron-right"></pc-icon>
         </button>
       </div>
-      <div class="text-sm opacity-70 mb-3">Combine column filters and operators.</div>
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm opacity-70">Combine column filters and operators.</span>
+        <button
+          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
+          [disabled]="hasActiveFilters()"
+          (click)="!hasActiveFilters() && openAdvanced.emit()"
+        >
+          Advanced Filter &gt;
+        </button>
+      </div>
       
       <!-- Apply / Clear buttons pinned at top -->
       <div class="flex gap-2 mb-1">
