@@ -139,7 +139,7 @@
 
         <pc-add-btn-row
           [isLoading]="isLoading()"
-          (btn1Clicked)="save()"
+          (btn1Clicked)="save($event)"
           [buttonsToShow]="buttonsToShow()"
           [btn1Text]="person()?.id ? 'SAVE' : 'ADD PERSON'"
         ></pc-add-btn-row>

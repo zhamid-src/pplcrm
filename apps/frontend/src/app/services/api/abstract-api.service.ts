@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
+import { Subject } from 'rxjs';
 import { TRPCService } from './trpc-service';
 
 import { Models } from 'common/src/lib/kysely.models';
@@ -40,6 +41,11 @@ import { Models } from 'common/src/lib/kysely.models';
   providedIn: 'root',
 })
 export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
+  public readonly refresh$ = new Subject<void>();
+
+  public triggerRefresh() {
+    this.refresh$.next();
+  }
   /**
    * Adds a single row to the database.
    *

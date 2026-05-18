@@ -66,7 +66,7 @@ interface ParamsType {
   selector: 'pc-persons-grid',
   imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
   templateUrl: './persons-grid.html',
-  providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly utils = inject(DataGridUtilsService);

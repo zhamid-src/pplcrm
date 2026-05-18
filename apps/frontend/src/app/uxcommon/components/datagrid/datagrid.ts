@@ -15,7 +15,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
@@ -356,6 +356,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private _lastPageSize: number | null = null;
 
   constructor() {
+    this.gridSvc.refresh$.pipe(takeUntilDestroyed()).subscribe(() => {
+      void this.refresh();
+    });
+
     // Mark that a load has started — prevents empty-state flash before first fetch
     effect(() => { if (this.isLoading()) this.hasInitiatedLoad.set(true); });
 

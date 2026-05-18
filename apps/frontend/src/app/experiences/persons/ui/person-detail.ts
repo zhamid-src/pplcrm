@@ -164,9 +164,9 @@ export class PersonDetail implements OnInit {
    * Save the person details to backend.
    * If in edit mode, it updates the person; otherwise, it creates a new entry.
    */
-  public save() {
+  public save(done?: () => void) {
     const data = this.form.getRawValue() as UpdatePersonsType;
-    return this.id ? this.update(data) : this.add(data);
+    return this.id ? this.update(data, done) : this.add(data, done);
   }
 
   /**
@@ -395,7 +395,7 @@ export class PersonDetail implements OnInit {
    * Adds a new person to the backend
    * @param data - Person data to be added
    */
-  private add(data: UpdatePersonsType) {
+  private add(data: UpdatePersonsType, done?: () => void) {
     // Include any household selected via the drawer before saving
     const pendingHousehold = this.pendingHouseholdId();
     if (pendingHousehold) {
@@ -406,7 +406,17 @@ export class PersonDetail implements OnInit {
     const end = this._loading.begin();
     this.personsSvc
       .add(data)
-      .then(() => this.alertSvc.showSuccess('Person added'))
+      .then(() => {
+        this.alertSvc.showSuccess('Person added');
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+          this.pendingHouseholdId.set(null);
+          this.addressString.set(null);
+          this.tags.set([]);
+          this.form.markAsPristine();
+        }
+      })
       .catch((err: unknown) => {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
@@ -511,7 +521,7 @@ export class PersonDetail implements OnInit {
    * Updates the person in the backend
    * @param data - Partial person data to update
    */
-  private update(data: Partial<UpdatePersonsType>) {
+  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
     if (!this.id) return;
 
     this.emailError.set(null);
@@ -521,6 +531,10 @@ export class PersonDetail implements OnInit {
       .then(() => {
         this.alertSvc.showSuccess('Person updated successfully.');
         this.form.markAsPristine();
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
       })
       .catch((err: unknown) => {
         if (this.isDuplicateEmailError(err)) {

@@ -68,6 +68,7 @@ export class AddBtnRow implements OnInit {
    * The parent can then decide to call the callback (usually stayOrCancel).
    */
   public handleBtn1Clicked() {
+    this.stay = false;
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
@@ -77,7 +78,7 @@ export class AddBtnRow implements OnInit {
    */
   public handleBtn2Clicked() {
     this.stay = true;
-    this.handleBtn1Clicked();
+    this.btn1Clicked.emit(this.stayOrCancel);
   }
 
   /**
