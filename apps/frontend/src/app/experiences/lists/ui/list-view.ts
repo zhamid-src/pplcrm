@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -9,6 +9,7 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-list-view',
   imports: [ReactiveFormsModule, AddBtnRow],
   templateUrl: './list-view.html',

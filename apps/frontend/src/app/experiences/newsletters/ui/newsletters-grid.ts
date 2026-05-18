@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component , ChangeDetectionStrategy} from '@angular/core';
 import { UpdateMarketingEmailType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
@@ -6,6 +6,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { NewslettersService } from '../services/newsletters-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-newsletters-grid',
   imports: [DataGrid],
   template: `

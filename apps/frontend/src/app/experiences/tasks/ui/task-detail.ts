@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { IAuthUser } from '@common';
@@ -14,6 +14,7 @@ import { TimeAgoPipe } from '../../../uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '../../../uxcommon/mentions/mention-controller';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-task-detail',
   imports: [DatePipe, DecimalPipe, SlicePipe, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
   templateUrl: './task-detail.html',
@@ -34,10 +35,10 @@ export class TaskDetail implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly assignedTo = signal<string>('');
 
-  protected newComment = '';
-  protected attName = '';
-  protected attUrl = '';
-  protected subtaskName = '';
+  protected newComment = signal('');
+  protected attName = signal('');
+  protected attUrl = signal('');
+  protected subtaskName = signal('');
 
   // collapse states
   protected showComments = signal(true);
@@ -55,12 +56,12 @@ export class TaskDetail implements OnInit {
   }
 
   protected async addComment() {
-    const plain = this.newComment.trim();
+    const plain = this.newComment().trim();
     if (!plain) return;
     this.isLoading.set(true);
     try {
       await (this.tasks as unknown as { api: any }).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
-      this.newComment = '';
+      this.newComment.set('');
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } finally {
       this.isLoading.set(false);
@@ -139,14 +140,14 @@ export class TaskDetail implements OnInit {
   }
 
   protected async addAttachment() {
-    const name = this.attName.trim();
-    const url = this.attUrl.trim();
+    const name = this.attName().trim();
+    const url = this.attUrl().trim();
     if (!name) return;
     this.isLoading.set(true);
     try {
       await (this.tasks as unknown as { api: any }).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
-      this.attName = '';
-      this.attUrl = '';
+      this.attName.set('');
+      this.attUrl.set('');
       await this.loadAttachments();
     } finally {
       this.isLoading.set(false);
@@ -159,12 +160,12 @@ export class TaskDetail implements OnInit {
   }
 
   protected async addSubtask() {
-    const name = this.subtaskName.trim();
+    const name = this.subtaskName().trim();
     if (!name) return;
     this.isLoading.set(true);
     try {
       await (this.tasks as unknown as { api: any }).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
-      this.subtaskName = '';
+      this.subtaskName.set('');
       await this.loadSubtasks();
     } finally {
       this.isLoading.set(false);
@@ -204,15 +205,15 @@ export class TaskDetail implements OnInit {
   // ===== Mention autocomplete handlers (textarea) =====
   protected onComposerInput(ev: Event) {
     const el = ev.target as HTMLTextAreaElement;
-    this.newComment = el.value;
-    const caret = el.selectionStart ?? this.newComment.length;
-    this.mc.updateFromInput(this.newComment, caret);
+    this.newComment.set(el.value);
+    const caret = el.selectionStart ?? this.newComment().length;
+    this.mc.updateFromInput(this.newComment(), caret);
   }
 
   protected onComposerClick(ev: Event) {
     const el = ev.target as HTMLTextAreaElement;
     const caret = el.selectionStart ?? 0;
-    this.mc.updateFromInput(this.newComment, caret);
+    this.mc.updateFromInput(this.newComment(), caret);
   }
 
   protected onComposerKeydown(ev: KeyboardEvent) {
@@ -228,8 +229,8 @@ export class TaskDetail implements OnInit {
 
   protected selectMention(u: IAuthUser, ev?: Event) {
     ev?.preventDefault();
-    const res = this.mc.select(u, this.newComment);
-    this.newComment = res.text;
+    const res = this.mc.select(u, this.newComment());
+    this.newComment.set(res.text);
     const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
     setTimeout(() => {
       if (el) {

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
@@ -9,6 +9,7 @@ import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tasks-grid',
   imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `

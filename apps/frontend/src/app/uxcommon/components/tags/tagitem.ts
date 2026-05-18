@@ -1,4 +1,4 @@
-import { Component, Signal, computed, input, output, signal } from '@angular/core';
+import { Component, Signal, computed, input, output, signal , ChangeDetectionStrategy} from '@angular/core';
 import { Icon } from '@icons/icon';
 
 /**
@@ -19,6 +19,7 @@ import { Icon } from '@icons/icon';
  * Used in tag lists or input interfaces to represent individual tags with interaction capabilities.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tagitem',
   imports: [Icon],
   styleUrl: './tagitem.css',

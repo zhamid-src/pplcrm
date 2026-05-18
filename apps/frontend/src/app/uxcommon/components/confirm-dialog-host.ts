@@ -8,7 +8,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { ConfirmDialogService, DialogVariant } from '../../services/shared-dialog.service';
 
@@ -60,8 +59,8 @@ export class ConfirmDialogHost {
 
   public readonly promptValue = signal(''); // signal instead of ngModel
 
-  private readonly stateSignal = toSignal(this.svc.state$, { initialValue: null });
-  private readonly openSignal = toSignal(this.svc.isOpen$, { initialValue: false });
+  private readonly stateSignal = this.svc.stateSignal;
+  private readonly openSignal = this.svc.isOpenSignal;
   public state = this.stateSignal;
   public confirmBtnClass = computed(() => {
     const v = (this.state()?.variant ?? 'neutral') as DialogVariant;

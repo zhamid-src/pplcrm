@@ -1,7 +1,8 @@
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, input, output, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
 import { debounce } from '@common';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-autocomplete',
   template: `
     <input
@@ -14,7 +15,7 @@ import { debounce } from '@common';
       (focus)="showAutoCompleteList()"
       (blur)="hideAutoCompleteList()"
     />
-    @if (matches().length && !hideAutoComplete) {
+    @if (matches().length && !hideAutoComplete()) {
       <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
         @for (match of matches(); track match) {
           <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">{{ match }}</li>
@@ -31,7 +32,7 @@ export class AutoComplete {
   /**
    * Whether to hide the autocomplete list.
    */
-  protected hideAutoComplete = true;
+  protected hideAutoComplete = signal(true);
 
   /**
    * Emits the selected value when a user selects or types something meaningful.
@@ -77,7 +78,7 @@ export class AutoComplete {
    * to be registered before the list disappears (avoiding lost focus issues).
    */
   protected hideAutoCompleteList() {
-    setTimeout(() => (this.hideAutoComplete = true), 200);
+    setTimeout(() => (this.hideAutoComplete.set(true)), 200);
   }
 
   /**
@@ -109,7 +110,7 @@ export class AutoComplete {
    * Displays the autocomplete list.
    */
   protected showAutoCompleteList() {
-    this.hideAutoComplete = false;
+    this.hideAutoComplete.set(false);
   }
 }
 

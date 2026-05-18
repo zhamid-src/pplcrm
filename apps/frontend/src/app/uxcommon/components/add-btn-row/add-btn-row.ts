@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, input, output } from '@angular/core';
+import { Component, OnInit, inject, input, output , ChangeDetectionStrategy} from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-add-btn-row',
   imports: [ReactiveFormsModule, Icon],
   templateUrl: './add-btn-row.html',

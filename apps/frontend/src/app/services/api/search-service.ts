@@ -3,8 +3,8 @@
  * Provides centralized search functionality with reactive state management
  * using Angular signals for cross-component search coordination.
  */
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
+import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
 
 /**
@@ -62,11 +62,10 @@ export class SearchService {
   /**
    * Internal signal that holds the current search term.
    */
-  private readonly searchSubject = new BehaviorSubject<string>('');
+  public readonly searchSignal = signal<string>('');
   private readonly searchInputSubject = new Subject<string>();
 
-  public readonly search$ = this.searchSubject.asObservable();
-
+  
   constructor() {
     this.searchInputSubject
       .pipe(
@@ -75,8 +74,8 @@ export class SearchService {
         debounceTime(300),
       )
       .subscribe((value) => {
-        if (value !== this.searchSubject.value) {
-          this.searchSubject.next(value);
+        if (value !== this.searchSignal()) {
+          this.searchSignal.set(value);
         }
       });
   }
@@ -85,8 +84,8 @@ export class SearchService {
    * Clears the current search term by setting it to an empty string.
    */
   public clearSearch(): void {
-    if (this.searchSubject.value !== '') {
-      this.searchSubject.next('');
+    if (this.searchSignal() !== '') {
+      this.searchSignal.set('');
     }
   }
 
@@ -105,7 +104,7 @@ export class SearchService {
    * @returns The current search string.
    */
   public getFilterText(): string {
-    return this.searchSubject.value;
+    return this.searchSignal();
   }
 
   /**
@@ -113,8 +112,8 @@ export class SearchService {
    */
   public doSearchImmediate(value: string): void {
     const norm = this.normalize(value);
-    if (norm !== this.searchSubject.value) {
-      this.searchSubject.next(norm);
+    if (norm !== this.searchSignal()) {
+      this.searchSignal.set(norm);
     }
   }
 

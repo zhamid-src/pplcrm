@@ -94,7 +94,7 @@
         }
       </div>
       <div class="flex gap-2">
-        <input class="input grow" placeholder="Add a subtask" [(ngModel)]="subtaskName" />
+        <input class="input grow" placeholder="Add a subtask" [ngModel]="subtaskName()" (ngModelChange)="subtaskName.set($event)" />
         <button class="btn btn-primary" (click)="addSubtask()" [disabled]="!subtaskName || isLoading()">Add</button>
       </div>
       }
@@ -145,7 +145,7 @@
         <div class="mt-2 form-control relative">
           <textarea
             #taskComposer
-            [(ngModel)]="newComment"
+            [ngModel]="newComment()" (ngModelChange)="newComment.set($event)"
             placeholder="Add a comment"
             class="textarea textarea-bordered w-full"
             (input)="onComposerInput($event)"
@@ -172,7 +172,7 @@
           </div>
           }
           <div class="mt-2 flex items-center justify-end gap-2">
-            <button type="button" class="btn btn-sm" (click)="newComment = ''">Clear</button>
+            <button type="button" class="btn btn-sm" (click)="newComment.set('')">Clear</button>
             <button type="button" class="btn btn-sm btn-primary" (click)="addComment()" [disabled]="!newComment || isLoading()">Add Comment</button>
           </div>
         </div>
@@ -204,8 +204,8 @@
         }
       </div>
       <div class="flex gap-2">
-        <input class="input" placeholder="Filename" [(ngModel)]="attName" />
-        <input class="input grow" placeholder="URL (optional)" [(ngModel)]="attUrl" />
+        <input class="input" placeholder="Filename" [ngModel]="attName()" (ngModelChange)="attName.set($event)" />
+        <input class="input grow" placeholder="URL (optional)" [ngModel]="attUrl()" (ngModelChange)="attUrl.set($event)" />
         <button class="btn btn-primary" (click)="addAttachment()" [disabled]="!attName || isLoading()">Add</button>
       </div>
       }

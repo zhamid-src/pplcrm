@@ -1,5 +1,5 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
+
 import { SettingsEntryType } from '@common';
 
 import { TRPCService } from '../../../services/api/trpc-service';
@@ -8,48 +8,46 @@ export type TenantSettingsSnapshot = Record<string, unknown>;
 
 @Injectable({ providedIn: 'root' })
 export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
-  private readonly snapshotSubject = new BehaviorSubject<TenantSettingsSnapshot>({});
-  private readonly pendingSubject = new BehaviorSubject<boolean>(false);
+  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
+  private readonly isPendingSignal = signal<boolean>(false);
 
-  public readonly snapshot$ = this.snapshotSubject.asObservable();
-  public readonly isPending$ = this.pendingSubject.asObservable();
-
+    
   public async load(force = false) {
-    if (!force && Object.keys(this.snapshotSubject.value).length) return this.snapshotSubject.value;
+    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
 
-    this.pendingSubject.next(true);
+    this.isPendingSignal.set(true);
     try {
       const data = (await this.api.settings.getSnapshot.query()) ?? {};
-      this.snapshotSubject.next(data);
+      this.snapshotSignal.set(data);
       return data;
     } finally {
-      this.pendingSubject.next(false);
+      this.isPendingSignal.set(false);
     }
   }
 
   public getValue<T = unknown>(key: string, fallback?: T) {
-    const value = this.snapshotSubject.value[key];
+    const value = this.snapshotSignal()[key];
     return (value === undefined ? fallback : (value as T)) ?? fallback;
   }
 
   public async upsert(entries: SettingsEntryType[]) {
-    if (!entries.length) return this.snapshotSubject.value;
+    if (!entries.length) return this.snapshotSignal();
 
-    this.pendingSubject.next(true);
+    this.isPendingSignal.set(true);
     try {
       const data = await this.api.settings.upsert.mutate({ entries });
-      this.snapshotSubject.next(data ?? {});
+      this.snapshotSignal.set(data ?? {});
       return data;
     } finally {
-      this.pendingSubject.next(false);
+      this.isPendingSignal.set(false);
     }
   }
 
   public snapshot(): TenantSettingsSnapshot {
-    return this.snapshotSubject.value;
+    return this.snapshotSignal();
   }
 
   public pending(): boolean {
-    return this.pendingSubject.value;
+    return this.isPendingSignal();
   }
 }

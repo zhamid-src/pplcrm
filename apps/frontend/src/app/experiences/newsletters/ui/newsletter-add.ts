@@ -1,4 +1,4 @@
-import { CUSTOM_ELEMENTS_SCHEMA, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -9,6 +9,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Tags } from '@uxcommon/components/tags/tags';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-newsletter-add',
   imports: [ReactiveFormsModule, Icon, Tags, TagItem],
   templateUrl: './newsletter-add.html',

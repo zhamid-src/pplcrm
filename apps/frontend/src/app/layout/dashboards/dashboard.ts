@@ -2,7 +2,7 @@
  * Root dashboard component that composes the main layout by combining the
  * navbar, sidebar, and routed content area.
  */
-import { Component, inject } from '@angular/core';
+import { Component, inject , ChangeDetectionStrategy} from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { Breadcrumb } from '@uxcommon/components/breadcrumb/breadcrumb';
@@ -12,6 +12,7 @@ import { Sidebar } from '../sidebar/sidebar';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-dashboard',
   imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts],
   templateUrl: './dashboard.html',

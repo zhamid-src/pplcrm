@@ -1,10 +1,11 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input , ChangeDetectionStrategy} from '@angular/core';
 import { Icon } from '@icons/icon';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
 import { ALERTTYPE, AlertService } from './alert-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-alerts',
   imports: [Icon, AnimateIfDirective],
   templateUrl: './alerts.html',

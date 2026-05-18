@@ -1,7 +1,7 @@
 /**
  * Sidebar component rendering navigation links and managing drawer state.
  */
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -9,6 +9,7 @@ import { Swap } from '@uxcommon/components/swap/swap';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-sidebar',
   imports: [Icon, RouterLink, Swap],
   templateUrl: './sidebar.html',

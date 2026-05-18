@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, input, output , ChangeDetectionStrategy} from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 
@@ -16,6 +16,7 @@ export interface TagGroup {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tag-rule-builder',
   imports: [AutoComplete],
   template: `

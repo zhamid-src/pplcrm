@@ -1,9 +1,10 @@
-import { Component, DestroyRef, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, effect, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { Icon } from '@icons/icon';
 
 import { get } from 'idb-keyval';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-exports-page',
   imports: [Icon],
   templateUrl: './exports-page.html',

@@ -62,7 +62,7 @@ export class EmailComments {
   public myUserId = input<string>(); // set this from parent; used for chat-start/chat-end and bubble color
 
   /** New comment input */
-  public newComment = '';
+  public newComment = signal('');
   public trackByComment = (_: number, c: Partial<EmailCommentType>) => (c as any).id ?? _;
 
   // expose util for templates
@@ -95,14 +95,14 @@ export class EmailComments {
   /** Add a comment (optimistic handled by store) */
   public async addComment(): Promise<void> {
     const em = this.email();
-    const text = this.newComment.trim();
+    const text = this.newComment().trim();
     const author = this.meId;
     if (!em?.id || !text || !author) return;
 
     this.saving.set(true);
     try {
       await this.store.addComment(em.id, author, text);
-      this.newComment = '';
+      this.newComment.set('');
     } catch (e) {
       console.error('Could not add comment:', e);
     } finally {
@@ -172,15 +172,15 @@ export class EmailComments {
   protected onComposerClick(ev: Event) {
     const el = ev.target as HTMLTextAreaElement;
     const caret = el.selectionStart ?? 0;
-    this.mc.updateFromInput(this.newComment, caret);
+    this.mc.updateFromInput(this.newComment(), caret);
   }
 
   // ===== Mention autocomplete handlers (textarea) =====
   protected onComposerInput(ev: Event) {
     const el = ev.target as HTMLTextAreaElement;
-    this.newComment = el.value;
-    const caret = el.selectionStart ?? this.newComment.length;
-    this.mc.updateFromInput(this.newComment, caret);
+    this.newComment.set(el.value);
+    const caret = el.selectionStart ?? this.newComment().length;
+    this.mc.updateFromInput(this.newComment(), caret);
   }
 
   protected onComposerKeydown(ev: KeyboardEvent) {
@@ -196,8 +196,8 @@ export class EmailComments {
 
   protected selectMention(u: IAuthUser, ev?: Event) {
     ev?.preventDefault();
-    const res = this.mc.select(u, this.newComment);
-    this.newComment = res.text;
+    const res = this.mc.select(u, this.newComment());
+    this.newComment.set(res.text);
     const el = this.emailComposer()?.nativeElement as HTMLTextAreaElement | undefined;
     setTimeout(() => {
       if (el) {

@@ -1,9 +1,10 @@
-import { Component, WritableSignal, effect, input, signal } from '@angular/core';
+import { Component, WritableSignal, effect, input, signal , ChangeDetectionStrategy} from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
 import { PcIconNameType, loadIconSvg } from './icons.index';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-icon',
   imports: [BypassHtmlSanitizerPipe],
   template: `

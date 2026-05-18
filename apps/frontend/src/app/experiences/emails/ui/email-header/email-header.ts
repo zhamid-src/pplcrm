@@ -2,7 +2,7 @@
  * @file Component displaying header information for an email.
  */
 import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal , ChangeDetectionStrategy} from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
@@ -12,6 +12,7 @@ import { ALL_FOLDERS } from 'common/src/lib/emails';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-email-header',
   // include swap for expand/collapse control
   imports: [DatePipe, UpperCasePipe, EmailAssign, Icon],

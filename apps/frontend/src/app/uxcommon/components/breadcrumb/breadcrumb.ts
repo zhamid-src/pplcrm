@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { Router } from '@angular/router';
 
 import { Icon } from '../icons/icon';
@@ -10,6 +10,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
  * the current URL path as clickable segments.
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-breadcrumb',
   imports: [Icon],
   template: `

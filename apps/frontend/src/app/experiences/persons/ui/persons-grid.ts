@@ -3,7 +3,7 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows.
  */
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
@@ -63,6 +63,7 @@ interface ParamsType {
  * @see {@link PersonsService} for data operations
  */
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-persons-grid',
   imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
   templateUrl: './persons-grid.html',

@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component , ChangeDetectionStrategy} from '@angular/core';
 import { UpdateTeamType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
@@ -6,6 +6,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { TeamsService } from '../services/teams-service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-teams-grid',
   imports: [DataGrid],
   template: `
