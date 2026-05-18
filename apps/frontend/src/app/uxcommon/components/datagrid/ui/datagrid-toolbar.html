@@ -36,6 +36,57 @@
     (action)="onToggleFilters()"
   />
 
+  <!-- Tag Filter Dropdown -->
+  @if (grid.showTagFilter()) {
+  <li class="dropdown dropdown-end">
+    <label
+      tabindex="0"
+      class="btn btn-ghost btn-sm relative"
+      [class.text-primary]="grid.selectedTags().length > 0"
+      title="Filter by tags"
+    >
+      <pc-icon name="tag"></pc-icon>
+      @if (grid.selectedTags().length > 0) {
+      <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">{{ grid.selectedTags().length }}</span>
+      }
+    </label>
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[2] w-72 p-2 shadow max-h-80 overflow-y-auto">
+      <li class="px-2 py-1 font-semibold text-xs border-b border-base-200 mb-1 flex justify-between items-center">
+        <span>Filter by Tags</span>
+        @if (grid.selectedTags().length > 0) {
+        <button class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0" (click)="grid.clearTagsFilter()">Clear</button>
+        }
+      </li>
+      <li class="px-2 py-1 border-b border-base-200 mb-1">
+        <input
+          type="text"
+          placeholder="Search tags..."
+          class="input input-bordered input-xs w-full bg-base-100"
+          [value]="grid.tagSearchQuery()"
+          (input)="grid.tagSearchQuery.set($any($event.target).value)"
+        />
+      </li>
+      @if (grid.filteredAvailableTags().length === 0) {
+      <li class="px-3 py-2 text-xs text-neutral-400 text-center">No tags found</li>
+      } @else {
+        @for (tag of grid.filteredAvailableTags(); track tag) {
+        <li>
+          <label class="label cursor-pointer justify-start gap-2 py-1.5 w-full min-w-0 flex flex-row items-center">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-xs shrink-0"
+              [checked]="grid.selectedTags().includes(tag)"
+              (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
+            />
+            <span class="label-text truncate flex-1 min-w-0 pr-2" [title]="tag">{{ tag }}</span>
+          </label>
+        </li>
+        }
+      }
+    </ul>
+  </li>
+  }
+
   <li class="dropdown dropdown-end">
     <label tabindex="0" class="btn btn-ghost btn-sm" title="Select columns">
       <pc-icon name="view-column"></pc-icon>
