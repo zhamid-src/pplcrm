@@ -1,16 +1,16 @@
 import { z } from 'zod';
-import { nameSchema, optionalNameSchema, descriptionSchema, optionalIdSchema, idSchema } from './core.schema';
+import { nameSchema, descriptionSchema, idSchema } from './core.schema';
 
 export const AddTeamObj = z.object({
   name: nameSchema('Name', 100),
   description: descriptionSchema(1000),
-  team_captain_id: optionalIdSchema,
+  team_captain_id: idSchema.optional(),
   volunteer_ids: z.array(idSchema).optional(),
 });
 
 export const UpdateTeamObj = z.object({
-  name: optionalNameSchema('Name', 100),
+  name: nameSchema('Name', 100).nullable(),
   description: descriptionSchema(1000),
-  team_captain_id: optionalIdSchema,
+  team_captain_id: idSchema.nullable().optional(),
   volunteer_ids: z.array(idSchema).optional(),
 });

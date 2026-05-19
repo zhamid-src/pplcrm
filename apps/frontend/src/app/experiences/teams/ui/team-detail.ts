@@ -1,12 +1,12 @@
-import { Component, OnInit, computed, effect, inject, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
-import { ActivatedRoute, Router, RouterModule } from "@angular/router";
-import { AddTeamType, UpdateTeamType } from "@common";
-import { AlertService } from "@uxcommon/components/alerts/alert-service";
-import { Icon } from "@uxcommon/components/icons/icon";
+import { Component, OnInit, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddTeamType, UpdateTeamType } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 
-import { PersonsService } from "../../persons/services/persons-service";
-import { TeamDetail, TeamsService } from "../services/teams-service";
+import { PersonsService } from '../../persons/services/persons-service';
+import { TeamDetail, TeamsService } from '../services/teams-service';
 
 interface PersonOption {
   email: string | null;
@@ -107,12 +107,6 @@ export class TeamDetailComponent implements OnInit {
     }
 
     const raw = this.form.getRawValue();
-    const payload: UpdateTeamType & AddTeamType = {
-      name: raw.name?.trim() ?? '',
-      description: raw.description?.trim()?.length ? raw.description.trim() : null,
-      team_captain_id: raw.team_captain_id ? raw.team_captain_id : null,
-      volunteer_ids: raw.volunteer_ids ?? [],
-    };
 
     this.saving.set(true);
     this.error.set(null);
@@ -120,9 +114,21 @@ export class TeamDetailComponent implements OnInit {
     try {
       let result: TeamDetail;
       if (this.isNew()) {
+        const payload: AddTeamType = {
+          name: raw.name?.trim() ?? '',
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || undefined,
+          volunteer_ids: raw.volunteer_ids ?? [],
+        };
         result = await this.teams.add(payload);
         await this.router.navigate(['../', result.id], { relativeTo: this.route });
       } else if (this.id) {
+        const payload: UpdateTeamType = {
+          name: raw.name?.trim() ?? null,
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || null,
+          volunteer_ids: raw.volunteer_ids ?? [],
+        };
         result = await this.teams.update(this.id, payload);
         this.detail.set(result);
         this.setForm(result);
