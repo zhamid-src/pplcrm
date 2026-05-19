@@ -33,7 +33,7 @@ import {
   TypeId,
   TypeTableColumns,
   TypeTenantId,
-} from '../../../../../common/src/lib/kysely.models';
+} from 'common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
 import { GroupByArg } from 'node_modules/kysely/dist/esm/parser/group-by-parser';

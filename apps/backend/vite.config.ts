@@ -19,6 +19,9 @@ export default defineConfig(() => ({
   plugins: [nxViteTsPaths()],
     environment: 'node',
 
+  
+
+
     env: {
       DB_USER: 'test',
       DB_NAME: 'test',

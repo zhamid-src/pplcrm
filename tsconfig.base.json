@@ -10,7 +10,10 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "es2022",
-    "lib": ["es2022", "dom"],
+    "lib": [
+      "es2022",
+      "dom"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
@@ -19,11 +22,25 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": "./",
     "paths": {
-      "@common": ["common/src/index.ts"],
-      "@experiences/*": ["apps/frontend/src/app/experiences/*"],
-      "@icons/*": ["apps/frontend/src/app/uxcommon/components/icons/*"],
-      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"]
+      "@common": [
+        "common/src/index.ts"
+      ],
+      "@experiences/*": [
+        "apps/frontend/src/app/experiences/*"
+      ],
+      "@icons/*": [
+        "apps/frontend/src/app/uxcommon/components/icons/*"
+      ],
+      "@uxcommon/*": [
+        "apps/frontend/src/app/uxcommon/*"
+      ],
+      "common/*": [
+        "common/*"
+      ]
     }
   },
-  "exclude": ["node_modules", "tmp"]
+  "exclude": [
+    "node_modules",
+    "tmp"
+  ]
 }
