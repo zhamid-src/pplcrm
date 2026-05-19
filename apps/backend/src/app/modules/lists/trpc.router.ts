@@ -1,7 +1,7 @@
 /**
  * tRPC router for managing list records and their members.
  */
-import { AddListObj, UpdateListObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
+import { AddListObj, UpdateListObj, exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
 
 import { z } from 'zod';
 
@@ -16,13 +16,15 @@ function count() {
   return authProcedure.query(({ ctx }) => lists.getCount(ctx.auth.tenant_id));
 }
 
+
+
 function deleteList() {
-  return authProcedure.input(z.string()).mutation(({ input, ctx }) => lists.delete(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.delete(ctx.auth.tenant_id, input));
 }
 
 function deleteLists() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => lists.deleteMany(ctx.auth.tenant_id, input));
 }
 
@@ -38,21 +40,21 @@ function getAllWithCounts() {
 
 function getById() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => lists.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
 function getMembersHouseholds() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input));
 }
 
 function getMembersPersons() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input));
 }
 
 function update() {
   return authProcedure
-    .input(z.object({ id: z.string(), data: UpdateListObj }))
+    .input(z.object({ id: idSchema, data: UpdateListObj }))
     .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth));
 }
 

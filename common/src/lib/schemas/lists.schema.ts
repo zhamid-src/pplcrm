@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { getAllOptions } from './core.schema';
+import { getAllOptions, nameSchema, optionalNameSchema, descriptionSchema, idSchema } from './core.schema';
 
 export const AddListObj = z.object({
-  name: z.string(),
-  description: z.string().nullable().optional(),
+  name: nameSchema('List name', 100),
+  description: descriptionSchema(1000),
   object: z.enum(['people', 'households']),
   is_dynamic: z.boolean().optional(),
   definition: z.lazy(() => getAllOptions).nullable().optional(),
-  member_ids: z.array(z.string()).optional(),
+  member_ids: z.array(idSchema).optional(),
 });
 
 export const ListsObj = z.object({
@@ -20,8 +20,8 @@ export const ListsObj = z.object({
 });
 
 export const UpdateListObj = z.object({
-  name: z.string().optional(),
-  description: z.string().nullable().optional(),
+  name: optionalNameSchema('List name', 100),
+  description: descriptionSchema(1000),
   object: z.enum(['people', 'households']).optional(),
   is_dynamic: z.boolean().optional(),
   definition: z.lazy(() => getAllOptions).nullable().optional(),

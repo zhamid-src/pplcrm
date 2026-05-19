@@ -2,7 +2,7 @@
  * tRPC router offering CRUD operations, tag management, and queries
  * for person records associated with a tenant.
  */
-import { UpdatePersonsObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
+import { UpdatePersonsObj, exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { PersonsController } from './controller';
@@ -10,8 +10,6 @@ import { PersonsService } from './services/persons.service';
 
 const persons = new PersonsController();
 const personsService = new PersonsService();
-
-const idSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
 
 function add() {
   return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));

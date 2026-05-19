@@ -54,3 +54,27 @@ export const exportCsvResponse = z.object({
   columns: z.array(z.string()),
   rowCount: z.number(),
 });
+
+export const idSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const optionalNameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} cannot be empty`).max(maxLen, `${fieldName} is too long`).optional();
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const optionalIdSchema = z.union([idSchema, z.literal('')]).nullish();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const optionalEmailSchema = z.union([emailSchema, z.literal('')]).nullish();
+
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullish();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullish();
+
+export const jsonSchema = z.string().trim().max(50000, 'JSON is too long').nullish();

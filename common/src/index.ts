@@ -71,6 +71,16 @@ export {
   exportCsvInput,
   exportCsvResponse,
   ImportListItemObj,
+  idSchema,
+  nameSchema,
+  optionalNameSchema,
+  descriptionSchema,
+  optionalIdSchema,
+  emailSchema,
+  optionalEmailSchema,
+  phoneSchema,
+  notesSchema,
+  jsonSchema,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

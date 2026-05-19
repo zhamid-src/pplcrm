@@ -2,7 +2,7 @@
  * tRPC router providing CRUD operations and tag management for
  * household records within a tenant.
  */
-import { UpdateHouseholdsObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
+import { UpdateHouseholdsObj, exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
 
 import { z } from 'zod';
 
@@ -25,7 +25,7 @@ function add() {
  */
 function attachTag() {
   return authProcedure
-    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
     .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth));
 }
 
@@ -42,7 +42,7 @@ function count() {
  */
 function deleteMany() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => households.deleteMany(ctx.auth.tenant_id, input));
 }
 
@@ -50,7 +50,7 @@ function deleteMany() {
  * Delete a single household by ID.
  */
 function deleteOne() {
-  return authProcedure.input(z.string()).mutation(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input));
 }
 
 /**
@@ -58,7 +58,7 @@ function deleteOne() {
  */
 function detachTag() {
   return authProcedure
-    .input(z.object({ id: z.string(), tag_name: z.string() }))
+    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
     .mutation(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name));
 }
 
@@ -83,7 +83,7 @@ function getAllWithPeopleCount() {
  */
 function getPeopleCount() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth));
 }
 
@@ -92,7 +92,7 @@ function getPeopleCount() {
  */
 function getById() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => households.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
@@ -107,7 +107,7 @@ function getDistinctTags() {
  * Get all tags associated with a specific household.
  */
 function getTags() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => households.getTags(input, ctx.auth));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => households.getTags(input, ctx.auth));
 }
 
 function exportCsv() {
@@ -123,7 +123,7 @@ function exportCsv() {
  * Update a household's information.
  */
 function update() {
-  return authProcedure.input(z.object({ id: z.string(), data: UpdateHouseholdsObj })).mutation(({ input, ctx }) =>
+  return authProcedure.input(z.object({ id: idSchema, data: UpdateHouseholdsObj })).mutation(({ input, ctx }) =>
     households.update({
       tenant_id: ctx.auth.tenant_id,
       id: input.id,

@@ -1,7 +1,7 @@
 /**
  * tRPC router exposing endpoints for managing user profile data.
  */
-import { z } from 'zod';
+import { idSchema } from '@common';
 
 import { authProcedure, router } from '../../../trpc';
 import { UserProfilesController } from './controller';
@@ -11,7 +11,7 @@ import { UserProfilesController } from './controller';
  */
 function getById() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => user.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
