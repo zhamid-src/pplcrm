@@ -29,15 +29,15 @@ export const UpdateHouseholdsObj = z.object({
 });
 
 export const UpdatePersonsObj = z.object({
-  campaign_id: z.string().optional(),
-  household_id: z.string().optional(),
-  email: z.string().optional(),
-  email2: z.string().optional(),
-  first_name: z.string().optional(),
-  middle_names: z.string().optional(),
-  last_name: z.string().optional(),
-  home_phone: z.string().optional(),
-  mobile: z.string().optional(),
-  notes: z.string().optional(),
-  json: z.string().optional(),
+  campaign_id: z.union([z.string().regex(/^\d+$/), z.literal('')]).nullish(),
+  household_id: z.union([z.string().regex(/^\d+$/), z.literal('')]).nullish(),
+  email: z.union([z.string().trim().email('Invalid email address'), z.literal('')]).nullish(),
+  email2: z.union([z.string().trim().email('Invalid email address'), z.literal('')]).nullish(),
+  first_name: z.string().trim().max(100, 'First name is too long').nullish(),
+  middle_names: z.string().trim().max(100, 'Middle names are too long').nullish(),
+  last_name: z.string().trim().max(100, 'Last name is too long').nullish(),
+  home_phone: z.string().trim().max(30, 'Home phone is too long').nullish(),
+  mobile: z.string().trim().max(30, 'Mobile phone is too long').nullish(),
+  notes: z.string().trim().max(10000, 'Notes are too long').nullish(),
+  json: z.string().trim().max(50000, 'JSON is too long').nullish(),
 });
