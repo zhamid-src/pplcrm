@@ -12,13 +12,13 @@ import { AuthUsersService } from '../services/authusers-service';
   template: `
     <section class="max-w-xl space-y-4 m-4">
       <header>
-        <h1 class="text-2xl font-semibold">Invite User</h1>
-        <p class="text-sm text-muted">Send an invitation to add a new teammate to this tenant.</p>
+        <h1 i18n class="text-2xl font-semibold">Invite User</h1>
+        <p i18n class="text-sm text-muted">Send an invitation to add a new teammate to this tenant.</p>
       </header>
 
       <form class="space-y-4" [formGroup]="form" (ngSubmit)="submit()">
         <div class="space-y-1">
-          <label class="block text-sm font-medium" for="email">Email</label>
+          <label i18n class="block text-sm font-medium" for="email">Email</label>
           <input
             id="email"
             type="email"
@@ -27,13 +27,13 @@ import { AuthUsersService } from '../services/authusers-service';
             autocomplete="email"
           />
           @if (isInvalid('email')) {
-            <p class="text-sm text-danger">Please enter a valid email address.</p>
+            <p i18n class="text-sm text-danger">Please enter a valid email address.</p>
           }
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-1">
-            <label class="block text-sm font-medium" for="first_name">First name</label>
+            <label i18n class="block text-sm font-medium" for="first_name">First name</label>
             <input
               id="first_name"
               type="text"
@@ -42,12 +42,12 @@ import { AuthUsersService } from '../services/authusers-service';
               autocomplete="given-name"
             />
             @if (isInvalid('first_name')) {
-              <p class="text-sm text-danger">First name is required.</p>
+              <p i18n class="text-sm text-danger">First name is required.</p>
             }
           </div>
 
           <div class="space-y-1">
-            <label class="block text-sm font-medium" for="last_name">Last name</label>
+            <label i18n class="block text-sm font-medium" for="last_name">Last name</label>
             <input
               id="last_name"
               type="text"
@@ -59,12 +59,13 @@ import { AuthUsersService } from '../services/authusers-service';
         </div>
 
         <div class="space-y-1">
-          <label class="block text-sm font-medium" for="role">Role</label>
+          <label i18n class="block text-sm font-medium" for="role">Role</label>
           <input
             id="role"
             type="text"
             class="w-full rounded border border-border px-3 py-2"
             formControlName="role"
+            i18n-placeholder
             placeholder="e.g. admin"
           />
         </div>
@@ -81,7 +82,7 @@ import { AuthUsersService } from '../services/authusers-service';
           >
             {{ submitting() ? 'Sending…' : 'Send Invite' }}
           </button>
-          <button type="button" class=" btn btn-error rounded border border-border px-4 py-2" (click)="cancel()">
+          <button i18n type="button" class=" btn btn-error rounded border border-border px-4 py-2" (click)="cancel()">
             Cancel
           </button>
         </div>

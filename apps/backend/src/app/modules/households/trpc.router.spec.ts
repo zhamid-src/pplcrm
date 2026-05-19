@@ -29,7 +29,7 @@ describe('HouseholdsRouter', () => {
     const spy = vi.spyOn(HouseholdsController.prototype, 'getAll').mockResolvedValue(mockHouseholds as any);
     
     const caller = HouseholdsRouter.createCaller({ auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any } as any);
-    const result = await caller.getAll({});
+    const result = await caller.getAll();
     
     expect(spy).toHaveBeenCalled();
     expect(result).toEqual(mockHouseholds);

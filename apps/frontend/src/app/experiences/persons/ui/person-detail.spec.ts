@@ -8,7 +8,6 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { signal } from '@angular/core';
 
 describe('PersonDetail', () => {
   let component: PersonDetail;
@@ -27,20 +26,20 @@ describe('PersonDetail', () => {
     mockAlertSvc = {
       showError: vi.fn(),
       showSuccess: vi.fn(),
-      showInfo: vi.fn()
+      showInfo: vi.fn(),
     };
 
     mockAuthSvc = {
-      getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'Admin' }])
+      getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'Admin' }]),
     };
 
     mockConfirmDlg = {
-      confirm: vi.fn().mockResolvedValue(true)
+      confirm: vi.fn().mockResolvedValue(true),
     };
 
     mockHouseholdsSvc = {
       getById: vi.fn().mockResolvedValue({ street_num: '123', street1: 'Main St', city: 'City', state: 'NY' }),
-      getAll: vi.fn().mockResolvedValue({ rows: [] })
+      getAll: vi.fn().mockResolvedValue({ rows: [] }),
     };
 
     mockPersonsSvc = {
@@ -51,19 +50,19 @@ describe('PersonDetail', () => {
       triggerRefresh: vi.fn(),
       attachTag: vi.fn().mockResolvedValue(undefined),
       detachTag: vi.fn().mockResolvedValue(undefined),
-      removeHousehold: vi.fn().mockResolvedValue(undefined)
+      removeHousehold: vi.fn().mockResolvedValue(undefined),
     };
 
     mockTeamsSvc = {
-      getTeamsForVolunteer: vi.fn().mockResolvedValue([{ id: 't1', name: 'Security', is_captain: false }])
+      getTeamsForVolunteer: vi.fn().mockResolvedValue([{ id: 't1', name: 'Security', is_captain: false }]),
     };
 
     mockRoute = {
       snapshot: {
         paramMap: {
-          get: vi.fn().mockReturnValue('p1')
-        }
-      }
+          get: vi.fn().mockReturnValue('p1'),
+        },
+      },
     };
 
     await TestBed.configureTestingModule({
@@ -76,8 +75,8 @@ describe('PersonDetail', () => {
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: TeamsService, useValue: mockTeamsSvc },
-        { provide: ActivatedRoute, useValue: mockRoute }
-      ]
+        { provide: ActivatedRoute, useValue: mockRoute },
+      ],
     }).compileComponents();
 
     mockRouter = TestBed.inject(Router);
@@ -91,8 +90,8 @@ describe('PersonDetail', () => {
   it('should create and load data on init in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     component.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
-    
+    await new Promise((r) => setTimeout(r, 10));
+
     expect(component['id']).toBe('p1');
     expect(mockPersonsSvc.getById).toHaveBeenCalledWith('p1');
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1');
@@ -104,8 +103,8 @@ describe('PersonDetail', () => {
   it('should format name properly', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     component.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
-    
+    await new Promise((r) => setTimeout(r, 10));
+
     // Test computed value
     expect(component['formName']()).toBe('John A Doe');
     expect(component['formInitials']()).toBe('JA');
@@ -114,7 +113,7 @@ describe('PersonDetail', () => {
   it('should save updates when in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     component.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     component['form'].patchValue({ first_name: 'Johnny' });
     await component.save();
@@ -130,9 +129,9 @@ describe('PersonDetail', () => {
     const fixtureNew = TestBed.createComponent(PersonDetail);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
-    
+
     componentNew.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     componentNew['form'].patchValue({ first_name: 'Jane', last_name: 'Smith' });
     await componentNew.save();
@@ -146,10 +145,10 @@ describe('PersonDetail', () => {
   it('should remove household address with confirmation', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     component.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
-    
+    await new Promise((r) => setTimeout(r, 10));
+
     await component['removeAddress']();
-    
+
     expect(mockConfirmDlg.confirm).toHaveBeenCalled();
     expect(mockPersonsSvc.removeHousehold).toHaveBeenCalledWith('p1');
     expect(component['addressString']()).toBeNull();
@@ -158,10 +157,10 @@ describe('PersonDetail', () => {
   it('should prompt before detaching volunteer tag if person is in teams', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     component.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
-    
+    await new Promise((r) => setTimeout(r, 10));
+
     await component['tagRemoved']('volunteer');
-    
+
     expect(mockTeamsSvc.getTeamsForVolunteer).toHaveBeenCalledWith('p1');
     expect(mockConfirmDlg.confirm).toHaveBeenCalled();
     expect(mockPersonsSvc.detachTag).toHaveBeenCalledWith('p1', 'volunteer');
@@ -172,13 +171,15 @@ describe('PersonDetail', () => {
     const fixtureNew = TestBed.createComponent(PersonDetail);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
-    
+
     componentNew.ngOnInit();
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
     await componentNew['assignToHousehold']('h1');
-    
+
     expect(componentNew['pendingHouseholdId']()).toBe('h1');
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Household selected — it will be saved when you add the person');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(
+      'Household selected — it will be saved when you add the person',
+    );
     expect(mockPersonsSvc.update).not.toHaveBeenCalled();
   });
 });
