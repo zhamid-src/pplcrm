@@ -1,6 +1,5 @@
-import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';
+import '@angular/compiler';
+import '@analogjs/vite-plugin-angular/setup-vitest';
 
-setupZoneTestEnv({
-  errorOnUnknownElements: true,
-  errorOnUnknownProperties: true,
-});
+import { vi } from 'vitest';
+(globalThis as any).jest = vi;

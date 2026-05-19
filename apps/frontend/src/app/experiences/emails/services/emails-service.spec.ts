@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 /**
  * @fileoverview Unit tests for EmailsService.
  * Tests the email API service functionality including CRUD operations and email management.
@@ -37,29 +38,29 @@ describe('EmailsService', () => {
   beforeEach(() => {
     mockApi = {
       emails: {
-        getEmails: { query: jest.fn() },
-        getFolders: { query: jest.fn() },
-        getFoldersWithCounts: { query: jest.fn() },
-        getById: { query: jest.fn() },
-        add: { mutate: jest.fn() },
-        update: { mutate: jest.fn() },
-        delete: { mutate: jest.fn() },
-        setFavourite: { mutate: jest.fn() },
-        setStatus: { mutate: jest.fn() },
-        assign: { mutate: jest.fn() },
-        getEmailBody: { query: jest.fn() },
-        getEmailHeader: { query: jest.fn() },
-        getEmailWithHeaders: { query: jest.fn() },
-        deleteMany: { mutate: jest.fn() },
-        addComment: { mutate: jest.fn() },
-        deleteComment: { mutate: jest.fn() },
-        getDraft: { query: jest.fn() },
-        deleteDraft: { mutate: jest.fn() },
-        getAllAttachments: { query: jest.fn() },
-        getAttachmentsByEmailId: { query: jest.fn() },
-        hasAttachment: { query: jest.fn() },
-        hasAttachmentByEmailIds: { query: jest.fn() },
-        restoreFromTrash: { mutate: jest.fn() },
+        getEmails: { query: vi.fn() },
+        getFolders: { query: vi.fn() },
+        getFoldersWithCounts: { query: vi.fn() },
+        getById: { query: vi.fn() },
+        add: { mutate: vi.fn() },
+        update: { mutate: vi.fn() },
+        delete: { mutate: vi.fn() },
+        setFavourite: { mutate: vi.fn() },
+        setStatus: { mutate: vi.fn() },
+        assign: { mutate: vi.fn() },
+        getEmailBody: { query: vi.fn() },
+        getEmailHeader: { query: vi.fn() },
+        getEmailWithHeaders: { query: vi.fn() },
+        deleteMany: { mutate: vi.fn() },
+        addComment: { mutate: vi.fn() },
+        deleteComment: { mutate: vi.fn() },
+        getDraft: { query: vi.fn() },
+        deleteDraft: { mutate: vi.fn() },
+        getAllAttachments: { query: vi.fn() },
+        getAttachmentsByEmailId: { query: vi.fn() },
+        hasAttachment: { query: vi.fn() },
+        hasAttachmentByEmailIds: { query: vi.fn() },
+        restoreFromTrash: { mutate: vi.fn() },
       },
     };
 
