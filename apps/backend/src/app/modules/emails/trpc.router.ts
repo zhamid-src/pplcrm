@@ -2,6 +2,7 @@
  * tRPC router for email management including folders, individual emails,
  * comments, and assignment of emails to users.
  */
+import { idSchema } from '@common';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -14,7 +15,7 @@ import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
  */
 function addComment() {
   return authProcedure
-    .input(z.object({ id: z.string(), author_id: z.string(), comment: z.string() }))
+    .input(z.object({ id: idSchema, author_id: idSchema, comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long') }))
     .mutation(
       wrapTrpc(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment)),
     );
@@ -26,55 +27,55 @@ function addComment() {
  */
 function assign() {
   return authProcedure
-    .input(z.object({ id: z.string(), user_id: z.string().nullable() }))
+    .input(z.object({ id: idSchema, user_id: idSchema.nullable() }))
     .mutation(wrapTrpc(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id)));
 }
 
 function deleteComment() {
   return authProcedure
-    .input(z.object({ email_id: z.string(), comment_id: z.string() }))
+    .input(z.object({ email_id: idSchema, comment_id: idSchema }))
     .mutation(wrapTrpc(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id)));
 }
 
 function deleteDraft() {
   return authProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: idSchema }))
     .mutation(wrapTrpc(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id)));
 }
 
 function deleteEmail() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .mutation(wrapTrpc(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input])));
 }
 
 function deleteEmails() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(wrapTrpc(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, input)));
 }
 
 function getAllAttachments() {
   return authProcedure
-    .input(z.object({ email_id: z.string(), options: z.object({ includeInline: z.boolean() }).optional() }))
+    .input(z.object({ email_id: idSchema, options: z.object({ includeInline: z.boolean() }).optional() }))
     .query(wrapTrpc(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options)));
 }
 
 function getAttachmentsByEmailId() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input)));
 }
 
 function getDraft() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input)));
 }
 
 function getEmailBody() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input)));
 }
 
@@ -84,7 +85,7 @@ function getEmailBody() {
  */
 function getEmailHeader() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input)));
 }
 
@@ -93,7 +94,7 @@ function getEmailHeader() {
  * @returns Email body with headers and recipient information.
  */
 function getEmailWithHeaders() {
-  return authProcedure.input(z.string()).query(
+  return authProcedure.input(idSchema).query(
     wrapTrpc(async ({ input, ctx }) => {
       const tenantId = ctx.auth.tenant_id;
 
@@ -113,7 +114,7 @@ function getEmailWithHeaders() {
  */
 function getEmails() {
   return authProcedure
-    .input(z.object({ folderId: z.string() }))
+    .input(z.object({ folderId: idSchema }))
     .query(wrapTrpc(({ input, ctx }) => emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId)));
 }
 
@@ -129,19 +130,19 @@ function getFoldersWithCounts() {
 
 function hasAttachment() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input)));
 }
 
 function hasAttachmentByEmailIds() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema))
     .query(wrapTrpc(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input)));
 }
 
 function restoreFromTrash() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema))
     .mutation(wrapTrpc(({ input, ctx }) => emails.restoreFromTrash(ctx.auth.tenant_id, input)));
 }
 
@@ -149,12 +150,12 @@ function saveDraft() {
   return authProcedure
     .input(
       z.object({
-        id: z.string().optional(),
-        to: z.array(z.string()),
-        cc: z.array(z.string()).optional(),
-        bcc: z.array(z.string()).optional(),
-        subject: z.string().optional(),
-        html: z.string().optional(),
+        id: idSchema.optional(),
+        to: z.array(z.string().trim().email('Invalid recipient email address')).optional().default([]),
+        cc: z.array(z.string().trim().email('Invalid CC email address')).optional(),
+        bcc: z.array(z.string().trim().email('Invalid BCC email address')).optional(),
+        subject: z.string().trim().max(500, 'Subject is too long').optional(),
+        html: z.string().max(100000, 'HTML body is too long').optional(),
       }),
     )
     .mutation(
@@ -173,13 +174,13 @@ function saveDraft() {
 
 function setFavourite() {
   return authProcedure
-    .input(z.object({ id: z.string(), favourite: z.boolean() }))
+    .input(z.object({ id: idSchema, favourite: z.boolean() }))
     .mutation(wrapTrpc(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite)));
 }
 
 function setStatus() {
   return authProcedure
-    .input(z.object({ id: z.string(), status: z.enum(['open', 'closed']) }))
+    .input(z.object({ id: idSchema, status: z.enum(['open', 'closed']) }))
     .mutation(wrapTrpc(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status)));
 }
 

@@ -1,6 +1,4 @@
-import { exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
-
-import { z } from 'zod';
+import { exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
 
 import { authProcedure, router } from '../../../trpc';
 import { NewslettersController } from './controller';
@@ -13,7 +11,7 @@ export const NewslettersRouter = router({
     .query(({ input, ctx }) => newsletters.getAllWithCounts(ctx.auth.tenant_id, input)),
   count: authProcedure.query(({ ctx }) => newsletters.getCount(ctx.auth.tenant_id)),
   getById: authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => newsletters.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
   exportCsv: authProcedure
     .input(exportCsvInput)

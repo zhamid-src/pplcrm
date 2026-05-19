@@ -2,7 +2,7 @@
  * tRPC router handling tag creation, modification, deletion, and search
  * operations for tenant-specific tags.
  */
-import { AddTagObj, UpdateTagObj, exportCsvInput, exportCsvResponse, getAllOptions } from '@common';
+import { AddTagObj, UpdateTagObj, exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
 
 import { z } from 'zod';
 
@@ -28,7 +28,7 @@ function count() {
  * Delete a single tag by its ID.
  */
 function deleteTag() {
-  return authProcedure.input(z.string()).mutation(({ input, ctx }) => tags.delete(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => tags.delete(ctx.auth.tenant_id, input));
 }
 
 /**
@@ -36,7 +36,7 @@ function deleteTag() {
  */
 function deleteTags() {
   return authProcedure
-    .input(z.array(z.string()))
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => tags.deleteMany(ctx.auth.tenant_id, input));
 }
 
@@ -44,7 +44,7 @@ function deleteTags() {
  * Find tags by partial or full name (autocomplete).
  */
 function findByName() {
-  return authProcedure.input(z.string()).query(({ input, ctx }) => tags.findByName(input, ctx.auth));
+  return authProcedure.input(z.string().trim().max(100, 'Search term too long')).query(({ input, ctx }) => tags.findByName(input, ctx.auth));
 }
 
 /**
@@ -66,7 +66,7 @@ function getAllWithCounts() {
  */
 function getById() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(({ input, ctx }) => tags.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
@@ -75,7 +75,7 @@ function getById() {
  */
 function update() {
   return authProcedure
-    .input(z.object({ id: z.string(), data: UpdateTagObj }))
+    .input(z.object({ id: idSchema, data: UpdateTagObj }))
     .mutation(({ input, ctx }) => tags.updateTag(input.id, input.data, ctx.auth));
 }
 

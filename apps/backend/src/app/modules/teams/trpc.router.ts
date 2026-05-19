@@ -1,4 +1,4 @@
-import { AddTeamObj, UpdateTeamObj, getAllOptions } from '@common';
+import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '@common';
 
 import { z } from 'zod';
 
@@ -16,7 +16,7 @@ function getAll() {
 
 function getById() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ ctx, input }) => controller.getById(ctx.auth, input)));
 }
 
@@ -28,19 +28,19 @@ function add() {
 
 function update() {
   return authProcedure
-    .input(z.object({ id: z.string(), data: UpdateTeamObj }))
+    .input(z.object({ id: idSchema, data: UpdateTeamObj }))
     .mutation(wrapTrpc(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data)));
 }
 
 function remove() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .mutation(wrapTrpc(({ ctx, input }) => controller.deleteTeam(ctx.auth, input)));
 }
 
 function getForVolunteer() {
   return authProcedure
-    .input(z.string())
+    .input(idSchema)
     .query(wrapTrpc(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input)));
 }
 

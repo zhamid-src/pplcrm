@@ -2,7 +2,7 @@
  * tRPC router defining authentication-related procedures such as
  * sign-up, sign-in, token renewal, and password reset flows.
  */
-import { InviteAuthUserObj, UpdateAuthUserObj, getAllOptions, signInInputObj, signUpInputObj } from '@common';
+import { InviteAuthUserObj, UpdateAuthUserObj, getAllOptions, signInInputObj, signUpInputObj, idSchema } from '@common';
 
 import z from 'zod';
 
@@ -73,7 +73,7 @@ function resetPassword() {
  * Retrieve a specific auth user by id.
  */
 function getById() {
-  return authProcedure.input(z.string()).query(wrapTrpc(({ input, ctx }) => controller.getUserById(ctx.auth, input)));
+  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => controller.getUserById(ctx.auth, input)));
 }
 
 /**
@@ -84,7 +84,7 @@ function getById() {
  */
 function sendPasswordResetEmail() {
   return publicProcedure
-    .input(z.object({ email: z.string() }))
+    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
     .mutation(wrapTrpc(({ input }) => controller.sendPasswordResetEmail(input.email)));
 }
 
@@ -121,7 +121,7 @@ function signOut() {
  */
 function update() {
   return authProcedure
-    .input(z.object({ id: z.string(), data: UpdateAuthUserObj }))
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
     .mutation(wrapTrpc(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data)));
 }
 
