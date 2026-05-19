@@ -1,12 +1,15 @@
 import { z } from 'zod';
-import { getAllOptions, nameSchema, optionalNameSchema, descriptionSchema, idSchema } from './core.schema';
+import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
 
 export const AddListObj = z.object({
   name: nameSchema('List name', 100),
   description: descriptionSchema(1000),
   object: z.enum(['people', 'households']),
   is_dynamic: z.boolean().optional(),
-  definition: z.lazy(() => getAllOptions).nullable().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
   member_ids: z.array(idSchema).optional(),
 });
 
@@ -16,19 +19,25 @@ export const ListsObj = z.object({
   description: z.string().nullable().optional(),
   object: z.enum(['people', 'households']),
   is_dynamic: z.boolean().optional(),
-  definition: z.lazy(() => getAllOptions).nullable().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
 });
 
 export const UpdateListObj = z.object({
-  name: optionalNameSchema('List name', 100),
-  description: descriptionSchema(1000),
+  name: nameSchema('List name', 100).optional(),
+  description: descriptionSchema(1000).optional(),
   object: z.enum(['people', 'households']).optional(),
   is_dynamic: z.boolean().optional(),
-  definition: z.lazy(() => getAllOptions).nullable().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
 });
 
 export const ImportListItemObj = z.object({
-  id: z.string(),
+  id: idSchema,
   fileName: z.string(),
   source: z.string(),
   tagName: z.string().nullable(),

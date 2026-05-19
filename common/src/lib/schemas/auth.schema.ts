@@ -1,16 +1,17 @@
 import { z } from 'zod';
+import { emailSchema, nameSchema } from './core.schema';
 
 export const InviteAuthUserObj = z.object({
-  email: z.string().max(320).email(),
-  first_name: z.string().max(100),
-  last_name: z.string().max(100).nullable().optional(),
+  email: emailSchema,
+  first_name: nameSchema('First name'),
+  last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
 });
 
 export const UpdateAuthUserObj = z.object({
-  email: z.string().max(320).email().optional(),
-  first_name: z.string().max(100).optional(),
-  last_name: z.string().max(100).nullable().optional(),
+  email: emailSchema.optional(),
+  first_name: nameSchema('First name').optional(),
+  last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
   verified: z.boolean().optional(),
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nameSchema, optionalNameSchema, optionalIdSchema } from './core.schema';
+import { nameSchema, notesSchema, idSchema } from './core.schema';
 
 export const AddTaskObj = z.object({
   name: nameSchema('Task name', 200),
@@ -9,7 +9,7 @@ export const AddTaskObj = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: optionalIdSchema,
+  assigned_to: idSchema.optional(),
 });
 
 export const TasksObj = z.object({
@@ -25,12 +25,12 @@ export const TasksObj = z.object({
 });
 
 export const UpdateTaskObj = z.object({
-  name: optionalNameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
+  name: nameSchema('Task name', 200).optional(),
+  details: notesSchema,
   due_at: z.coerce.date().optional(),
   status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: optionalIdSchema,
+  assigned_to: idSchema.optional(),
 });

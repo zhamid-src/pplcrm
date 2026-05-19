@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nameSchema, optionalNameSchema, descriptionSchema } from './core.schema';
+import { nameSchema, descriptionSchema } from './core.schema';
 
 export const AddTagObj = z.object({
   name: nameSchema('Tag name', 50),
@@ -13,8 +13,8 @@ export const AddTagObj = z.object({
 });
 
 export const UpdateTagObj = z.object({
-  name: optionalNameSchema('Tag name', 50),
-  description: descriptionSchema(500),
+  name: nameSchema('Tag name', 50).optional(),
+  description: descriptionSchema(500).optional(),
   color: z
     .string()
     .trim()
