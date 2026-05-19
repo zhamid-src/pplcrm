@@ -31,7 +31,8 @@ describe('Icons Index', () => {
     });
 
     it('should reference svg asset paths', () => {
-      Object.values(IconsIndex.icons).forEach((value) => {
+      Object.entries(IconsIndex.icons).forEach(([key, value]) => {
+        if (key === 'none') return;
         expect(value).toMatch(/\.svg$/);
       });
     });

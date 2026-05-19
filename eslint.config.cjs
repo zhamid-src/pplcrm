@@ -32,6 +32,8 @@ module.exports = [
       'apps/frontend/postcss.config.js',
       'jest.preset.cjs',
       '**/index.html',
+      '**/vite.config.*.timestamp*',
+      '**/vitest.config.*.timestamp*',
     ],
   },
 
