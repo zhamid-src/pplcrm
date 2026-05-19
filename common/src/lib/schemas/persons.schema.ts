@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { phoneSchema, notesSchema, jsonSchema, idSchema, emailSchema } from './core.schema';
+import { phoneSchema, notesSchema, jsonSchema, idSchema, nullableEmailSchema } from './core.schema';
 
 export const PersonsObj = z.object({
   id: z.string(),
@@ -32,8 +32,8 @@ export const UpdateHouseholdsObj = z.object({
 export const UpdatePersonsObj = z.object({
   campaign_id: idSchema.optional(),
   household_id: idSchema.optional(),
-  email: emailSchema.optional(),
-  email2: emailSchema.optional(),
+  email: nullableEmailSchema,
+  email2: nullableEmailSchema,
   first_name: z.string().trim().max(100, 'First name is too long').nullish(),
   middle_names: z.string().trim().max(100, 'Middle names are too long').nullish(),
   last_name: z.string().trim().max(100, 'Last name is too long').nullish(),

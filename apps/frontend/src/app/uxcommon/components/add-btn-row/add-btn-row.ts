@@ -1,8 +1,10 @@
-import { Component, OnInit, inject, input, output , ChangeDetectionStrategy} from '@angular/core';
+import { Component, OnInit, inject, input, output, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { merge } from 'rxjs';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -14,6 +16,8 @@ export class AddBtnRow implements OnInit {
   private readonly rootFormGroup = inject(FormGroupDirective);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly cdr = inject(ChangeDetectorRef);
+  private readonly destroyRef = inject(DestroyRef);
 
   private stay = false;
 
@@ -87,6 +91,11 @@ export class AddBtnRow implements OnInit {
    */
   public ngOnInit() {
     this.form = this.rootFormGroup.control;
+    merge(this.form.valueChanges, this.form.statusChanges)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.cdr.markForCheck();
+      });
   }
 
   /**
