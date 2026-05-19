@@ -8,7 +8,7 @@ import {
   TypeColumn,
   TypeId,
   TypeTenantId,
-} from '../../../../../common/src/lib/kysely.models';
+} from 'common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
 import { UserActivityRepo } from './user-activity.repo';

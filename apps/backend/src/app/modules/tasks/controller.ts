@@ -1,6 +1,6 @@
 import type { AddTaskType, ExportCsvInputType, ExportCsvResponseType, UpdateTaskType, getAllOptionsType } from '@common';
 
-import type { IAuthKeyPayload } from '../../../../../../common/src/lib/auth';
+import type { IAuthKeyPayload } from 'common/src/lib/auth';
 import { BaseController } from '../../lib/base.controller';
 import { TasksRepo } from './repositories/tasks.repo';
 import type { OperationDataType } from 'common/src/lib/kysely.models';
