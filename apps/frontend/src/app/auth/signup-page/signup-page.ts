@@ -1,9 +1,6 @@
-/**
- * Component and form logic for user registration.
- */
 import { DecimalPipe } from '@angular/common';
-import { Component, inject , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { form, submit, required, email, minLength, FormField, FormRoot } from '@angular/forms/signals';
 import { RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
@@ -12,12 +9,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import {
-  emailControl,
-  passwordBreachNumber,
-  passwordControl,
-  passwordInBreach,
-} from 'apps/frontend/src/app/auth/auth-utils';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
 
 /**
  * Component responsible for user sign-up.
@@ -27,27 +19,37 @@ import {
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-signup',
-  imports: [DecimalPipe, ReactiveFormsModule, Icon, RouterModule, AuthLayoutComponent],
+  imports: [DecimalPipe, FormField, FormRoot, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
-  private readonly fb = inject(FormBuilder);
 
   /** Signal indicating whether form submission is in progress */
   private _loading = createLoadingGate();
 
-  /** Reactive form with user registration fields */
-  protected form = this.fb.group({
-    organization: ['', [Validators.required]],
-    email: emailControl(this.fb),
-    password: passwordControl(this.fb),
-    first_name: ['', [Validators.required]],
-    middle_names: [''],
-    last_name: [''],
-    terms: [''],
+  /** Model capturing registration details */
+  protected readonly signUpData = signal({
+    organization: '',
+    email: '',
+    password: '',
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    terms: '',
   });
+
+  /** Signal-based form with validation schema */
+  public readonly form = form(this.signUpData, (p) => {
+    required(p.organization);
+    required(p.email);
+    email(p.email);
+    required(p.password);
+    minLength(p.password, 8);
+    required(p.first_name);
+  });
+
   protected isLoading = this._loading.visible;
 
   /** Utilities for password breach checking */
@@ -56,34 +58,30 @@ export class SignUpPage {
 
   /**
    * Getter for the email form control.
-   * @returns The email AbstractControl
    */
   public get email() {
-    return this.form.get('email');
+    return this.form.email();
   }
 
   /**
    * Getter for the first name form control.
-   * @returns The first name AbstractControl
    */
   public get firstName() {
-    return this.form.get('first_name');
+    return this.form.first_name();
   }
 
   /**
    * Getter for the organization form control.
-   * @returns The organization AbstractControl
    */
   public get organization() {
-    return this.form.get('organization');
+    return this.form.organization();
   }
 
   /**
    * Getter for the password form control.
-   * @returns The password AbstractControl
    */
-  public get password(): FormControl {
-    return this.form.get('password') as FormControl;
+  public get password() {
+    return this.form.password();
   }
 
   /**
@@ -91,22 +89,29 @@ export class SignUpPage {
    * Displays alerts for error or success states.
    */
   public async join() {
-    if (this.form.invalid) return this.alertSvc.showError('Please enter all information before continuing.');
+    this.form().markAsTouched();
 
-    const end = this._loading.begin();
-
-    // TODO: better error message
-    return this.authService
-      .signUp(this.form.getRawValue() as signUpInputType)
-      .then((data) => {
-        const user = data as IAuthUser;
-        if (user) {
-          this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
-        } else {
-          this.alertSvc.showError('Unable to complete signup.');
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
+          const user = data as IAuthUser;
+          if (user) {
+            this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
+          } else {
+            this.alertSvc.showError('Unable to complete signup.');
+          }
+        } catch (err: any) {
+          this.alertSvc.showError(err.message);
+        } finally {
+          end();
         }
-      })
-      .catch((err) => this.alertSvc.showError(err.message))
-      .finally(() => end());
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please enter all information before continuing.');
+      },
+    });
   }
 }

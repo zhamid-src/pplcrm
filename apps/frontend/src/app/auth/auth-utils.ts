@@ -1,4 +1,4 @@
-import { AbstractControl, FormBuilder, NonNullableFormBuilder, Validators } from '@angular/forms';
+import { FormBuilder, NonNullableFormBuilder, Validators } from '@angular/forms';
 
 // Consolidated form control builders and password breach utilities
 export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;
@@ -13,8 +13,19 @@ export function emailControl(fb: AnyFormBuilder) {
 /**
  * Returns the number of times the provided control's value was found in data breaches.
  */
-export function passwordBreachNumber(control: AbstractControl | null | undefined) {
-  const errs = control?.errors as unknown as { pwnedPasswordOccurrence?: number } | undefined;
+export function passwordBreachNumber(control: any) {
+  let errs: any;
+  if (control && typeof control.errors === 'function') {
+    // It's a FieldState (Signal Forms)
+    const activeErrors = control.errors() as any[];
+    const breachErr = activeErrors.find(
+      (e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined,
+    );
+    errs = breachErr;
+  } else {
+    // It's an AbstractControl (Reactive Forms)
+    errs = control?.errors;
+  }
   return errs?.pwnedPasswordOccurrence ?? null;
 }
 
@@ -28,6 +39,6 @@ export function passwordControl(fb: AnyFormBuilder) {
 /**
  * Indicates whether the provided control's value appears in known data breaches.
  */
-export function passwordInBreach(control: AbstractControl | null | undefined) {
+export function passwordInBreach(control: any) {
   return !!passwordBreachNumber(control);
 }
