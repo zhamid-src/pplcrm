@@ -90,6 +90,15 @@ test.describe('Authentication', () => {
     });
 
     test('should redirect authenticated users away from sign-in', async ({ page }) => {
+      // Mock currentUser query response for tRPC using RegExp
+      await page.route(/\/auth\.currentUser/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ result: { data: { id: '123', email: 'test@example.com' } } }]),
+        });
+      });
+
       // Mock authentication state
       await page.addInitScript(() => {
         localStorage.setItem('auth_token', 'mock-token');
@@ -134,8 +143,8 @@ test.describe('Authentication', () => {
     test('should handle network errors during sign-in', async ({ page }) => {
       await page.goto('/signin');
 
-      // Mock network failure
-      await page.route('**/api/auth/**', (route) => route.abort());
+      // Mock network failure on the tRPC signIn mutation
+      await page.route(/\/auth\.signIn/, (route) => route.abort());
 
       // Fill form and submit
       await page.locator('input[type="email"], input[placeholder*="email" i]').fill('test@example.com');
@@ -149,12 +158,12 @@ test.describe('Authentication', () => {
     test('should handle invalid credentials', async ({ page }) => {
       await page.goto('/signin');
 
-      // Mock 401 response
-      await page.route('**/api/auth/**', (route) =>
+      // Mock 401 response on the tRPC signIn mutation
+      await page.route(/\/auth\.signIn/, (route) =>
         route.fulfill({
           status: 401,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'Invalid credentials' }),
+          body: JSON.stringify([{ error: { json: { message: 'Invalid credentials' } } }]),
         }),
       );
 
@@ -184,13 +193,24 @@ test.describe('Authentication', () => {
     test('should be keyboard navigable', async ({ page }) => {
       await page.goto('/signin');
 
-      // Tab through form elements
-      await page.keyboard.press('Tab');
-      await expect(page.locator('input[type="email"], input[placeholder*="email" i]')).toBeFocused();
+      // Focus email input first
+      const emailInput = page.locator('input[type="email"], input[placeholder*="email" i]');
+      await emailInput.focus();
+      await expect(emailInput).toBeFocused();
 
+      // Tab to password
       await page.keyboard.press('Tab');
       await expect(page.locator('input[type="password"], input[placeholder*="password" i]')).toBeFocused();
 
+      // Tab to remember_me checkbox
+      await page.keyboard.press('Tab');
+      await expect(page.locator('input[type="checkbox"]')).toBeFocused();
+
+      // Tab to forgot password link
+      await page.keyboard.press('Tab');
+      await expect(page.locator('a:has-text("Forgot your password?")')).toBeFocused();
+
+      // Tab to submit button
       await page.keyboard.press('Tab');
       await expect(page.locator('button[type="submit"], button:has-text("Sign in")')).toBeFocused();
     });

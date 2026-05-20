@@ -5,12 +5,12 @@
     <div class="space-y-3">
       <label class="input w-full validator">
         <pc-icon [size]="4" name="at-symbol" />
-        <input type="email" placeholder="Enter your email" [formField]="form.email" />
+        <input type="email" placeholder="Enter your email" [formField]="form.email" aria-label="Email" />
       </label>
 
       <label class="input w-full validator">
         <pc-icon [size]="4" name="lock-closed" />
-        <input type="password" placeholder="Enter your password" [formField]="form.password" />
+        <input type="password" placeholder="Enter your password" [formField]="form.password" aria-label="Password" />
       </label>
 
       <div class="flex items-center justify-between pt-2">
