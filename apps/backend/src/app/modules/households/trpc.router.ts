@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { HouseholdsController } from './controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
+import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
 
 /**
  * Add a new household to the system.
@@ -16,7 +17,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
 function add() {
   return authProcedure
     .input(UpdateHouseholdsObj)
-    .mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth));
+    .mutation(wrapTrpc(({ input, ctx }) => households.addHousehold(input, ctx.auth)));
 }
 
 /**
@@ -26,7 +27,7 @@ function add() {
 function attachTag() {
   return authProcedure
     .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth));
+    .mutation(wrapTrpc(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth)));
 }
 
 /**
@@ -34,7 +35,7 @@ function attachTag() {
  * @returns Count of household records.
  */
 function count() {
-  return authProcedure.query(({ ctx }) => households.getCount(ctx.auth.tenant_id));
+  return authProcedure.query(wrapTrpc(({ ctx }) => households.getCount(ctx.auth.tenant_id)));
 }
 
 /**
@@ -43,14 +44,14 @@ function count() {
 function deleteMany() {
   return authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => households.deleteMany(ctx.auth.tenant_id, input));
+    .mutation(wrapTrpc(({ input, ctx }) => households.deleteMany(ctx.auth.tenant_id, input)));
 }
 
 /**
  * Delete a single household by ID.
  */
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input)));
 }
 
 /**
@@ -59,14 +60,14 @@ function deleteOne() {
 function detachTag() {
   return authProcedure
     .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name));
+    .mutation(wrapTrpc(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name)));
 }
 
 /**
  * Get all households for the tenant.
  */
 function getAll() {
-  return authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id));
+  return authProcedure.query(wrapTrpc(({ ctx }) => households.getAll(ctx.auth.tenant_id)));
 }
 
 /**
@@ -75,7 +76,7 @@ function getAll() {
 function getAllWithPeopleCount() {
   return authProcedure
     .input(getAllOptions)
-    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input));
+    .query(wrapTrpc(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)));
 }
 
 /**
@@ -84,7 +85,7 @@ function getAllWithPeopleCount() {
 function getPeopleCount() {
   return authProcedure
     .input(idSchema)
-    .query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth));
+    .query(wrapTrpc(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)));
 }
 
 /**
@@ -93,43 +94,43 @@ function getPeopleCount() {
 function getById() {
   return authProcedure
     .input(idSchema)
-    .query(({ input, ctx }) => households.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+    .query(wrapTrpc(({ input, ctx }) => households.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })));
 }
 
 /**
  * Get all distinct tags used across all households for the tenant.
  */
 function getDistinctTags() {
-  return authProcedure.query(({ ctx }) => households.getDistinctTags(ctx.auth));
+  return authProcedure.query(wrapTrpc(({ ctx }) => households.getDistinctTags(ctx.auth)));
 }
 
 /**
  * Get all tags associated with a specific household.
  */
 function getTags() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => households.getTags(input, ctx.auth));
+  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => households.getTags(input, ctx.auth)));
 }
 
 function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) =>
+    .mutation(wrapTrpc(({ input, ctx }) =>
       households.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
-    );
+    ));
 }
 
 /**
  * Update a household's information.
  */
 function update() {
-  return authProcedure.input(z.object({ id: idSchema, data: UpdateHouseholdsObj })).mutation(({ input, ctx }) =>
+  return authProcedure.input(z.object({ id: idSchema, data: UpdateHouseholdsObj })).mutation(wrapTrpc(({ input, ctx }) =>
     households.update({
       tenant_id: ctx.auth.tenant_id,
       id: input.id,
       row: input.data as OperationDataType<'households', 'update'>,
     }),
-  );
+  ));
 }
 
 const households = new HouseholdsController();

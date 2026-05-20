@@ -2,8 +2,8 @@
  * @file Component for creating or editing households and managing their tags and members.
  */
 import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
-import { Component, OnInit, inject, input, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Component, OnInit, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
+import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute } from '@angular/router';
 import { UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
@@ -24,12 +24,11 @@ import { Households } from 'common/src/lib/kysely.models';
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-household-detail',
-  imports: [ReactiveFormsModule, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold, Icon],
+  imports: [FormField, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold, Icon],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly route = inject(ActivatedRoute);
 
@@ -45,31 +44,26 @@ export class HouseholdDetail implements OnInit {
   /** List of associated tag strings */
   protected tags: string[] = [];
 
-  /** Reactive form group to handle household data */
-  protected form = this.fb.group({
-    formatted_address: [''],
-    type: [''],
-    lat: [0],
-    lng: [0],
-    street_num: [''],
-    street1: [''],
-    street2: [''],
-    apt: [''],
-    city: [''],
-    state: [''],
-    country: [''],
-    zip: [''],
-    home_phone: [''],
-    notes: [''],
-    tags: [],
-    metadata: this.fb.group({
-      tenant_id: [''],
-      createdby_id: [''],
-      updatedby_id: [''],
-      created_at: [''],
-      updated_at: [''],
-    }),
+  /** Flat payload backing signal for the form */
+  protected readonly payload = signal({
+    formatted_address: '',
+    type: '',
+    lat: 0,
+    lng: 0,
+    street_num: '',
+    street1: '',
+    street2: '',
+    apt: '',
+    city: '',
+    state: '',
+    country: '',
+    zip: '',
+    home_phone: '',
+    notes: '',
   });
+
+  /** Signal-based form control group */
+  protected readonly form = form(this.payload);
 
   /** ID of the household being edited */
   protected id: string | null = null;
@@ -87,14 +81,7 @@ export class HouseholdDetail implements OnInit {
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
 
-  /**
-   * Initializes the component and captures the household ID in edit mode.
-   */
-  constructor() {
-    if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
-  }
+  constructor() {}
 
   /**
    * Handles address selection and parses Google Places data into form.
@@ -109,8 +96,8 @@ export class HouseholdDetail implements OnInit {
       }
       // Save the address by creating the household or updating
       const address = parseAddress(place);
-      this.form.patchValue(address);
-      this.form.markAsDirty();
+      this.payload.update((prev) => ({ ...prev, ...address }));
+      this.form.street1().markAsDirty();
       this.addressVerified = true;
     } finally {
       end();
@@ -121,6 +108,9 @@ export class HouseholdDetail implements OnInit {
    * Lifecycle hook that initializes the component.
    */
   public async ngOnInit() {
+    if (this.mode() === 'edit') {
+      this.id = this.route.snapshot.paramMap.get('id');
+    }
     await this.loadHousehold();
   }
 
@@ -149,7 +139,7 @@ export class HouseholdDetail implements OnInit {
    * Save the household, calling either update or add depending on mode
    */
   protected save(done?: () => void) {
-    const raw = this.form.getRawValue();
+    const raw = this.payload();
     // Explicitly pick only schema-valid fields — extra form fields
     // (formatted_address, type, lat, lng, tags, metadata) would cause Zod errors.
     const data: UpdateHouseholdsType = {
@@ -241,7 +231,23 @@ export class HouseholdDetail implements OnInit {
     const household = this.household();
     if (!household) return;
 
-    this.form.patchValue(household);
+    this.payload.set({
+      formatted_address: household.formatted_address ?? '',
+      type: household.type ?? '',
+      lat: household.lat ?? 0,
+      lng: household.lng ?? 0,
+      street_num: household.street_num ?? '',
+      street1: household.street1 ?? '',
+      street2: household.street2 ?? '',
+      apt: household.apt ?? '',
+      city: household.city ?? '',
+      state: household.state ?? '',
+      country: household.country ?? '',
+      zip: household.zip ?? '',
+      home_phone: household.home_phone ?? '',
+      notes: household.notes ?? '',
+    });
+    this.form().reset();
   }
 
   /**
@@ -258,7 +264,7 @@ export class HouseholdDetail implements OnInit {
       .update(this.id, data)
       .then(() => {
         this.alertSvc.showSuccess('Household updated successfully.');
-        this.form.markAsPristine();
+        this.form().reset();
         this.householdsSvc.triggerRefresh();
         if (done) {
           done();

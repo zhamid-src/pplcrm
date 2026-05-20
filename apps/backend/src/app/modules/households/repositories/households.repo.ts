@@ -220,7 +220,9 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
           .as('persons_count'),
       ])
-      .select(({ fn }) => [fn.agg<string[]>('array_agg', ['tags.name']).as('tags')])
+      .select(() => [
+        sql<string[]>`coalesce(array_remove(array_agg(tags.name), null), '{}')`.as('tags'),
+      ])
       .groupBy([
         'households.id',
         'households.country',

@@ -7,92 +7,93 @@ import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { PersonsController } from './controller';
 import { PersonsService } from './services/persons.service';
+import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
 
 const persons = new PersonsController();
 const personsService = new PersonsService();
 
 function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
+  return authProcedure.input(UpdatePersonsObj).mutation(wrapTrpc(({ input, ctx }) => personsService.addPerson(input, ctx.auth)));
 }
 
 function attachTag() {
   return authProcedure
     .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, ctx.auth));
+    .mutation(wrapTrpc(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, ctx.auth)));
 }
 
 function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+  return authProcedure.query(wrapTrpc(({ ctx }) => persons.getCount(ctx.auth.tenant_id)));
 }
 
 function deleteMany() {
   return authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth.tenant_id, input));
+    .mutation(wrapTrpc(({ input, ctx }) => persons.deleteMany(ctx.auth.tenant_id, input)));
 }
 
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input)));
 }
 
 function detachTag() {
   return authProcedure
     .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(({ input, ctx }) =>
+    .mutation(wrapTrpc(({ input, ctx }) =>
       personsService.detachTag({
         tenant_id: ctx.auth.tenant_id,
         person_id: input.id,
         name: input.tag_name,
       }),
-    );
+    ));
 }
 
 function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+  return authProcedure.input(getAllOptions).query(wrapTrpc(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input)));
 }
 
 function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+  return authProcedure.input(getAllOptions).query(wrapTrpc(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input)));
 }
 
 function getByHouseholdId() {
   return authProcedure
     .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+    .query(wrapTrpc(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options)));
 }
 
 function getById() {
   return authProcedure
     .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+    .query(wrapTrpc(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })));
 }
 
 // Distinct tags
 function getDistinctTags() {
-  return authProcedure.query(({ ctx }) => persons.getDistinctTags(ctx.auth));
+  return authProcedure.query(wrapTrpc(({ ctx }) => persons.getDistinctTags(ctx.auth)));
 }
 
 function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) =>
+    .mutation(wrapTrpc(({ input, ctx }) =>
       persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
-    );
+    ));
 }
 
 function getTags() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => persons.getTags(input, ctx.auth));
+  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => persons.getTags(input, ctx.auth)));
 }
 
 function update() {
-  return authProcedure.input(z.object({ id: idSchema, data: UpdatePersonsObj })).mutation(({ input, ctx }) =>
+  return authProcedure.input(z.object({ id: idSchema, data: UpdatePersonsObj })).mutation(wrapTrpc(({ input, ctx }) =>
     personsService.updatePerson(input.id, input.data as any, ctx.auth),
-  );
+  ));
 }
 
 function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth)));
 }
 
 function importMany() {
