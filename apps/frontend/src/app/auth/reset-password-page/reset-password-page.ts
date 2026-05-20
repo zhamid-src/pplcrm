@@ -1,9 +1,9 @@
 /**
  * Component for initiating the password reset email flow.
  */
-import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
+import { form, submit, required, email, FormField } from '@angular/forms/signals';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -17,7 +17,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-reset-password',
-  imports: [ReactiveFormsModule, Alerts],
+  imports: [FormField, Alerts],
   templateUrl: './reset-password-page.html',
 })
 export class ResetPasswordPage {
@@ -25,10 +25,9 @@ export class ResetPasswordPage {
   private _loading = createLoadingGate();
   private alertSvc = inject(AlertService);
   private authService = inject(AuthService);
-  private fb = inject(FormBuilder);
   private router = inject(Router);
 
-  protected readonly isLoading = signal(true);
+  protected readonly isLoading = this._loading.visible;
 
   /** Signal tracking whether the email has been sent */
   protected emailSent = signal(false);
@@ -36,17 +35,22 @@ export class ResetPasswordPage {
   /** Success message string */
   protected success: string | undefined;
 
-  /** Reactive form with a single email input */
-  public form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
+  /** Backing payload signal */
+  protected readonly payload = signal({
+    email: '',
+  });
+
+  /** Signal-based form with validations */
+  public readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
   });
 
   /**
    * Getter for the email form control.
-   * @returns The email AbstractControl from the form.
    */
   public get email() {
-    return this.form.get('email');
+    return this.form.email();
   }
 
   /**
@@ -54,22 +58,39 @@ export class ResetPasswordPage {
    * If the email is valid, it calls the AuthService and shows a success message.
    * Otherwise, shows an error message.
    */
-  public async submit() {
-    if (!this.email?.valid || !this.email.value)
-      return this.alertSvc.showError('Please check the email address and try again.');
+  public async submit(event?: Event) {
+    event?.preventDefault();
 
-    const end = this._loading.begin();
-    try {
-      await this.authService
-        .sendPasswordResetEmail({ email: this.email.value })
-        .catch((err) => this.alertSvc.showError(err.message));
+    const rawEmail = this.payload().email;
+    const emailVal = rawEmail.trim().toLowerCase();
 
-      this.alertSvc.showSuccess(
-        "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
-      );
-      this.router.navigateByUrl('signin');
-    } finally {
-      end();
+    if (rawEmail !== emailVal) {
+      this.form.email().value.set(emailVal);
     }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          await this.authService.sendPasswordResetEmail({ email: emailVal });
+          this.alertSvc.showSuccess(
+            "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+          );
+          this.emailSent.set(true);
+          this.router.navigateByUrl('signin');
+        } catch (err: any) {
+          this.alertSvc.showError(err.message || String(err));
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please check the email address and try again.');
+      }
+    });
   }
 }
