@@ -24,15 +24,12 @@ describe('ResetPasswordPage', () => {
       alertList: vi.fn().mockReturnValue([])
     };
 
-    
-
     await TestBed.configureTestingModule({
       imports: [ResetPasswordPage],
       providers: [
         provideRouter([]),
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
-        
       ]
     }).compileComponents();
 
@@ -48,7 +45,7 @@ describe('ResetPasswordPage', () => {
   });
 
   it('should have initial invalid form state', () => {
-    expect(component.form.invalid).toBe(true);
+    expect(component.form().invalid()).toBe(true);
   });
 
   it('should block submit and show error if email is empty', async () => {
@@ -58,14 +55,14 @@ describe('ResetPasswordPage', () => {
   });
 
   it('should block submit and show error if email is invalid format', async () => {
-    component.form.controls.email.setValue('invalid');
+    component.email.value.set('invalid');
     await component.submit();
     expect(mockAlertSvc.showError).toHaveBeenCalledWith('Please check the email address and try again.');
     expect(mockAuthSvc.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
   it('should submit valid email, show success, and navigate', async () => {
-    component.form.controls.email.setValue('test@example.com');
+    component.email.value.set('test@example.com');
     await component.submit();
 
     expect(mockAuthSvc.sendPasswordResetEmail).toHaveBeenCalledWith({ email: 'test@example.com' });
@@ -77,7 +74,7 @@ describe('ResetPasswordPage', () => {
     const errorMsg = 'User not found';
     mockAuthSvc.sendPasswordResetEmail.mockRejectedValue(new Error(errorMsg));
 
-    component.form.controls.email.setValue('test@example.com');
+    component.email.value.set('test@example.com');
     await component.submit();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
