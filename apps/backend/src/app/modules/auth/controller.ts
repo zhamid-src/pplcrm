@@ -121,11 +121,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         email,
         password,
         first_name: input.first_name,
-        last_name: input.last_name ?? null,
         role: input.role ?? null,
         verified: false,
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
       } as OperationDataType<'authusers', 'insert'>;
       const user = await repo.add({ row }, trx);
       if (!user) throw new InternalError('User creation failed');
@@ -135,8 +132,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: auth.tenant_id,
         auth_id: user.id,
         last_name: input.last_name ?? null,
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
       } as OperationDataType<'profiles', 'insert'>;
       await this.profiles.add({ row: profileRow }, trx);
 
