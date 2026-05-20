@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { SignUpPage } from './signup-page';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 describe('SignUpPage', () => {
@@ -116,5 +116,45 @@ describe('SignUpPage', () => {
     await component.join();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
+  });
+
+  it('should redirect to summary page on successful sign up', async () => {
+    const mockRouter = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(mockRouter, 'navigate').mockResolvedValue(true as any);
+
+    component['signUpData'].set({
+      organization: 'Acme Corp',
+      email: 'test@example.com',
+      password: 'validPassword123',
+      first_name: 'John',
+      middle_names: '',
+      last_name: 'Doe',
+      terms: 'true'
+    });
+
+    fixture.detectChanges();
+    await component.join();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['summary']);
+  });
+
+  it('should call join only once on form submit via button click', async () => {
+    component['signUpData'].set({
+      organization: 'Acme Corp',
+      email: 'test@example.com',
+      password: 'validPassword123',
+      first_name: 'John',
+      middle_names: '',
+      last_name: 'Doe',
+      terms: 'true'
+    });
+    fixture.detectChanges();
+
+    const joinSpy = vi.spyOn(component, 'join');
+    const buttonEl = fixture.nativeElement.querySelector('button[type="submit"]');
+    buttonEl.click();
+    fixture.detectChanges();
+
+    expect(joinSpy).toHaveBeenCalledTimes(1);
   });
 });

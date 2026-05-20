@@ -1,7 +1,7 @@
 <!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
   <label class="label text-neutral-100">Enter your email and password to sign in</label>
-  <form [formRoot]="form">
+  <form (submit)="signIn($event)" novalidate>
     <div class="space-y-3">
       <label class="input w-full validator">
         <pc-icon [size]="4" name="at-symbol" />
@@ -30,7 +30,7 @@
         </div>
       </div>
       <div>
-        <button type="submit" class="btn btn-primary w-full" (click)="signIn()">
+        <button type="submit" class="btn btn-primary w-full">
           @if (isLoading()) {
           <span class="loading loading-dots loading-lg text-primary"></span>
           } @else { SIGN IN }

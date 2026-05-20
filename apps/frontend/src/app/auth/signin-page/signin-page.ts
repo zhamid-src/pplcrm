@@ -1,7 +1,7 @@
 import { Component, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { form, submit, required, email, minLength, FormField, FormRoot } from '@angular/forms/signals';
+import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../services/api/token-service';
@@ -38,7 +38,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-login',
-  imports: [FormField, FormRoot, RouterLink, Icon, AuthLayoutComponent],
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
@@ -91,7 +91,9 @@ export class SignInPage {
    * Submits the form to perform user sign-in.
    * Shows error if form is invalid or authentication fails.
    */
-  public async signIn() {
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
     // clear any stale auth
     this.tokenService.clearAll();
 

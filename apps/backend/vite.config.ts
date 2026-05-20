@@ -23,10 +23,14 @@ export default defineConfig(() => ({
 
 
     env: {
-      DB_USER: 'test',
-      DB_NAME: 'test',
-      DB_PASSWORD: 'test',
-      JWT_SECRET: 'test'
+      DB_USER: 'pplcrm',
+      DB_NAME: 'pplcrm',
+      DB_PASSWORD: '[REDACTED]',
+      JWT_SECRET: 'dev-secret',
+      SHARED_SECRET: 'dev-secret',
+      DB_PORT: '5432',
+      DB_HOST: 'localhost',
+      DB_SSL: 'false',
     },
 
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],

@@ -1,6 +1,6 @@
 <!-- Template for user sign-up, capturing account and organization details. -->
 <pc-auth-layout>
-  <form [formRoot]="form" class="flex flex-col gap-3">
+  <form (submit)="join($event)" novalidate class="flex flex-col gap-3">
     <label class="label text-neutral-100">Enter basic info to create your account </label>
 
     <label class="input w-full validator">
@@ -77,7 +77,7 @@
     >
     }
 
-    <button class="btn btn-primary" (click)="join()" [disabled]="isLoading()">
+    <button type="submit" class="btn btn-primary" [disabled]="isLoading()">
       @if (isLoading()) {
       <span class="loading loading-dots loading-lg text-primary"></span>
       } @else { JOIN → }

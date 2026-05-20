@@ -139,10 +139,12 @@ export class BaseRepository<T extends keyof Models> {
     tenant_id: OperandValueExpressionOrList<Models, T, 'tenant_id'>,
     trx?: Transaction<Models>,
   ): Promise<number> {
-    const result = await this.getSelect(trx)
-      .select(({ fn }) => [fn.countAll<number>().as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .executeTakeFirst();
+    let query = this.getSelect(trx)
+      .select(({ fn }) => [fn.countAll<number>().as('count')]);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', tenant_id);
+    }
+    const result = await query.executeTakeFirst();
     return result?.count ?? 0;
   }
 
@@ -163,10 +165,11 @@ export class BaseRepository<T extends keyof Models> {
     if (numericIds.length === 0) return false;
 
     const deleteQuery = this.getDelete(trx) as ReturnType<typeof BaseRepository.prototype.getDelete>;
-    const result = await deleteQuery
-      .where('id', 'in', numericIds)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
+    let query = deleteQuery.where('id', 'in', numericIds);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', input.tenant_id);
+    }
+    const result = await query.executeTakeFirst();
 
     return Number(result?.numDeletedRows ?? 0) > 0;
   }
@@ -201,11 +204,12 @@ export class BaseRepository<T extends keyof Models> {
       return Promise.resolve([]);
     }
 
-    return this.getSelectWithColumns(options, trx)
-      .where(input.column, 'ilike', input.key + '%')
-      .where('tenant_id', '=', input.tenant_id)
-      .limit(3)
-      .execute();
+    let query = this.getSelectWithColumns(options, trx)
+      .where(input.column, 'ilike', input.key + '%');
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', input.tenant_id);
+    }
+    return query.limit(3).execute();
   }
 
   /**
@@ -218,7 +222,11 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(input.options, trx).where('tenant_id', '=', input.tenant_id).execute();
+    let query = this.getSelectWithColumns(input.options, trx);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', input.tenant_id);
+    }
+    return query.execute();
   }
 
   /**
@@ -254,9 +262,12 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where(column as any, '=', input.value as any)
-      .where('tenant_id', '=', input.tenant_id);
+    let query = this.getSelectWithColumns(input.options, trx)
+      .where(column as any, '=', input.value as any);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', input.tenant_id);
+    }
+    return query;
   }
 
   public getOneBy<C extends ColName<T>>(
@@ -311,12 +322,13 @@ export class BaseRepository<T extends keyof Models> {
     if (Object.keys(input.row).length === 0) {
       return 0; // or just return early, nothing to update
     }
-    return this.getUpdate(trx)
+    let query = this.getUpdate(trx)
       .set(input.row)
-      .where('id', '=', input.id as unknown as string)
-      .where('tenant_id', '=', input.tenant_id as TypeColumnValue<T, 'tenant_id'>)
-      .returningAll()
-      .executeTakeFirst();
+      .where('id', '=', input.id as unknown as string);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id', '=', input.tenant_id as TypeColumnValue<T, 'tenant_id'>);
+    }
+    return query.returningAll().executeTakeFirst();
   }
 
   /**
