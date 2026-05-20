@@ -1,16 +1,11 @@
-import { Injectable } from '@angular/core';
-import { Subject } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class ListsRefreshService {
-  private readonly _refresh$ = new Subject<void>();
+  /** Increments each time a refresh is requested. Consumers can effect() on this. */
+  public readonly refreshCount = signal(0);
 
   public trigger() {
-    this._refresh$.next();
-  }
-
-  public get changes$() {
-    return this._refresh$.asObservable();
+    this.refreshCount.update((n) => n + 1);
   }
 }
-
