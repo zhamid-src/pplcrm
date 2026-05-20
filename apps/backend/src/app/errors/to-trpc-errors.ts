@@ -6,6 +6,8 @@ import { AppError } from './app-errors';
 export function toTRPCError(err: unknown): TRPCError {
   if (err instanceof TRPCError) return err;
 
+  const isDevOrTest = process.env['NODE_ENV'] !== 'production';
+
   if (err instanceof AppError) {
     // Status -> TRPC code
     const code =
@@ -29,17 +31,31 @@ export function toTRPCError(err: unknown): TRPCError {
                         ? 'TOO_MANY_REQUESTS'
                         : /* default */ 'INTERNAL_SERVER_ERROR';
 
+    let message = err.message;
+    if (isDevOrTest && (err as any).cause instanceof Error) {
+      message = `${err.message} (Cause: ${(err as any).cause.message})`;
+    } else if (isDevOrTest && typeof (err as any).cause === 'string') {
+      message = `${err.message} (Cause: ${(err as any).cause})`;
+    }
+
     return new TRPCError({
       code,
-      message: err.message,
+      message,
       cause: err,
     });
   }
 
   // Unknown/unexpected -> internal
+  let message = 'Something went wrong, please try again';
+  if (isDevOrTest && err instanceof Error) {
+    message = `Something went wrong, please try again (Cause: ${err.message})`;
+  } else if (isDevOrTest && typeof err === 'string') {
+    message = `Something went wrong, please try again (Cause: ${err})`;
+  }
+
   return new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',
-    message: 'Something went wrong, please try again',
+    message,
     cause: err,
   });
 }

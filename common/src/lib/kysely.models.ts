@@ -173,7 +173,7 @@ interface AuthUsers extends RecordType {
   verified: boolean;
 }
 
-interface Campaigns extends Omit<RecordType, 'createdby_id'> {
+interface Campaigns extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
   admin_id: string;
   createdby_id: string;
   description: string | null;

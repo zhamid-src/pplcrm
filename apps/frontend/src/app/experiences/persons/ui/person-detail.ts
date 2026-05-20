@@ -3,8 +3,7 @@
  */
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, effect, inject, input, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -30,14 +29,13 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-person-detail',
-  imports: [DatePipe, ReactiveFormsModule, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
+  imports: [DatePipe, FormField, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly auth = inject(AuthService);
   private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly teamsSvc = inject(TeamsService);
@@ -67,36 +65,24 @@ export class PersonDetail implements OnInit {
   protected readonly person = signal<Persons | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
 
-  /** Reactive form group for person data */
-  protected form = this.fb.group({
-    first_name: [''],
-    middle_names: [''],
-    last_name: [''],
-    email: [''],
-    email2: [''],
-    home_phone: [''],
-    mobile: [''],
-    notes: [''],
-    metadata: this.fb.group({
-      tenant_id: [''],
-      createdby_id: [''],
-      updatedby_id: [''],
-      created_at: [''],
-      updated_at: [''],
-    }),
+  /** Backing payload signal for person data */
+  protected readonly payload = signal({
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    email: '',
+    email2: '',
+    home_phone: '',
+    mobile: '',
+    notes: '',
   });
+
+  /** Signal form for person data validation and status tracking */
+  protected readonly form = form(this.payload);
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
   protected tags = signal<string[]>([]);
-
-  /**
-   * Signal that tracks the live form value. Used by computed signals to avoid
-   * calling form.get().value imperatively inside template expressions.
-   */
-  protected readonly formValues = toSignal(this.form.valueChanges, {
-    initialValue: this.form.getRawValue(),
-  });
 
   public readonly householdId = computed(
     () => (this.person()?.household_id ?? null) || this.pendingHouseholdId()
@@ -107,8 +93,8 @@ export class PersonDetail implements OnInit {
 
   /** Reactive display name derived from live form values — avoids method calls in template */
   protected readonly formName = computed(() => {
-    const v = this.formValues();
-    return `${v?.first_name || ''} ${v?.middle_names || ''} ${v?.last_name || ''}`.trim();
+    const v = this.payload();
+    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
   });
 
   /** Two-letter initials derived from formName for the avatar chip */
@@ -166,7 +152,9 @@ export class PersonDetail implements OnInit {
    * If in edit mode, it updates the person; otherwise, it creates a new entry.
    */
   public save(done?: () => void) {
-    const data = this.form.getRawValue() as UpdatePersonsType;
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+    const data = this.payload() as UpdatePersonsType;
     return this.id ? this.update(data, done) : this.add(data, done);
   }
 
@@ -415,7 +403,7 @@ export class PersonDetail implements OnInit {
           this.pendingHouseholdId.set(null);
           this.addressString.set(null);
           this.tags.set([]);
-          this.form.markAsPristine();
+          this.form().reset();
         }
       })
       .catch((err: unknown) => {
@@ -515,7 +503,16 @@ export class PersonDetail implements OnInit {
     const person = this.person();
     if (!person) return;
 
-    this.form.patchValue(person);
+    this.payload.set({
+      first_name: person.first_name ?? '',
+      middle_names: person.middle_names ?? '',
+      last_name: person.last_name ?? '',
+      email: person.email ?? '',
+      email2: person.email2 ?? '',
+      home_phone: person.home_phone ?? '',
+      mobile: person.mobile ?? '',
+      notes: person.notes ?? '',
+    });
   }
 
   /**
@@ -531,7 +528,7 @@ export class PersonDetail implements OnInit {
       .update(this.id, data)
       .then(() => {
         this.alertSvc.showSuccess('Person updated successfully.');
-        this.form.markAsPristine();
+        this.form().reset();
         this.personsSvc.triggerRefresh();
         if (done) {
           done();

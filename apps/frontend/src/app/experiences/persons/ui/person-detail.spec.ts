@@ -97,7 +97,7 @@ describe('PersonDetail', () => {
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1');
     expect(component['person']()?.first_name).toBe('John');
     expect(component['tags']()).toContain('volunteer');
-    expect(component['form'].value.first_name).toBe('John');
+    expect(component['payload']().first_name).toBe('John');
   });
 
   it('should format name properly', async () => {
@@ -115,7 +115,10 @@ describe('PersonDetail', () => {
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
-    component['form'].patchValue({ first_name: 'Johnny' });
+    component['payload'].set({
+      ...component['payload'](),
+      first_name: 'Johnny',
+    });
     await component.save();
 
     expect(mockPersonsSvc.update).toHaveBeenCalled();
@@ -133,7 +136,11 @@ describe('PersonDetail', () => {
     componentNew.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
-    componentNew['form'].patchValue({ first_name: 'Jane', last_name: 'Smith' });
+    componentNew['payload'].set({
+      ...componentNew['payload'](),
+      first_name: 'Jane',
+      last_name: 'Smith',
+    });
     await componentNew.save();
 
     expect(mockPersonsSvc.add).toHaveBeenCalled();
