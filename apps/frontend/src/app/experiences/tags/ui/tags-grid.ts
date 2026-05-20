@@ -33,7 +33,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
   selector: 'pc-tags-grid',
   imports: [DataGrid],
   template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useClass: TagsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: TagsService }],
 })
 export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
   protected col = [
