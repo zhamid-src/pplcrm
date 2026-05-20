@@ -1,5 +1,5 @@
-import { Component, OnInit, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, OnInit, computed, effect, inject, signal, ChangeDetectionStrategy, untracked } from '@angular/core';
+import { form, required, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -17,12 +17,11 @@ interface PersonOption {
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-team-detail',
-  imports: [ReactiveFormsModule, RouterModule, Icon],
+  imports: [FormField, RouterModule, Icon],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {
   private readonly alerts = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
   private readonly persons = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -32,32 +31,51 @@ export class TeamDetailComponent implements OnInit {
 
   protected readonly detail = signal<TeamDetail | null>(null);
   protected readonly error = signal<string | null>(null);
-  protected readonly form = this.fb.group({
-    name: ['', [Validators.required]],
-    description: [''],
-    team_captain_id: [''],
-    volunteer_ids: this.fb.control<string[]>([]),
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    team_captain_id: '',
+    volunteer_ids: [] as string[],
   });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.name);
+  });
+
   protected readonly isNew = signal(false);
   protected readonly loading = signal(true);
-  protected readonly people = signal<PersonOption[]>([]);
+  protected signalPeople = signal<PersonOption[]>([]);
+  protected readonly people = computed(() => this.signalPeople());
   protected readonly saving = signal(false);
   protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
 
   constructor() {
     effect(() => {
       const options = this.people();
-      const control = this.form.controls.team_captain_id;
       if (options.length === 0) return;
-      const current = control.value;
-      if (current && !options.some((p) => p.id === current)) {
-        control.setValue('');
+
+      const current = untracked(this.payload);
+      let nextCaptain = current.team_captain_id;
+      let changed = false;
+
+      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
+        nextCaptain = '';
+        changed = true;
       }
-      const volunteerControl = this.form.controls.volunteer_ids;
-      const currentVolunteers = volunteerControl.value ?? [];
+
+      const currentVolunteers = current.volunteer_ids ?? [];
       const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
       if (validIds.length !== currentVolunteers.length) {
-        volunteerControl.setValue(validIds, { emitEvent: false });
+        changed = true;
+      }
+
+      if (changed) {
+        this.payload.update((p) => ({
+          ...p,
+          team_captain_id: nextCaptain,
+          volunteer_ids: validIds,
+        }));
       }
     });
   }
@@ -78,6 +96,21 @@ export class TeamDetailComponent implements OnInit {
     return person?.label ?? '—';
   }
 
+  protected isVolunteerSelected(id: string): boolean {
+    return this.payload().volunteer_ids?.includes(id) ?? false;
+  }
+
+  protected onVolunteersChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      volunteer_ids: selectedOptions,
+    }));
+    this.form.volunteer_ids().markAsDirty();
+  }
+
   protected async deleteTeam() {
     if (!this.id) return;
     const confirmed = confirm('Delete this team?');
@@ -85,6 +118,7 @@ export class TeamDetailComponent implements OnInit {
     this.saving.set(true);
     try {
       await this.teams.delete(this.id);
+      this.teams.triggerRefresh();
       this.alerts.showSuccess('Team deleted');
       await this.router.navigate(['../'], { relativeTo: this.route });
     } catch (err: any) {
@@ -100,13 +134,17 @@ export class TeamDetailComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  protected async save() {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
       return;
     }
 
-    const raw = this.form.getRawValue();
+    const raw = this.payload();
 
     this.saving.set(true);
     this.error.set(null);
@@ -121,7 +159,8 @@ export class TeamDetailComponent implements OnInit {
           volunteer_ids: raw.volunteer_ids ?? [],
         };
         result = await this.teams.add(payload);
-        await this.router.navigate(['../', result.id], { relativeTo: this.route });
+        this.teams.triggerRefresh();
+        await this.router.navigate(['../'], { relativeTo: this.route });
       } else if (this.id) {
         const payload: UpdateTeamType = {
           name: raw.name?.trim() ?? null,
@@ -130,9 +169,10 @@ export class TeamDetailComponent implements OnInit {
           volunteer_ids: raw.volunteer_ids ?? [],
         };
         result = await this.teams.update(this.id, payload);
+        this.teams.triggerRefresh();
         this.detail.set(result);
         this.setForm(result);
-        this.form.markAsPristine();
+        this.form().reset();
         this.alerts.showSuccess('Team updated');
         return;
       } else {
@@ -140,7 +180,7 @@ export class TeamDetailComponent implements OnInit {
       }
       this.detail.set(result);
       this.setForm(result);
-      this.form.markAsPristine();
+      this.form().reset();
       this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to save team';
@@ -159,10 +199,10 @@ export class TeamDetailComponent implements OnInit {
         label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
         email: person.email ?? null,
       }));
-      this.people.set(items);
+      this.signalPeople.set(items);
     } catch (err) {
       console.error('Failed to load volunteers list', err);
-      this.people.set([]);
+      this.signalPeople.set([]);
     }
   }
 
@@ -193,14 +233,11 @@ export class TeamDetailComponent implements OnInit {
   }
 
   private setForm(team: TeamDetail | null) {
-    this.form.reset(
-      {
-        name: team?.name ?? '',
-        description: team?.description ?? '',
-        team_captain_id: team?.team_captain_id ?? '',
-        volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
-      },
-      { emitEvent: false },
-    );
+    this.payload.set({
+      name: team?.name ?? '',
+      description: team?.description ?? '',
+      team_captain_id: team?.team_captain_id ?? '',
+      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
+    });
   }
 }

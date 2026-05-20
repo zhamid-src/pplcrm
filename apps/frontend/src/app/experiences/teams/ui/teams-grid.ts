@@ -20,7 +20,7 @@ import { TeamsService } from '../services/teams-service';
       plusIcon="add-group"
     ></pc-datagrid>
   `,
-  providers: [{ provide: AbstractAPIService, useClass: TeamsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: TeamsService }],
 })
 export class TeamsGridComponent extends DataGrid<'teams', UpdateTeamType> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
