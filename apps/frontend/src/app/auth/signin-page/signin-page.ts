@@ -1,10 +1,7 @@
-/**
- * @fileoverview Sign-in page component providing user authentication interface.
- * Features reactive forms, validation, password visibility toggle, and token persistence options.
- */
-import { Component, effect, inject , ChangeDetectionStrategy} from '@angular/core';
-import { AbstractControl, FormControl, NonNullableFormBuilder, ReactiveFormsModule, ValidatorFn } from '@angular/forms';
+import { Component, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { form, submit, required, email, minLength, FormField, FormRoot } from '@angular/forms/signals';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../services/api/token-service';
@@ -14,13 +11,12 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-utils';
 
 /**
  * Sign-in page component providing comprehensive user authentication interface.
  *
  * This component handles the complete sign-in flow including:
- * - Reactive form validation for email and password
+ * - Signal-based form validation for email and password
  * - Password visibility toggle for better UX
  * - Token persistence options (localStorage vs sessionStorage)
  * - Loading states and error handling
@@ -42,13 +38,12 @@ import { emailControl, passwordControl } from 'apps/frontend/src/app/auth/auth-u
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-login',
-  imports: [ReactiveFormsModule, RouterLink, Icon, AuthLayoutComponent],
+  imports: [FormField, FormRoot, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',
 })
 export class SignInPage {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
-  private readonly fb = inject(NonNullableFormBuilder);
   private readonly router = inject(Router);
   private readonly tokenService = inject(TokenService);
 
@@ -60,10 +55,18 @@ export class SignInPage {
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
 
-  /** Form group capturing the user's email and password */
-  public form = this.fb.group({
-    email: emailControl(this.fb),
-    password: passwordControl(this.fb),
+  /** Model capturing credentials */
+  protected readonly credentials = signal({
+    email: '',
+    password: '',
+  });
+
+  /** Signal-based form with validations */
+  public readonly form = form(this.credentials, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.password);
+    minLength(p.password, 8);
   });
 
   /**
@@ -76,12 +79,12 @@ export class SignInPage {
     });
   }
 
-  public get email(): FormControl<string | null> {
-    return this.form.controls.email;
+  public get email() {
+    return this.form.email();
   }
 
-  public get password(): FormControl<string | null> {
-    return this.form.controls.password;
+  public get password() {
+    return this.form.password();
   }
 
   /**
@@ -93,50 +96,55 @@ export class SignInPage {
     this.tokenService.clearAll();
 
     // normalize inputs
-    const rawEmail = (this.email?.value ?? '').toString();
-    const email = rawEmail.trim().toLowerCase();
-    const password = (this.password?.value ?? '').toString();
+    const rawEmail = this.credentials().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+    const passwordVal = this.credentials().password;
 
     // write back the normalized email (no revalidate spam)
-    if (this.email && rawEmail !== email) {
-      this.email.setValue(email, { emitEvent: false });
+    if (rawEmail !== emailVal) {
+      this.form.email().value.set(emailVal);
     }
 
     // force validation messages to appear
-    this.form.markAllAsTouched();
-    this.form.updateValueAndValidity({ onlySelf: false, emitEvent: false });
+    this.form().markAsTouched();
 
-    // block backend if invalid
-    if (!email || !password || this.form.invalid) {
-      const msg = this.email?.hasError('required')
-        ? 'Email is required.'
-        : this.email?.hasError('email')
-          ? 'Please enter a valid email address.'
-          : this.password?.hasError('minlength')
-            ? 'Password must be at least 8 characters.'
-            : 'Please enter a valid email and password.';
-      this.alertSvc.showError(msg);
-      return;
-    }
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          await this.authService.signIn({ email: emailVal, password: passwordVal });
+        } catch (err) {
+          if (err instanceof JSendFailError) {
+            const message = err.data['message'] ?? 'Unable to sign in.';
+            this.alertSvc.showError(message);
+          } else if (err instanceof TRPCClientError) {
+            this.alertSvc.showError(err.message);
+          } else {
+            this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+          }
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const emailField = this.form.email();
+        const passwordField = this.form.password();
+        
+        const hasEmailRequired = emailField.errors().some(e => e.kind === 'required');
+        const hasEmailFormat = emailField.errors().some(e => e.kind === 'email');
+        const hasPasswordMinLength = passwordField.errors().some(e => e.kind === 'minLength');
 
-    const end = this._loading.begin();
-    try {
-      await this.authService.signIn({ email, password });
-    } catch (err) {
-      // your existing error handling...
-      if (err instanceof JSendFailError) {
-        const message = err.data['message'] ?? 'Unable to sign in.';
-        this.form.setErrors({ message });
-        this.alertSvc.showError(message);
-      } else if (err instanceof TRPCClientError) {
-        this.form.setErrors({ message: err.message });
-        this.alertSvc.showError(err.message);
-      } else {
-        this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+        const msg = hasEmailRequired
+          ? 'Email is required.'
+          : hasEmailFormat
+            ? 'Please enter a valid email address.'
+            : hasPasswordMinLength
+              ? 'Password must be at least 8 characters.'
+              : 'Please enter a valid email and password.';
+        this.alertSvc.showError(msg);
       }
-    } finally {
-      end();
-    }
+    });
   }
 
   /**

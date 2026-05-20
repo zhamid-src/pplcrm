@@ -1,16 +1,16 @@
 <!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
   <label class="label text-neutral-100">Enter your email and password to sign in</label>
-  <form [formGroup]="form">
+  <form [formRoot]="form">
     <div class="space-y-3">
       <label class="input w-full validator">
         <pc-icon [size]="4" name="at-symbol" />
-        <input max="72" type="email" required placeholder="Enter your email" formControlName="email" />
+        <input type="email" placeholder="Enter your email" [formField]="form.email" />
       </label>
 
       <label class="input w-full validator">
         <pc-icon [size]="4" name="lock-closed" />
-        <input type="password" min="6" max="72" required placeholder="Enter your password" formControlName="password" />
+        <input type="password" placeholder="Enter your password" [formField]="form.password" />
       </label>
 
       <div class="flex items-center justify-between pt-2">
