@@ -86,4 +86,49 @@ describe('AuthController Integration', () => {
       await db.deleteFrom('authusers').where('id', '=', user.id).execute();
     }
   });
+
+  it('should invite a user, create profile and sanitize response', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const creatorEmail = `creator-${Date.now()}@example.com`;
+    const tokens = await controller.signUp({
+      organization: `Org-Invite-${Date.now()}`,
+      email: creatorEmail,
+      password: 'StrongPassword123!',
+      first_name: 'Creator',
+    });
+
+    const creator = await db.selectFrom('authusers').selectAll().where('email', '=', creatorEmail).executeTakeFirst();
+    expect(creator).toBeDefined();
+
+    const authPayload = {
+      tenant_id: creator.tenant_id,
+      user_id: creator.id,
+      session_id: 'dummy-session-id',
+    };
+
+    const inviteEmail = `invited-${Date.now()}@example.com`;
+
+    const result = await controller.inviteUser(authPayload, {
+      email: inviteEmail,
+      first_name: 'InvitedFirstName',
+      last_name: 'InvitedLastName',
+      role: 'admin',
+    });
+
+    expect(result).toBeDefined();
+    expect(result.email).toBe(inviteEmail);
+    expect(result.first_name).toBe('InvitedFirstName');
+
+    // Clean up
+    await db.deleteFrom('profiles').where('auth_id', '=', result.id).execute();
+    await db.deleteFrom('authusers').where('id', '=', result.id).execute();
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', creator.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', creator.id).execute();
+    await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', creator.id).execute();
+  });
 });
