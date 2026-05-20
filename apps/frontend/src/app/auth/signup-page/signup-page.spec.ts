@@ -41,7 +41,7 @@ describe('SignUpPage', () => {
   });
 
   it('should have initial invalid form state', () => {
-    expect(component['form'].invalid).toBe(true);
+    expect(component.form().invalid()).toBe(true);
   });
 
   it('should block join and show alert if form is invalid', async () => {
@@ -52,7 +52,7 @@ describe('SignUpPage', () => {
 
   it('should submit form and show success when valid', async () => {
     // Fill out the form correctly
-    component['form'].setValue({
+    component['signUpData'].set({
       organization: 'Acme Corp',
       email: 'test@example.com',
       password: 'validPassword123',
@@ -62,7 +62,8 @@ describe('SignUpPage', () => {
       terms: 'true'
     });
 
-    expect(component['form'].valid).toBe(true);
+    fixture.detectChanges();
+    expect(component.form().valid()).toBe(true);
 
     await component.join();
 
@@ -81,13 +82,17 @@ describe('SignUpPage', () => {
   it('should show error if signup returns falsy user', async () => {
     mockAuthSvc.signUp.mockResolvedValue(null);
 
-    component['form'].patchValue({
+    component['signUpData'].set({
       organization: 'Acme Corp',
       email: 'test@example.com',
       password: 'validPassword123',
-      first_name: 'John'
+      first_name: 'John',
+      middle_names: '',
+      last_name: '',
+      terms: ''
     });
 
+    fixture.detectChanges();
     await component.join();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith('Unable to complete signup.');
@@ -97,13 +102,17 @@ describe('SignUpPage', () => {
     const errorMsg = 'Email already exists';
     mockAuthSvc.signUp.mockRejectedValue(new Error(errorMsg));
 
-    component['form'].patchValue({
+    component['signUpData'].set({
       organization: 'Acme Corp',
       email: 'test@example.com',
       password: 'validPassword123',
-      first_name: 'John'
+      first_name: 'John',
+      middle_names: '',
+      last_name: '',
+      terms: ''
     });
 
+    fixture.detectChanges();
     await component.join();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
