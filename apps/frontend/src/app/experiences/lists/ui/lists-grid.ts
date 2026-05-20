@@ -1,7 +1,7 @@
 /**
  * Grid component for viewing and editing lists of people or households.
  */
-import { Component, OnDestroy, OnInit, inject , ChangeDetectionStrategy} from '@angular/core';
+import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core';
 import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -22,10 +22,15 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
   ></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useClass: ListsService }],
 })
-export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implements OnInit, OnDestroy {
+export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   private readonly refreshSvc = inject(ListsRefreshService);
 
-  private sub?: { unsubscribe(): void };
+  constructor() {
+    super();
+    effect(() => {
+      if (this.refreshSvc.refreshCount() > 0) this.refresh();
+    });
+  }
 
   protected col = [
     { field: 'id', headerName: 'ID' },
@@ -46,16 +51,4 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
     { field: 'created_by', headerName: 'Created By' },
   ];
 
-  constructor() {
-    super();
-  }
-
-  public override ngOnDestroy(): void {
-    this.sub?.unsubscribe?.();
-  }
-
-  public override async ngOnInit() {
-    await super.ngOnInit();
-    this.sub = this.refreshSvc.changes$.subscribe(() => this.refresh());
-  }
 }
