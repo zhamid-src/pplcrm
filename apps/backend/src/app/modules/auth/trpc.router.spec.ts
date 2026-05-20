@@ -2,11 +2,11 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AuthRouter } from './trpc.router';
 import { AuthController } from './controller';
 
-describe('AuthRouter', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
+beforeEach(() => {
+  vi.restoreAllMocks();
+});
 
+describe('AuthRouter', () => {
   it('should call currentUser on the controller', async () => {
     const mockUser = { id: '123', email: 'test@example.com' };
     const spy = vi.spyOn(AuthController.prototype, 'currentUser').mockResolvedValue(mockUser as any);
@@ -26,6 +26,23 @@ describe('AuthRouter', () => {
     const result = await caller.signIn({ email: 'test@example.com', password: 'password123' });
     
     expect(spy).toHaveBeenCalled();
+    expect(result).toEqual(mockTokens);
+  });
+
+  it('should call signUp on the controller', async () => {
+    const mockTokens = { auth_token: 'signup-auth-token', refresh_token: 'signup-refresh-token' };
+    const spy = vi.spyOn(AuthController.prototype, 'signUp').mockResolvedValue(mockTokens as any);
+
+    const caller = AuthRouter.createCaller({} as any);
+    const signUpData = {
+      email: 'newuser@example.com',
+      password: 'StrongPassword123!',
+      first_name: 'John',
+      organization: 'New Org',
+    };
+    const result = await caller.signUp(signUpData);
+
+    expect(spy).toHaveBeenCalledWith(signUpData);
     expect(result).toEqual(mockTokens);
   });
 
