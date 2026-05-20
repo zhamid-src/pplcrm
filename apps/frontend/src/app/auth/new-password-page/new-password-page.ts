@@ -2,21 +2,21 @@
  * Component allowing a user to set a new password using a reset code.
  */
 import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Component, OnInit, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { RouterLink, ActivatedRoute, Router } from '@angular/router';
+import { form, submit, required, minLength, FormField } from '@angular/forms/signals';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordControl, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-new-password',
-  imports: [DecimalPipe, ReactiveFormsModule, RouterLink, AuthLayoutComponent, Icon],
+  imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
   templateUrl: './new-password-page.html',
 })
 /**
@@ -25,7 +25,6 @@ import { passwordBreachNumber, passwordControl, passwordInBreach } from 'apps/fr
 export class NewPasswordPage implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
-  private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -46,16 +45,22 @@ export class NewPasswordPage implements OnInit {
   /** Success message to show after successful password reset */
   protected success: string | undefined;
 
-  /** Reactive form with the new password control */
-  public form = this.fb.group({
-    password: passwordControl(this.fb),
+  /** Backing payload signal */
+  protected readonly payload = signal({
+    password: '',
+  });
+
+  /** Signal-based form with validations */
+  public readonly form = form(this.payload, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
   });
 
   /**
    * Get the password form control.
    */
-  public get password(): FormControl {
-    return this.form.get('password') as FormControl;
+  public get password() {
+    return this.form.password();
   }
 
   /**
@@ -77,26 +82,41 @@ export class NewPasswordPage implements OnInit {
    * Submit the new password to the server.
    * Validates the input and shows success or error messages accordingly.
    */
-  public async submit() {
-    if (!this.password?.valid || !this.password.value) {
+  public async submit(event?: Event) {
+    event?.preventDefault();
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
       this.alertSvc.showError('Please check the password.');
       return;
     }
 
-    const end = this._loading.begin();
-    try {
-      const error = await this.authService.resetPassword({
-        code: this.code || '',
-        password: this.password.value,
-      });
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const passwordVal = this.payload().password;
+          const error = await this.authService.resetPassword({
+            code: this.code || '',
+            password: passwordVal,
+          });
 
-      if (error) this.error.set(true);
-      else {
-        this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-        this.router.navigateByUrl('signin');
+          if (error) {
+            this.error.set(true);
+          } else {
+            this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
+            this.router.navigateByUrl('signin');
+          }
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please check the password.');
       }
-    } finally {
-      end();
-    }
+    });
   }
 }

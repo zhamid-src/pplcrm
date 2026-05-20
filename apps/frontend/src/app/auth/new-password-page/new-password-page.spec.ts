@@ -25,8 +25,6 @@ describe('NewPasswordPage', () => {
       alertList: vi.fn().mockReturnValue([])
     };
 
-    
-
     mockRoute = {
       snapshot: {
         queryParamMap: {
@@ -41,7 +39,6 @@ describe('NewPasswordPage', () => {
         provideRouter([]),
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
-        
         { provide: ActivatedRoute, useValue: mockRoute }
       ]
     }).compileComponents();
@@ -78,7 +75,7 @@ describe('NewPasswordPage', () => {
 
   it('should submit new password, show success, and navigate', async () => {
     await component.ngOnInit(); // to set the code
-    component.form.controls.password.setValue('validPassword123');
+    component.password.value.set('validPassword123');
     
     await component.submit();
 
@@ -94,7 +91,7 @@ describe('NewPasswordPage', () => {
     await component.ngOnInit();
     mockAuthSvc.resetPassword.mockResolvedValue(new Error('Invalid token'));
 
-    component.form.controls.password.setValue('validPassword123');
+    component.password.value.set('validPassword123');
     await component.submit();
 
     expect(component['error']()).toBe(true);
