@@ -13,7 +13,7 @@ import { merge } from 'rxjs';
   templateUrl: './add-btn-row.html',
 })
 export class AddBtnRow implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective);
+  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly cdr = inject(ChangeDetectorRef);
@@ -21,7 +21,13 @@ export class AddBtnRow implements OnInit {
 
   private stay = false;
 
-  protected form!: FormGroup;
+  protected form?: FormGroup;
+
+  /**
+   * The optional Signal-based form state.
+   * If provided, button disabling and reset behavior will use this form state.
+   */
+  public signalForm = input<any>();
 
   /**
    * Emits when the first button (e.g., SAVE or SAVE & ADD MORE) is clicked.
@@ -61,6 +67,21 @@ export class AddBtnRow implements OnInit {
   public isLoading = input.required<boolean>();
 
   /**
+   * Returns true if the save actions should be disabled.
+   */
+  protected get isSaveDisabled(): boolean {
+    if (this.isLoading()) return true;
+    const sigF = this.signalForm();
+    if (sigF) {
+      return sigF().invalid() || !sigF().dirty();
+    }
+    if (this.form) {
+      return this.form.invalid || !this.form.dirty;
+    }
+    return false;
+  }
+
+  /**
    * Navigates the user back to the previous route.
    * Used by the cancel button.
    */
@@ -90,12 +111,14 @@ export class AddBtnRow implements OnInit {
    * Initializes the component by linking to the parent form group.
    */
   public ngOnInit() {
-    this.form = this.rootFormGroup.control;
-    merge(this.form.valueChanges, this.form.statusChanges)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.cdr.markForCheck();
-      });
+    this.form = this.rootFormGroup?.control;
+    if (this.form) {
+      merge(this.form.valueChanges, this.form.statusChanges)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => {
+          this.cdr.markForCheck();
+        });
+    }
   }
 
   /**
@@ -105,7 +128,12 @@ export class AddBtnRow implements OnInit {
    */
   public stayOrCancel = () => {
     if (this.stay) {
-      this.form.reset();
+      const sigF = this.signalForm();
+      if (sigF) {
+        sigF().reset();
+      } else if (this.form) {
+        this.form.reset();
+      }
     } else {
       this.cancel();
     }
