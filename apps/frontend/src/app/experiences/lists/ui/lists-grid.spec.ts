@@ -2,14 +2,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ListsGridComponent } from './lists-grid';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { Subject } from 'rxjs';
+import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 class MockApiService {
-  refresh$ = new Subject<void>();
+  refreshCount = signal(0);
   getAll = vi.fn().mockResolvedValue({ rows: [], totalCount: 0 });
   abort = vi.fn();
 }
@@ -20,19 +20,18 @@ describe('ListsGridComponent', () => {
 
   let mockRefreshSvc: any;
   let mockApiSvc: any;
-  let refreshSubject: Subject<void>;
+  let refreshCount: ReturnType<typeof signal<number>>;
 
   beforeEach(async () => {
-    refreshSubject = new Subject<void>();
-    
+    refreshCount = signal(0);
+
     mockRefreshSvc = {
-      changes$: refreshSubject.asObservable()
+      refreshCount
     };
 
     mockApiSvc = {
-      // DataGrid requires these basic methods
       getAll: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
-      refresh$: new Subject()
+      refreshCount: signal(0),
     };
 
     await TestBed.configureTestingModule({
@@ -76,24 +75,25 @@ describe('ListsGridComponent', () => {
     expect(formatter({ data: {}, value: null })).toBe(0);
   });
 
-  it('should subscribe to refresh service on init and trigger refresh', async () => {
+  it('should call refresh when refreshCount signal increments', async () => {
     vi.spyOn(component, 'refresh').mockImplementation(() => {});
-    
+
     await component.ngOnInit();
-    
-    refreshSubject.next(); // Trigger the observable
-    
+
+    // Simulate a refresh trigger via the signal
+    refreshCount.update((n) => n + 1);
+    // Effect runs asynchronously; flush microtasks
+    await fixture.whenStable();
+
     expect(component.refresh).toHaveBeenCalled();
   });
 
-  it('should unsubscribe on destroy', async () => {
+  it('should not call refresh on initial render (refreshCount === 0)', async () => {
+    vi.spyOn(component, 'refresh').mockImplementation(() => {});
+
     await component.ngOnInit();
-    
-    expect(component['sub']).toBeDefined();
-    const unsubscribeSpy = vi.spyOn(component['sub'] as any, 'unsubscribe');
-    
-    component.ngOnDestroy();
-    
-    expect(unsubscribeSpy).toHaveBeenCalled();
+
+    // No trigger — refreshCount stays 0
+    expect(component.refresh).not.toHaveBeenCalled();
   });
 });
