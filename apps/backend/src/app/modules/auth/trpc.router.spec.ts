@@ -131,4 +131,47 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', creator.id).execute();
   });
+
+  it('should update a user, sync profile, and sanitize response without non-existent column errors', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const userEmail = `update-user-${Date.now()}@example.com`;
+    await controller.signUp({
+      organization: `Org-Update-${Date.now()}`,
+      email: userEmail,
+      password: 'StrongPassword123!',
+      first_name: 'UpdateTest',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', userEmail).executeTakeFirstOrThrow();
+
+    const authPayload = {
+      tenant_id: user.tenant_id,
+      user_id: user.id,
+      session_id: 'dummy-session-id',
+    };
+
+    // Update first_name and last_name (which triggers profile sync)
+    const result = await controller.updateUser(authPayload, user.id, {
+      first_name: 'Baba',
+      last_name: 'Ganoush',
+      role: 'admin',
+      verified: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(result.first_name).toBe('Baba');
+    expect(result.last_name).toBe('Ganoush');
+    expect(result.role).toBe('admin');
+    expect(result.verified).toBe(true);
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
 });
