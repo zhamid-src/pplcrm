@@ -1,7 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { form, submit, required, email, minLength, FormField, FormRoot } from '@angular/forms/signals';
-import { RouterModule } from '@angular/router';
+import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -19,12 +19,13 @@ import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/au
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-signup',
-  imports: [DecimalPipe, FormField, FormRoot, Icon, RouterModule, AuthLayoutComponent],
+  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',
 })
 export class SignUpPage {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
 
   /** Signal indicating whether form submission is in progress */
   private _loading = createLoadingGate();
@@ -88,7 +89,8 @@ export class SignUpPage {
    * Handles form submission for user registration.
    * Displays alerts for error or success states.
    */
-  public async join() {
+  public async join(event?: Event) {
+    event?.preventDefault();
     this.form().markAsTouched();
 
     await submit(this.form, {
@@ -99,6 +101,7 @@ export class SignUpPage {
           const user = data as IAuthUser;
           if (user) {
             this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
+            await this.router.navigate(['summary']);
           } else {
             this.alertSvc.showError('Unable to complete signup.');
           }

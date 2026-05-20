@@ -128,4 +128,17 @@ describe('SignInPage', () => {
     
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
   });
+
+  it('should call signIn only once on form submit via button click', async () => {
+    component.email.value.set('test@example.com');
+    component.password.value.set('validPassword123');
+    fixture.detectChanges();
+
+    const signInSpy = vi.spyOn(component, 'signIn');
+    const buttonEl = fixture.nativeElement.querySelector('button[type="submit"]');
+    buttonEl.click();
+    fixture.detectChanges();
+
+    expect(signInSpy).toHaveBeenCalledTimes(1);
+  });
 });

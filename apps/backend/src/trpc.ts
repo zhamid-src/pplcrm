@@ -8,6 +8,10 @@ const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
 
 const trpc = initTRPC.context<Context>().create({
   errorFormatter({ shape, error }) {
+    console.error('tRPC Error:', error);
+    if (error.cause) {
+      console.error('tRPC Error Cause:', error.cause);
+    }
     // Path may be on error.path, or on shape.data.path (or absent)
     const pathStr: string = (error as any).path ?? (shape.data?.path as string | undefined) ?? '';
 

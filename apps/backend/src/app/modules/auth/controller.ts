@@ -284,11 +284,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
         await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
-        token = await this.createTokens({
-          user_id: profile.id,
-          tenant_id: user.tenant_id,
-          name: user.first_name,
-        });
+        token = await this.createTokens(
+          {
+            user_id: profile.id,
+            tenant_id: user.tenant_id,
+            name: user.first_name,
+          },
+          trx,
+        );
       });
 
       return token;
@@ -394,11 +397,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * Creates auth and refresh tokens and saves session.
    * @private
    * @param input Token input payload including user and tenant info.
+   * @param trx Optional Kysely transaction.
    * @returns Auth token and refresh token pair.
    */
-  private async createTokens(input: { user_id: string; tenant_id: string; name: string; oldSession?: string }) {
+  private async createTokens(
+    input: { user_id: string; tenant_id: string; name: string; oldSession?: string },
+    trx?: Transaction<Models>,
+  ) {
     // Delete the old session
-    if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession);
+    if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession, trx);
 
     const row = {
       user_id: input.user_id,
@@ -408,7 +415,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       status: 'active',
     } as OperationDataType<'sessions', 'insert'>;
 
-    const currentSession = await this.sessions.add({ row });
+    const currentSession = await this.sessions.add({ row }, trx);
 
     if (!currentSession) {
       throw new InternalError('Session creation failed');
