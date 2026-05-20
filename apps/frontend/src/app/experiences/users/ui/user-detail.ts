@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -11,12 +11,11 @@ import { AuthUsersService } from '../services/authusers-service';
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-user-detail',
-  imports: [DatePipe, ReactiveFormsModule, RouterModule, Icon],
+  imports: [DatePipe, FormField, RouterModule, Icon],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent implements OnInit {
   private readonly alerts = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
@@ -27,14 +26,19 @@ export class UserDetailComponent implements OnInit {
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
 
-  protected readonly form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-    first_name: ['', [Validators.required]],
-    last_name: [''],
-    role: [''],
-    verified: [false],
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: '',
+    verified: false,
   });
-  protected readonly controls = this.form.controls;
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
 
   protected readonly displayName = computed(() => {
     const user = this.detail();
@@ -91,9 +95,13 @@ export class UserDetailComponent implements OnInit {
     void this.load();
   }
 
-  protected async save() {
-    if (this.form.invalid || !this.id) {
-      this.form.markAllAsTouched();
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid() || !this.id) {
       return;
     }
 
@@ -105,7 +113,7 @@ export class UserDetailComponent implements OnInit {
       await this.users.update(this.id, payload);
       this.alerts.showSuccess('User updated');
       await this.load();
-      this.form.markAsPristine();
+      this.form().reset();
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to update user';
       this.error.set(message);
@@ -119,7 +127,7 @@ export class UserDetailComponent implements OnInit {
     const user = this.detail();
     if (!user) return;
     this.setForm(user);
-    this.form.markAsPristine();
+    this.form().reset();
   }
 
   protected goBack() {
@@ -146,7 +154,7 @@ export class UserDetailComponent implements OnInit {
       this.detail.set(user);
       this.stats.set(user.stats);
       this.setForm(user);
-      this.form.markAsPristine();
+      this.form().reset();
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Failed to load user';
       this.error.set(message);
@@ -157,20 +165,17 @@ export class UserDetailComponent implements OnInit {
   }
 
   private setForm(user: IAuthUserDetail) {
-    this.form.reset(
-      {
-        email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name ?? '',
-        role: user.role ?? '',
-        verified: Boolean(user.verified),
-      },
-      { emitEvent: false },
-    );
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+      role: user.role ?? '',
+      verified: Boolean(user.verified),
+    });
   }
 
   private buildPayload(): UpdateAuthUserType {
-    const raw = this.form.getRawValue();
+    const raw = this.payload();
     const normalize = (value: string | null | undefined) => {
       const trimmed = value?.trim() ?? '';
       return trimmed.length ? trimmed : null;

@@ -123,6 +123,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         first_name: input.first_name,
         role: input.role ?? null,
         verified: false,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
       } as OperationDataType<'authusers', 'insert'>;
       const user = await repo.add({ row }, trx);
       if (!user) throw new InternalError('User creation failed');
@@ -132,6 +134,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: auth.tenant_id,
         auth_id: user.id,
         last_name: input.last_name ?? null,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
       } as OperationDataType<'profiles', 'insert'>;
       await this.profiles.add({ row: profileRow }, trx);
 
@@ -316,7 +320,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       }
     }
     if (data.first_name !== undefined) row['first_name'] = data.first_name as any;
-    if (data.last_name !== undefined) row['last_name'] = (data.last_name ?? null) as any;
+    if (data.last_name !== undefined) row['last_name'] = (data.last_name ?? '') as any;
     if (data.role !== undefined) row['role'] = (data.role ?? null) as any;
     if (data.verified !== undefined) row['verified'] = data.verified as any;
     if (Object.keys(row).length > 0) {
