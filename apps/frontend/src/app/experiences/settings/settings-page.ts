@@ -1,5 +1,5 @@
-import { Component, OnInit, effect, inject, signal , ChangeDetectionStrategy} from '@angular/core';
-import { FormBuilder, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
+import { Component, OnInit, effect, inject, signal, ChangeDetectionStrategy, WritableSignal } from '@angular/core';
+import { form, email, pattern, FormField } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType } from '@common';
 
@@ -13,18 +13,18 @@ interface SectionFieldState {
 
 interface SectionState {
   config: SettingsSectionConfig;
-  form: FormGroup;
+  payload: WritableSignal<Record<string, any>>;
+  form: any;
   fields: SectionFieldState[];
 }
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-settings-page',
-  imports: [ReactiveFormsModule, Icon],
+  imports: [FormField, Icon],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
-  private readonly fb = inject(FormBuilder);
   protected readonly settingsSvc = inject(SettingsService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
 
@@ -61,11 +61,11 @@ export class SettingsPage implements OnInit {
   }
 
   protected isSectionDirty(section: SectionState) {
-    return section.form.dirty;
+    return section.form().dirty();
   }
 
   protected isSectionInvalid(section: SectionState) {
-    return section.form.invalid;
+    return section.form().invalid();
   }
 
   protected isSaving(section: SectionState) {
@@ -73,19 +73,18 @@ export class SettingsPage implements OnInit {
   }
 
   protected async saveSection(section: SectionState) {
-    if (!section.form.dirty) return;
+    if (!section.form().dirty()) return;
 
     const entries: SettingsEntryType[] = [];
     for (const field of section.fields) {
-      const control = section.form.get(field.controlName);
-      if (!control) continue;
-      if (!control.dirty) continue;
-      const value = this.prepareOutgoingValue(field.config, control.value);
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
       entries.push({ key: field.config.key, value });
     }
 
     if (!entries.length) {
-      section.form.markAsPristine();
+      section.form().reset();
       return;
     }
 
@@ -103,57 +102,55 @@ export class SettingsPage implements OnInit {
   }
 
   private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const controls: Record<string, unknown> = {};
+    const initialPayload: Record<string, any> = {};
     const fieldStates: SectionFieldState[] = [];
 
     for (const field of section.fields) {
       const controlName = this.controlNameFor(field.key);
-      const initial = this.normalizeIncomingValue(field, this.settingsSvc.getValue(field.key, field.defaultValue));
-      const validators = this.buildValidators(field);
-      controls[controlName] = this.fb.control(initial, validators);
+      initialPayload[controlName] = this.normalizeIncomingValue(field, this.settingsSvc.getValue(field.key, field.defaultValue));
       fieldStates.push({ config: field, controlName });
     }
 
-    const form = this.fb.group(controls);
-    return { config: section, form, fields: fieldStates };
-  }
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+      }
+    });
 
-  private buildValidators(field: SettingsFieldConfig) {
-    const validators: ValidatorFn[] = [];
-
-    if (field.type === 'email') {
-      validators.push(Validators.email);
-    }
-
-    if (field.type === 'url') {
-      validators.push(Validators.pattern(/^https?:\/\//i));
-    }
-
-    return validators;
+    return { config: section, payload, form: formSignal, fields: fieldStates };
   }
 
   private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
     const sections = target ? [target] : this.sectionStates;
 
     for (const state of sections) {
-      const patch: Record<string, unknown> = {};
+      const nextPayload = { ...state.payload() };
+      let changed = false;
 
       for (const field of state.fields) {
-        const control = state.form.get(field.controlName);
-        if (!control) continue;
-        if (!resetDirty && control.dirty) continue;
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
 
         const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        patch[field.controlName] = incoming;
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
       }
 
-      if (Object.keys(patch).length) {
-        state.form.patchValue(patch, { emitEvent: false });
+      if (changed) {
+        state.payload.set(nextPayload);
       }
 
       if (resetDirty) {
-        state.form.markAsPristine();
-        state.form.markAsUntouched();
+        state.form().reset();
       }
     }
   }

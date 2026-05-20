@@ -39,27 +39,29 @@
           <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
         </header>
 
-        <form [formGroup]="section.form" (ngSubmit)="saveSection(section)" class="space-y-8">
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
           <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) {
             <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
-              <label class="text-sm font-semibold text-base-content/90"> {{ field.config.label }} </label>
+              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90"> {{ field.config.label }} </label>
 
               @switch (field.config.type) {
                 @case ('textarea') {
                   <textarea
+                    [id]="field.controlName"
                     class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
                     [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formControlName]="field.controlName"
+                    [formField]="section.form[field.controlName]"
                     rows="4"
                   ></textarea>
                 }
                 @case ('toggle') {
                   <label class="flex items-center gap-3 cursor-pointer py-1">
                     <input
+                      [id]="field.controlName"
                       type="checkbox"
                       class="toggle toggle-primary toggle-md"
-                      [formControlName]="field.controlName"
+                      [formField]="section.form[field.controlName]"
                     />
                     <span class="text-sm font-normal text-base-content/70">
                       {{ field.config.placeholder ?? 'Enabled' }}
@@ -68,8 +70,9 @@
                 }
                 @case ('select') {
                   <select
+                    [id]="field.controlName"
                     class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                    [formControlName]="field.controlName"
+                    [formField]="section.form[field.controlName]"
                   >
                     @for (option of field.config.options ?? []; track option.value ?? $index) {
                       <option [value]="option.value">{{ option.label }}</option>
@@ -78,32 +81,35 @@
                 }
                 @case ('number') {
                   <input
+                    [id]="field.controlName"
                     type="number"
                     class="input input-bordered focus:input-primary w-full bg-base-200/30"
                     [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formControlName]="field.controlName"
+                    [formField]="section.form[field.controlName]"
                   />
                 }
                 @case ('date') {
                   <input
+                    [id]="field.controlName"
                     type="date"
                     class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                    [formControlName]="field.controlName"
+                    [formField]="section.form[field.controlName]"
                   />
                 }
                 @default {
                   <input
+                    [id]="field.controlName"
                     [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
                     class="input input-bordered focus:input-primary w-full bg-base-200/30"
                     [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formControlName]="field.controlName"
+                    [formField]="section.form[field.controlName]"
                   />
                 }
               }
 
               @if (field.config.helper) {
               <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form.get(field.controlName)?.invalid && section.form.get(field.controlName)?.touched) {
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
               <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
                 <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
                 Please provide a valid value.

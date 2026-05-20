@@ -80,6 +80,8 @@ describe('AuthController Integration', () => {
     if (user) {
       await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
       await db.deleteFrom('tags').where('createdby_id', '=', user.id).execute();
+      await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+      await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
       await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
       await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
@@ -127,6 +129,8 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('authusers').where('id', '=', result.id).execute();
     await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', creator.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', creator.id).execute();
     await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', creator.id).execute();
@@ -170,6 +174,72 @@ describe('AuthController Integration', () => {
     // Clean up
     await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
+
+  it('should create a default campaign and default settings on sign-up', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const email = `test-settings-${Date.now()}@example.com`;
+    const orgName = `Org-Settings-${Date.now()}`;
+
+    const controller = new AuthController();
+
+    // Sign up new user
+    const token = await controller.signUp({
+      organization: orgName,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'SettingsTest',
+    });
+
+    expect(token).toBeDefined();
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    
+    // 1. Verify default campaign was created
+    const campaign = await db
+      .selectFrom('campaigns')
+      .selectAll()
+      .where('tenant_id', '=', user.tenant_id)
+      .executeTakeFirst();
+
+    expect(campaign).toBeDefined();
+    expect(campaign?.name).toBe(`${orgName} Campaign`);
+    expect(campaign?.admin_id).toBe(user.id);
+    expect(campaign?.createdby_id).toBe(user.id);
+
+    // 2. Verify settings were created
+    const settings = await db
+      .selectFrom('settings')
+      .selectAll()
+      .where('tenant_id', '=', user.tenant_id)
+      .execute();
+
+    expect(settings).toHaveLength(2);
+    
+    const currentCampaignSetting = settings.find(s => s.key === 'current_campaign');
+    expect(currentCampaignSetting).toBeDefined();
+    expect(currentCampaignSetting?.value).toEqual({ id: Number(campaign?.id) });
+    expect(currentCampaignSetting?.createdby_id).toBe(user.id);
+    expect(currentCampaignSetting?.updatedby_id).toBe(user.id);
+
+    const notificationsSetting = settings.find(s => s.key === 'notifications');
+    expect(notificationsSetting).toBeDefined();
+    expect(notificationsSetting?.value).toBe(false);
+    expect(notificationsSetting?.createdby_id).toBe(user.id);
+    expect(notificationsSetting?.updatedby_id).toBe(user.id);
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();

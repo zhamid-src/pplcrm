@@ -283,6 +283,40 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
         await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
+
+        // Create a default campaign for the new tenant
+        const campaign = await trx
+          .insertInto('campaigns')
+          .values({
+            tenant_id,
+            admin_id: user.id,
+            createdby_id: user.id,
+            name: `${input.organization} Campaign`,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Create default settings (current_campaign and notifications)
+        await trx
+          .insertInto('settings')
+          .values([
+            {
+              tenant_id,
+              key: 'current_campaign',
+              value: { id: Number(campaign.id) } as any,
+              createdby_id: user.id,
+              updatedby_id: user.id,
+            },
+            {
+              tenant_id,
+              key: 'notifications',
+              value: false as any,
+              createdby_id: user.id,
+              updatedby_id: user.id,
+            },
+          ])
+          .execute();
+
         token = await this.createTokens(
           {
             user_id: profile.id,
