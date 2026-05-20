@@ -79,14 +79,14 @@ describe('SignInPage', () => {
     await component.signIn();
     
     expect(mockTokenSvc.clearAll).toHaveBeenCalled();
-    expect(component.form.invalid).toBe(true);
+    expect(component.form().invalid()).toBe(true);
     expect(mockAlertSvc.showError).toHaveBeenCalledWith('Email is required.');
     expect(mockAuthSvc.signIn).not.toHaveBeenCalled();
   });
 
   it('should block sign in and show alert if email is invalid format', async () => {
-    component.form.controls.email.setValue('invalid-email');
-    component.form.controls.password.setValue('validPassword123');
+    component.email.value.set('invalid-email');
+    component.password.value.set('validPassword123');
     
     await component.signIn();
     
@@ -95,8 +95,8 @@ describe('SignInPage', () => {
   });
 
   it('should block sign in and show alert if password is too short', async () => {
-    component.form.controls.email.setValue('test@example.com');
-    component.form.controls.password.setValue('short');
+    component.email.value.set('test@example.com');
+    component.password.value.set('short');
     
     await component.signIn();
     
@@ -105,12 +105,12 @@ describe('SignInPage', () => {
   });
 
   it('should normalize email before signing in', async () => {
-    component.form.controls.email.setValue(' Test@Example.com ');
-    component.form.controls.password.setValue('validPassword123');
+    component.email.value.set(' Test@Example.com ');
+    component.password.value.set('validPassword123');
     
     await component.signIn();
     
-    expect(component.email.value).toBe('test@example.com');
+    expect(component.email.value()).toBe('test@example.com');
     expect(mockAuthSvc.signIn).toHaveBeenCalledWith({
       email: 'test@example.com',
       password: 'validPassword123'
@@ -121,8 +121,8 @@ describe('SignInPage', () => {
     const errorMsg = 'Invalid credentials';
     mockAuthSvc.signIn.mockRejectedValue(new Error(errorMsg));
     
-    component.form.controls.email.setValue('test@example.com');
-    component.form.controls.password.setValue('validPassword123');
+    component.email.value.set('test@example.com');
+    component.password.value.set('validPassword123');
     
     await component.signIn();
     
