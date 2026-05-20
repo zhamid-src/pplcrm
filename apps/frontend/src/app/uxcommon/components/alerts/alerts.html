@@ -8,6 +8,7 @@
 
   <div
     class="alert rounded-none"
+    role="alert"
     *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
     [class.only-of-type:rounded-b-2xl]="isPositionTop()"
     [class.last-of-type:rounded-b-2xl]="isPositionTop()"
@@ -17,6 +18,7 @@
     [class.alert-warning]="alert.type === 'warning'"
     [class.alert-success]="alert.type === 'success'"
     [class.alert-error]="alert.type === 'error'"
+    [class.error]="alert.type === 'error'"
     [class.animate-bounce]="isPositionBottom()"
     [class.animate-flash]="alert.pulse()"
   >

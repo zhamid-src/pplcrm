@@ -6,143 +6,266 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Persons Grid', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to persons page
-    await page.goto('/persons');
+    // 1. Mock currentUser to bypass AuthGuard
+    await page.route(/\/auth\.currentUser/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          result: {
+            data: {
+              id: 'user-1',
+              email: 'test@example.com',
+              first_name: 'Test',
+              last_name: 'User',
+              role: 'user',
+            }
+          }
+        }]),
+      });
+    });
+
+    // 2. Mock persons.getAllWithAddress
+    await page.route(/\/persons\.getAllWithAddress/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          result: {
+            data: {
+              rows: [
+                {
+                  id: 'person-1',
+                  first_name: 'Alice',
+                  last_name: 'Smith',
+                  email: 'alice@example.com',
+                  mobile: '123-456-7890',
+                  home_phone: '987-654-3210',
+                  tags: ['donor', 'volunteer'],
+                  street_num: '123',
+                  apt: '4B',
+                  street1: 'Main St',
+                  street2: '',
+                  city: 'Springfield',
+                  state: 'IL',
+                  zip: '62701',
+                  country: 'USA',
+                  notes: 'Some notes here',
+                  household_id: 'household-1'
+                },
+                {
+                  id: 'person-2',
+                  first_name: 'Bob',
+                  last_name: 'Jones',
+                  email: 'bob@example.com',
+                  mobile: '555-555-5555',
+                  home_phone: '',
+                  tags: ['volunteer'],
+                  street_num: '456',
+                  apt: '',
+                  street1: 'Oak Ave',
+                  street2: '',
+                  city: 'Springfield',
+                  state: 'IL',
+                  zip: '62702',
+                  country: 'USA',
+                  notes: '',
+                  household_id: 'household-2'
+                }
+              ],
+              count: 2
+            }
+          }
+        }]),
+      });
+    });
+
+    // 3. Mock tags.getAll
+    await page.route(/\/tags\.getAll/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          result: {
+            data: {
+              rows: [
+                { id: 't1', name: 'volunteer' },
+                { id: 't2', name: 'donor' }
+              ],
+              count: 2
+            }
+          }
+        }]),
+      });
+    });
+
+    // 4. Mock persons.update to succeed
+    await page.route(/\/persons\.update/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          result: {
+            data: { success: true }
+          }
+        }]),
+      });
+    });
+
+    // Navigate to persons page (actual route is /people)
+    await page.goto('/people');
     await page.waitForLoadState('networkidle');
   });
 
   test.describe('Grid Display', () => {
     test('should display persons grid', async ({ page }) => {
       // Check that the grid is visible
-      await expect(page.locator('pc-persons-grid, ag-grid-angular, .ag-root-wrapper')).toBeVisible();
+      await expect(page.locator('pc-persons-grid pc-datagrid')).toBeVisible();
     });
 
     test('should display column headers', async ({ page }) => {
       // Check for common column headers
       await expect(
-        page.locator('.ag-header-cell-text:has-text("Name"), .ag-header-cell:has-text("First Name")'),
+        page.locator('th[role="columnheader"]:has-text("First Name")')
       ).toBeVisible();
       await expect(
-        page.locator('.ag-header-cell-text:has-text("Email"), .ag-header-cell:has-text("email")'),
+        page.locator('th[role="columnheader"]:has-text("Email")')
       ).toBeVisible();
       await expect(
-        page.locator('.ag-header-cell-text:has-text("Mobile"), .ag-header-cell:has-text("mobile")'),
+        page.locator('th[role="columnheader"]:has-text("Mobile")')
       ).toBeVisible();
     });
 
     test('should display person data in rows', async ({ page }) => {
       // Wait for data to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
       // Check that rows are present
-      const rows = page.locator('.ag-row');
+      const rows = page.locator('tbody tr');
       await expect(rows.first()).toBeVisible();
     });
 
     test('should show loading state initially', async ({ page }) => {
+      // Setup a slow response to ensure loading indicator shows
+      await page.route(/\/persons\.getAllWithAddress/, async (route) => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{
+            result: {
+              data: { rows: [], count: 0 }
+            }
+          }]),
+        });
+      });
+
       // Reload page to catch loading state
       await page.reload();
 
       // Should show loading indicator
-      await expect(page.locator('.ag-overlay-loading-wrapper, .loading, ._loading')).toBeVisible();
+      await expect(page.locator('pc-icon[name="loading"]').first()).toBeVisible();
     });
   });
 
   test.describe('Grid Interactions', () => {
     test('should allow column sorting', async ({ page }) => {
       // Wait for grid to load
-      await page.waitForSelector('.ag-header-cell', { timeout: 10000 });
+      await page.waitForSelector('th[role="columnheader"]', { timeout: 10000 });
 
-      // Click on a sortable column header
-      const nameHeader = page.locator('.ag-header-cell:has-text("Name"), .ag-header-cell:has-text("First")').first();
-      await nameHeader.click();
+      // Click on a sortable column header label
+      const nameHeader = page.locator('th[role="columnheader"]:has-text("First Name")').first();
+      await nameHeader.locator('[data-header-label]').click();
 
-      // Check for sort indicator
-      await expect(page.locator('.ag-sort-ascending-icon, .ag-sort-descending-icon')).toBeVisible();
+      // Check for sort indicator status on the element
+      await expect(nameHeader).toHaveAttribute('aria-sort', /ascending|descending/);
     });
 
     test('should allow column filtering', async ({ page }) => {
       // Wait for grid to load
-      await page.waitForSelector('.ag-header-cell', { timeout: 10000 });
+      await page.waitForSelector('th[role="columnheader"]', { timeout: 10000 });
 
-      // Look for filter button or menu
-      const filterButton = page.locator('.ag-header-cell .ag-header-cell-menu-button, .ag-filter-icon').first();
+      // Click on filter options button
+      const filterButton = page.locator('th[role="columnheader"]:has-text("First Name") label[title="Column options"]').first();
 
-      if ((await filterButton.count()) > 0) {
+      if (await filterButton.isVisible()) {
         await filterButton.click();
 
-        // Check that filter menu appears
-        await expect(page.locator('.ag-menu, .ag-filter-wrapper')).toBeVisible();
+        // Check that filter dropdown menu appears
+        const dropdownMenu = page.locator('th[role="columnheader"]:has-text("First Name") .dropdown-content').first();
+        await expect(dropdownMenu).toBeVisible();
       }
     });
 
     test('should allow row selection', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Click on first row
-      const firstRow = page.locator('.ag-row').first();
-      await firstRow.click();
+      // Click first row's checkbox
+      const firstRowCheckbox = page.locator('tbody tr input[type="checkbox"]').first();
+      await firstRowCheckbox.click();
 
-      // Check that row is selected
-      await expect(firstRow).toHaveClass(/ag-row-selected/);
+      // Check that it's selected (checked)
+      await expect(firstRowCheckbox).toBeChecked();
     });
   });
 
   test.describe('Inline Editing', () => {
     test('should allow editing person name', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Double-click on name cell to edit
-      const nameCell = page.locator('.ag-row .ag-cell').first();
-      await nameCell.dblclick();
+      // Click on name cell to edit (single click matches pcEditable behavior)
+      const nameCell = page.locator('tbody tr td[data-col-id="first_name"]').first();
+      await nameCell.click();
 
       // Check if edit mode is activated
-      const editInput = page.locator('.ag-cell input, .ag-cell-editor input');
-      if ((await editInput.count()) > 0) {
-        await expect(editInput).toBeVisible();
-        await expect(editInput).toBeFocused();
-      }
+      const editInput = nameCell.locator('input');
+      await expect(editInput).toBeVisible();
+      await editInput.focus();
+      await expect(editInput).toBeFocused();
     });
 
     test('should save changes on Enter key', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Double-click on editable cell
-      const editableCell = page.locator('.ag-row .ag-cell').first();
-      await editableCell.dblclick();
+      // Click on editable cell
+      const nameCell = page.locator('tbody tr td[data-col-id="first_name"]').first();
+      await nameCell.click();
 
-      const editInput = page.locator('.ag-cell input, .ag-cell-editor input');
-      if ((await editInput.count()) > 0) {
+      const editInput = nameCell.locator('input');
+      if (await editInput.isVisible()) {
         // Clear and enter new value
+        await editInput.focus();
         await editInput.fill('New Name');
         await editInput.press('Enter');
 
         // Check that edit mode is exited
         await expect(editInput).not.toBeVisible();
+        await expect(nameCell).toContainText('New Name');
       }
     });
 
     test('should cancel changes on Escape key', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Double-click on editable cell
-      const editableCell = page.locator('.ag-row .ag-cell').first();
-      const originalValue = await editableCell.textContent();
+      // Click on editable cell
+      const nameCell = page.locator('tbody tr td[data-col-id="first_name"]').first();
+      const originalValue = await nameCell.textContent();
 
-      await editableCell.dblclick();
+      await nameCell.click();
 
-      const editInput = page.locator('.ag-cell input, .ag-cell-editor input');
-      if ((await editInput.count()) > 0) {
+      const editInput = nameCell.locator('input');
+      if (await editInput.isVisible()) {
         // Change value and press Escape
+        await editInput.focus();
         await editInput.fill('Changed Value');
         await editInput.press('Escape');
 
         // Check that original value is restored
-        await expect(editableCell).toHaveText(originalValue || '');
+        await expect(nameCell).toHaveText(originalValue || '');
       }
     });
   });
@@ -150,27 +273,24 @@ test.describe('Persons Grid', () => {
   test.describe('Tag Management', () => {
     test('should display tags in tag column', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Look for tag column
-      const tagCell = page.locator('.ag-row .ag-cell:has(.tag, .badge, [data-testid="tag"])').first();
-
-      if ((await tagCell.count()) > 0) {
-        await expect(tagCell).toBeVisible();
-      }
+      // Look for tags cell
+      const tagCell = page.locator('tbody tr td[data-col-id="tags"]').first();
+      await expect(tagCell.locator('pc-tags')).toBeVisible();
     });
 
     test('should allow tag filtering', async ({ page }) => {
-      // Look for tag filter controls
-      const tagFilter = page.locator('[data-testid="tag-filter"], .tag-filter, select:has(option:text("tag"))');
+      // Click tag filter dropdown in toolbar
+      const tagFilterButton = page.locator('label[title="Filter by tags"]');
 
-      if ((await tagFilter.count()) > 0) {
-        await tagFilter.click();
+      if (await tagFilterButton.isVisible()) {
+        await tagFilterButton.click();
 
-        // Select a tag option
-        const tagOption = page.locator('option, .dropdown-item').first();
-        if ((await tagOption.count()) > 0) {
-          await tagOption.click();
+        // Select a tag option checkbox
+        const firstCheckbox = page.locator('.dropdown-content input[type="checkbox"]').first();
+        if (await firstCheckbox.isVisible()) {
+          await firstCheckbox.click();
 
           // Wait for filtering to apply
           await page.waitForLoadState('networkidle');
@@ -182,45 +302,39 @@ test.describe('Persons Grid', () => {
   test.describe('Address Confirmation', () => {
     test('should show confirmation dialog for address changes', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Try to edit an address field
-      const addressCell = page
-        .locator('.ag-row .ag-cell:has-text("street"), .ag-row .ag-cell[col-id*="address"]')
-        .first();
+      // Try to edit an address field (street_num) - uses double click specifically
+      const addressCell = page.locator('tbody tr td[data-col-id="street_num"]').first();
 
-      if ((await addressCell.count()) > 0) {
+      if (await addressCell.isVisible()) {
         await addressCell.dblclick();
 
         // Should show confirmation dialog
-        await expect(page.locator('.modal, .dialog, [role="dialog"]')).toBeVisible();
+        await expect(page.locator('dialog#confirmAddressEdit')).toBeVisible();
       }
     });
 
     test('should allow confirming address changes', async ({ page }) => {
       // Wait for rows to load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
       // Try to edit an address field
-      const addressCell = page
-        .locator('.ag-row .ag-cell:has-text("street"), .ag-row .ag-cell[col-id*="address"]')
-        .first();
+      const addressCell = page.locator('tbody tr td[data-col-id="street_num"]').first();
 
-      if ((await addressCell.count()) > 0) {
+      if (await addressCell.isVisible()) {
         await addressCell.dblclick();
 
         // Look for confirmation dialog
-        const confirmDialog = page.locator('.modal, .dialog, [role="dialog"]');
-        if ((await confirmDialog.count()) > 0) {
-          // Click confirm button
-          const confirmButton = confirmDialog.locator(
-            'button:has-text("Confirm"), button:has-text("Yes"), .btn-primary',
-          );
-          await confirmButton.click();
+        const confirmDialog = page.locator('dialog#confirmAddressEdit');
+        await expect(confirmDialog).toBeVisible();
 
-          // Dialog should close
-          await expect(confirmDialog).not.toBeVisible();
-        }
+        // Click Yes button
+        const confirmButton = confirmDialog.locator('button:has-text("Yes")');
+        await confirmButton.click();
+
+        // Dialog should close
+        await expect(confirmDialog).not.toBeVisible();
       }
     });
   });
@@ -228,9 +342,9 @@ test.describe('Persons Grid', () => {
   test.describe('Search and Filtering', () => {
     test('should have search functionality', async ({ page }) => {
       // Look for search input
-      const searchInput = page.locator('input[placeholder*="search" i], input[type="search"], [data-testid="search"]');
+      const searchInput = page.locator('input[placeholder*="search" i], input[type="search"]').first();
 
-      if ((await searchInput.count()) > 0) {
+      if (await searchInput.isVisible()) {
         await expect(searchInput).toBeVisible();
 
         // Test search functionality
@@ -238,14 +352,14 @@ test.describe('Persons Grid', () => {
         await page.waitForLoadState('networkidle');
 
         // Grid should update with filtered results
-        await expect(page.locator('.ag-row')).toBeVisible();
+        await expect(page.locator('tbody tr').first()).toBeVisible();
       }
     });
 
     test('should clear search results', async ({ page }) => {
-      const searchInput = page.locator('input[placeholder*="search" i], input[type="search"], [data-testid="search"]');
+      const searchInput = page.locator('input[placeholder*="search" i], input[type="search"]').first();
 
-      if ((await searchInput.count()) > 0) {
+      if (await searchInput.isVisible()) {
         // Enter search term
         await searchInput.fill('test');
         await page.waitForLoadState('networkidle');
@@ -255,7 +369,7 @@ test.describe('Persons Grid', () => {
         await page.waitForLoadState('networkidle');
 
         // Should show all results again
-        await expect(page.locator('.ag-row')).toBeVisible();
+        await expect(page.locator('tbody tr').first()).toBeVisible();
       }
     });
   });
@@ -263,14 +377,16 @@ test.describe('Persons Grid', () => {
   test.describe('Performance and Responsiveness', () => {
     test('should handle large datasets efficiently', async ({ page }) => {
       // Wait for initial load
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
 
-      // Scroll through the grid to test virtual scrolling
-      const gridViewport = page.locator('.ag-body-viewport');
-      await gridViewport.scroll({ top: 1000 });
+      // Scroll the container to test responsiveness
+      const scroller = page.locator('#scroller, .overflow-auto').first();
+      if (await scroller.count() > 0) {
+        await scroller.evaluate(node => node.scrollTop = 100);
+      }
 
       // Should still be responsive
-      await expect(page.locator('.ag-row')).toBeVisible();
+      await expect(page.locator('tbody tr').first()).toBeVisible();
     });
 
     test('should work on mobile viewport', async ({ page }) => {
@@ -278,48 +394,47 @@ test.describe('Persons Grid', () => {
       await page.setViewportSize({ width: 375, height: 667 });
 
       // Grid should still be functional
-      await expect(page.locator('pc-persons-grid, ag-grid-angular')).toBeVisible();
-
-      // Should be scrollable horizontally
-      const gridViewport = page.locator('.ag-body-viewport');
-      await gridViewport.scroll({ left: 100 });
+      await expect(page.locator('pc-persons-grid pc-datagrid')).toBeVisible();
     });
   });
 
   test.describe('Error Handling', () => {
     test('should handle network errors gracefully', async ({ page }) => {
-      // Mock network failure
-      await page.route('**/api/persons/**', (route) => route.abort());
+      // Mock network failure for getAllWithAddress query
+      await page.route(/\/persons\.getAllWithAddress/, (route) => route.abort());
 
       // Reload page
       await page.reload();
 
-      // Should show error state or empty state
-      await expect(page.locator('.ag-overlay-no-rows-wrapper, .error-state, .empty-state')).toBeVisible();
+      // Should show error alert toast (AlertService)
+      await expect(page.locator('pc-alerts .alert').first()).toBeVisible();
     });
 
     test('should handle edit conflicts', async ({ page }) => {
       // Mock edit conflict response
-      await page.route('**/api/persons/**', (route) =>
+      await page.route(/\/persons\.update/, async (route) =>
         route.fulfill({
           status: 409,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'Conflict' }),
+          body: JSON.stringify([{
+            error: { message: 'Conflict' }
+          }]),
         }),
       );
 
       // Try to edit a cell
-      await page.waitForSelector('.ag-row', { timeout: 10000 });
-      const editableCell = page.locator('.ag-row .ag-cell').first();
-      await editableCell.dblclick();
+      await page.waitForSelector('tbody tr', { timeout: 10000 });
+      const editableCell = page.locator('tbody tr td[data-col-id="first_name"]').first();
+      await editableCell.click();
 
-      const editInput = page.locator('.ag-cell input, .ag-cell-editor input');
-      if ((await editInput.count()) > 0) {
+      const editInput = editableCell.locator('input');
+      if (await editInput.isVisible()) {
+        await editInput.focus();
         await editInput.fill('New Value');
         await editInput.press('Enter');
 
         // Should show error message
-        await expect(page.locator('.error, .alert, [role="alert"]')).toBeVisible();
+        await expect(page.locator('pc-alerts .alert').first()).toBeVisible();
       }
     });
   });

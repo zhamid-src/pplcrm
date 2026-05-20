@@ -6,6 +6,10 @@
       "dependsOn": ["^build"],
       "inputs": ["production", "^production"]
     },
+    "test": {
+      "executor": "nx:noop",
+      "dependsOn": ["frontend:test", "backend:test"]
+    },
     "lint": {
       "cache": true,
       "inputs": [
