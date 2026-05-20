@@ -4,11 +4,11 @@ import { provideRouter } from '@angular/router';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { Subject } from 'rxjs';
+import { signal } from '@angular/core';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 class MockApiService {
-  refresh$ = new Subject<void>();
+  refreshCount = signal(0);
   getAll = vi.fn().mockResolvedValue({ rows: [], totalCount: 0 });
   abort = vi.fn();
 }
