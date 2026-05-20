@@ -4,8 +4,7 @@
  * using Angular signals for cross-component search coordination.
  */
 import { Injectable, signal } from '@angular/core';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
+import { debounce } from '@common';
 
 /**
  * Centralized search state management service for application-wide search functionality.
@@ -50,8 +49,7 @@ import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
  * ```typescript
  * // In a data grid component
  * constructor(private searchService: SearchService) {
- *   const searchTerm = toSignal(this.searchService.search$, { initialValue: '' });
- *   effect(() => this.filterData(searchTerm()));
+ *   effect(() => this.filterData(this.searchService.searchSignal()));
  * }
  * ```
  */
@@ -63,22 +61,13 @@ export class SearchService {
    * Internal signal that holds the current search term.
    */
   public readonly searchSignal = signal<string>('');
-  private readonly searchInputSubject = new Subject<string>();
 
-  
-  constructor() {
-    this.searchInputSubject
-      .pipe(
-        map((value) => this.normalize(value)),
-        distinctUntilChanged(),
-        debounceTime(300),
-      )
-      .subscribe((value) => {
-        if (value !== this.searchSignal()) {
-          this.searchSignal.set(value);
-        }
-      });
-  }
+  private readonly _debouncedSet = debounce((value: string) => {
+    const norm = this.normalize(value);
+    if (norm !== this.searchSignal()) {
+      this.searchSignal.set(norm);
+    }
+  }, 300);
 
   /**
    * Clears the current search term by setting it to an empty string.
@@ -90,12 +79,12 @@ export class SearchService {
   }
 
   /**
-   * Updates the search value with the provided string.
+   * Updates the search value with the provided string, debounced by 300 ms.
    *
    * @param value - The new search term to set.
    */
   public doSearch(value: string): void {
-    this.searchInputSubject.next(value);
+    this._debouncedSet(value);
   }
 
   /**
