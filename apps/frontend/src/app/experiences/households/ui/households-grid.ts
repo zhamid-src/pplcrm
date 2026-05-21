@@ -1,7 +1,7 @@
 /**
  * @file Grid component for listing households with counts and tags.
  */
-import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '@common';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -12,6 +12,8 @@ import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-def
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 interface ParamsType {
   value: string[];
@@ -24,9 +26,10 @@ interface ParamsType {
   template: `
     <pc-datagrid
       [colDefs]="col"
-      [disableDelete]="true"
+      [disableDelete]="false"
       [disableView]="false"
       [disableImport]="false"
+      [confirmDeleteOverride]="onConfirmDeleteBind"
       (importCSV)="openImportDialog()"
       addRoute="add"
       plusIcon="add-home"
@@ -56,6 +59,7 @@ interface ParamsType {
   providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
 })
 
+
 /**
  * This is the households grid component used to display the list of households.
  * It also gets the number of people that belong to each household.
@@ -67,7 +71,10 @@ interface ParamsType {
 export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
   private tagOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
 
   protected readonly mappableFields: string[] = [
     'street_num',
@@ -200,6 +207,89 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
    */
   constructor() {
     super();
+  }
+
+  /**
+   * Override delete to warn the user when selected households have people attached.
+   * Offers three choices: delete people too, keep people and remove address, or cancel.
+   */
+  protected override async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.getSelectedRows()) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] }) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        for (const pid of personIds) {
+          try {
+            await this.personsSvc.removeHousehold(pid);
+          } catch {
+            // best-effort; continue
+          }
+        }
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.gridSvc.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
   }
 
   protected onImportSubmit(payload: {

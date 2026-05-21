@@ -6,6 +6,22 @@ import { Injectable, signal, computed } from '@angular/core';
 
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 
+export interface DialogChoice<T = any> {
+  label: string;
+  value: T;
+  variant?: DialogVariant;
+}
+
+export interface ChooseOptions<T = any> {
+  allowBackdropClose?: boolean;
+  cancelText?: string;
+  choices: DialogChoice<T>[];
+  icon?: PcIconNameType;
+  message?: string;
+  title: string;
+  variant?: DialogVariant;
+}
+
 export interface BaseDialogOptions {
   allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
   cancelText?: string; // default per type
@@ -29,6 +45,9 @@ export interface DialogState {
   title: string;
   type: DialogType;
   variant: DialogVariant;
+
+  // choose
+  choices?: DialogChoice[];
 }
 
 export interface PromptOptions extends BaseDialogOptions {
@@ -55,8 +74,8 @@ export class ConfirmDialogService {
       variant: opts.variant ?? 'info',
       icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
       allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: opts.confirmText ?? 'OK',
-      cancelText: opts.cancelText ?? '',
+      confirmText: 'OK',
+      cancelText: '',
     });
     return new Promise<void>((resolve) => (this._resolve = resolve));
   }
@@ -67,6 +86,7 @@ export class ConfirmDialogService {
     if (st?.type === 'confirm') this._resolve?.(false);
     else if (st?.type === 'alert') this._resolve?.();
     else if (st?.type === 'prompt') this._resolve?.(null);
+    else if (st?.type === 'choose') this._resolve?.(null);
     this.close();
   }
 
@@ -89,6 +109,24 @@ export class ConfirmDialogService {
     });
 
     return new Promise<boolean>((resolve) => (this._resolve = resolve));
+  }
+
+  /** Open a choose dialog with multiple choice buttons. Resolves with selected value, or null on cancel. */
+  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
+    const v = opts.variant ?? 'neutral';
+    this.open({
+      type: 'choose',
+      title: opts.title,
+      message: opts.message,
+      variant: v,
+      icon: opts.icon ?? this.defaultIconFor(v),
+      allowBackdropClose: opts.allowBackdropClose ?? true,
+      confirmText: '',
+      cancelText: opts.cancelText ?? 'Cancel',
+      choices: opts.choices,
+    });
+
+    return new Promise<T | null>((resolve) => (this._resolve = resolve));
   }
 
   /** For the host to know the default icon for a variant */
@@ -140,6 +178,6 @@ export class ConfirmDialogService {
   }
 }
 
-export type DialogType = 'confirm' | 'alert' | 'prompt';
+export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
 
 export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
