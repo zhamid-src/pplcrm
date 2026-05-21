@@ -1,0 +1,120 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HouseholdsGrid } from './households-grid';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { HouseholdsService } from '../services/households-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { signal } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+class MockHouseholdsService {
+  deleteMany = vi.fn().mockResolvedValue(true);
+  getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  abort = vi.fn();
+}
+
+describe('HouseholdsGrid', () => {
+  let component: HouseholdsGrid;
+  let fixture: ComponentFixture<HouseholdsGrid>;
+
+  let mockPersonsSvc: any;
+  let mockDialogSvc: any;
+  let mockAlertSvc: any;
+  let mockHouseholdsSvc: any;
+
+  beforeEach(async () => {
+    mockPersonsSvc = {
+      getByHouseholdId: vi.fn().mockResolvedValue([{ id: 'person1' }, { id: 'person2' }]),
+      removeHousehold: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+    };
+
+    mockDialogSvc = {
+      choose: vi.fn(),
+    };
+
+    mockAlertSvc = {
+      showSuccess: vi.fn(),
+      showError: vi.fn(),
+    };
+
+    mockHouseholdsSvc = new MockHouseholdsService();
+
+    await TestBed.configureTestingModule({
+      imports: [HouseholdsGrid],
+      providers: [
+        provideRouter([]),
+        { provide: PersonsService, useValue: mockPersonsSvc },
+        { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: AlertService, useValue: mockAlertSvc },
+        { provide: HouseholdsService, useValue: mockHouseholdsSvc },
+        { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } } },
+        { provide: AbstractAPIService, useValue: mockHouseholdsSvc },
+      ],
+    })
+    .overrideComponent(HouseholdsGrid, {
+      set: {
+        providers: [
+          { provide: AbstractAPIService, useValue: mockHouseholdsSvc },
+        ],
+      },
+    })
+    .compileComponents();
+
+    fixture = TestBed.createComponent(HouseholdsGrid);
+    component = fixture.componentInstance;
+  });
+
+  it('should create and initialize columns', () => {
+    expect(component).toBeTruthy();
+    expect(component['col']).toBeDefined();
+  });
+
+  it('should return false (fallback to default) when selected households have no people', async () => {
+    const selected = [{ id: '4080', persons_count: 0 }];
+    const result = await component['confirmDelete'](selected);
+    expect(result).toBe(false);
+    expect(mockDialogSvc.choose).not.toHaveBeenCalled();
+    expect(mockHouseholdsSvc.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('should prompt user when selected households have people', async () => {
+    const selected = [{ id: '4081', persons_count: '2' }];
+    mockDialogSvc.choose.mockResolvedValue(null); // User cancels
+
+    const result = await component['confirmDelete'](selected);
+
+    expect(result).toBe(true); // Handled
+    expect(mockPersonsSvc.getByHouseholdId).toHaveBeenCalledWith('4081', { columns: ['id'] });
+    expect(mockDialogSvc.choose).toHaveBeenCalled();
+    expect(mockHouseholdsSvc.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('should detach people and delete households when user chooses keep-people', async () => {
+    const selected = [{ id: '4081', persons_count: 2 }];
+    mockDialogSvc.choose.mockResolvedValue('keep-people');
+
+    const result = await component['confirmDelete'](selected);
+
+    expect(result).toBe(true);
+    expect(mockPersonsSvc.removeHousehold).toHaveBeenCalledWith('person1');
+    expect(mockPersonsSvc.removeHousehold).toHaveBeenCalledWith('person2');
+    expect(mockHouseholdsSvc.deleteMany).toHaveBeenCalledWith(['4081']);
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Households deleted successfully.');
+  });
+
+  it('should delete people and delete households when user chooses delete-people', async () => {
+    const selected = [{ id: '4081', persons_count: 2 }];
+    mockDialogSvc.choose.mockResolvedValue('delete-people');
+
+    const result = await component['confirmDelete'](selected);
+
+    expect(result).toBe(true);
+    expect(mockPersonsSvc.deleteMany).toHaveBeenCalledWith(['person1', 'person2']);
+    expect(mockHouseholdsSvc.deleteMany).toHaveBeenCalledWith(['4081']);
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Households deleted successfully.');
+  });
+});

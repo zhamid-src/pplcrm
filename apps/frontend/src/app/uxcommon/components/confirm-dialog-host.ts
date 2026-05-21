@@ -37,14 +37,31 @@ import { ConfirmDialogService, DialogVariant } from '../../services/shared-dialo
             />
           }
 
-          <div class="flex justify-end gap-2">
-            @if (showCancel()) {
-              <button class="btn" (click)="onCancel()">{{ state()!.cancelText }}</button>
-            }
-            <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">
-              {{ state()!.confirmText }}
-            </button>
-          </div>
+          @if (state()!.type === 'choose') {
+            <div class="flex flex-col gap-2 w-full mt-4">
+              @for (choice of state()!.choices; track choice.label) {
+                <button
+                  class="btn w-full"
+                  [class]="choiceBtnClass(choice.variant)"
+                  (click)="onChoice(choice.value)"
+                >
+                  {{ choice.label }}
+                </button>
+              }
+              @if (showCancel()) {
+                <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
+              }
+            </div>
+          } @else {
+            <div class="flex justify-end gap-2">
+              @if (showCancel()) {
+                <button class="btn" (click)="onCancel()">{{ state()!.cancelText }}</button>
+              }
+              <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">
+                {{ state()!.confirmText }}
+              </button>
+            </div>
+          }
         </div>
 
         <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
@@ -77,9 +94,33 @@ export class ConfirmDialogHost {
         return '';
     }
   });
+
+  public choiceBtnClass(v?: DialogVariant): string {
+    if (!v) return '';
+    switch (v) {
+      case 'danger':
+        return 'btn-error';
+      case 'warning':
+        return 'btn-warning';
+      case 'info':
+        return 'btn-info';
+      case 'success':
+        return 'btn-success';
+      default:
+        return '';
+    }
+  }
+
   public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
   public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => !!this.state()?.cancelText && this.state()!.type !== 'alert');
+  public showCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    if (st.type === 'choose') {
+      return !!st.cancelText;
+    }
+    return !!st.cancelText && st.type !== 'alert';
+  });
 
   constructor() {
     effect(() => {
@@ -117,5 +158,9 @@ export class ConfirmDialogHost {
     if (st.type === 'prompt') this.svc.ok(this.promptValue());
     else if (st.type === 'alert') this.svc.ok();
     else this.svc.ok(true);
+  }
+
+  public onChoice(value: unknown): void {
+    this.svc.ok(value);
   }
 }

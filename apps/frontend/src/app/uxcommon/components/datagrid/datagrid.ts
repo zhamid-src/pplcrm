@@ -364,6 +364,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
   public disableExport = input<boolean>(false);
+  public confirmDeleteOverride = input<((selected: any[]) => Promise<boolean | void>) | null>(null);
   public disableImport = input<boolean>(false);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
@@ -814,17 +815,28 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Confirm and then delete selected rows */
-  protected async confirmDelete(): Promise<void> {
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean | void> {
     if (this.disableDelete()) {
       this.alertSvc.showError(this.config.messages.noDeletePermission);
-      return;
+      return true;
+    }
+
+    const overrideFn = this.confirmDeleteOverride();
+    if (overrideFn) {
+      const selected = selectedRows || this.getSelectedRows();
+      const handled = await overrideFn(selected);
+      if (handled !== false) {
+        this.clearAllSelection();
+        await this.refresh();
+        return true;
+      }
     }
 
     await this.actionsSvc.confirmDeleteAndRun({
       _loading: this._loading,
       dialogs: this.dialogs,
       alertSvc: this.alertSvc,
-      getSelectedRows: () => this.getSelectedRows(),
+      getSelectedRows: () => selectedRows || this.getSelectedRows(),
       gridSvc: this.gridSvc,
       config: this.config,
     });
@@ -832,6 +844,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
     await this.refresh();
+    return true;
   }
   public doConfirmDelete() {
     void this.confirmDelete();
