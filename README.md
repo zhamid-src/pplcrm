@@ -77,66 +77,7 @@ nx serve frontend
 
 ## 🚀 First-Time Setup
 
-If you are setting up the project for the very first time on a new machine, follow these steps.
-
-### 1. Prerequisites
-
-Ensure you have the following installed:
-- Node.js 18+
-- Yarn or npm
-- Docker Desktop (recommended for database and storage emulation)
-
-*(Note: macOS users can alternately run `./setup.sh` for an automated native setup instead of using Docker).*
-
-### 2. Clone and Install Dependencies
-
-```bash
-git clone https://github.com/zhamid-src/pplcrm.git
-cd pplcrm
-npm install
-```
-
-### 3. Environment Variables
-
-Create an environment file named `.env.development` in the root of the project:
-
-```env
-DB_USER=postgres
-DB_NAME=pplcrm
-DB_PASSWORD=postgres
-DB_PORT=5432
-DB_HOST=localhost
-DB_SSL=false
-SHARED_SECRET=your-super-secret
-```
-
-### 4. Create Background Services (Docker)
-
-Make sure Docker Desktop is open and running.
-
-**Database (PostgreSQL):**
-```bash
-docker run --name pplcrm-db \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_DB=pplcrm \
-  -p 5432:5432 -d postgres
-```
-
-**Blob Storage (Azurite):**
-```bash
-docker run --name pplcrm-azurite -p 10000:10000 -p 10001:10001 -p 10002:10002 -d mcr.microsoft.com/azure-storage/azurite
-npm run azurite:init
-```
-*(The init script creates an `uploads` container, applies CORS, and outputs a SAS URL valid for one hour).*
-
-### 5. Run Database Migrations
-
-With the database running, build your tables:
-
-```bash
-npm run db:migrate
-```
+If you are setting up the project for the very first time, please follow the step-by-step instructions in the [Setup Guide](SETUP.md).
 
 ---
 
