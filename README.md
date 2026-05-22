@@ -23,6 +23,7 @@
 - `apps/backend/` – Fastify API server with controllers, repositories, migrations, and routers.
 - `apps/frontend/` – Angular 20 SPA (standalone components & signals) styled with Tailwind CSS and DaisyUI.
 - `common/` – Shared TypeScript/Zod definitions and Kysely database models.
+- `docs/` – Project documentation including [Common UX Elements](docs/UX_COMMON.md) and [Feature Components](docs/COMPONENTS.md).
 - Root configs (`package.json`, `nx.json`, `tsconfig.base.json`) define dependencies, build targets, and TypeScript settings.
 
 ---
@@ -105,6 +106,9 @@ npx prettier --write .
 
 ## 📚 Next Steps & Resources
 
+- [Setup Guide](SETUP.md)
+- [Common UX Elements Guide](docs/UX_COMMON.md)
+- [Feature Components Catalog](docs/COMPONENTS.md)
 - [Nx Docs](https://nx.dev)
 - [tRPC](https://trpc.io)
 - [Kysely](https://github.com/kysely-org/kysely)
