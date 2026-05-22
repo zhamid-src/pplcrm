@@ -317,6 +317,24 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           ])
           .execute();
 
+        // Create the tenant's permanent placeholder household and store its ID on
+        // the tenant so it can be quickly identified without scanning all households.
+        const placeholderHousehold = await trx
+          .insertInto('households')
+          .values({
+            tenant_id,
+            campaign_id: campaign.id as any,
+            createdby_id: user.id,
+          } as any)
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        await trx
+          .updateTable('tenants')
+          .set({ placeholder_household_id: placeholderHousehold.id as any })
+          .where('id', '=', tenant_id as any)
+          .execute();
+
         token = await this.createTokens(
           {
             user_id: profile.id,

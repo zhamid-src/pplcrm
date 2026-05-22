@@ -30,6 +30,7 @@ interface ParamsType {
       [disableView]="false"
       [disableImport]="false"
       [confirmDeleteOverride]="onConfirmDeleteBind"
+      [rowCanSelect]="rowCanSelectFn"
       (importCSV)="openImportDialog()"
       addRoute="add"
       plusIcon="add-home"
@@ -75,6 +76,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly dialogSvc = inject(ConfirmDialogService);
   private tagOptionValues: string[] = [];
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
 
   protected readonly mappableFields: string[] = [
     'street_num',
@@ -136,7 +138,12 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     },
     { field: 'street_num', headerName: 'Street Number', editable: true },
     { field: 'apt', headerName: 'Apt', editable: true },
-    { field: 'street1', headerName: 'Street 1', editable: true },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: true,
+      valueFormatter: (params: any) => params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+    },
     { field: 'street2', headerName: 'Street 2', editable: true },
     { field: 'city', headerName: 'City', editable: true },
     {
@@ -217,10 +224,19 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     const selected = (selectedRows || this.getSelectedRows()) as Array<{
       id: string;
       persons_count?: number | string | null;
+      is_placeholder?: boolean;
     }>;
 
     if (!selected.length) {
       this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError(
+        'The placeholder household cannot be deleted. It holds people who have no address.',
+      );
       return true;
     }
 

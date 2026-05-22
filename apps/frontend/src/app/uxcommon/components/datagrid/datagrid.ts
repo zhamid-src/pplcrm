@@ -13,6 +13,7 @@ import {
   input,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -356,6 +357,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           await this.commitTagColumn(row, col);
         }
       : undefined,
+    isEditable: () => this.isCellEditable(row, col),
   });
 
   // Inputs & Outputs
@@ -369,6 +371,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
+  public rowCanSelect = input<(row: any) => boolean>(() => true);
   // gridOptions removed (unused)
   public limitToTags = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
@@ -470,7 +473,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   constructor() {
     effect(() => {
-      if (this.gridSvc.refreshCount() > 0) void this.refresh();
+      const count = this.gridSvc.refreshCount();
+      if (count > 0) {
+        untracked(() => {
+          void this.refresh();
+        });
+      }
     });
 
     // Mark that a load has started — prevents empty-state flash before first fetch
@@ -627,9 +635,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         const current: Record<string, boolean> = state?.rowSelection ?? {};
         const next: Record<string, boolean> = typeof updater === 'function' ? updater(current) : updater;
         const set = new Set(this.selectedIdSet());
+        const canSelectFn = this.rowCanSelect();
         for (const row of this.rows()) {
           const id = this.toId(row);
           if (!id) continue;
+          if (canSelectFn && !canSelectFn(row)) {
+            set.delete(id);
+            continue;
+          }
           if (next[id]) set.add(id);
           else set.delete(id);
         }
@@ -1188,7 +1201,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Bridge for column-level double-click handlers */
   protected handleCellDblClick(row: any, col: ColDef) {
-    if (this.isEditable(col)) {
+    if (this.isCellEditable(row, col)) {
       this.startEdit(row, col);
       return;
     }
@@ -1283,6 +1296,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Inline edit helpers
   protected isEditable(col: ColDef): boolean {
     return !!col?.editable;
+  }
+
+  protected isCellEditable(row: any, col: ColDef): boolean {
+    if (!this.isEditable(col)) return false;
+    const canSelectFn = this.rowCanSelect();
+    if (canSelectFn && !canSelectFn(row)) return false;
+    return true;
+  }
+
+  protected isCellPointerInteractive(row: any, col: ColDef | undefined): boolean {
+    if (!col) return false;
+    if (this.isCellEditable(row, col)) return false;
+    if (typeof col.onCellDoubleClicked === 'function') return true;
+    return !this.disableView();
   }
 
   protected isPointerInteractive(col: ColDef | undefined): boolean {
@@ -1420,6 +1447,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.allSelected()) {
       const id = this.toId(row.original ?? row);
       if (!id) return;
+      const canSelectFn = this.rowCanSelect();
+      if (canSelectFn && !canSelectFn(row.original ?? row)) {
+        return;
+      }
       const current = this.allSelectedIdSet();
       const next = new Set(current);
       if (checked) next.add(id);
@@ -1427,7 +1458,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.allSelectedIdSet.set(next);
       return;
     }
-    if (typeof row?.toggleSelected === 'function') row.toggleSelected(checked);
+    if (typeof row?.toggleSelected === 'function') {
+      const canSelectFn = this.rowCanSelect();
+      if (canSelectFn && !canSelectFn(row.original ?? row)) {
+        return;
+      }
+      row.toggleSelected(checked);
+    }
   }
 
   // Virtualization helpers
@@ -1618,6 +1655,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
             }
           : undefined,
         gridSvc: this.gridSvc,
+        rowCanSelect: this.rowCanSelect(),
       });
       this.allSelectedIds.set(ids);
       this.allSelectedIdSet.set(new Set(ids));
@@ -1761,7 +1799,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected startEdit(row: any, col: ColDef) {
-    if (!this.isEditable(col) || !col.field) return;
+    if (!this.isCellEditable(row, col) || !col.field) return;
     const id = this.toId(row);
     if (!id) return;
     this.editingCell.set({ id, field: col.field });
@@ -1775,11 +1813,42 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Row selection helpers (TanStack-driven)
   public tableAllPageSelected(): boolean {
-    return !!this.tsTable?.getIsAllPageRowsSelected?.();
+    const rows = this.rows();
+    if (!rows.length) return false;
+    const canSelectFn = this.rowCanSelect();
+    const ids = this.selectedIdSet();
+    let selectableCount = 0;
+    let selectedSelectableCount = 0;
+    for (const r of rows) {
+      const id = this.toId(r);
+      if (!id) continue;
+      if (canSelectFn && !canSelectFn(r)) {
+        continue;
+      }
+      selectableCount++;
+      if (ids.has(id)) {
+        selectedSelectableCount++;
+      }
+    }
+    return selectableCount > 0 && selectedSelectableCount === selectableCount;
   }
 
   public tableSomePageSelected(): boolean {
-    return !!this.tsTable?.getIsSomePageRowsSelected?.();
+    if (this.tableAllPageSelected()) return false;
+    const rows = this.rows();
+    const canSelectFn = this.rowCanSelect();
+    const ids = this.selectedIdSet();
+    for (const r of rows) {
+      const id = this.toId(r);
+      if (!id) continue;
+      if (canSelectFn && !canSelectFn(r)) {
+        continue;
+      }
+      if (ids.has(id)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   protected toId(row: any): string {

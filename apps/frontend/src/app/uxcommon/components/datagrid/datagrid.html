@@ -169,12 +169,14 @@
             [style.maxWidth.px]="selectionStickyWidth()"
           >
             <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
               <input
                 type="checkbox"
                 class="checkbox checkbox-sm"
                 [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />
+              }
               @let rowId = toId(r.original); @if (!disableView() && rowId) {
               <span title="Open detail" aria-label="Open detail" (click)="openEdit(rowId); $event.stopPropagation();">
                 <pc-icon
@@ -202,8 +204,8 @@
             [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
             [class.overflow-visible]="isTagColumn(col) && isEditing"
             class="min-w-0 px-2 border-r border-base-300"
-            [class.cursor-pencil]="isEditable(col)"
-            [class.cursor-pointer]="isPointerInteractive(col)"
+            [class.cursor-pencil]="isCellEditable(r.original, col)"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
             [style.width.px]="columnWidthPx(cell.column.id)"
             [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
@@ -297,7 +299,7 @@
             } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else {
             <span class="flex items-center gap-1 w-full">
               <span class="flex-1 truncate">{{ rawValue }}</span>
-              @if (isEditable(col)) {
+              @if (isCellEditable(r.original, col)) {
               <pc-icon
                 name="pencil-square"
                 [size]="3"

@@ -14,6 +14,7 @@ class MockHouseholdsService {
   deleteMany = vi.fn().mockResolvedValue(true);
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
   abort = vi.fn();
+  refreshCount = signal(0);
 }
 
 describe('HouseholdsGrid', () => {
@@ -74,15 +75,26 @@ describe('HouseholdsGrid', () => {
   });
 
   it('should return false (fallback to default) when selected households have no people', async () => {
-    const selected = [{ id: '4080', persons_count: 0 }];
+    const selected = [{ id: '4080', persons_count: 0, is_placeholder: false }];
     const result = await component['confirmDelete'](selected);
     expect(result).toBe(false);
     expect(mockDialogSvc.choose).not.toHaveBeenCalled();
     expect(mockHouseholdsSvc.deleteMany).not.toHaveBeenCalled();
   });
 
+  it('should block deletion and show an error when the placeholder household is selected', async () => {
+    const selected = [{ id: '9999', persons_count: 3, is_placeholder: true }];
+    const result = await component['confirmDelete'](selected);
+    expect(result).toBe(true); // Handled — blocked
+    expect(mockAlertSvc.showError).toHaveBeenCalledWith(
+      expect.stringContaining('placeholder'),
+    );
+    expect(mockDialogSvc.choose).not.toHaveBeenCalled();
+    expect(mockHouseholdsSvc.deleteMany).not.toHaveBeenCalled();
+  });
+
   it('should prompt user when selected households have people', async () => {
-    const selected = [{ id: '4081', persons_count: '2' }];
+    const selected = [{ id: '4081', persons_count: '2', is_placeholder: false }];
     mockDialogSvc.choose.mockResolvedValue(null); // User cancels
 
     const result = await component['confirmDelete'](selected);
@@ -94,7 +106,7 @@ describe('HouseholdsGrid', () => {
   });
 
   it('should detach people and delete households when user chooses keep-people', async () => {
-    const selected = [{ id: '4081', persons_count: 2 }];
+    const selected = [{ id: '4081', persons_count: 2, is_placeholder: false }];
     mockDialogSvc.choose.mockResolvedValue('keep-people');
 
     const result = await component['confirmDelete'](selected);
@@ -107,7 +119,7 @@ describe('HouseholdsGrid', () => {
   });
 
   it('should delete people and delete households when user chooses delete-people', async () => {
-    const selected = [{ id: '4081', persons_count: 2 }];
+    const selected = [{ id: '4081', persons_count: 2, is_placeholder: false }];
     mockDialogSvc.choose.mockResolvedValue('delete-people');
 
     const result = await component['confirmDelete'](selected);
@@ -116,5 +128,44 @@ describe('HouseholdsGrid', () => {
     expect(mockPersonsSvc.deleteMany).toHaveBeenCalledWith(['person1', 'person2']);
     expect(mockHouseholdsSvc.deleteMany).toHaveBeenCalledWith(['4081']);
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Households deleted successfully.');
+  });
+
+  it('should prevent selection of placeholder households via rowCanSelectFn', () => {
+    expect(component.rowCanSelectFn({ is_placeholder: true })).toBe(false);
+    expect(component.rowCanSelectFn({ is_placeholder: false })).toBe(true);
+  });
+
+  it('should format street1 as "People with no addresses" for placeholder households', () => {
+    const street1Col = component['col'].find(c => c.field === 'street1');
+    expect(street1Col).toBeDefined();
+    expect(street1Col?.valueFormatter).toBeDefined();
+
+    const formattedPlaceholder = street1Col?.valueFormatter?.({
+      data: { is_placeholder: true },
+      value: null,
+    });
+    expect(formattedPlaceholder).toBe('People with no addresses');
+
+    const formattedRegular = street1Col?.valueFormatter?.({
+      data: { is_placeholder: false },
+      value: '123 Main St',
+    });
+    expect(formattedRegular).toBe('123 Main St');
+  });
+
+  it('should prevent inline editing for placeholder households', () => {
+    fixture.componentRef.setInput('rowCanSelect', component.rowCanSelectFn);
+    fixture.detectChanges();
+
+    const street1Col = component['col'].find(c => c.field === 'street1');
+    expect(street1Col).toBeDefined();
+
+    // With a placeholder household, editing should be disabled
+    const placeholderCfg = component.editableCfg({ is_placeholder: true }, street1Col);
+    expect(placeholderCfg.isEditable()).toBe(false);
+
+    // With a regular household, editing should be enabled
+    const regularCfg = component.editableCfg({ is_placeholder: false }, street1Col);
+    expect(regularCfg.isEditable()).toBe(true);
   });
 });

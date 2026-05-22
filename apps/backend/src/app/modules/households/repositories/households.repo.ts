@@ -200,6 +200,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     // Data query
     const rows = await applyFilters(this.getSelect(trx))
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
       .select([
         'households.id',
         'households.country',
@@ -219,6 +220,14 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .whereRef('persons.household_id', '=', 'households.id')
           .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
           .as('persons_count'),
+        // is_placeholder: true only for the one household stored on the tenant row
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('is_placeholder'),
       ])
       .select(() => [
         sql<string[]>`coalesce(array_remove(array_agg(tags.name), null), '{}')`.as('tags'),
@@ -235,6 +244,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.street2',
         'households.street_num',
         'households.notes',
+        'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
@@ -248,6 +258,22 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       rows,
       count,
     };
+  }
+
+  /**
+   * Returns a Set of IDs from `candidates` that are placeholder households
+   * for this tenant. Typically returns a set with 0 or 1 element.
+   */
+  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
+    if (!candidates.length) return new Set();
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('households.id', 'in', candidates as any)
+      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
+      .select('households.id')
+      .execute();
+    return new Set(result.map((r) => String(r.id)));
   }
 
   /**

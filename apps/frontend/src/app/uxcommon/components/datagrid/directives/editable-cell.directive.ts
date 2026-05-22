@@ -35,10 +35,13 @@ export class EditableCellDirective {
     showError: (m: string) => void;
     undo: () => void;
     customCommit?: (currentValue: any) => Promise<unknown>;
+    isEditable?: () => boolean;
   }>();
 
   protected onClick() {
-    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = this.pcEditable();
+    const p = this.pcEditable();
+    if (typeof p.isEditable === 'function' && !p.isEditable()) return;
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = p;
     if (!col?.field) return;
     // Respect col.editable for parity with grid logic
     if (!col?.editable) return;

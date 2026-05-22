@@ -44,7 +44,7 @@ function count() {
 function deleteMany() {
   return authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(wrapTrpc(({ input, ctx }) => households.deleteMany(ctx.auth.tenant_id, input)));
+    .mutation(wrapTrpc(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)));
 }
 
 /**
