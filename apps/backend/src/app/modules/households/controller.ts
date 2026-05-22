@@ -23,6 +23,23 @@ export class HouseholdsController extends BaseController<'households', Household
   }
 
   /**
+   * Delete multiple households by ID, silently skipping any that are marked
+   * `is_placeholder`. Placeholder households are created at tenant setup time
+   * and serve as the permanent catch-all for people with no address.
+   *
+   * @param auth - Auth context
+   * @param idsToDelete - Household IDs requested for deletion
+   */
+  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
+    // Filter out any placeholder households — they are permanent and undeletable
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
+    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
+
+    if (safeIds.length === 0) return false;
+    return this.deleteMany(auth.tenant_id, safeIds);
+  }
+
+  /**
    * Add a new household entry for the authenticated user's tenant.
    *
    * @param payload - Household data to insert

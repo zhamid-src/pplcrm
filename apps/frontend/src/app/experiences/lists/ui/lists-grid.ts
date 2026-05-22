@@ -1,7 +1,7 @@
 /**
  * Grid component for viewing and editing lists of people or households.
  */
-import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, effect, inject, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -28,7 +28,10 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   constructor() {
     super();
     effect(() => {
-      if (this.refreshSvc.refreshCount() > 0) this.refresh();
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        untracked(() => this.refresh());
+      }
     });
   }
 

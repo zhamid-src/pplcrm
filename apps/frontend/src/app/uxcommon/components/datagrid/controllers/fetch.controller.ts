@@ -80,10 +80,12 @@ export class FetchController {
       getAll(o: any): Promise<{ rows: any[]; count: number }>;
       getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
     };
+    rowCanSelect?: ((row: any) => boolean) | null;
   }): Promise<{ ids: string[]; count: number }> {
     const options: any = { searchStr: opts.searchText, tags: opts.limitToTags, advancedFilterModel: opts.advancedFilterModel };
-    const { rows, count } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
-    const ids = (rows ?? []).map((r: any) => String(r.id)).filter(Boolean);
-    return { ids, count: count ?? ids.length };
+    const { rows } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
+    const filteredRows = opts.rowCanSelect ? (rows ?? []).filter(opts.rowCanSelect) : (rows ?? []);
+    const ids = filteredRows.map((r: any) => String(r.id)).filter(Boolean);
+    return { ids, count: filteredRows.length };
   }
 }

@@ -318,6 +318,8 @@ interface Tenants extends RecordType, AddressType {
   phone: string | null;
   json: Json | null;
   notes: string | null;
+  /** ID of the tenant's permanent placeholder household (people with no address go here). */
+  placeholder_household_id: string | null;
 }
 
 interface Emails extends RecordType {
