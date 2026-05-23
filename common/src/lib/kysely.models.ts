@@ -62,6 +62,7 @@ export interface Models {
   task_subtasks: TaskSubtasks;
   task_attachments: TaskAttachments;
   user_activity: UserActivity;
+  ms_oauth_tokens: MsOauthTokens;
   data_imports: DataImports;
 }
 
@@ -436,6 +437,20 @@ interface DataImports extends RecordType {
   households_created: number;
   metadata: Json | null;
   processed_at: Timestamp;
+}
+
+interface MsOauthTokens {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: Timestamp;
+  ms_email: string | null;
+  delta_link: string | null;
+  synced_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface TaskComments extends RecordType {

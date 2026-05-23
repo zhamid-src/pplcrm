@@ -4,6 +4,7 @@ import authRoute from './modules/auth/routes/auth.route';
 import emailsRoute from './modules/emails/routes/emails.route';
 import householdsRoute from './modules/households/routes/households.route';
 import personsRoute from './modules/persons/routes/persons.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 
 /**
  * Registers all REST API routes for the application.
@@ -27,6 +28,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register email routes
   fastify.register(emailsRoute, { prefix: '/v1/inbox' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
 
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
