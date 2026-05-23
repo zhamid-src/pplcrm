@@ -12,6 +12,14 @@ export default defineConfig(() => ({
       'apps/frontend/src': __dirname + '/src',
     }
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
   plugins: [angular(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
   test: {
     name: 'frontend',

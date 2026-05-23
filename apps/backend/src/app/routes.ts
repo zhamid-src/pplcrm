@@ -2,6 +2,7 @@ import { FastifyPluginCallback } from 'fastify';
 
 import authRoute from './modules/auth/routes/auth.route';
 import emailsRoute from './modules/emails/routes/emails.route';
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
 import householdsRoute from './modules/households/routes/households.route';
 import personsRoute from './modules/persons/routes/persons.route';
 import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
@@ -28,6 +29,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register email routes
   fastify.register(emailsRoute, { prefix: '/v1/inbox' });
+
+  // Register email attachments REST routes
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
 
   // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
   fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });

@@ -1,5 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
@@ -42,10 +43,19 @@ describe('SettingsPage', () => {
       pending: vi.fn(() => false),
     };
 
+    const mockActivatedRoute = {
+      snapshot: {
+        queryParamMap: {
+          get: vi.fn().mockReturnValue(null),
+        },
+      },
+    };
+
     await TestBed.configureTestingModule({
       imports: [SettingsPage],
       providers: [
-        { provide: SettingsService, useValue: mockSettingsSvc }
+        { provide: SettingsService, useValue: mockSettingsSvc },
+        { provide: ActivatedRoute, useValue: mockActivatedRoute }
       ]
     }).compileComponents();
 
