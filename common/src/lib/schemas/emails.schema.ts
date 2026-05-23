@@ -38,6 +38,7 @@ export const EmailObj = z.object({
   preview: z.string().optional(),
   assigned_to: z.string().optional(),
   updated_at: z.date(),
+  date_sent: z.date().nullable().optional(),
   is_favourite: z.boolean(),
   attachment_count: z.number(),
   has_attachment: z.boolean(),

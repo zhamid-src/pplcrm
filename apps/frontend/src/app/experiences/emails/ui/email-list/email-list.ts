@@ -1,7 +1,4 @@
-/**
- * @file Component displaying emails for a selected folder.
- */
-import { ChangeDetectionStrategy, Component, effect, inject, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, output, signal, computed } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
@@ -23,11 +20,25 @@ export class EmailList {
   /** Emails in the currently selected folder (reactive) */
   public readonly emails = this.store.emailsInSelectedFolder;
 
+  /** Sort order for the email list */
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  /** Chronologically sorted email list */
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
   constructor() {
     // Auto-select the first email when the current selection is removed.
     effect(() => {
       const folderId = this.store.currentSelectedFolderId();
-      const emails = this.emails();
+      const emails = this.sortedEmails();
       const selectedId = this.store.currentSelectedEmailId();
 
       // If the list is empty, clear any existing selection and bail out.

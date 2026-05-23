@@ -62,6 +62,10 @@ describe('EmailsService', () => {
         hasAttachmentByEmailIds: { query: vi.fn() },
         restoreFromTrash: { mutate: vi.fn() },
       },
+      msSync: {
+        syncNow: { mutate: vi.fn() },
+        getConnectionStatus: { query: vi.fn() },
+      },
     };
 
     // Create a bare instance without invoking Angular inject()s
@@ -191,6 +195,28 @@ describe('EmailsService', () => {
         comment: 'Test comment',
       });
       expect(result).toEqual(mockComment);
+    });
+  });
+
+  describe('Sync Operations', () => {
+    it('should trigger email sync', async () => {
+      const mockResult = { inserted: 5 };
+      mockApi.msSync.syncNow.mutate.mockResolvedValue(mockResult);
+
+      const result = await service.syncEmails();
+
+      expect(mockApi.msSync.syncNow.mutate).toHaveBeenCalled();
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should query connection status', async () => {
+      const mockStatus = { connected: true, msEmail: 'test@example.com', syncedAt: null };
+      mockApi.msSync.getConnectionStatus.query.mockResolvedValue(mockStatus);
+
+      const result = await service.getConnectionStatus();
+
+      expect(mockApi.msSync.getConnectionStatus.query).toHaveBeenCalled();
+      expect(result).toEqual(mockStatus);
     });
   });
 

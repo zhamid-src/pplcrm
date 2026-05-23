@@ -1,5 +1,6 @@
-// emails.store.ts
-import { Injectable, computed, inject } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmailStatus } from '@common';
 
 import { EmailsService } from '../emails-service';
@@ -13,9 +14,14 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 export class EmailsStore {
   // ----------------- Lazy per-email fallback -----------------
   //  private readonly _checked = new Set<string>();
+  private readonly router = inject(Router);
+  private readonly alerts = inject(AlertService);
   private readonly actions = inject(EmailActionsStore);
   private readonly cache = inject(EmailCacheStore);
   private readonly emailSvc = inject(EmailsService);
+
+  private readonly _isSyncing = signal(false);
+  public readonly isSyncing = this._isSyncing.asReadonly();
 
   /*
   private readonly ensureHasAttachmentOnOpen = effect(() => {
@@ -158,5 +164,40 @@ export class EmailsStore {
 
   public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
     return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  // ----------------- Syncing -----------------
+  public async syncEmails() {
+    this._isSyncing.set(true);
+    try {
+      const result = await this.emailSvc.syncEmails();
+      // Reload current folder emails and counts
+      const currentFolderId = this.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      await this.refreshFolderCounts();
+      this.alerts.showSuccess('Sync complete!');
+      return result;
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('No Microsoft account connected') || msg.includes('Token refresh failed')) {
+        this.alerts.show({
+          text: 'No Microsoft account is connected. Would you like to connect it now in Settings?',
+          type: 'warning',
+          OKBtn: 'Go to Settings',
+          btn2: 'Cancel',
+          OKBtnCallback: () => {
+            void this.router.navigate(['/settings'], { queryParams: { tab: 'email-sync' } });
+          },
+          duration: 0,
+        });
+      } else {
+        this.alerts.showError(`Sync failed: ${msg}`);
+      }
+      throw e;
+    } finally {
+      this._isSyncing.set(false);
+    }
   }
 }

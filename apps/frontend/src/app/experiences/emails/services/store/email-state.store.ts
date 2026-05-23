@@ -131,6 +131,7 @@ export class EmailStateStore {
           id,
           folder_id: String(s.folder_id),
           updated_at: new Date(s.updated_at),
+          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
           is_favourite: !!s.is_favourite,
           attachment_count: count,
           status: (s as any).status || 'open',

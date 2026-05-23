@@ -212,6 +212,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           preview: '',
           assigned_to: undefined,
           updated_at: d.updated_at,
+          date_sent: d.updated_at,
           is_favourite: false,
           attachment_count: 0,
           has_attachment: false,
