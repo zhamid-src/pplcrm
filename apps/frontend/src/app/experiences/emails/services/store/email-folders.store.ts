@@ -86,6 +86,7 @@ function normalizeServerEmailRow(r: any): ServerEmail {
     id: String(r.id),
     folder_id: String(r.folder_id),
     updated_at: r.updated_at, // OK if string or Date per your type
+    date_sent: r.date_sent ? new Date(r.date_sent) : null,
     is_favourite: !!r.is_favourite,
     status: r.status ?? undefined,
     from_email: r.from_email ?? null,

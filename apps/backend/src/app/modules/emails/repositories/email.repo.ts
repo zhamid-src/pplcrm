@@ -66,7 +66,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * Get emails by folder with attachment count and has_attachment flag.
    * LEFT JOIN subquery for counts + EXISTS for boolean.
    */
-  public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string) {
+  public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string): Promise<any[]> {
     const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
 
     // Subquery: SELECT email_id, COUNT(*)::int AS att_count FROM email_attachments ... GROUP BY email_id
@@ -74,7 +74,10 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
     return (
       this.getSelect()
-        .selectAll()
+        .leftJoin(ea, 'ea.email_id', 'emails.id')
+        .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
+        .selectAll('emails')
+        .select('eh.date_sent as date_sent')
         // numeric count (coalesced to 0)
         .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
         // boolean has_attachment via EXISTS (fast)
@@ -89,9 +92,9 @@ export class EmailRepo extends BaseRepository<'emails'> {
             )
             .as('has_attachment'),
         )
-        .leftJoin(ea, 'ea.email_id', 'emails.id')
-        .where('tenant_id', '=', tenant_id)
+        .where('emails.tenant_id', '=', tenant_id)
         .where((eb) => whereForFolder(eb))
+        .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc')
         .execute()
     );
   }

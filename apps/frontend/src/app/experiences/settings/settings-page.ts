@@ -1,4 +1,5 @@
 import { Component, OnInit, effect, inject, signal, ChangeDetectionStrategy, WritableSignal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { form, email, pattern, FormField } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType } from '@common';
@@ -27,6 +28,7 @@ interface SectionState {
 })
 export class SettingsPage implements OnInit {
   protected readonly settingsSvc = inject(SettingsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
 
   protected readonly sections = SETTINGS_SECTIONS;
@@ -48,6 +50,11 @@ export class SettingsPage implements OnInit {
     await this.settingsSvc.load();
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);
+
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    if (tab) {
+      this.selectedSectionId.set(tab);
+    }
   }
 
   protected trackSection = (_: number, section: SectionState) => section.config.id;

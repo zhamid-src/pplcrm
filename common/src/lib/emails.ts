@@ -76,6 +76,7 @@ export type ServerEmail = {
   subject?: string | null;
   to_email?: string | null;
   updated_at: string | Date;
+  date_sent?: string | Date | null;
 };
 
 export type SpecialFolderId = OnlyVirtual['id'];

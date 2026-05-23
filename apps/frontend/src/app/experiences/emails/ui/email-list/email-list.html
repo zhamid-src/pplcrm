@@ -1,6 +1,25 @@
-<section class="border-r border-gray-200 flex flex-col h-full overflow-hidden w-48">
-  <ul class="flex-1 overflow-y-auto min-h-0 email-scrollbar">
-    @for (email of emails(); track email.id) {
+<section class="border-r border-gray-200 flex flex-col h-full overflow-hidden w-48 bg-base-50">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between border-t border-gray-200 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-50">
+    <span class="text-xs font-semibold text-neutral-content">Sort</span>
+    <div class="dropdown dropdown-end">
+      <label tabindex="0" class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer">
+        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
+        <pc-icon name="chevron-down" [size]="3"></pc-icon>
+      </label>
+      <ul tabindex="0" class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200">
+        <li>
+          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
+        </li>
+        <li>
+          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <ul class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+    @for (email of sortedEmails(); track email.id) {
     <li
       (click)="selectEmail(email)"
       [class.bg-blue-50]="isSelected(email.id)"
@@ -12,8 +31,7 @@
         } @else {
         <span class="truncate flex-1">No recipient</span>
         }
-        <!-- TODO: use the sent time -->
-        <span class="flex-none">{{ email.updated_at | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
+        <span class="flex-none">{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
       </div>
       <div class="truncate font-medium flex gap-1">
         @if (email?.subject) {

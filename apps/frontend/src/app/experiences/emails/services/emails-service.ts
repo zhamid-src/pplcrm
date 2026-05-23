@@ -156,4 +156,19 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   public setStatus(id: string, status: EmailStatus) {
     return this.api.emails.setStatus.mutate({ id, status });
   }
+
+  /** Trigger Microsoft email sync */
+  public syncEmails() {
+    return (this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>)(
+      undefined,
+      {
+        meta: { skipErrorHandler: true },
+      },
+    );
+  }
+
+  /** Get connection status for Microsoft sync */
+  public getConnectionStatus() {
+    return this.api.msSync.getConnectionStatus.query();
+  }
 }
