@@ -10,6 +10,7 @@ import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from 'common/src/lib/models';
+import { environment } from '../../../../../environments/environment';
 
 @Component({
   selector: 'pc-email-body',
@@ -77,6 +78,6 @@ export class EmailBody {
 
   protected getAttachmentUrl(att: any): string {
     const id = this.emailId();
-    return id ? `/api/emails/${id}/attachments/${att.id}` : '';
+    return id ? `${environment.apiUrl}/api/emails/${id}/attachments/${att.id}` : '';
   }
 }

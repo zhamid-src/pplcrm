@@ -18,6 +18,8 @@ const envSchema = z.object({
   MS_CLIENT_SECRET: z.string().optional(),
   MS_TENANT_ID: z.string().optional().default('common'),
   MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -39,4 +41,6 @@ export const env = {
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,
   msTenantId: parsedEnv.MS_TENANT_ID,
   msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
 };

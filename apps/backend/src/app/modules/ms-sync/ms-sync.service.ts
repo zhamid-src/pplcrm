@@ -8,6 +8,9 @@ import { Kysely } from 'kysely';
 import { Models } from 'common/src/lib/kysely.models';
 import { MsOAuthService } from './ms-oauth.service';
 import { ALL_FOLDERS } from 'common/src/lib/emails';
+import { StorageService } from '../../lib/storage.service';
+import { env } from '../../../env';
+import crypto from 'crypto';
 
 /** Map of Microsoft folder display names → pplcrm folder IDs */
 const MS_FOLDER_MAP: Record<string, string> = {
@@ -26,6 +29,8 @@ const MAX_MESSAGES_PER_SYNC = 50;
  * in the existing pplcrm email tables.
  */
 export class MsSyncService {
+  private readonly storageService = new StorageService();
+
   constructor(
     private readonly db: Kysely<Models>,
     private readonly oauthSvc: MsOAuthService,
@@ -57,7 +62,7 @@ export class MsSyncService {
       nextDeltaLink = response['@odata.deltaLink'] ?? response['@odata.nextLink'] ?? null;
 
       for (const msg of messages) {
-        const wasSaved = await this.saveMessage(msg, userId, tenantId, requestedBy, folderMap);
+        const wasSaved = await this.saveMessage(client, msg, userId, tenantId, requestedBy, folderMap);
         if (wasSaved) inserted++;
       }
 
@@ -97,6 +102,7 @@ export class MsSyncService {
    * Returns true if a new email was inserted.
    */
   private async saveMessage(
+    client: Client,
     msg: any,
     _userId: string,
     tenantId: string,
@@ -123,6 +129,56 @@ export class MsSyncService {
     const subject = msg.subject ?? null;
     const dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
 
+    // Fetch Graph attachments if any
+    let graphAttachments: any[] = [];
+    const hasCid = msg.body?.content && msg.body.content.includes('cid:');
+    if (msg.hasAttachments || hasCid) {
+      try {
+        const attRes = await client.api(`/me/messages/${msId}/attachments`).get();
+        graphAttachments = attRes.value ?? [];
+      } catch (err) {
+        console.error(`Failed to fetch attachments for message ${msId}:`, err);
+      }
+    }
+
+    const fileAttachments = graphAttachments.filter(
+      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
+    );
+
+    // Upload attachment files to storage outside database transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const att of fileAttachments) {
+      try {
+        const buffer = Buffer.from(att.contentBytes, 'base64');
+        const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
+        const fileUUID = crypto.randomUUID();
+        const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
+
+        await this.storageService.upload(storage_key, buffer, att.contentType);
+
+        uploadedFiles.push({
+          filename: att.name,
+          content_type: att.contentType,
+          size_bytes: att.size,
+          storage_key,
+          sha256_hex,
+          cid: att.contentId ?? null,
+          is_inline: att.isInline ?? false,
+        });
+      } catch (err) {
+        console.error(`Failed to upload attachment ${att.name} for message ${msId} to storage:`, err);
+      }
+    }
+
     return this.db.transaction().execute(async (trx) => {
       // 1. Insert into emails
       const emailRow = await trx
@@ -148,8 +204,16 @@ export class MsSyncService {
 
       const emailId = String(emailRow.id);
 
-      // 2. Insert body
-      const bodyHtml = msg.body?.content ?? '';
+      // 2. Rewrite inline CID references in body content, then insert body
+      let bodyHtml = msg.body?.content ?? '';
+      for (const file of uploadedFiles) {
+        if (file.is_inline && file.cid) {
+          const cidEscaped = file.cid.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
+          bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
+        }
+      }
+
       await trx
         .insertInto('email_bodies')
         .values({
@@ -161,7 +225,56 @@ export class MsSyncService {
         })
         .execute();
 
-      // 3. Insert headers
+      // 3. Insert files and email_attachments metadata
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+
+        let fileId: string;
+
+        const existingFile = await trx
+          .selectFrom('files' as any)
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('sha256_hex', '=', file.sha256_hex)
+          .executeTakeFirst();
+
+        if (existingFile) {
+          fileId = String((existingFile as any).id);
+        } else {
+          const fileResult = await trx
+            .insertInto('files' as any)
+            .values({
+              tenant_id: tenantId,
+              filename: file.filename,
+              mime_type: file.content_type,
+              size_bytes: file.size_bytes,
+              storage_key: file.storage_key,
+              sha256_hex: file.sha256_hex,
+              uploaded_by: requestedBy,
+            })
+            .returning('id')
+            .executeTakeFirst();
+
+          fileId = String((fileResult as any).id);
+        }
+
+        await trx
+          .insertInto('email_attachments' as any)
+          .values({
+            tenant_id: tenantId,
+            email_id: emailId,
+            filename: file.filename,
+            content_type: file.content_type,
+            size_bytes: file.size_bytes,
+            cid: file.cid,
+            is_inline: file.is_inline,
+            pos: i + 1,
+            file_id: fileId,
+          })
+          .execute();
+      }
+
+      // 4. Insert headers
       const internetMessageId = msg.internetMessageId ?? '';
       const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject ?? ''}\r\nFrom: ${fromEmail ?? ''}\r\nTo: ${toEmail ?? ''}\r\nDate: ${dateSent.toUTCString()}\r\n`;
 
@@ -178,7 +291,7 @@ export class MsSyncService {
         })
         .execute();
 
-      // 4. Insert recipients
+      // 5. Insert recipients
       const recipientRows: any[] = [];
       const toList: any[] = msg.toRecipients ?? [];
       const ccList: any[] = msg.ccRecipients ?? [];
