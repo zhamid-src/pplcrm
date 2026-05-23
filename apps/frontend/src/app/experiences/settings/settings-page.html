@@ -27,6 +27,22 @@
           {{ section.config.title }}
         </button>
         }
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('email-sync')"
+          [class.opacity-70]="!isSelected('email-sync')"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon
+            name="envelope"
+            class="h-5 w-5 mr-2 opacity-80"
+            [class.text-primary]="isSelected('email-sync')"
+          />
+          Email Sync
+        </button>
       </nav>
     </aside>
 
@@ -39,6 +55,7 @@
           <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
         </header>
 
+        <!-- (form content) -->
         <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
           <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) {
@@ -155,6 +172,17 @@
         </form>
       </section>
       } }
+
+      <!-- Email Sync custom section -->
+      @if (isSelected('email-sync')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
+          <p class="mt-1 text-sm text-base-content/60">Connect your Office 365 mailbox to sync emails into your pplcrm inbox.</p>
+        </header>
+        <pc-ms-sync-settings></pc-ms-sync-settings>
+      </section>
+      }
     </main>
   </div>
   } @else {

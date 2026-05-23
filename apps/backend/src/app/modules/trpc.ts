@@ -15,6 +15,7 @@ import { UserProfilesRouter } from './userprofiles/trpc.router';
 import { TeamsRouter } from './teams/trpc.router';
 import { SettingsRouter } from './settings/trpc.router';
 import { ImportsRouter } from './imports/trpc.router';
+import { MsSyncRouter } from './ms-sync/trpc.router';
 
 /**
  * Inferred type representing the full structure of the tRPC API.
@@ -45,6 +46,7 @@ export const trpcRouter = router({
   teams: TeamsRouter,
   settings: SettingsRouter,
   imports: ImportsRouter,
+  msSync: MsSyncRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -71,3 +73,5 @@ export { TeamsRouter } from './teams/trpc.router';
 export { SettingsRouter } from './settings/trpc.router';
 
 export { ImportsRouter } from './imports/trpc.router';
+
+export { MsSyncRouter } from './ms-sync/trpc.router';

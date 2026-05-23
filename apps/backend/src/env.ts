@@ -8,9 +8,16 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
   DB_PORT: z.coerce.number().default(5432),
   DB_HOST: z.string().default('localhost'),
-  DB_SSL: z.string().optional().transform((val) => val === 'true'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
   API_URL: z.string().url().default('http://localhost:3000'),
   SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -28,4 +35,8 @@ export const env = {
   },
   apiUrl: parsedEnv.API_URL,
   sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
 };
