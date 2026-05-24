@@ -1,5 +1,5 @@
 import type { Router } from '@angular/router';
-import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink } from '@trpc/client';
+import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 
 import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
@@ -34,25 +34,39 @@ function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, un
   });
 }
 
+let activeRefreshPromise: Promise<string | null> | null = null;
+
 /** Returns a valid auth token, refreshing if required. */
 async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
-  let authToken = tokenSvc.getAuthToken();
+  const authToken = tokenSvc.getAuthToken();
   if (!authToken) return null;
 
   if (isTokenExpired(authToken)) {
+    if (activeRefreshPromise) {
+      return activeRefreshPromise;
+    }
+
     const refreshToken = tokenSvc.getRefreshToken();
     if (!refreshToken) throw new TRPCClientError('No refresh token available');
 
-    const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
-      auth_token: authToken,
-      refresh_token: refreshToken,
-    });
+    activeRefreshPromise = (async () => {
+      try {
+        const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
+          auth_token: authToken,
+          refresh_token: refreshToken,
+        });
 
-    tokenSvc.set({
-      auth_token: payload.auth_token,
-      refresh_token: payload.refresh_token,
-    });
-    authToken = payload.auth_token;
+        tokenSvc.set({
+          auth_token: payload.auth_token,
+          refresh_token: payload.refresh_token,
+        });
+        return payload.auth_token;
+      } finally {
+        activeRefreshPromise = null;
+      }
+    })();
+
+    return activeRefreshPromise;
   }
   return authToken;
 }
@@ -132,5 +146,5 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
 /* Dedicated client for token refreshes only                          */
 /* ------------------------------------------------------------------ */
 const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [httpBatchLink({ url: environment.apiUrl })],
+  links: [httpLink({ url: environment.apiUrl })],
 });

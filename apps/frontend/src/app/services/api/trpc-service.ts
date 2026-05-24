@@ -2,7 +2,15 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { ErrorService } from '../error.service';
-import { TRPCClientError, TRPCLink, createTRPCClient, httpBatchLink, loggerLink } from '@trpc/client';
+import {
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpBatchLink,
+  httpLink as trpcHttpLink,
+  loggerLink,
+  splitLink,
+} from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 
 import { get, set } from 'idb-keyval';
@@ -93,7 +101,11 @@ export class TRPCService<T> {
         loggerLink(),
         refreshLink(this.tokenService, this.router),
         errorLink(this.errorSvc),
-        httpLink(this.tokenService),
+        splitLink({
+          condition: (op) => op.type === 'mutation',
+          true: httpUnbatchedLink(this.tokenService),
+          false: httpBatchedLink(this.tokenService),
+        }),
       ],
     });
   }
@@ -205,11 +217,26 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
 }
 
 /**
+ * Creates a TRPC HTTP unbatched link with the auth token included in headers.
+ *
+ * @param tokenSvc - The TokenService instance
+ */
+function httpUnbatchedLink(tokenSvc: TokenService) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
+}
+
+/**
  * Creates a TRPC HTTP batch link with the auth token included in headers.
  *
  * @param tokenSvc - The TokenService instance
  */
-function httpLink(tokenSvc: TokenService) {
+function httpBatchedLink(tokenSvc: TokenService) {
   return httpBatchLink({
     url: environment.apiUrl,
     headers() {
