@@ -475,7 +475,8 @@ export class PersonDetail implements OnInit {
     if (streetParts.length) parts.push(streetParts.join(' ').trim());
     if (locationParts.length) parts.push(locationParts.join(', ').trim());
 
-    return parts.join(', ');
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
   }
 
   /**
