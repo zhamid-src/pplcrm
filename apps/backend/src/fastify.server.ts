@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import multipart from '@fastify/multipart';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 
 import fastify from 'fastify';
@@ -40,6 +41,11 @@ export class FastifyServer {
     // Register core Fastify plugins
     this.server.register(cors, { ...opts });
     this.server.register(sensible);
+    this.server.register(multipart, {
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB
+      },
+    });
     this.server.register(jsendPlugin);
 
     // Register REST routes

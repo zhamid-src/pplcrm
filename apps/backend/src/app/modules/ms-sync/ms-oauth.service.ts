@@ -6,8 +6,13 @@ import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/
 import { Kysely } from 'kysely';
 import { Models } from 'common/src/lib/kysely.models';
 
-/** Scopes required for reading mail via Microsoft Graph */
-const MS_SCOPES = ['https://graph.microsoft.com/Mail.Read', 'offline_access'];
+/** Scopes required for reading, writing, and sending mail via Microsoft Graph */
+const MS_SCOPES = [
+  'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.ReadWrite',
+  'https://graph.microsoft.com/Mail.Send',
+  'offline_access'
+];
 
 /**
  * Microsoft OAuth service for acquiring and refreshing tokens.

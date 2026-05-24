@@ -12,16 +12,6 @@ import { StorageService } from '../../lib/storage.service';
 import { env } from '../../../env';
 import crypto from 'crypto';
 
-/** Map of Microsoft folder display names → pplcrm folder IDs */
-const MS_FOLDER_MAP: Record<string, string> = {
-  Inbox: ALL_FOLDERS.ALL_OPEN,
-  'Sent Items': ALL_FOLDERS.SENT,
-  Drafts: ALL_FOLDERS.DRAFTS,
-  'Deleted Items': ALL_FOLDERS.TRASH,
-  'Junk Email': ALL_FOLDERS.SPAM,
-};
-
-const FALLBACK_FOLDER = ALL_FOLDERS.ALL_OPEN;
 const MAX_MESSAGES_PER_SYNC = 50;
 
 /**
@@ -46,54 +36,144 @@ export class MsSyncService {
     const accessToken = await this.oauthSvc.getValidToken(userId);
     const client = this.buildGraphClient(accessToken);
 
-    // Get MS folder name → pplcrm folder mapping via the user's real folder list
-    const folderMap = await this.buildFolderMap(client);
+    // Query active email folders for this tenant from database to prevent foreign key issues
+    const dbFolders: any[] = await (this.db as any)
+      .selectFrom('email_folders')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .execute();
+    const allowedFolderIds = new Set(dbFolders.map((f: any) => String(f.id)));
 
-    const deltaLink = await this.oauthSvc.getDeltaLink(userId);
+    const syncFolders = [
+      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.ALL_OPEN },
+      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
+      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
+      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
+    ].filter(f => allowedFolderIds.has(f.pplcrmId));
 
-    let url = deltaLink ?? `/me/mailFolders/inbox/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId&$orderby=receivedDateTime+desc`;
+    // Read stored delta map
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
+    let deltaMap: Record<string, string> = {};
+    if (dbDeltaLink) {
+      try {
+        deltaMap = JSON.parse(dbDeltaLink);
+      } catch {
+        // If not valid JSON, it's a legacy plain URL string. Clear it.
+        deltaMap = {};
+      }
+    }
 
     let inserted = 0;
-    let nextDeltaLink: string | null = null;
+    const nextDeltaMap: Record<string, string> = { ...deltaMap };
 
-    try {
-      const response: any = await client.api(url).get();
-      const messages: any[] = response.value ?? [];
-      nextDeltaLink = response['@odata.deltaLink'] ?? response['@odata.nextLink'] ?? null;
+    for (const folder of syncFolders) {
+      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+      let pageUrl: string | null = folderDeltaLink ?? `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
 
-      for (const msg of messages) {
-        const wasSaved = await this.saveMessage(client, msg, userId, tenantId, requestedBy, folderMap);
+      const allMessages: any[] = [];
+      let isInitialSync = (folderDeltaLink === null);
+      let hasMore = true;
+
+      while (pageUrl && hasMore) {
+        try {
+          const response: any = await client.api(pageUrl).get();
+          const messages = response.value ?? [];
+          allMessages.push(...messages);
+
+          const nextLink = response['@odata.nextLink'] ?? null;
+          const deltaLink = response['@odata.deltaLink'] ?? null;
+
+          if (deltaLink) {
+            nextDeltaMap[folder.wellKnownName] = deltaLink;
+            hasMore = false;
+          } else if (nextLink) {
+            pageUrl = nextLink;
+          } else {
+            hasMore = false;
+          }
+        } catch (err: any) {
+          if (err?.statusCode === 410) {
+            // Delta link expired for this folder, clear it
+            delete nextDeltaMap[folder.wellKnownName];
+            isInitialSync = true;
+            allMessages.length = 0; // clear any partially loaded pages before restarting
+            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Process all messages fetched in this sync run
+      for (const msg of allMessages) {
+        if (msg['@removed']) {
+          const msId = msg.id;
+          if (msId) {
+            const dedupeKey = `ms:${msId}`;
+            await this.deleteMessage(tenantId, dedupeKey);
+          }
+          continue;
+        }
+        const wasSaved = await this.saveMessage(client, msg, userId, tenantId, requestedBy, folder.pplcrmId);
         if (wasSaved) inserted++;
       }
 
-      if (nextDeltaLink) {
-        await this.oauthSvc.saveDeltaLink(userId, nextDeltaLink);
+      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
+      // we have retrieved the entire list of active server messages.
+      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
+      if (isInitialSync) {
+        const serverMsIds = new Set(allMessages.filter(m => !m['@removed']).map(m => String(m.id)));
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'ms:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const msId = previewKey.replace(/^ms:/, '');
+          if (!serverMsIds.has(msId)) {
+            await this.deleteMessage(tenantId, previewKey);
+          }
+        }
       }
-    } catch (err: any) {
-      // If delta link expired, clear it and retry with a full sync next time
-      if (err?.statusCode === 410) {
-        await this.oauthSvc.saveDeltaLink(userId, '');
-      }
-      throw err;
     }
+
+    // Save updated delta map back to database
+    await this.oauthSvc.saveDeltaLink(userId, JSON.stringify(nextDeltaMap));
 
     return { inserted };
   }
 
-  /** Builds a map from MS folder ID → pplcrm folder ID */
-  private async buildFolderMap(client: Client): Promise<Record<string, string>> {
-    try {
-      const response: any = await client.api('/me/mailFolders').get();
-      const folders: any[] = response.value ?? [];
-      const map: Record<string, string> = {};
-      for (const folder of folders) {
-        const pplcrmId = MS_FOLDER_MAP[folder.displayName as string] ?? FALLBACK_FOLDER;
-        map[folder.id] = pplcrmId;
-      }
-      return map;
-    } catch {
-      return {};
-    }
+  /**
+   * Safely deletes a synced email and all its dependent child tables
+   * by its MS deduplication key (stored in `preview`).
+   */
+  private async deleteMessage(tenantId: string, dedupeKey: string): Promise<void> {
+    const existing = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', '=', dedupeKey)
+      .executeTakeFirst();
+
+    if (!existing) return;
+    const emailId = String(existing.id);
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx.deleteFrom('email_comments').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_recipients').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_attachments' as any).where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_trash' as any).where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
+    });
   }
 
   /**
@@ -107,7 +187,7 @@ export class MsSyncService {
     _userId: string,
     tenantId: string,
     requestedBy: string,
-    folderMap: Record<string, string>,
+    folderId: string,
   ): Promise<boolean> {
     const msId: string = msg.id ?? '';
     if (!msId) return false;
@@ -123,7 +203,6 @@ export class MsSyncService {
 
     if (existing) return false;
 
-    const folderId = folderMap[msg.parentFolderId] ?? FALLBACK_FOLDER;
     const fromEmail = msg.from?.emailAddress?.address ?? null;
     const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
     const subject = msg.subject ?? null;

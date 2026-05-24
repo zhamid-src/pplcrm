@@ -1,0 +1,381 @@
+
+> nx run frontend:serve:development
+
+[33m❯[39m Building...
+/*! 🌼 daisyUI 5.5.19 */
+[32m✔[39m Building...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [4.246 seconds] - 2026-05-24T14:00:00.044Z[39m
+[37m[39m
+[37mWatch mode enabled. Watching for file changes...[39m
+[37mNOTE: Raw file sizes do not reflect development server per-request transformations.[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m4200[22m/[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [0.140 seconds] - 2026-05-24T14:02:17.540Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [0.073 seconds] - 2026-05-24T14:02:41.741Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m
+[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [2.662 seconds] - 2026-05-24T14:04:05.290Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [1.617 seconds] - 2026-05-24T14:04:25.206Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [0.102 seconds] - 2026-05-24T14:04:39.695Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [0.077 seconds] - 2026-05-24T14:04:46.097Z[39m
+[37m[39m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37mApplication bundle generation failed. [0.383 seconds] - 2026-05-24T14:04:56.812Z[39m
+[37m[39m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2554: Expected 1 arguments, but got 2.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:50:74:[39m[22m
+[1m[31m[37m      50 │ ...Map, rawFolders } = await this.getFoldersAndMap(client, [32mtenantId[37m);[39m[22m
+[1m[31m         ╵                                                            [32m~~~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37mApplication bundle generation failed. [0.553 seconds] - 2026-05-24T14:05:03.039Z[39m
+[37m[39m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type '"email_folders"' is not assignable to parameter of type 'TableExpressionOrList<Models, never>'.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:104:20:[39m[22m
+[1m[31m[37m      104 │         .selectFrom([32m'email_folders'[37m)[39m[22m
+[1m[31m          ╵                     [32m~~~~~~~~~~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2349: This expression is not callable.[39m[22m
+[1m[31m  Each member of the union type '{ <SE extends SelectExpression<{ [x: string]: never; }, any>>(selections: readonly SE[]): SelectQueryBuilder<{ [x: string]: never; }, any, { [E in FlattenSelectExpression<SE> as ExtractAliasFromSelectExpression<...>]: SelectType<...>; }>; <CB extends SelectCallback<...>>(callback: CB): SelectQueryBuilder<...>; <SE e...' has signatures, but none of those signatures are compatible with each other.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:105:9:[39m[22m
+[1m[31m[37m      105 │         .[32mselect[37m('id')[39m[22m
+[1m[31m          ╵          [32m~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS7006: Parameter 'f' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:108:54:[39m[22m
+[1m[31m[37m      108 │ ...t allowedFolderIds = new Set(dbFolders.map(([32mf[37m) => String(f.id)));[39m[22m
+[1m[31m          ╵                                                [32m^[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37mApplication bundle generation failed. [0.083 seconds] - 2026-05-24T14:05:29.421Z[39m
+[37m[39m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type '"email_folders"' is not assignable to parameter of type 'TableExpressionOrList<Models, never>'.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:104:20:[39m[22m
+[1m[31m[37m      104 │         .selectFrom([32m'email_folders'[37m)[39m[22m
+[1m[31m          ╵                     [32m~~~~~~~~~~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2349: This expression is not callable.[39m[22m
+[1m[31m  Each member of the union type '{ <SE extends SelectExpression<{ [x: string]: never; }, any>>(selections: readonly SE[]): SelectQueryBuilder<{ [x: string]: never; }, any, { [E in FlattenSelectExpression<SE> as ExtractAliasFromSelectExpression<...>]: SelectType<...>; }>; <CB extends SelectCallback<...>>(callback: CB): SelectQueryBuilder<...>; <SE e...' has signatures, but none of those signatures are compatible with each other.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:105:9:[39m[22m
+[1m[31m[37m      105 │         .[32mselect[37m('id')[39m[22m
+[1m[31m          ╵          [32m~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS7006: Parameter 'f' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:108:54:[39m[22m
+[1m[31m[37m      108 │ ...t allowedFolderIds = new Set(dbFolders.map(([32mf[37m) => String(f.id)));[39m[22m
+[1m[31m          ╵                                                [32m^[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37mApplication bundle generation failed. [0.104 seconds] - 2026-05-24T14:05:38.505Z[39m
+[37m[39m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type '"email_folders"' is not assignable to parameter of type 'TableExpressionOrList<Models, never>'.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:104:20:[39m[22m
+[1m[31m[37m      104 │         .selectFrom([32m'email_folders'[37m)[39m[22m
+[1m[31m          ╵                     [32m~~~~~~~~~~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2349: This expression is not callable.[39m[22m
+[1m[31m  Each member of the union type '{ <SE extends SelectExpression<{ [x: string]: never; }, any>>(selections: readonly SE[]): SelectQueryBuilder<{ [x: string]: never; }, any, { [E in FlattenSelectExpression<SE> as ExtractAliasFromSelectExpression<...>]: SelectType<...>; }>; <CB extends SelectCallback<...>>(callback: CB): SelectQueryBuilder<...>; <SE e...' has signatures, but none of those signatures are compatible with each other.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:105:9:[39m[22m
+[1m[31m[37m      105 │         .[32mselect[37m('id')[39m[22m
+[1m[31m          ╵          [32m~~~~~~[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS7006: Parameter 'f' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m    apps/backend/src/app/modules/ms-sync/ms-sync.service.ts:108:54:[39m[22m
+[1m[31m[37m      108 │ ...t allowedFolderIds = new Set(dbFolders.map(([32mf[37m) => String(f.id)));[39m[22m
+[1m[31m          ╵                                                [32m^[0m[39m[22m
+[1m[31m[39m[22m
+[1m[31m[39m[22m
+[33m❯[39m Changes detected. Rebuilding...
+[32m✔[39m Changes detected. Rebuilding...
+[37m[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mstyles.css[39m[37m         [2m | [22m[2mstyles[22m           [2m | [22m[36m264.53 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-VFXHKPBF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m37.39 kB[39m[37m[2m | [22m[39m
+[37m[32mmain.js[39m[37m            [2m | [22m[2mmain[22m             [2m | [22m [36m26.19 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-CRUBCMWF.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m14.52 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YHO3WOGD.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-IDXHL5E6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m4.41 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-YE55YHDX.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m2.27 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GOMI4DH3.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m  [36m1.37 kB[39m[37m[2m | [22m[39m
+[37m[39m
+[37m[1m [22m                  [2m | [22m[1mInitial total[22m    [2m | [22m[1m355.09 kB[22m[39m
+[37m[39m
+[37m[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m[39m
+[37m[32mchunk-E7HZOP4D.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m[36m272.56 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-FLOCTG7S.js[39m[37m  [2m | [22m[2memail-client[22m     [2m | [22m[36m200.69 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-674F47EL.js[39m[37m  [2m | [22m[2mnewsletter-add[22m   [2m | [22m [36m70.62 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PBCK4RBI.js[39m[37m  [2m | [22m[2mlist-detail[22m      [2m | [22m [36m67.94 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-33EJJGD7.js[39m[37m  [2m | [22m[2msettings-page[22m    [2m | [22m [36m67.50 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-JFPJIU3O.js[39m[37m  [2m | [22m[2mdashboard[22m        [2m | [22m [36m56.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-7PZWCKSV.js[39m[37m  [2m | [22m[2mperson-detail[22m    [2m | [22m [36m47.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-OTBMY44U.js[39m[37m  [2m | [22m[39m[37m[2mtask-detail[22m      [2m | [22m [36m47.30 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-QI4R2JQH.js[39m[37m  [2m | [22m[2mnewsletter-detail[22m[2m | [22m [36m30.96 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-PN6GYHLT.js[39m[37m  [2m | [22m[2mimports-page[22m     [2m | [22m [36m29.74 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-56QJOLF6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.47 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-P3DS3ND6.js[39m[37m  [2m | [22m[2m-[22m                [2m | [22m [36m29.26 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-GU6K7PEB.js[39m[37m  [2m | [22m[2mteam-detail[22m      [2m | [22m [36m29.12 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-EL3G5VNW.js[39m[37m  [2m | [22m[2muser-detail[22m      [2m | [22m [36m26.66 kB[39m[37m[2m | [22m[39m
+[37m[32mchunk-KYGMS2HC.js[39m[37m  [2m | [22m[2mhousehold-detail[22m [2m | [22m [36m25.34 kB[39m[37m[2m | [22m[39m
+[37m[2m...and 40 more lazy chunks files. Use "--verbose" to show all the files.[22m[39m
+[37m[39m
+[37mApplication bundle generation complete. [0.586 seconds] - 2026-05-24T14:05:55.019Z[39m
+[37m[39m
+[37mPage reload sent to client(s).[39m
+
+
+
+ NX   Running target serve for project frontend failed
+
+Failed tasks:
+
+- frontend:serve:development
+
+Hint: run the command with --verbose for more details.
+

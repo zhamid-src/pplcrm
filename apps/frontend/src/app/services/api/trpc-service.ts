@@ -93,7 +93,7 @@ export class TRPCService<T> {
    *
    * Available to child services via `this.api` for making backend calls.
    */
-  protected api;
+  protected api: any;
 
   constructor() {
     this.api = createTRPCClient<TRPCRouter>({
@@ -105,7 +105,7 @@ export class TRPCService<T> {
           condition: (op) => op.type === 'mutation',
           true: httpUnbatchedLink(this.tokenService),
           false: httpBatchedLink(this.tokenService),
-        }),
+        }) as any,
       ],
     });
   }

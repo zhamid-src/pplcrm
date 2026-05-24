@@ -41,19 +41,22 @@ async function run() {
 
     // Delete existing records first so they can be re-synced
     console.log('Deleting existing test emails…');
-    await db.deleteFrom('email_bodies').where(sql`email_id::integer >= 40`).execute();
-    await db.deleteFrom('email_headers').where(sql`email_id::integer >= 40`).execute();
-    await db.deleteFrom('email_recipients').where(sql`email_id::integer >= 40`).execute();
-    await db.deleteFrom('email_attachments').where(sql`email_id::integer >= 40`).execute();
-    await db.deleteFrom('emails').where(sql`id::integer >= 40`).execute();
+    await db.deleteFrom('email_bodies').where(sql<any>`email_id::integer >= 40`).execute();
+    await db.deleteFrom('email_headers').where(sql<any>`email_id::integer >= 40`).execute();
+    await db.deleteFrom('email_recipients').where(sql<any>`email_id::integer >= 40`).execute();
+    await db.deleteFrom('email_attachments').where(sql<any>`email_id::integer >= 40`).execute();
+    await db.deleteFrom('emails').where(sql<any>`id::integer >= 40`).execute();
     await db.updateTable('ms_oauth_tokens').set({ delta_link: null }).execute();
 
     console.log('Starting syncUser…');
     const result = await syncSvc.syncUser(tokenRow.user_id, tokenRow.tenant_id, tokenRow.user_id);
     console.log('Sync complete! Result:', result);
 
-  } catch (err) {
-    console.error('Sync failed with error:', err);
+  } catch (err: any) {
+    console.error('Sync failed with error:', err?.message || err);
+    if (err?.stack) {
+      console.error(err.stack);
+    }
   } finally {
     await db.destroy();
   }

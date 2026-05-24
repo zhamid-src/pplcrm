@@ -144,7 +144,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     fd.set('html', input.html);
     input.attachments.forEach((f) => fd.append('attachments', f, f.name));
 
-    const res = await fetch('/api/emails/send', { method: 'POST', body: fd });
+    const token = this.tokenService.getAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const res = await fetch('/api/emails/send', { method: 'POST', body: fd, headers });
     const json = (await res.json()) as JSend<EmailType>;
     return jsend.unwrap(json);
   }
