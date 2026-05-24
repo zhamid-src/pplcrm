@@ -291,6 +291,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             tenant_id,
             admin_id: user.id,
             createdby_id: user.id,
+            updatedby_id: user.id,
             name: `${input.organization} Campaign`,
           })
           .returning('id')
@@ -325,6 +326,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             tenant_id,
             campaign_id: campaign.id as any,
             createdby_id: user.id,
+            updatedby_id: user.id,
           } as any)
           .returning('id')
           .executeTakeFirstOrThrow();

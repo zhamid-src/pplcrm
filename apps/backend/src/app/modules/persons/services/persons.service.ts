@@ -52,6 +52,7 @@ export class PersonsService {
             tenant_id: auth.tenant_id,
             campaign_id: String(campaign_id),
             createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
           } as OperationDataType<'households', 'insert'>,
         });
         household_id = String(created?.id);
@@ -64,6 +65,7 @@ export class PersonsService {
       campaign_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
 
     return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
@@ -85,7 +87,10 @@ export class PersonsService {
     return this.personsRepo.update({
       tenant_id: auth.tenant_id,
       id,
-      row: data as OperationDataType<'persons', 'update'>,
+      row: {
+        ...data,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'persons', 'update'>,
     });
   }
 
@@ -304,6 +309,7 @@ export class PersonsService {
                         tenant_id: auth.tenant_id,
                         campaign_id,
                         createdby_id: auth.user_id,
+                        updatedby_id: auth.user_id,
                         file_id: importRecordId,
                       } as OperationDataType<'households', 'insert'>,
                     },
@@ -342,6 +348,7 @@ export class PersonsService {
                   tenant_id: auth.tenant_id,
                   campaign_id,
                   createdby_id: auth.user_id,
+                  updatedby_id: auth.user_id,
                   home_phone: sanitized.home_phone ?? null,
                   street_num: sanitized.street_num ?? null,
                   street1: sanitized.street1 ?? null,
@@ -372,6 +379,7 @@ export class PersonsService {
               tenant_id: auth.tenant_id,
               campaign_id,
               createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
               household_id: householdId,
               first_name: sanitized.first_name ?? null,
               middle_names: null,

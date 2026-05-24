@@ -38,6 +38,7 @@ async function createTestSeed(db: any) {
     admin_id: userId,
     name: 'Test Campaign',
     createdby_id: userId,
+    updatedby_id: userId,
   }).execute();
 
   // 4. Household
@@ -46,6 +47,7 @@ async function createTestSeed(db: any) {
     tenant_id: tenantId,
     campaign_id: campaignId,
     createdby_id: userId,
+    updatedby_id: userId,
   }).execute();
 
   return { tenantId, userId, campaignId, householdId };
@@ -97,6 +99,7 @@ describe('PersonsRepo Integration', () => {
         last_name: 'User',
         file_id: importId,
         createdby_id: userId,
+        updatedby_id: userId,
       },
     });
 
@@ -120,6 +123,7 @@ describe('PersonsRepo Integration', () => {
         first_name: 'Tagged',
         last_name: 'One',
         createdby_id: userId,
+        updatedby_id: userId,
       },
     });
 
@@ -131,6 +135,7 @@ describe('PersonsRepo Integration', () => {
         first_name: 'Untagged',
         last_name: 'Two',
         createdby_id: userId,
+        updatedby_id: userId,
       },
     });
 
@@ -171,6 +176,7 @@ describe('PersonsRepo Integration', () => {
         first_name: 'Stats',
         last_name: 'User',
         createdby_id: userId,
+        updatedby_id: userId,
       },
     });
 
