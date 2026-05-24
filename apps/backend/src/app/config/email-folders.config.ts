@@ -4,7 +4,9 @@ import { EMAIL_FOLDERS, EmailFolderConfig } from '@common';
  * Get all email folders sorted by sort_order.
  */
 export function getAllEmailFolders(): EmailFolderConfig[] {
-  return EMAIL_FOLDERS.sort((a, b) => a.sort_order - b.sort_order);
+  return [...EMAIL_FOLDERS]
+    .filter((folder: any) => !folder.is_hidden)
+    .sort((a, b) => a.sort_order - b.sort_order);
 }
 
 /**

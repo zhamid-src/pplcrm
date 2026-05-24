@@ -125,19 +125,19 @@ export class EmailRepo extends BaseRepository<'emails'> {
     // 2) Virtual counts (tenant-wide, not grouped)
     const virtual = await this.getSelect()
       .select(() => [
-        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.ALL_OPEN})`.as(
+        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'all_open',
         ),
-        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.ALL_OPEN})`.as(
+        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'closed',
         ),
-        sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id = ${ALL_FOLDERS.ALL_OPEN})`.as(
+        sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'assigned',
         ),
-        sql<number>`count(*) filter (where assigned_to is null and status = 'open' and folder_id = ${ALL_FOLDERS.ALL_OPEN})`.as(
+        sql<number>`count(*) filter (where assigned_to is null and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'unassigned',
         ),
-        sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id = ${ALL_FOLDERS.ALL_OPEN})`.as(
+        sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'favourites',
         ),
       ])
@@ -301,15 +301,15 @@ export class EmailRepo extends BaseRepository<'emails'> {
   private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
     switch (folder_id) {
       case SPECIAL_FOLDERS.ALL_OPEN:
-        return (eb) => eb.and([eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.ALL_OPEN)]);
+        return (eb) => eb.and([eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.CLOSED:
-        return (eb) => eb.and([eb('status', '=', 'closed'), eb('folder_id', '=', ALL_FOLDERS.ALL_OPEN)]);
+        return (eb) => eb.and([eb('status', '=', 'closed'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
-        return (eb) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.ALL_OPEN)]);
+        return (eb) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.UNASSIGNED:
-        return (eb) => eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.ALL_OPEN)]);
+        return (eb) => eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.FAVOURITES:
-        return (eb) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.ALL_OPEN)]);
+        return (eb) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       default:
         // Real folder
         return (eb) => eb('folder_id', '=', folder_id);

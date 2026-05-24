@@ -45,7 +45,7 @@ export class MsSyncService {
     const allowedFolderIds = new Set(dbFolders.map((f: any) => String(f.id)));
 
     const syncFolders = [
-      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.ALL_OPEN },
+      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
       { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
       { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
       { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },

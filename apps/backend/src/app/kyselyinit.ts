@@ -1,6 +1,7 @@
 import { BaseRepository } from './lib/base.repo';
 import '../env';
 
+
 /**
  * Rolls back the most recent database migration.
  *
@@ -55,4 +56,11 @@ export async function migrateToLatest(): Promise<void> {
 }
 
 // Automatically run migration when script is executed directly
-void migrateToLatest();
+const isMain = typeof process !== 'undefined' && process.argv[1] && (
+  process.argv[1].endsWith('kyselyinit.ts') || 
+  process.argv[1].endsWith('kyselyinit.js')
+);
+if (isMain) {
+  void migrateToLatest();
+}
+

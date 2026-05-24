@@ -29,6 +29,10 @@ export class EmailFolderList implements OnInit {
 
   /** Sidebar collapsed flag */
   public readonly foldersCollapsed = signal(false);
+  
+  /** Real Folders section collapsed flag (collapsed by default) */
+  public readonly realFoldersCollapsed = signal(true);
+
   public readonly newEmail = output<void>();
 
   public emitNewEmail() {
@@ -57,6 +61,11 @@ export class EmailFolderList implements OnInit {
   /** Toggle collapse/expand */
   public toggleFolders(): void {
     this.foldersCollapsed.update((v) => !v);
+  }
+
+  /** Toggle real folders section collapse/expand */
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
   }
 
   /** Icon helper */
