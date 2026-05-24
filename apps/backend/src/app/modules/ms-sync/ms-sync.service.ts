@@ -148,6 +148,34 @@ export class MsSyncService {
   }
 
   /**
+   * Deletes all local emails synced from MS Graph for this tenant.
+   */
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    const msEmails = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', 'like', 'ms:%')
+      .execute();
+
+    if (msEmails.length === 0) return;
+    const emailIds = msEmails.map((e) => String(e.id));
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx.deleteFrom('email_comments').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx.deleteFrom('email_recipients').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx.deleteFrom('email_attachments' as any).where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx.deleteFrom('email_trash' as any).where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
+    });
+  }
+
+  /**
    * Safely deletes a synced email and all its dependent child tables
    * by its MS deduplication key (stored in `preview`).
    */

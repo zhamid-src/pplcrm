@@ -9,6 +9,7 @@ import { MsOAuthService } from './ms-oauth.service';
 import { MsSyncService } from './ms-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { env } from '../../../env';
+import { z } from 'zod';
 
 /** Lazily-initialized services (created once on first call) */
 let _oauthSvc: MsOAuthService | null = null;
@@ -73,13 +74,24 @@ function syncNow() {
  * Disconnects the user's Microsoft account by deleting their stored tokens.
  */
 function disconnect() {
-  return authProcedure.mutation(
-    wrapTrpc(async ({ ctx }) => {
-      const { oauthSvc } = getServices();
-      await oauthSvc.disconnect(ctx.auth.user_id);
-      return { success: true };
-    }),
-  );
+  return authProcedure
+    .input(
+      z.object({
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(
+      wrapTrpc(async ({ ctx, input }) => {
+        const { oauthSvc, syncSvc } = getServices();
+
+        if (input.removeLocalEmails) {
+          await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+        }
+
+        await oauthSvc.disconnect(ctx.auth.user_id);
+        return { success: true };
+      }),
+    );
 }
 
 /** Router exposing Microsoft sync procedures. */
