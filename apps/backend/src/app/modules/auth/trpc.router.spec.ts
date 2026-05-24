@@ -95,9 +95,10 @@ describe('AuthController Integration', () => {
 
     // Clean up
     if (user) {
-      await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
+      await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
       await db.deleteFrom('tags').where('createdby_id', '=', user.id).execute();
       await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+      await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
       await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
@@ -144,9 +145,10 @@ describe('AuthController Integration', () => {
     // Clean up
     await db.deleteFrom('profiles').where('auth_id', '=', result.id).execute();
     await db.deleteFrom('authusers').where('id', '=', result.id).execute();
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', creator.id).execute();
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', creator.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', creator.id).execute();
     await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
@@ -189,9 +191,10 @@ describe('AuthController Integration', () => {
     expect(result.verified).toBe(true);
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
@@ -253,9 +256,10 @@ describe('AuthController Integration', () => {
     expect(notificationsSetting?.updatedby_id).toBe(user.id);
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('admin_id', '=', user.id).execute();
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();

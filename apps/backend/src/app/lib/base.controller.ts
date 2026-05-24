@@ -5,8 +5,6 @@ import { OperandValueExpressionOrList, ReferenceExpression, Transaction } from '
 import {
   Models,
   OperationDataType,
-  TypeColumn,
-  TypeId,
   TypeTenantId,
 } from 'common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
@@ -71,7 +69,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   public delete(tenant_id: TypeTenantId<T>, idToDelete: string) {
     return this.repo.delete({
       tenant_id,
-      id: idToDelete as TypeId<T>,
+      id: idToDelete,
     });
   }
 
@@ -82,9 +80,9 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param idsToDelete - Array of row IDs to delete
    * @returns A Promise resolving to the deleted rows (if any)
    */
-  public deleteMany(tenant_id: TypeColumn<T, 'tenant_id'>, idsToDelete: string[]) {
+  public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
     return this.repo.deleteMany({
-      ids: idsToDelete as TypeId<T>[],
+      ids: idsToDelete,
       tenant_id,
     });
   }
@@ -99,9 +97,8 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to up to 3 best-matching rows
    */
   public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
-    const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     return this.repo.find({
-      tenant_id,
+      tenant_id: input.tenant_id,
       key: input.key,
       column: input.column,
     });
@@ -115,17 +112,15 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to all matching rows
    */
   public getAll(tenant: string, options?: getAllOptionsType) {
-    const tenant_id = tenant as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     return this.repo.getAll({
-      tenant_id,
+      tenant_id: tenant,
       options: options as QueryParams<T>,
     });
   }
 
   public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
-    const tenant_id = tenant as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     return this.getRepo().getAllWithCounts({
-      tenant_id,
+      tenant_id: tenant,
       options: options as QueryParams<any>,
     });
   }
@@ -137,7 +132,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to the total row count
    */
   public getCount(tenant_id: string) {
-    return this.repo.count(tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>);
+    return this.repo.count(tenant_id);
   }
 
   /**
@@ -148,10 +143,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to the found row or `undefined`
    */
   public getOneById(input: { tenant_id: string; id: string }) {
-    const tenant_id = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
-    const id = input.id as OperandValueExpressionOrList<Models, T, 'id'>;
-
-    return this.repo.getOneBy('id', { value: id, tenant_id });
+    return this.repo.getOneBy('id', { value: input.id as OperandValueExpressionOrList<Models, T, 'id'>, tenant_id: input.tenant_id });
   }
 
   /**
@@ -163,9 +155,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to the updated row
    */
   public update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
-    const id = input.id as TypeId<T>;
-    const tenant_id = input.tenant_id as TypeTenantId<T>;
-    return this.repo.update({ id, tenant_id, row: input.row });
+    return this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
   }
 
   /**
@@ -182,9 +172,8 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     input: ExportCsvInputType & { tenant_id: string },
     auth?: IAuthKeyPayload,
   ): Promise<ExportCsvResponseType> {
-    const tenant = input.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>;
     const options = (input?.options ?? {}) as QueryParams<T>;
-    const rows = await this.repo.getAll({ tenant_id: tenant, options });
+    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options });
     const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
     const response = this.buildCsvResponse(records, input);
 

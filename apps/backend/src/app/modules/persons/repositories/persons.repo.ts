@@ -41,10 +41,10 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     await this.getUpdate(trx)
       .set({
         file_id: null,
-        updated_at: sql`now()` as any,
-      } as OperationDataType<'persons', 'update'>)
-      .where('tenant_id', '=', input.tenant_id as any)
-      .where('file_id', '=', input.import_id as any)
+        updated_at: sql`now()`,
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
       .executeTakeFirst();
   }
 
@@ -66,12 +66,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       query = query
         .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
         .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags as any);
+        .where(sql`LOWER(tags.name)`, 'in', tags);
     }
 
     const rows = await query.execute();
     const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows as any[]) {
+    for (const row of rows) {
       const id = row.id != null ? String(row.id) : '';
       if (!id || map.has(id)) continue;
       map.set(id, {
@@ -95,8 +95,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
 
     return {
-      total: Number((row as any)?.total ?? 0),
-      last_created_at: (row as any)?.last_created_at ? new Date((row as any).last_created_at) : null,
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
     };
   }
 
@@ -168,7 +168,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
     const tags = input.tags;
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
@@ -181,7 +181,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
           return qb.where(
-            sql`(
+            sql<boolean>`(
             LOWER(persons.first_name) LIKE ${text} OR
             LOWER(persons.last_name) LIKE ${text} OR
             LOWER(persons.email) LIKE ${text} OR
@@ -189,7 +189,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             LOWER(households.city) LIKE ${text} OR
             LOWER(households.street1) LIKE ${text} OR
             LOWER(tags.name) LIKE ${text}
-          )` as any,
+          )`,
           );
         });
 

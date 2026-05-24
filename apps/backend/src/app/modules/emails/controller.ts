@@ -7,7 +7,7 @@ import { EmailDraftsRepo } from './repositories/email-drafts.repo';
 import { EmailRepo } from './repositories/email.repo';
 import { BaseController } from '../../lib/base.controller';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
-import { OperationDataType, TypeTenantId } from 'common/src/lib/kysely.models';
+import { TypeTenantId } from 'common/src/lib/kysely.models';
 import { EmailDraftType } from 'common/src/lib/models';
 
 /** Controller handling email operations */
@@ -35,7 +35,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           comment,
           createdby_id: author_id,
           updatedby_id: author_id,
-        } as OperationDataType<'emails', 'insert'>,
+        },
       });
       if (!row) throw new InternalError('Failed to add comment');
       return row;
