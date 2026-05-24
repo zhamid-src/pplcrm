@@ -17068,3 +17068,2207 @@ Migration starting
       "port": 3000
     }
 [7m[1m[36m NX [39m[22m[27m [1mProcess exited with code 1, waiting for changes to restart...[22m
+[ [32mwatch[39m ] build succeeded, watching for changes...
+[1m[31mStarting inspector on localhost:9229 failed: address already in use[39m[22m
+[1m[31m[39m[22m
+[ [32mwatch[39m ] build succeeded, watching for changes...
+Migration starting
+[1m[31mStarting inspector on localhost:9229 failed: address already in use[39m[22m
+[1m[31m[39m[22m
+Migration starting
+[1m[31m(node:31931) [FSTDEP022] FastifyWarning: The router options for ignoreTrailingSlash property access is deprecated. Please use "options.routerOptions" instead for accessing router options. The router options will be removed in `fastify@6`.[39m[22m
+[1m[31m(Use `node --trace-warnings ...` to show where the warning was created)[39m[22m
+[1m[31m[39m[22m
+[17:59:58.516] [32mINFO[39m (31931): [36mServer listening at http://[::1]:3000[39m
+[17:59:58.517] [32mINFO[39m (31931): [36mServer listening at http://127.0.0.1:3000[39m
+[17:59:58.517] [32mINFO[39m (31931): [36m[ ready ] http://localhost:3000[39m
+[18:00:01.886] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.890] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 3.6207504272460938
+[18:00:01.890] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.900] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8.940584182739258
+[18:00:01.901] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.901] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.12008476257324219
+[18:00:01.901] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-4"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.907] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-4"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.8261260986328125
+[18:00:01.950] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-5"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.953] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-5"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.1940841674804688
+[18:00:01.954] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-6"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/settings.getSnapshot?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.955] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-6"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.9190406799316406
+[18:00:01.956] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-7"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/settings.getSnapshot?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52324
+    }
+[18:00:01.960] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-7"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.522624969482422
+[18:01:46.944] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-8"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:46.945] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-8"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.4461250305175781
+[18:01:46.945] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-9"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:46.965] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-9"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 18.880416870117188
+[18:01:46.966] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-a"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:46.967] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-a"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.25458335876464844
+[18:01:46.967] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-b"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:46.973] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-b"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.555999755859375
+[18:01:55.107] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-c"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:55.108] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-c"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.6520423889160156
+[18:01:55.108] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-d"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:55.115] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-d"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.5987091064453125
+[18:01:55.116] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-e"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.disconnect",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:55.117] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-e"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.17441749572753906
+[18:01:55.117] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-f"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/msSync.disconnect",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:55.155] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-f"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 37.846500396728516
+[18:01:57.274] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-g"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.278] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-g"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.8848342895507812
+[18:01:57.288] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-h"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.289] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-h"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.24633407592773438
+[18:01:57.289] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-i"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.300] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-i"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10.757917404174805
+[18:01:57.301] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-j"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.309] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-j"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8.128376007080078
+[18:01:57.310] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-k"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.310] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-k"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.12983322143554688
+[18:01:57.311] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-l"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:01:57.317] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-l"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.043792724609375
+[18:02:01.872] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-m"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:01.873] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-m"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.2568340301513672
+[18:02:01.874] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-n"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:01.878] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-n"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.085956573486328
+[18:02:01.879] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-o"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:01.880] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-o"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.16324996948242188
+[18:02:01.880] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-p"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:01.883] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-p"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.753957748413086
+[18:02:02.611] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-q"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:02.615] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-q"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.9328346252441406
+[18:02:02.618] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-r"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.getAuthUrl?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:02.618] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-r"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.18991661071777344
+[18:02:02.619] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-s"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/msSync.getAuthUrl?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:02.624] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-s"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.855165481567383
+[18:02:09.300] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-t"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth/ms/callback?code=M.C546_BAY.2.U.Dp6klec7bwn55d!I6VdKNoh8o1IK9QIET8Fy6olfB2qQXz5Zf2e4PDyYjHKpfW5NdaMr!WUri3qp9BGL1m6KZ4mMdXEJm!R2o3d54yFBSTnbG*CW8Y5L0Bfw!*dwGRjEFxVLGeKcdikMy80LnCiaccCZcZtaI4!g92ipT2J2vKXjwPwMEI*hU2qDE0DtVh0hz0YjkARpiHVm7pvV9LuECRXu2QIpsKdAR4oRXOLceiLVowwyTyZfGmphgSdsfnR!sOqyiljQJ7FDNHdKAE2KwyH37ek74iuhbs2kZAPNK1pRnAoGi8A5pwTM0BAyNG!Ii7p6bZ8UoSwXFw1o!3tMDfrP3Nu8Zb*CkE2qXD14JkubKC341CQR!5GQngGAF9g8*SqDbCUmKZXa1ZLJzSbVfLgE9G3IiIainsrwtq4hhh1z4mnUvUGIW4RbREgCYgMOP1P9YcqBl3J88!E5qe1aNmV3ImJpVx50C*Dmqky!csfE4PViOQI0Pr8!eWAVvQKJ4xMgyzDsouQPdbO5878OnANaIb0L1tkgpNNjVAO2iVlfJlPXNANivOtMaWQQw4czkraN1GzekWFPs7LVi9b7xRI8S4VSfx!T9Y3JtB8bYHgmQHsur4c3wYcsLNd4qsAordQ7DMuBbvtDKfdxjC3*uTHbZL5*PE!EkCsu0*yTA8EY&client_info=eyJ2ZXIiOiIxLjAiLCJzdWIiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFKS0xsd2xGcFItbDN6aDd3VmhHa1ZvIiwibmFtZSI6IlplZSBIYW1pZCIsInByZWZlcnJlZF91c2VybmFtZSI6InpoYW1pZEBnbWFpbC5jb20iLCJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtNDc4OC1mNmUwNDNjYjU0ZGYiLCJ0aWQiOiI5MTg4MDQwZC02YzY3LTRjNWItYjExMi0zNmEzMDRiNjZkYWQiLCJob21lX29pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC00Nzg4LWY2ZTA0M2NiNTRkZiIsInVpZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC00Nzg4LWY2ZTA0M2NiNTRkZiIsInV0aWQiOiI5MTg4MDQwZC02YzY3LTRjNWItYjExMi0zNmEzMDRiNjZkYWQifQ&state=eyJ1c2VySWQiOiIxIiwidGVuYW50SWQiOiIxIn0%3d&clientdata=m%7c%7c%7cmicrosoftonline.com%7cnone",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52536
+    }
+[18:02:10.000] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-t"
+    [35mres[39m: {
+      "statusCode": 302
+    }
+    [35mresponseTime[39m: 699.8997077941895
+[18:02:10.074] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-u"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.074] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-u"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.11791801452636719
+[18:02:10.075] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-v"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.077] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-v"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.7227497100830078
+[18:02:10.078] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-w"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.078] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-w"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.08012580871582031
+[18:02:10.079] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-x"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.080] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-x"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.6900825500488281
+[18:02:10.117] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-y"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.120] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-y"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.147459030151367
+[18:02:10.127] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-z"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/settings.getSnapshot?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.128] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-z"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.3647937774658203
+[18:02:10.128] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-10"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/settings.getSnapshot?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:10.131] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-10"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.0332508087158203
+[18:02:11.857] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-11"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:11.862] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-11"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.150875091552734
+[18:02:11.863] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-12"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:11.863] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-12"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.213958740234375
+[18:02:11.863] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-13"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:11.867] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-13"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.824331283569336
+[18:02:13.390] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-14"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:13.394] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-14"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.588083267211914
+[18:02:13.403] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-15"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/msSync.syncNow",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:13.403] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-15"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.165374755859375
+[18:02:13.403] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-16"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/msSync.syncNow",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:14.467] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-16"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1063.7803745269775
+[18:02:14.468] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-17"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:14.471] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-17"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.7215423583984375
+[18:02:14.472] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-18"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/msSync.getConnectionStatus?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:14.474] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-18"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.6920833587646484
+[18:02:15.943] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-19"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.943] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-19"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.2308330535888672
+[18:02:15.944] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1a"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.947] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1a"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.9439163208007812
+[18:02:15.955] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1b"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.955] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1b"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.3000831604003906
+[18:02:15.955] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1c"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.963] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1c"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7.433084487915039
+[18:02:15.964] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1d"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.971] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1d"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.611415863037109
+[18:02:15.972] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1e"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.972] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1e"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.29450035095214844
+[18:02:15.972] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1f"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:15.984] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1f"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11.009166717529297
+[18:02:16.937] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1g"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.946] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1g"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8.772209167480469
+[18:02:16.948] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1h"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.948] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1h"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.24654197692871094
+[18:02:16.948] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1i"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.951] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1i"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.4716663360595703
+[18:02:16.956] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1j"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.959] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1j"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.289875030517578
+[18:02:16.964] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1k"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22123%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.964] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1k"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.09808349609375
+[18:02:16.964] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1l"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:16.964] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1l"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.047332763671875
+[18:02:16.964] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1m"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22123%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:16.966] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1n"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:16.978] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1n"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12.68545913696289
+[18:02:16.982] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1m"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 17.21912384033203
+[18:02:18.513] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1o"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:18.522] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1o"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8.211000442504883
+[18:02:18.523] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1p"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%221%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:18.523] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1p"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.12783432006835938
+[18:02:18.524] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1q"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%221%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:18.529] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1q"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.57670783996582
+[18:02:18.533] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1r"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:18.536] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1r"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.8685836791992188
+[18:02:18.537] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1s"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:18.539] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1s"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.1890830993652344
+[18:02:20.470] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1t"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.477] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1t"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7.053459167480469
+[18:02:20.479] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1u"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%223%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.479] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1u"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.17333412170410156
+[18:02:20.480] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1v"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%223%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.483] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1v"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.0400009155273438
+[18:02:20.487] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1w"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.490] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1w"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.19525146484375
+[18:02:20.492] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1x"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22124%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.492] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1x"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1622486114501953
+[18:02:20.493] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1y"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:20.494] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-1z"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22124%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:20.496] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1y"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.1412925720214844
+[18:02:20.501] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-1z"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7.110666275024414
+[18:02:21.646] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-20"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.646] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-20"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.3177490234375
+[18:02:21.647] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-21"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.657] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-21"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9.00583267211914
+[18:02:21.658] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-22"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%225%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.658] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-22"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.12253952026367188
+[18:02:21.658] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-23"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%225%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.661] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-23"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.2162914276123047
+[18:02:21.664] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-24"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.667] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-24"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.606334686279297
+[18:02:21.669] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-25"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22127%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.669] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-25"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.19295692443847656
+[18:02:21.669] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-26"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:21.671] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-27"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22127%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:21.673] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-26"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.034584045410156
+[18:02:21.677] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-27"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.220876693725586
+[18:02:24.637] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-28"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:24.648] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-28"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10.930082321166992
+[18:02:24.649] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-29"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:24.649] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-29"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.15416717529296875
+[18:02:24.649] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2a"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:24.655] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2a"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.385875701904297
+[18:02:25.920] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2b"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:25.924] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2b"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.2883338928222656
+[18:02:25.925] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2c"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:25.925] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2c"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.205291748046875
+[18:02:25.926] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2d"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:25.928] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2d"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.0426673889160156
+[18:02:31.685] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2e"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:31.686] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2e"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.27883338928222656
+[18:02:31.687] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2f"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:31.690] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2f"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.7002506256103516
+[18:02:31.692] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2g"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.addComment",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:31.692] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2g"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.2888755798339844
+[18:02:31.693] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2h"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/emails.addComment",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:31.696] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2h"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.29779052734375
+[18:02:35.682] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2i"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.687] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2i"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.040458679199219
+[18:02:35.688] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2j"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.688] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2j"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.2209148406982422
+[18:02:35.689] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2k"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.currentUser?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.691] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2k"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.9310417175292969
+[18:02:35.710] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2l"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.714] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2l"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.400165557861328
+[18:02:35.715] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2m"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.715] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2m"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.42366600036621094
+[18:02:35.716] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2n"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getFoldersWithCounts?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.732] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2n"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 15.775833129882812
+[18:02:35.733] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2o"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.755] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2o"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 21.850082397460938
+[18:02:35.756] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2p"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.757] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2p"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.14041709899902344
+[18:02:35.757] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2q"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:35.762] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2q"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.8174591064453125
+[18:02:37.220] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2r"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.220] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2r"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.2767505645751953
+[18:02:37.221] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2s"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.224] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2s"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.2832908630371094
+[18:02:37.226] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2t"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.226] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2t"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.16466712951660156
+[18:02:37.227] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2u"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%228%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.229] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2u"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.6326675415039062
+[18:02:37.234] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2v"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.241] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2v"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.692499160766602
+[18:02:37.244] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2w"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22123%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.244] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2w"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1438751220703125
+[18:02:37.244] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2x"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:37.244] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2x"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.0922088623046875
+[18:02:37.245] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2y"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22123%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:37.247] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-2z"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:37.257] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2z"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10.165040969848633
+[18:02:37.258] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-2y"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13.667499542236328
+[18:02:38.725] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-30"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:38.738] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-30"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12.692708969116211
+[18:02:38.740] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-31"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:38.745] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-31"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.14495849609375
+[18:02:42.737] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-32"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:42.738] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-32"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.7577495574951172
+[18:02:42.739] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-33"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:42.744] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-33"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.937749862670898
+[18:02:42.745] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-34"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:42.745] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-34"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.15149879455566406
+[18:02:42.746] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-35"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%226%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:42.751] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-35"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.445291519165039
+[18:02:43.136] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-36"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.141] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-36"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.128582000732422
+[18:02:43.143] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-37"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%229%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.143] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-37"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1955413818359375
+[18:02:43.144] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-38"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%229%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.147] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-38"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.486499786376953
+[18:02:43.486] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-39"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.491] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-39"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.331790924072266
+[18:02:43.492] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3a"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%221%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.493] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3a"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.14599990844726562
+[18:02:43.493] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3b"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%221%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.496] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3b"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.319000244140625
+[18:02:43.501] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3c"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.503] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3c"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.9441242218017578
+[18:02:43.508] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3d"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.509] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3d"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.4254150390625
+[18:02:43.509] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3e"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:43.512] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3e"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.321666717529297
+[18:02:44.169] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3f"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:44.174] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3f"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.123208999633789
+[18:02:44.175] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3g"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%222%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:44.176] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3g"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.3885002136230469
+[18:02:44.177] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3h"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%222%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:44.179] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3h"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.5292091369628906
+[18:02:45.337] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3i"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:45.342] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3i"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4.426750183105469
+[18:02:45.343] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3j"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%2211%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:45.344] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3j"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1624164581298828
+[18:02:45.344] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3k"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%2211%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:45.348] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3k"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.4504146575927734
+[18:02:45.352] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3l"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:45.355] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3l"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.3808326721191406
+[18:02:45.359] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3m"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:45.362] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3m"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.964956283569336
+[18:02:46.153] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3n"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.159] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3n"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.571083068847656
+[18:02:46.161] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3o"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%223%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.161] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3o"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.23216629028320312
+[18:02:46.161] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3p"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%223%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.163] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3p"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.060832977294922
+[18:02:46.167] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3q"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.169] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3q"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.7819595336914062
+[18:02:46.172] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3r"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22124%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.172] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3r"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1641254425048828
+[18:02:46.173] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3s"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:46.174] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3t"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22124%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:46.175] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3s"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.502666473388672
+[18:02:46.181] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3t"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6.137666702270508
+[18:02:54.511] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3u"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.512] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3u"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.3834991455078125
+[18:02:54.512] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3v"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.524] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3v"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10.894416809082031
+[18:02:54.525] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3w"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%225%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.525] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3w"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.1834583282470703
+[18:02:54.525] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3x"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmails?batch=1&input=%7B%220%22%3A%7B%22folderId%22%3A%225%22%7D%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.531] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3x"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5.228374481201172
+[18:02:54.534] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3y"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/auth.renewAuthToken",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.536] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3y"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2.679250717163086
+[18:02:54.537] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-3z"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22127%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.538] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-3z"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.21216773986816406
+[18:02:54.538] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-40"
+    [35mreq[39m: {
+      "method": "OPTIONS",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:54.538] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-40"
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0.17616844177246094
+[18:02:54.538] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-41"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/emails.getEmailWithHeaders?batch=1&input=%7B%220%22%3A%22127%22%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52547
+    }
+[18:02:54.539] [32mINFO[39m (31931): [36mincoming request[39m
+    [35mreqId[39m: "req-42"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/auth.getUsers?batch=1&input=%7B%7D",
+      "host": "localhost:3000",
+      "remoteAddress": "::1",
+      "remotePort": 52508
+    }
+[18:02:54.541] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-42"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1.3725833892822266
+[18:02:54.542] [32mINFO[39m (31931): [36mrequest completed[39m
+    [35mreqId[39m: "req-41"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.707792282104492

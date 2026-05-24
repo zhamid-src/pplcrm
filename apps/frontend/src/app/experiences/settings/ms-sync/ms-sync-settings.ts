@@ -157,8 +157,9 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 
   protected async disconnect() {
     if (!confirm('Are you sure you want to disconnect your Office 365 account?')) return;
+    const removeLocal = confirm('Would you also like to delete all locally stored emails that were synced from this account?');
     try {
-      await this.api.msSync.disconnect.mutate();
+      await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
       this.status.set({ connected: false, msEmail: null, syncedAt: null });
       this.lastSyncResult.set(null);
       this.alertSvc.showSuccess('Office 365 account disconnected.');
