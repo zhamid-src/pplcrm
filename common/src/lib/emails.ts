@@ -14,6 +14,7 @@ interface EmailFolderBase {
   is_default: boolean;
   name: string;
   sort_order: number;
+  is_hidden?: boolean;
 }
 
 export interface EmailFolderConfig {
@@ -24,6 +25,7 @@ export interface EmailFolderConfig {
   is_virtual: boolean;
   name: string;
   sort_order: number;
+  is_hidden?: boolean;
 }
 
 export interface RealEmailFolder extends EmailFolderBase {
@@ -85,27 +87,36 @@ export type SpecialFolderKey = OnlyVirtual['code'];
 
 export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
 
-function createRegularFolders<const A extends readonly StrictEmailFolderConfig[]>(folders: A) {
-  type R = Extract<A[number], { is_virtual: false }>;
-  type Key = Uppercase<R['name'] & string>;
-  type IdFor<K extends Key> = Extract<R, { name: Capitalize<Lowercase<K>> }>['id'];
+/**
+ * Helper to construct a mapped record of regular (real) folders.
+ * Maps UPPERCASE folder names to their respective folder IDs.
+ */
+function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type RegularFolder = Extract<F[number], { is_virtual: false }>;
+  type FolderKey = Uppercase<RegularFolder['name'] & string>;
+  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
 
-  const entries = (folders.filter((f): f is R => !f.is_virtual) as readonly R[]).map(
-    (f) => [f.name.toUpperCase() as Key, f.id] as const,
-  );
+  const entries = folders
+    .filter((f): f is RegularFolder => !f.is_virtual)
+    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
 
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in Key]: IdFor<K> };
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
 }
 
-// ---------- Builders ----------
-function createSpecialFolders<const A extends readonly StrictEmailFolderConfig[]>(folders: A) {
-  type V = Extract<A[number], { is_virtual: true }>;
-  type K = V extends { code: infer C extends string } ? C : never;
-  type IdFor<Code extends string> = Extract<V, { code: Code }>['id'];
+/**
+ * Helper to construct a mapped record of special (virtual) folders.
+ * Maps virtual folder codes (e.g. 'ALL_OPEN') to their respective folder IDs.
+ */
+function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
+  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
+  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
 
-  const entries = (folders.filter((f): f is V => f.is_virtual) as readonly V[]).map((f) => [f.code, f.id] as const);
+  const entries = folders
+    .filter((f): f is VirtualFolder => f.is_virtual)
+    .map((f) => [f.code, f.id] as const);
 
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in K]: IdFor<P> };
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
 }
 
 export const isRegularFolderId = (id: string): id is RegularFolderId =>
@@ -157,11 +168,12 @@ export const EMAIL_FOLDERS = [
   },
 
   // Real
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 10, is_default: false, is_virtual: false },
+  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
+  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
+  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
+  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
+  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
+  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
 ] as const satisfies StrictEmailFolderConfig[];
 
 // Real-only (exact keys/ids)

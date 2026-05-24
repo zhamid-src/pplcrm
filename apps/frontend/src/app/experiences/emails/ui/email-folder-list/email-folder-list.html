@@ -21,7 +21,8 @@
   </div>
 
   <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
-    @for (folder of folders(); track folder.id) {
+    <!-- Virtual Folders (Filters) -->
+    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
     <li
       class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-blue-50"
       (click)="selectFolder(folder)"
@@ -37,8 +38,49 @@
         {{ getEmailCount(folder) }}
       </span>
     </li>
+    } }
 
-    }
+    <!-- Separator & Collapsible Header -->
+    <li
+      class="h-px bg-gray-200 my-2"
+      [class.mx-3]="!foldersCollapsed()"
+      [class.mx-1]="foldersCollapsed()"
+      role="separator"
+    ></li>
+    <li
+      class="px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none group-hover:md:flex"
+      [class.hidden]="foldersCollapsed()"
+      (click)="toggleRealFolders()"
+    >
+      <span>Folders</span>
+      <pc-swap
+        swapOffIcon="chevron-right"
+        swapOnIcon="chevron-down"
+        animation="flip"
+        [checked]="!realFoldersCollapsed()"
+        [size]="3"
+        (click)="toggleRealFolders()"
+      ></pc-swap>
+    </li>
+
+    <!-- Real Folders -->
+    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-blue-50"
+      (click)="selectFolder(folder)"
+      [class.bg-blue-100]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
+      </div>
+
+      <span class="text-xs tabular-nums group-hover:md:block font-normal" [class.hidden]="foldersCollapsed()">
+        {{ getEmailCount(folder) }}
+      </span>
+    </li>
+    } } }
   </ul>
 
   <div class="p-2 border-t border-gray-200 flex flex-col gap-2 shrink-0">
