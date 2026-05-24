@@ -161,6 +161,7 @@ export const EMAIL_FOLDERS = [
   { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 7, is_default: false, is_virtual: false },
   { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 8, is_default: false, is_virtual: false },
   { id: '5', name: 'Trash', icon: 'trash', sort_order: 9, is_default: false, is_virtual: false },
+  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 10, is_default: false, is_virtual: false },
 ] as const satisfies StrictEmailFolderConfig[];
 
 // Real-only (exact keys/ids)

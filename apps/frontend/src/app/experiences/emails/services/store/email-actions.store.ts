@@ -130,12 +130,25 @@ export class EmailActionsStore {
     try {
       const created = await this.svc.sendEmail(input);
 
-      // If you're currently in "Sent", reload to show the new item; otherwise just refresh counts.
+      // Reload the current folder to show the new email in Outbox/Sent immediately.
       const currentFolderId = this.folders.currentSelectedFolderId();
       if (currentFolderId) {
         await this.folders.loadEmailsForFolder(currentFolderId);
       }
       await this.folders.refreshFolderCounts();
+
+      // Trigger automatic background sync shortly after sending to give the dispatch time to process.
+      setTimeout(() => {
+        this.svc.syncEmails().then(async () => {
+          const fid = this.folders.currentSelectedFolderId();
+          if (fid) {
+            await this.folders.loadEmailsForFolder(fid);
+          }
+          await this.folders.refreshFolderCounts();
+        }).catch((err) => {
+          console.warn('Auto-sync after send failed:', err);
+        });
+      }, 4000);
 
       // Optional: warm header cache (if your API returns header)
       // this.cache.replaceHeader(String(created.id), created.header ?? null);
