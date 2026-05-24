@@ -1,7 +1,7 @@
 /**
  * Repository for tag records and their associations.
  */
-import { OperandValueExpressionOrList, SelectQueryBuilder, Transaction, sql } from 'kysely';
+import { ReferenceExpression, SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models, OperationDataType, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
@@ -30,13 +30,11 @@ export class TagsRepo extends BaseRepository<'tags'> {
     return await this.transaction().execute(async (trx) => {
       if (!input.ids.length) return false;
 
-      const tagIds = input.ids as OperandValueExpressionOrList<Models, 'tags', 'id'>;
-
       const deletableRows = await trx
         .selectFrom(this.table)
         .select(['id'])
-        .where('tenant_id', '=', input.tenant_id as OperandValueExpressionOrList<Models, 'tags', 'tenant_id'>)
-        .where('id', 'in', tagIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .where('id', 'in', input.ids)
         .where('deletable', '=', true)
         .execute();
 
@@ -46,28 +44,20 @@ export class TagsRepo extends BaseRepository<'tags'> {
 
       await trx
         .deleteFrom('map_households_tags')
-        .where(
-          'tag_id',
-          'in',
-          deletableIds as OperandValueExpressionOrList<Models, 'map_households_tags', 'tag_id'>,
-        )
-        .where('tenant_id', '=', input.tenant_id as TypeTenantId<'map_households_tags'>)
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
         .execute();
 
       await trx
         .deleteFrom('map_peoples_tags')
-        .where(
-          'tag_id',
-          'in',
-          deletableIds as OperandValueExpressionOrList<Models, 'map_peoples_tags', 'tag_id'>,
-        )
-        .where('tenant_id', '=', input.tenant_id as TypeTenantId<'map_peoples_tags'>)
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
         .execute();
 
       const result = await trx
         .deleteFrom(this.table)
-        .where('id', 'in', deletableIds as OperandValueExpressionOrList<Models, 'tags', 'id'>)
-        .where('tenant_id', '=', input.tenant_id as OperandValueExpressionOrList<Models, 'tags', 'tenant_id'>)
+        .where('id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
         .executeTakeFirst();
 
       return Number(result?.numDeletedRows ?? 0) > 0;
@@ -104,16 +94,16 @@ export class TagsRepo extends BaseRepository<'tags'> {
       const needsDeletableUpdate = existing.deletable !== false;
       const needsColorUpdate = existing.color !== desiredColor;
       if (needsDeletableUpdate || needsColorUpdate) {
-        const updateRow = {
+        const updateRow: OperationDataType<'tags', 'update'> = {
           updatedby_id: input.user_id,
           ...(needsDeletableUpdate ? { deletable: false } : {}),
           ...(needsColorUpdate ? { color: desiredColor } : {}),
-        } as OperationDataType<'tags', 'update'>;
+        };
 
         await this.update(
           {
-            tenant_id: input.tenant_id as TypeTenantId<'tags'>,
-            id: String(existing.id) as TypeId<'tags'>,
+            tenant_id: input.tenant_id,
+            id: String(existing.id),
             row: updateRow,
           },
           trx,
@@ -139,7 +129,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     // Pagination defaults
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
@@ -154,18 +144,17 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
           return qb.where(
-            sql`(
+            sql<boolean>`(
             LOWER(tags.name) LIKE ${text} OR
             LOWER(tags.description) LIKE ${text}
-          )` as any,
-          );
+          )`);
         })
         .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
           q.where('tags.description', 'ilike', `%${filterModel['description'].value}%`),
         )
         .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
-          const raw = (filterModel['deletable']?.value ?? filterModel['deletable']) as any;
+          const raw = filterModel['deletable']?.value ?? filterModel['deletable'];
           const v = String(raw || '')
             .trim()
             .toLowerCase();
@@ -194,7 +183,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
       ])
       .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable'])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),
       )
       .offset(startRow)
       .limit(endRow - startRow)

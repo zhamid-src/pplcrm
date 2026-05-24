@@ -67,14 +67,7 @@ export interface Models {
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
-type DiscriminatedUnionOfRecord<
-  A,
-  B = {
-    [Key in Keys<A> as '_']: {
-      [K in Key]: [{ [S in K]: A[K] extends A[Exclude<K, Keys<A>>] ? never : A[K] }];
-    };
-  }['_'],
-> = Keys<A> extends Keys<B> ? (B[Keys<A>] extends Array<any> ? B[Keys<A>][number] : never) : never;
+
 
 export type GetOperandType<
   T extends Keys<TablesOperationMap>,
@@ -89,12 +82,10 @@ export type GetOperandType<
 export type OperationDataType<
   T extends Keys<Models>,
   Op extends 'select' | 'update' | 'insert',
-> = T extends Keys<TableOpsUnion> ? TableOpsUnion[T][Op] : never;
-// export type TableColumnsType<T extends keyof Models> = ValuesOf<T>;
-type TableOpsUnion = DiscriminatedUnionOfRecord<TablesOperationMap>;
+> = TablesOperationMap[T][Op];
 
-export type TypeId<T extends keyof Models> = TypeColumn<T, 'id'>;
-export type TypeTenantId<T extends keyof Models> = TypeColumn<T, 'tenant_id'>;
+export type TypeId<T extends keyof Models> = string & { _table?: T };
+export type TypeTenantId<T extends keyof Models> = string & { _table?: T };
 
 type ExtractTableAlias<DB, TE> = TE extends `${string} as ${infer TA}`
   ? TA extends keyof DB
