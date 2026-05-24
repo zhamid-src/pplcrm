@@ -38,6 +38,7 @@ async function createTestSeed(db: any) {
     admin_id: userId,
     name: 'Test Campaign',
     createdby_id: userId,
+    updatedby_id: userId,
   }).execute();
 
   // 4. Household
@@ -46,6 +47,7 @@ async function createTestSeed(db: any) {
     tenant_id: tenantId,
     campaign_id: campaignId,
     createdby_id: userId,
+    updatedby_id: userId,
   }).execute();
 
   return { tenantId, userId, campaignId, householdId };

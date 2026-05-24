@@ -128,7 +128,10 @@ function update() {
     households.update({
       tenant_id: ctx.auth.tenant_id,
       id: input.id,
-      row: input.data as OperationDataType<'households', 'update'>,
+      row: {
+        ...input.data,
+        updatedby_id: ctx.auth.user_id,
+      } as OperationDataType<'households', 'update'>,
     }),
   ));
 }

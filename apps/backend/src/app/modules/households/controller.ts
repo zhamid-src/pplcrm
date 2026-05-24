@@ -80,6 +80,7 @@ export class HouseholdsController extends BaseController<'households', Household
       campaign_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
     return this.add(row as OperationDataType<'households', 'insert'>);
   }

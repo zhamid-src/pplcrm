@@ -138,7 +138,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         {
           tenant_id: input.tenant_id,
           id: input.person_id,
-          row: { household_id: targetId } as OperationDataType<'persons', 'update'>,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
         },
         trx,
       );
