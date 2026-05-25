@@ -15,13 +15,13 @@ const db = new Kysely<any>({ dialect });
 
 async function run() {
   try {
-    const emails = await db.selectFrom('emails')
-      .select(['id', 'subject', 'preview', 'created_at'])
-      .orderBy('id', 'desc')
-      .limit(10)
+    const settings = await db.selectFrom('settings')
+      .selectAll()
+      .where('tenant_id', '=', '1')
+      .where('key', 'like', 'communications.smtp_%')
       .execute();
-    console.log('Latest emails in DB:');
-    console.log(emails);
+    console.log('Tenant 1 SMTP settings in DB:');
+    console.log(settings);
 
     const email74Body = await db.selectFrom('email_bodies')
       .select('body_html')
