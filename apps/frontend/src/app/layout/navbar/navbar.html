@@ -1,5 +1,5 @@
 <!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg">
+<div class="navbar bg-base-100 shadow-lg relative">
   <div class="flex-1 sm:hidden" (click)="toggleMobile()">
     <pc-icon name="bars-4"></pc-icon>
   </div>
@@ -48,6 +48,14 @@
       (click)="toggleTheme()"
     ></pc-swap>
 
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+      <div class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse">
+        <span class="loading loading-spinner loading-xs text-primary"></span>
+        <span>Sending ({{ emailActions.sendingCount() }})...</span>
+      </div>
+    }
+
     <!-- notifications -->
     <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
 
@@ -78,4 +86,9 @@
       </ul>
     </div>
   </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+    <progress class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"></progress>
+  }
 </div>

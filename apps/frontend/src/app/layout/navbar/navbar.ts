@@ -12,6 +12,7 @@ import { FullScreenService } from '../../services/fullscreen.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,6 +27,7 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
  * Top-level navigation bar displayed across the application.
  */
 export class Navbar {
+  protected readonly emailActions = inject(EmailActionsStore);
   private readonly auth = inject(AuthService);
   private readonly fullscreen = inject(FullScreenService);
   private readonly searchSvc = inject(SearchService);
