@@ -222,7 +222,7 @@ export class MsSyncService {
 
     // Dedup: use ms message ID stored in email preview field (prefixed)
     const dedupeKey = `ms:${msId}`;
-    const existing = await this.db
+    let existing = await this.db
       .selectFrom('emails')
       .select('id')
       .where('tenant_id', '=', tenantId)
@@ -230,6 +230,42 @@ export class MsSyncService {
       .executeTakeFirst();
 
     if (existing) return false;
+
+    // Try finding by internetMessageId in email_headers to match locally composed & sent emails
+    const internetMessageId = msg.internetMessageId ?? '';
+    if (internetMessageId) {
+      const headerRow = await this.db
+        .selectFrom('email_headers')
+        .select('email_id')
+        .where('tenant_id', '=', tenantId)
+        .where('raw_headers', 'like', `%Message-ID: ${internetMessageId}%`)
+        .executeTakeFirst();
+
+      if (headerRow) {
+        const matchedEmail = await this.db
+          .selectFrom('emails')
+          .select(['id', 'folder_id'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(headerRow.email_id))
+          .executeTakeFirst();
+
+        if (matchedEmail) {
+          // Found matching email. Update it with the remote message ID dedupeKey and set to correct folder
+          await this.db
+            .updateTable('emails')
+            .set({
+              preview: dedupeKey,
+              folder_id: folderId, // align to synced folder (e.g. Sent folder '3')
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(matchedEmail.id))
+            .execute();
+
+          return false; // prevent duplicate insertion
+        }
+      }
+    }
 
     const fromEmail = msg.from?.emailAddress?.address ?? null;
     const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;

@@ -389,6 +389,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           const createdDraft = await client.api('/me/messages').post(msDraftMessage);
           msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
 
           // Update local email preview/dedupe key to `ms:${msDraftId}`
           await db
@@ -397,6 +398,20 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
 
           // Upload attachments
           for (const file of files) {
