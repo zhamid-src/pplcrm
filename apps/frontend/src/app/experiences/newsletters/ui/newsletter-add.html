@@ -84,7 +84,12 @@
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <form [formGroup]="regularForm" class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <form
+      [formGroup]="regularForm"
+      class="mx-auto flex w-full flex-col gap-6 transition-all duration-300"
+      [class.max-w-3xl]="currentStep() !== 2"
+      [class.max-w-none]="currentStep() === 2"
+    >
       <ol class="steps steps-horizontal w-full overflow-x-auto pb-2">
         @for (label of steps; track label; let idx = $index) {
         <li class="step" [class.step-primary]="currentStep() >= idx + 1">
@@ -125,28 +130,12 @@
       </div>
       } @case (2) {
       <div class="space-y-4">
-        <div class="rounded border border-base-300 bg-base-100 p-4">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Design tools</h3>
-          <p class="mt-1 text-sm text-base-content/70">
-            Paste your HTML design or jot down notes for the team. You can refine this later.
-          </p>
-        </div>
-        <div>
-          <label class="label">HTML content</label>
-          <textarea
-            class="textarea textarea-bordered min-h-40 w-full"
-            formControlName="htmlContent"
-            placeholder="Paste HTML or start drafting..."
-          ></textarea>
-        </div>
-        <div>
-          <label class="label">Plain text version</label>
-          <textarea
-            class="textarea textarea-bordered min-h-32 w-full"
-            formControlName="plainTextContent"
-            placeholder="Optional plain text fallback"
-          ></textarea>
-        </div>
+        <pc-visual-newsletter-editor
+          [htmlContent]="regularForm.get('htmlContent')?.value || ''"
+          [plainTextContent]="regularForm.get('plainTextContent')?.value || ''"
+          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event)"
+          (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
+        ></pc-visual-newsletter-editor>
       </div>
       } @case (3) {
       <div class="space-y-6">
