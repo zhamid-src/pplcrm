@@ -36,6 +36,7 @@ export interface EmailBlock {
   footerCompany?: string;
   footerAddress?: string;
   footerUnsubscribeUrl?: string;
+  socialIconStyle?: 'circular-solid' | 'circular-gray' | 'simple-color' | 'simple-gray';
 }
 
 @Component({
@@ -312,15 +313,18 @@ export interface EmailBlock {
                                               @for (social of block.socials || []; track social.platform) {
                                                 <td class="px-2">
                                                   <span
-                                                    class="inline-block w-8 h-8 rounded-full text-center font-bold text-white text-sm select-none"
-                                                    style="line-height: 32px;"
-                                                    [class.bg-[#3b5998]]="social.platform === 'facebook'"
-                                                    [class.bg-[#1da1f2]]="social.platform === 'twitter'"
-                                                    [class.bg-[#0077b5]]="social.platform === 'linkedin'"
-                                                    [class.bg-[#e1306c]]="social.platform === 'instagram'"
-                                                    [class.bg-[#ff0000]]="social.platform === 'youtube'"
+                                                    class="inline-flex items-center justify-center w-8 h-8 select-none"
+                                                    [style.background-color]="getSocialBgColor(social.platform, block.socialIconStyle || 'circular-solid')"
+                                                    [style.color]="getSocialIconColor(social.platform, block.socialIconStyle || 'circular-solid')"
+                                                    [style.border-radius]="(block.socialIconStyle || 'circular-solid').startsWith('circular') ? '50%' : '0%'"
                                                   >
-                                                    {{ social.platform.charAt(0).toUpperCase() }}
+                                                    <svg
+                                                      viewBox="0 0 24 24"
+                                                      class="w-4 h-4 fill-current"
+                                                      style="display: block; width: 16px; height: 16px;"
+                                                    >
+                                                      <path [attr.d]="socialSvgPaths[social.platform]"></path>
+                                                    </svg>
                                                   </span>
                                                 </td>
                                               }
@@ -773,6 +777,20 @@ export interface EmailBlock {
                 <!-- SOCIAL LINKS EDIT FIELDS -->
                 @if (block.type === 'social') {
                   <div class="space-y-2">
+                    <div class="form-control">
+                      <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
+                      <select
+                        class="select select-bordered select-sm w-full"
+                        [(ngModel)]="block.socialIconStyle"
+                        (ngModelChange)="updateBlocks()"
+                      >
+                        <option value="circular-solid">Circular Brand Color</option>
+                        <option value="circular-gray">Circular Grayscale</option>
+                        <option value="simple-color">Flat Brand Color</option>
+                        <option value="simple-gray">Flat Grayscale</option>
+                      </select>
+                    </div>
+
                     <label class="label text-xs font-semibold py-1">Social Networks</label>
                     @for (social of block.socials; track social.platform) {
                       <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
@@ -981,6 +999,44 @@ export class VisualNewsletterEditorComponent implements OnInit {
   protected readonly editorMode = signal<'visual' | 'code'>('visual');
   protected readonly activeTab = signal<'blocks' | 'edit' | 'templates'>('blocks');
 
+  protected readonly socialSvgPaths: Record<string, string> = {
+    facebook: 'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z',
+    twitter: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
+    linkedin: 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z',
+    instagram: 'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204 0.013-3.583 0.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z',
+    youtube: 'M23.498 6.163a3.003 3.003 0 00-2.11-2.11C19.518 3.545 12 3.545 12 3.545s-7.518 0-9.388.507a3.003 3.003 0 00-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 002.11 2.11c1.87.507 9.388.507 9.388.507s7.518 0 9.388-.507a3.003 3.003 0 002.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+  };
+
+  protected getSocialBgColor(platform: string, style: string): string {
+    const s = style || 'circular-solid';
+    if (s === 'circular-solid') {
+      if (platform === 'facebook') return '#1877f2';
+      if (platform === 'twitter') return '#000000';
+      if (platform === 'linkedin') return '#0a66c2';
+      if (platform === 'instagram') return '#e1306c';
+      if (platform === 'youtube') return '#ff0000';
+    }
+    if (s === 'circular-gray') {
+      return '#4b5563';
+    }
+    return 'transparent';
+  }
+
+  protected getSocialIconColor(platform: string, style: string): string {
+    const s = style || 'circular-solid';
+    if (s === 'circular-solid' || s === 'circular-gray') {
+      return '#ffffff';
+    }
+    if (s === 'simple-color') {
+      if (platform === 'facebook') return '#1877f2';
+      if (platform === 'twitter') return '#000000';
+      if (platform === 'linkedin') return '#0a66c2';
+      if (platform === 'instagram') return '#e1306c';
+      if (platform === 'youtube') return '#ff0000';
+    }
+    return '#4b5563';
+  }
+
   // Computed signals
   protected readonly selectedBlock = computed(() => {
     const id = this.selectedBlockId();
@@ -1084,6 +1140,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     } else if (type === 'spacer') {
       styles.height = '20';
     } else if (type === 'social') {
+      newBlock.socialIconStyle = 'circular-solid';
       newBlock.socials = [
         { platform: 'facebook', url: 'https://facebook.com' },
         { platform: 'twitter', url: 'https://twitter.com' },
@@ -1220,6 +1277,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
         {
           id: 'w7',
           type: 'social',
+          socialIconStyle: 'circular-solid',
           socials: [
             { platform: 'facebook', url: 'https://facebook.com' },
             { platform: 'twitter', url: 'https://twitter.com' },
@@ -1440,19 +1498,25 @@ export class VisualNewsletterEditorComponent implements OnInit {
           </table>`;
       } else if (block.type === 'social') {
         let tdSocials = '';
+        const style = block.socialIconStyle || 'circular-solid';
         for (const social of block.socials || []) {
           const char = social.platform.charAt(0).toUpperCase();
-          let pColor = '#3b82f6';
-          if (social.platform === 'facebook') pColor = '#3b5998';
-          if (social.platform === 'twitter') pColor = '#1da1f2';
-          if (social.platform === 'linkedin') pColor = '#0077b5';
-          if (social.platform === 'instagram') pColor = '#e1306c';
-          if (social.platform === 'youtube') pColor = '#ff0000';
+          const svgPath = this.socialSvgPaths[social.platform] || '';
+          const bgColor = this.getSocialBgColor(social.platform, style);
+          const iconColor = this.getSocialIconColor(social.platform, style);
+          const radius = style.startsWith('circular') ? '50%' : '0%';
 
           tdSocials += `
-            <td style="padding: 0 8px;">
-              <a href="${social.url || '#'}" target="_blank" style="text-decoration: none; display: inline-block; width: 32px; height: 32px; background-color: ${pColor}; border-radius: 50%; text-align: center; line-height: 32px; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-weight: bold; font-size: 14px;">
-                ${char}
+            <td style="padding: 0 8px;" align="center" valign="middle">
+              <a href="${social.url || '#'}" target="_blank" style="text-decoration: none; display: block; width: 32px; height: 32px; background-color: ${bgColor}; border-radius: ${radius}; line-height: 32px; text-align: center; color: ${iconColor};">
+                <!--[if !mso]><!-->
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="${iconColor}" style="display: inline-block; vertical-align: middle; width: 16px; height: 16px; margin-top: 8px;">
+                  <path d="${svgPath}"></path>
+                </svg>
+                <!--<![endif]-->
+                <!--[if mso]>
+                <span style="color: ${iconColor}; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px;">${char}</span>
+                <![endif]-->
               </a>
             </td>`;
         }
