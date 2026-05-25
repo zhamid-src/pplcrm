@@ -62,7 +62,7 @@ export class NewsletterAddComponent implements OnInit {
   });
   protected readonly showDatePicker = signal(false);
   protected readonly selectedTemplate = signal<'welcome' | 'product' | 'newsletter' | 'empty'>('welcome');
-  protected readonly steps = ['Summary', 'Template', 'Design', 'Send to', 'Timing'] as const;
+  protected readonly steps = ['Template', 'Design', 'Audience & Summary', 'Timing'] as const;
 
   public ngOnInit(): void {
     this.syncListSignalsFromForm();
@@ -137,7 +137,7 @@ export class NewsletterAddComponent implements OnInit {
   protected handleNext(): void {
     const step = this.currentStep();
 
-    if (step === 1) {
+    if (step === 3) {
       this.markSummaryTouched();
       if (
         this.regularForm.get('subject')?.invalid ||
@@ -148,7 +148,7 @@ export class NewsletterAddComponent implements OnInit {
       }
     }
 
-    if (step === 5) return;
+    if (step === 4) return;
     this.currentStep.set((step + 1) as StepIndex);
   }
 
@@ -401,4 +401,4 @@ export class NewsletterAddComponent implements OnInit {
 
 type CreationMode = 'options' | 'regular' | 'automated';
 
-type StepIndex = 1 | 2 | 3 | 4 | 5;
+type StepIndex = 1 | 2 | 3 | 4;
