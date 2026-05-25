@@ -155,26 +155,19 @@ export class ComposeEmailComponent {
     if (input) input.value = '';
   }
 
-  public async onSend() {
+  public onSend() {
     if (!this.validTo()) return;
-    this.sending.set(true);
-    try {
-      const v = this.form.getRawValue();
-      const input: ComposePayload = {
-        to: this.parseEmails(v.to),
-        cc: this.parseEmails(v.cc),
-        bcc: this.parseEmails(v.bcc),
-        subject: v.subject,
-        html: v.html,
-        attachments: this.attachments(),
-      };
-      await this.actions.sendEmail(input);
-      this.finished.emit(); // close composer
-    } catch {
-      // Error surfaced via EmailActionsStore
-    } finally {
-      this.sending.set(false);
-    }
+    const v = this.form.getRawValue();
+    const input: ComposePayload = {
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+      attachments: this.attachments(),
+    };
+    void this.actions.sendEmail(input);
+    this.finished.emit(); // close composer immediately
   }
 
   public removeAttachment(index: number) {
