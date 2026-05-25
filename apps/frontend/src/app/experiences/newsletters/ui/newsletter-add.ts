@@ -8,6 +8,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
+import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -60,7 +61,8 @@ export class NewsletterAddComponent implements OnInit {
     scheduledTime: [''],
   });
   protected readonly showDatePicker = signal(false);
-  protected readonly steps = ['Summary', 'Design', 'Send to', 'Timing'] as const;
+  protected readonly selectedTemplate = signal<'welcome' | 'product' | 'newsletter' | 'empty'>('welcome');
+  protected readonly steps = ['Summary', 'Template', 'Design', 'Send to', 'Timing'] as const;
 
   public ngOnInit(): void {
     this.syncListSignalsFromForm();
@@ -70,7 +72,7 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   protected close(): void {
-    this.router.navigate(['../'], { relativeTo: this.route });
+    void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
   protected handleBack(): void {
@@ -146,7 +148,7 @@ export class NewsletterAddComponent implements OnInit {
       }
     }
 
-    if (step === 4) return;
+    if (step === 5) return;
     this.currentStep.set((step + 1) as StepIndex);
   }
 
@@ -209,6 +211,21 @@ export class NewsletterAddComponent implements OnInit {
     this.currentStep.set(1);
     this.syncListSignalsFromForm();
     this.syncTagSignalsFromForm();
+    this.selectTemplate('welcome');
+  }
+
+  protected selectTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): void {
+    this.selectedTemplate.set(preset);
+    const html = compileTemplateHtml(preset);
+    const text = compileTemplatePlainText(preset);
+    this.regularForm.get('htmlContent')?.setValue(html);
+    this.regularForm.get('plainTextContent')?.setValue(text);
+  }
+
+  protected goToStep(targetStep: number): void {
+    if (targetStep < this.currentStep()) {
+      this.currentStep.set(targetStep as StepIndex);
+    }
   }
 
   protected sendRegular(): void {
@@ -384,4 +401,4 @@ export class NewsletterAddComponent implements OnInit {
 
 type CreationMode = 'options' | 'regular' | 'automated';
 
-type StepIndex = 1 | 2 | 3 | 4;
+type StepIndex = 1 | 2 | 3 | 4 | 5;

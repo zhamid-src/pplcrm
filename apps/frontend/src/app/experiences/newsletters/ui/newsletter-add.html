@@ -77,22 +77,24 @@
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold">Regular newsletter</h1>
     </div>
-    <button class="btn btn-outline btn-sm" (click)="switchToOptions()">
-      <pc-icon name="arrow-path" class="mr-1"></pc-icon>
-      Change type
-    </button>
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
     <form
       [formGroup]="regularForm"
       class="mx-auto flex w-full flex-col gap-6 transition-all duration-300"
-      [class.max-w-3xl]="currentStep() !== 2"
-      [class.max-w-none]="currentStep() === 2"
+      [class.max-w-3xl]="currentStep() !== 3"
+      [class.max-w-none]="currentStep() === 3"
     >
       <ol class="steps steps-horizontal w-full overflow-x-auto pb-2">
         @for (label of steps; track label; let idx = $index) {
-        <li class="step" [class.step-primary]="currentStep() >= idx + 1">
+        <li
+          class="step transition hover:text-primary"
+          [class.step-primary]="currentStep() >= idx + 1"
+          [class.cursor-pointer]="currentStep() > idx + 1"
+          [style.pointer-events]="currentStep() > idx + 1 ? 'auto' : 'none'"
+          (click)="goToStep(idx + 1)"
+        >
           <span class="text-xs font-medium">{{ label }}</span>
         </li>
         }
@@ -129,6 +131,121 @@
         </div>
       </div>
       } @case (2) {
+      <div class="space-y-6">
+        <div class="rounded border border-base-300 bg-base-100 p-4">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Layout Templates</h3>
+          <p class="mt-1 text-sm text-base-content/70">
+            Choose a starting design template for your newsletter. You will customize its contents and styling in the next step.
+          </p>
+        </div>
+
+        <div class="grid gap-6 sm:grid-cols-2">
+          <!-- WELCOME CARD -->
+          <button
+            type="button"
+            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
+            [class.border-primary]="selectedTemplate() === 'welcome'"
+            [class.bg-primary/5]="selectedTemplate() === 'welcome'"
+            [class.border-base-300]="selectedTemplate() !== 'welcome'"
+            [class.bg-base-100]="selectedTemplate() !== 'welcome'"
+            (click)="selectTemplate('welcome')"
+          >
+            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+              <img
+                src="assets/newsletters/welcome.png"
+                alt="Welcome Email Preview"
+                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
+              />
+            </div>
+            <div class="p-4 flex items-start gap-3">
+              <div class="rounded-lg bg-primary/10 p-2.5 text-primary text-xl">👋</div>
+              <div>
+                <h4 class="text-base font-bold text-base-content">Welcome Email</h4>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Warm greeting, hero image, social links & footer.</p>
+              </div>
+            </div>
+          </button>
+
+          <!-- PRODUCT CARD -->
+          <button
+            type="button"
+            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
+            [class.border-primary]="selectedTemplate() === 'product'"
+            [class.bg-primary/5]="selectedTemplate() === 'product'"
+            [class.border-base-300]="selectedTemplate() !== 'product'"
+            [class.bg-base-100]="selectedTemplate() !== 'product'"
+            (click)="selectTemplate('product')"
+          >
+            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+              <img
+                src="assets/newsletters/product.png"
+                alt="Product Announcement Preview"
+                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
+              />
+            </div>
+            <div class="p-4 flex items-start gap-3">
+              <div class="rounded-lg bg-success/10 p-2.5 text-success text-xl">🚀</div>
+              <div>
+                <h4 class="text-base font-bold text-base-content">Product Announcement</h4>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Hero image, list of updates, CTA button & footer.</p>
+              </div>
+            </div>
+          </button>
+
+          <!-- NEWSLETTER CARD -->
+          <button
+            type="button"
+            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
+            [class.border-primary]="selectedTemplate() === 'newsletter'"
+            [class.bg-primary/5]="selectedTemplate() === 'newsletter'"
+            [class.border-base-300]="selectedTemplate() !== 'newsletter'"
+            [class.bg-base-100]="selectedTemplate() !== 'newsletter'"
+            (click)="selectTemplate('newsletter')"
+          >
+            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+              <img
+                src="assets/newsletters/newsletter.png"
+                alt="Weekly Digest Preview"
+                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
+              />
+            </div>
+            <div class="p-4 flex items-start gap-3">
+              <div class="rounded-lg bg-warning/10 p-2.5 text-warning text-xl">📰</div>
+              <div>
+                <h4 class="text-base font-bold text-base-content">Weekly Digest</h4>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Heading divider, weekly digest content & footer.</p>
+              </div>
+            </div>
+          </button>
+
+          <!-- EMPTY CARD -->
+          <button
+            type="button"
+            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
+            [class.border-primary]="selectedTemplate() === 'empty'"
+            [class.bg-primary/5]="selectedTemplate() === 'empty'"
+            [class.border-base-300]="selectedTemplate() !== 'empty'"
+            [class.bg-base-100]="selectedTemplate() !== 'empty'"
+            (click)="selectTemplate('empty')"
+          >
+            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+              <img
+                src="assets/newsletters/empty.png"
+                alt="Empty Canvas Preview"
+                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
+              />
+            </div>
+            <div class="p-4 flex items-start gap-3">
+              <div class="rounded-lg bg-base-300/70 p-2.5 text-base-content text-xl">📄</div>
+              <div>
+                <h4 class="text-base font-bold text-base-content">Empty Canvas</h4>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Start from scratch with a single heading block.</p>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+      } @case (3) {
       <div class="space-y-4">
         <pc-visual-newsletter-editor
           [htmlContent]="regularForm.get('htmlContent')?.value || ''"
@@ -137,7 +254,7 @@
           (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
         ></pc-visual-newsletter-editor>
       </div>
-      } @case (3) {
+      } @case (4) {
       <div class="space-y-6">
         <div>
           <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Send to lists</h3>
@@ -249,7 +366,7 @@
           </div>
         </div>
       </div>
-      } @case (4) {
+      } @case (5) {
       <div class="space-y-5">
         <div>
           <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Send timing</h3>
@@ -345,10 +462,6 @@
       </button>
       <h1 class="text-lg font-semibold">Automated journeys</h1>
     </div>
-    <button class="btn btn-outline btn-sm" (click)="switchToOptions()">
-      <pc-icon name="arrow-path" class="mr-1"></pc-icon>
-      Change type
-    </button>
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
