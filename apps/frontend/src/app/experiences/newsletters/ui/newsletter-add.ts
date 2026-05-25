@@ -7,11 +7,12 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Tags } from '@uxcommon/components/tags/tags';
+import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-newsletter-add',
-  imports: [ReactiveFormsModule, Icon, Tags, TagItem],
+  imports: [ReactiveFormsModule, Icon, Tags, TagItem, VisualNewsletterEditorComponent],
   templateUrl: './newsletter-add.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
