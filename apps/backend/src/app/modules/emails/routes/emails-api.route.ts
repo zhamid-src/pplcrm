@@ -166,13 +166,34 @@ async function saveLocalEmail(
     // 5. Insert recipients
     const recipientRows: any[] = [];
     toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({ tenant_id: tenantId, email_id: emailId, kind: 'to', name: null, email: emailAddr, pos: idx });
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+      });
     });
     ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({ tenant_id: tenantId, email_id: emailId, kind: 'cc', name: null, email: emailAddr, pos: idx });
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+      });
     });
     bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({ tenant_id: tenantId, email_id: emailId, kind: 'bcc', name: null, email: emailAddr, pos: idx });
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+      });
     });
 
     if (recipientRows.length > 0) {
@@ -217,7 +238,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const db = (BaseRepository as any)['_db'];
 
     // Retrieve sender user details
-    const user = await db.selectFrom('authusers')
+    const user = await db
+      .selectFrom('authusers')
       .select(['email', 'first_name', 'last_name'])
       .where('tenant_id', '=', tenantId)
       .where('id', '=', userId)
@@ -293,7 +315,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       .executeTakeFirst();
 
     // Load SMTP settings from database for this tenant
-    const smtpRows = await db.selectFrom('settings')
+    const smtpRows = await db
+      .selectFrom('settings')
       .select(['key', 'value'])
       .where('tenant_id', '=', tenantId)
       .where('key', 'like', 'communications.smtp_%')
@@ -310,130 +333,165 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     if (!hasMsConnected && !hasSmtpConfigured) {
       return reply.status(400).send({
         status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft account or configure SMTP settings in Settings.',
+        message:
+          'No email dispatch method configured. Please connect a Microsoft account or configure SMTP settings in Settings.',
       });
     }
 
     // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview = html.replace(/<[^>]*>/g, '').substring(0, 100).trim() || '';
-    const emailRow = await saveLocalEmail(db, tenantId, userId, fromEmail, fromName, toList, ccList, bccList, subject, html, uploadedFiles, fallbackPreview);
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    const emailRow = await saveLocalEmail(
+      db,
+      tenantId,
+      userId,
+      fromEmail,
+      fromName,
+      toList,
+      ccList,
+      bccList,
+      subject,
+      html,
+      uploadedFiles,
+      fallbackPreview,
+    );
 
-    // Return the Outbox record immediately to the user
-    reply.jsendSuccess(emailRow);
-
-    // Dispatch the email in the background
-    (async () => {
-      try {
-        const oauthSvc = getOAuthService(db);
-        if (hasMsConnected) {
-          let msDraftId: string | null = null;
-          try {
-            const accessToken = await oauthSvc.getValidToken(userId);
-            const client = Client.init({
-              authProvider: (done) => done(null, accessToken),
-            });
-
-            const msDraftMessage: any = {
-              subject: subject,
-              body: {
-                contentType: 'html',
-                content: html,
-              },
-              toRecipients: toList.map((emailAddr: string) => ({
-                emailAddress: { address: emailAddr },
-              })),
-              ccRecipients: ccList.map((emailAddr: string) => ({
-                emailAddress: { address: emailAddr },
-              })),
-              bccRecipients: bccList.map((emailAddr: string) => ({
-                emailAddress: { address: emailAddr },
-              })),
-            };
-
-            const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-            msDraftId = createdDraft.id;
-
-            // Update local email preview/dedupe key to `ms:${msDraftId}`
-            await db.updateTable('emails')
-              .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', String(emailRow.id))
-              .execute();
-
-            // Upload attachments
-            for (const file of files) {
-              await client.api(`/me/messages/${msDraftId}/attachments`).post({
-                '@odata.type': '#microsoft.graph.fileAttachment',
-                name: file.filename,
-                contentType: file.mimetype,
-                contentBytes: file.buffer.toString('base64'),
-              });
-            }
-
-            // Send draft
-            await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-            // Update local email folder to '3' (Sent) on success
-            await db.updateTable('emails')
-              .set({ folder_id: '3', updated_at: new Date() })
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', String(emailRow.id))
-              .execute();
-
-            // Trigger background sync to get folders/Sent items synchronized
-            const syncSvc = new MsSyncService(db, oauthSvc);
-            syncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
-              fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-            });
-
-          } catch (err: any) {
-            fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-            // Note: email remains in folder '10' (Outbox)
-          }
-        } else {
-          // SMTP Flow
-          const port = Number(smtpSettings['communications.smtp_port'] || 587);
-          const transport = nodemailer.createTransport({
-            host: smtpSettings['communications.smtp_host'],
-            port: port,
-            secure: port === 465,
-            auth: {
-              user: smtpSettings['communications.smtp_user'] || '',
-              pass: smtpSettings['communications.smtp_pass'] || '',
-            },
+    // Dispatch the email synchronously
+    try {
+      const oauthSvc = getOAuthService(db);
+      if (hasMsConnected) {
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
           });
 
-          try {
-            await transport.sendMail({
-              from: `"${fromName}" <${fromEmail}>`,
-              to: toList,
-              cc: ccList,
-              bcc: bccList,
-              subject: subject,
-              html: html,
-              attachments: files.map(file => ({
-                filename: file.filename,
-                content: file.buffer,
-                contentType: file.mimetype,
-              })),
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
             });
-
-            // Update local email folder to '3' (Sent) on success
-            await db.updateTable('emails')
-              .set({ folder_id: '3', updated_at: new Date() })
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', String(emailRow.id))
-              .execute();
-
-          } catch (err: any) {
-            fastify.log.error(err, `Failed to dispatch SMTP email for email ${emailRow.id}`);
-            // Note: email remains in folder '10' (Outbox)
           }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
         }
-      } catch (err: any) {
-        fastify.log.error(err, `Unexpected error in background send task for email ${emailRow.id}`);
+      } else {
+        // SMTP Flow
+        const port = Number(smtpSettings['communications.smtp_port'] || 587);
+        const transport = nodemailer.createTransport({
+          host: smtpSettings['communications.smtp_host'],
+          port: port,
+          secure: port === 465,
+          auth: {
+            user: smtpSettings['communications.smtp_user'] || '',
+            pass: smtpSettings['communications.smtp_pass'] || '',
+          },
+        });
+
+        try {
+          await transport.sendMail({
+            from: `"${fromName}" <${fromEmail}>`,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject: subject,
+            html: html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to dispatch SMTP email for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(err.message || 'Failed to dispatch SMTP email', 400);
+        }
       }
-    })();
+    } catch (err: any) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+    }
   });
 
   // Download attachment by ID
@@ -441,7 +499,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const { id, attachmentId } = req.params;
     const db = (BaseRepository as any)['_db'];
 
-    const attachment = await db.selectFrom('email_attachments')
+    const attachment = await db
+      .selectFrom('email_attachments')
       .selectAll()
       .where('id', '=', attachmentId)
       .where('email_id', '=', id)
@@ -451,10 +510,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Attachment not found' });
     }
 
-    const file = await db.selectFrom('files')
-      .selectAll()
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
+    const file = await db.selectFrom('files').selectAll().where('id', '=', attachment.file_id).executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });
@@ -476,7 +532,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const { id, cid } = req.params;
     const db = (BaseRepository as any)['_db'];
 
-    const attachment = await db.selectFrom('email_attachments')
+    const attachment = await db
+      .selectFrom('email_attachments')
       .selectAll()
       .where('email_id', '=', id)
       .where('cid', '=', cid)
@@ -487,10 +544,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Inline attachment not found' });
     }
 
-    const file = await db.selectFrom('files')
-      .selectAll()
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
+    const file = await db.selectFrom('files').selectAll().where('id', '=', attachment.file_id).executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });

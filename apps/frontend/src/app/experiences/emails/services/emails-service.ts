@@ -8,6 +8,7 @@ import { TRPCService } from '../../../services/api/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 import { HasRow } from 'common/src/lib/emails';
 import { EmailDraftType, EmailType } from 'common/src/lib/models';
+import { environment } from '../../../../environments/environment';
 
 /** Service for interacting with email backend via tRPC */
 @Injectable({ providedIn: 'root' })
@@ -147,7 +148,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     const token = this.tokenService.getAuthToken();
     const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-    const res = await fetch('/api/emails/send', { method: 'POST', body: fd, headers });
+    const res = await fetch(`${environment.apiUrl}/api/emails/send`, { method: 'POST', body: fd, headers });
     const json = (await res.json()) as JSend<EmailType>;
     return jsend.unwrap(json);
   }
