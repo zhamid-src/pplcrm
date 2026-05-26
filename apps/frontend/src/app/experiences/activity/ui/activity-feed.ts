@@ -16,30 +16,39 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
             <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
-            User Activity Feed
+            <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading">User Activity Feed</ng-container>
           </h1>
-          <p class="text-sm text-base-content/60 mt-1">
+          <p class="text-sm text-base-content/60 mt-1" i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle">
             Real-time audit log of changes made to contacts, emails, tasks, and system settings.
           </p>
         </div>
-        <button class="btn btn-outline btn-sm gap-2" (click)="refreshFeed()">
+        <button
+          class="btn btn-outline btn-sm gap-2"
+          (click)="refreshFeed()"
+          i18n-title="@@activityFeed.refreshButton.title"
+          title="Refresh the activity feed"
+        >
           <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          Refresh Feed
+          <ng-container i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label">Refresh Feed</ng-container>
         </button>
       </div>
 
       <!-- Loading State -->
       <div *ngIf="isLoading() && activities().length === 0" class="flex flex-col items-center justify-center py-20">
-        <span class="loading loading-spinner loading-lg text-primary"></span>
-        <p class="text-base-content/60 mt-4">Loading system logs...</p>
+        <span
+          class="loading loading-spinner loading-lg text-primary"
+          i18n-aria-label="@@activityFeed.loading.ariaLabel"
+          aria-label="Loading activity logs"
+        ></span>
+        <p class="text-base-content/60 mt-4" i18n="Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message">Loading system logs...</p>
       </div>
 
       <!-- Empty State -->
       <div *ngIf="!isLoading() && activities().length === 0" class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
         <div class="card-body items-center text-center py-12">
           <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-          <h2 class="card-title text-base-content/70">No activity logged</h2>
-          <p class="text-sm text-base-content/50 mt-1">
+          <h2 class="card-title text-base-content/70" i18n="Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading">No activity logged</h2>
+          <p class="text-sm text-base-content/50 mt-1" i18n="Activity feed empty state|Description text when no activity has been logged yet@@activityFeed.emptyState.description">
             Activity logs will appear here once actions are performed in the system.
           </p>
         </div>
@@ -79,6 +88,8 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
                           [routerLink]="link.path"
                           [queryParams]="link.params"
                           class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5 hover:badge-primary cursor-pointer"
+                          i18n-title="@@activityFeed.entityLink.title"
+                          title="Go to record"
                         >{{ act.entity }}{{ link.label ? ': ' + link.label : '' }}</a>
                       } @else {
                         <span class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5">{{ act.entity }}</span>
@@ -100,7 +111,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
             (click)="loadMore()"
           >
             <span *ngIf="isLoading()" class="loading loading-spinner loading-xs"></span>
-            Load More Activity
+            <ng-container i18n="Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label">Load More Activity</ng-container>
           </button>
         </div>
       </div>

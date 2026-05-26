@@ -24,18 +24,28 @@ import type { EmailType } from 'common/src/lib/models';
         (click)="toggle()"
         [attr.aria-expanded]="expanded()"
         aria-controls="activities-panel"
+        i18n-aria-label="@@emailActivities.toggleButton.ariaLabel"
+        aria-label="Toggle activity log"
       >
         <span class="flex items-center gap-2">
           <pc-icon name="clock" [size]="4" class="text-gray-500"></pc-icon>
-          <span>Activity</span>
+          <span i18n="Email activity panel section heading|Label shown on the collapsed activity toggle button@@emailActivities.heading">Activity</span>
           @if (activityCount() > 0) {
-            <span class="inline-flex items-center justify-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+            <span
+              class="inline-flex items-center justify-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700"
+              i18n-aria-label="@@emailActivities.count.ariaLabel"
+              [attr.aria-label]="activityCount() + ' activities'"
+            >
               {{ activityCount() }}
             </span>
           }
         </span>
         <span class="cursor-pointer ml-2 text-xs text-gray-500">
-          @if (expanded()) { Hide } @else { Show }
+          @if (expanded()) {
+            <ng-container i18n="Email activity panel|Label to collapse the activity panel@@emailActivities.toggle.hide">Hide</ng-container>
+          } @else {
+            <ng-container i18n="Email activity panel|Label to expand the activity panel@@emailActivities.toggle.show">Show</ng-container>
+          }
         </span>
       </button>
 
@@ -43,15 +53,23 @@ import type { EmailType } from 'common/src/lib/models';
         <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
           @if (isLoading()) {
             <div class="flex items-center justify-center py-6">
-              <span class="loading loading-spinner loading-sm text-gray-400"></span>
+              <span
+                class="loading loading-spinner loading-sm text-gray-400"
+                i18n-aria-label="@@emailActivities.loading.ariaLabel"
+                aria-label="Loading activities"
+              ></span>
             </div>
           } @else if (activities().length === 0) {
             <div class="flex flex-col items-center justify-center py-6 gap-1 text-gray-400">
               <pc-icon name="information-circle" [size]="5"></pc-icon>
-              <span class="text-xs">No activity recorded yet</span>
+              <span class="text-xs" i18n="Email activity panel empty state|Message shown when there are no activity events yet@@emailActivities.emptyState">No activity recorded yet</span>
             </div>
           } @else {
-            <ol class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3">
+            <ol
+              class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3"
+              i18n-aria-label="@@emailActivities.list.ariaLabel"
+              aria-label="Email activity timeline"
+            >
               @for (act of activities(); track act.id) {
                 <li class="ml-4">
                   <!-- Timeline dot -->
