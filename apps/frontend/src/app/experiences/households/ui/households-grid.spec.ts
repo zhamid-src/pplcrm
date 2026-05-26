@@ -6,6 +6,7 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -25,6 +26,7 @@ describe('HouseholdsGrid', () => {
   let mockDialogSvc: any;
   let mockAlertSvc: any;
   let mockHouseholdsSvc: any;
+  let mockTagOptionsSvc: any;
 
   beforeEach(async () => {
     mockPersonsSvc = {
@@ -44,6 +46,10 @@ describe('HouseholdsGrid', () => {
 
     mockHouseholdsSvc = new MockHouseholdsService();
 
+    mockTagOptionsSvc = {
+      getTagNames: vi.fn().mockResolvedValue(['tag1', 'tag2']),
+    };
+
     await TestBed.configureTestingModule({
       imports: [HouseholdsGrid],
       providers: [
@@ -54,6 +60,7 @@ describe('HouseholdsGrid', () => {
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } } },
         { provide: AbstractAPIService, useValue: mockHouseholdsSvc },
+        { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ],
     })
     .overrideComponent(HouseholdsGrid, {

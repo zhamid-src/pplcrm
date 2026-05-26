@@ -19,3 +19,4 @@ getTestBed().initTestEnvironment(
   ok: true,
   text: () => Promise.resolve('<svg></svg>'),
 });
+

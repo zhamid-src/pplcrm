@@ -33,5 +33,10 @@ export default defineConfig(() => ({
       reportsDirectory: '../../coverage/apps/frontend',
       provider: 'v8' as const,
     },
+    // Suppress NG0914: Angular fires this when provideZonelessChangeDetection() is used
+    // alongside Zone.js (which the Angular testing harness always loads). It's harmless.
+    onConsoleLog(log: string) {
+      if (log.includes('NG0914')) return false;
+    },
   },
 }));

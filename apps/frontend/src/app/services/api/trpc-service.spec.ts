@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { Injectable } from '@angular/core';
 import { TRPCService } from './trpc-service';
 import { ErrorService } from '../error.service';
 import { TokenService } from './token-service';
@@ -13,6 +14,7 @@ vi.mock('idb-keyval', () => ({
 }));
 
 // Create a concrete class since TRPCService uses a generic type T
+@Injectable()
 class TestTRPCService extends TRPCService<'persons'> {
   // Expose protected methods for testing
   public testRunCachedCall(

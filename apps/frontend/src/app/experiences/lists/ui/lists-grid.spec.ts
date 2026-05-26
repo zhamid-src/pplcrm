@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ListsGridComponent } from './lists-grid';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -20,6 +21,7 @@ describe('ListsGridComponent', () => {
 
   let mockRefreshSvc: any;
   let mockApiSvc: any;
+  let mockTagOptionsSvc: any;
   let refreshCount: ReturnType<typeof signal<number>>;
 
   beforeEach(async () => {
@@ -34,6 +36,10 @@ describe('ListsGridComponent', () => {
       refreshCount: signal(0),
     };
 
+    mockTagOptionsSvc = {
+      getTagNames: vi.fn().mockResolvedValue(['tag1', 'tag2']),
+    };
+
     await TestBed.configureTestingModule({
       imports: [ListsGridComponent],
       providers: [
@@ -42,7 +48,8 @@ describe('ListsGridComponent', () => {
         { provide: ConfirmDialogService, useValue: { confirm: vi.fn() } },
         { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load' } } },
         { provide: ListsRefreshService, useValue: mockRefreshSvc },
-        { provide: AbstractAPIService, useValue: mockApiSvc }
+        { provide: AbstractAPIService, useValue: mockApiSvc },
+        { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ]
     })
     .overrideComponent(ListsGridComponent, { set: { providers: [{ provide: AbstractAPIService, useClass: MockApiService }] } }) // Override component provider
