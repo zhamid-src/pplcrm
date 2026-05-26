@@ -10,6 +10,7 @@ import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import { TypeTenantId } from 'common/src/lib/kysely.models';
 import { EmailDraftType } from 'common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -17,6 +18,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   private bodiesRepo = new EmailBodiesRepo();
   private commentsRepo = new EmailCommentsRepo();
   private draftsRepo = new EmailDraftsRepo();
+  private activityRepo = new UserActivityRepo();
 
   constructor() {
     super(new EmailRepo());
@@ -47,11 +49,34 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Assign an email to a user */
-  public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
+  public async assignEmail(
+    tenant_id: string,
+    id: string,
+    user_id: string | null,
+    actor_id?: string,
+    assigned_to_name?: string | null,
+  ) {
     try {
       const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
 
       if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = user_id ? 'assign' : 'unassign';
+        const metadata: Record<string, unknown> = {};
+        if (user_id) metadata['assigned_to_id'] = user_id;
+        if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
+
+        this.activityRepo.log({
+          tenant_id,
+          user_id: actor_id,
+          activity: activityType,
+          entity: 'email',
+          entity_id: id,
+          metadata,
+        }).catch((e) => console.error('Failed to log email assign activity', e));
+      }
 
       if (user_id) {
         try {
@@ -77,6 +102,15 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to assign email', undefined, { cause: err });
+    }
+  }
+
+  /** Get all activity log entries for a specific email */
+  public async getActivitiesForEmail(tenant_id: string, email_id: string) {
+    try {
+      return await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
+    } catch (err) {
+      throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
     }
   }
 
@@ -327,10 +361,29 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Update email status (open/closed/resolved) */
-  public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
+  public async setStatus(
+    tenant_id: string,
+    id: string,
+    status: EmailStatus,
+    actor_id?: string,
+  ) {
     try {
       const updated = await this.getRepo().setStatus(tenant_id, id, status);
       if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = status === 'closed' ? 'close' : 'reopen';
+        this.activityRepo.log({
+          tenant_id,
+          user_id: actor_id,
+          activity: activityType,
+          entity: 'email',
+          entity_id: id,
+          metadata: { status },
+        }).catch((e) => console.error('Failed to log email status activity', e));
+      }
+
       return updated;
     } catch (err) {
       if (err instanceof AppError) throw err;

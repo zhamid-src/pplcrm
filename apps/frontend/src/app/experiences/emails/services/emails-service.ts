@@ -27,11 +27,12 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   /**
    * Assign an email to a user.
    * @param id Email identifier
-   * @param user_id User ID to assign to
+   * @param user_id User ID to assign to (null to unassign)
+   * @param assigned_to_name Display name of the assignee (for activity log)
    * @returns Promise for the mutation
    */
-  public assign(id: string, user_id: string | null) {
-    return this.api.emails.assign.mutate({ id, user_id });
+  public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
+    return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
   }
 
   /** Delete a single email by ID */
@@ -88,6 +89,15 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    */
   public getEmailWithHeaders(id: string) {
     return this.api.emails.getEmailWithHeaders.query(id);
+  }
+
+  /**
+   * Fetch all activity log entries for a given email.
+   * @param emailId Email identifier
+   * @returns Promise resolving to array of activity rows
+   */
+  public getActivities(emailId: string) {
+    return this.api.emails.getActivities.query(emailId);
   }
 
   /**

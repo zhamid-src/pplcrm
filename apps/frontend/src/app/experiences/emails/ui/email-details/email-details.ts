@@ -8,11 +8,12 @@ import { EmailsStore } from '../../services/store/emailstore';
 import { EmailBody } from '../email-body/email-body';
 import { EmailComments } from '../email-comments/email-comments';
 import { EmailHeader } from '../email-header/email-header';
+import { EmailActivities } from '../email-activities/email-activities';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-details',
-  imports: [EmailHeader, EmailBody, EmailComments],
+  imports: [EmailHeader, EmailBody, EmailComments, EmailActivities],
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {

@@ -40,6 +40,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     user_id: string;
     activity: UserActivityType;
     entity: string;
+    entity_id?: string | null;
     quantity?: number | null;
     metadata?: Record<string, unknown> | null;
     performed_by?: string | null;
@@ -50,12 +51,38 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       user_id: input.user_id,
       activity: input.activity,
       entity: input.entity,
+      entity_id: input.entity_id ?? null,
       quantity: input.quantity ?? 0,
       metadata: input.metadata ?? null,
       createdby_id: actor,
       updatedby_id: actor,
     } as OperationDataType<'user_activity', 'insert'>;
     await this.add({ row }, trx);
+  }
+
+  /**
+   * Get all activity entries for a specific entity record (e.g. all events on email #123).
+   * Returns rows joined with the acting user's name, ordered newest-first.
+   */
+  public async getForEntity(tenant_id: string, entity: string, entity_id: string) {
+    return (this.getSelect() as SelectQueryBuilder<Models, 'user_activity', any>)
+      .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+      .select([
+        'user_activity.id',
+        'user_activity.activity',
+        'user_activity.entity',
+        'user_activity.entity_id',
+        'user_activity.quantity',
+        'user_activity.metadata',
+        'user_activity.created_at',
+        'authusers.first_name',
+        'authusers.last_name',
+      ])
+      .where('user_activity.tenant_id', '=', tenant_id)
+      .where('user_activity.entity', '=', entity)
+      .where('user_activity.entity_id', '=', entity_id)
+      .orderBy('user_activity.created_at', 'desc')
+      .execute();
   }
 
   public async getAllWithUser(tenant_id: string, options: QueryParams<'user_activity'>) {
@@ -65,6 +92,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
         'user_activity.id',
         'user_activity.activity',
         'user_activity.entity',
+        'user_activity.entity_id',
         'user_activity.quantity',
         'user_activity.metadata',
         'user_activity.created_at',
@@ -89,5 +117,5 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
   }
 }
 
-export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'merge';
+export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'unassign' | 'merge' | 'close' | 'reopen';
 import { QueryParams } from './base.repo';

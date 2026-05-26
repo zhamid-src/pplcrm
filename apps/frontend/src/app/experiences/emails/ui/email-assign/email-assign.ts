@@ -66,9 +66,12 @@ export class EmailAssign {
     if (!email) return;
 
     const normalizedUserId = userId != null ? String(userId) : null;
+    const assigneeName = normalizedUserId
+      ? this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null
+      : null;
 
     try {
-      await this.store.assignEmailToUser(email.id, normalizedUserId);
+      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
       this.assignedTo.set(normalizedUserId);
     } catch (e) {
       this.alertSvc.showError('Something went wrong, please try again');

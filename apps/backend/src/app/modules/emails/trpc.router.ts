@@ -27,8 +27,10 @@ function addComment() {
  */
 function assign() {
   return authProcedure
-    .input(z.object({ id: idSchema, user_id: idSchema.nullable() }))
-    .mutation(wrapTrpc(({ input, ctx }) => emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id)));
+    .input(z.object({ id: idSchema, user_id: idSchema.nullable(), assigned_to_name: z.string().optional() }))
+    .mutation(wrapTrpc(({ input, ctx }) =>
+      emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id, ctx.auth.user_id, input.assigned_to_name ?? null),
+    ));
 }
 
 function deleteComment() {
@@ -181,7 +183,19 @@ function setFavourite() {
 function setStatus() {
   return authProcedure
     .input(z.object({ id: idSchema, status: z.enum(['open', 'closed']) }))
-    .mutation(wrapTrpc(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status)));
+    .mutation(wrapTrpc(({ input, ctx }) =>
+      emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id),
+    ));
+}
+
+/**
+ * Retrieve all activity log entries for a given email.
+ * @returns List of activity rows with user names, ordered newest-first.
+ */
+function getActivities() {
+  return authProcedure
+    .input(idSchema)
+    .query(wrapTrpc(({ input, ctx }) => emails.getActivitiesForEmail(ctx.auth.tenant_id, input)));
 }
 
 const emails = new EmailsController();
@@ -195,6 +209,7 @@ export const EmailsRouter = router({
   getDraft: getDraft(),
   getEmailHeader: getEmailHeader(),
   getEmailWithHeaders: getEmailWithHeaders(),
+  getActivities: getActivities(),
   addComment: addComment(),
   deleteComment: deleteComment(),
   deleteDraft: deleteDraft(),

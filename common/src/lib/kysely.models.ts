@@ -414,6 +414,7 @@ interface UserActivity extends RecordType {
   user_id: string;
   activity: string;
   entity: string;
+  entity_id: string | null;
   quantity: number;
   metadata: Json | null;
 }
