@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
@@ -9,7 +9,6 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { AuthUsersService } from '../services/authusers-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-user-detail',
   imports: [DatePipe, FormField, RouterModule, Icon],
   templateUrl: './user-detail.html',

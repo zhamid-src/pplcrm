@@ -1,6 +1,6 @@
 // pc-compose-email.component.ts
 import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
 import { Icon } from '@icons/icon'; // your <pc-icon>
@@ -14,7 +14,6 @@ import Quill from 'quill';
 import { EmailActionsStore } from '../../services/store/email-actions.store';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-compose-email',
   imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
   host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors

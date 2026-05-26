@@ -1,4 +1,4 @@
-import { Component , ChangeDetectionStrategy} from '@angular/core';
+import { Component } from '@angular/core';
 import { UpdateAuthUserType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
@@ -6,7 +6,6 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { AuthUsersService } from '../services/authusers-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-users-grid',
   imports: [DataGrid],
   template: `

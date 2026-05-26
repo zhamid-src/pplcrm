@@ -1,13 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  EventEmitter,
-  Input,
-  OnInit,
-  Output,
-  computed,
-  signal,
-} from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
@@ -23,7 +14,6 @@ import {
 } from './newsletter-templates';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-visual-newsletter-editor',
   imports: [CommonModule, FormsModule, Icon],
   template: `

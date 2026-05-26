@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, output, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, input, output, ChangeDetectorRef, DestroyRef } from '@angular/core';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -7,7 +7,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-add-btn-row',
   imports: [ReactiveFormsModule, Icon],
   templateUrl: './add-btn-row.html',

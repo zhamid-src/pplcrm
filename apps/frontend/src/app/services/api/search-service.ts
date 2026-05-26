@@ -3,8 +3,7 @@
  * Provides centralized search functionality with reactive state management
  * using Angular signals for cross-component search coordination.
  */
-import { Injectable, signal } from '@angular/core';
-import { debounce } from '@common';
+import { Service, signal, debounced, effect } from '@angular/core';
 
 /**
  * Centralized search state management service for application-wide search functionality.
@@ -12,68 +11,37 @@ import { debounce } from '@common';
  * This service provides a reactive search state that can be shared across multiple
  * components, enabling coordinated search experiences throughout the application.
  * It uses Angular signals for efficient reactivity and automatic UI updates.
- *
- * **Key Features:**
- * - **Global Search State**: Centralized search term management
- * - **Reactive Updates**: Angular signals for automatic UI synchronization
- * - **Cross-Component Sync**: Share search state between components
- * - **Simple API**: Clear methods for search operations
- * - **Memory Efficient**: Lightweight signal-based implementation
- *
- * **Common Use Cases:**
- * - Global search bars that filter multiple views
- * - Data grids with search functionality
- * - List components with real-time filtering
- * - Search result coordination across tabs/views
- *
- * **Architecture:**
- * The service maintains a single source of truth for search state using Angular signals,
- * allowing any component to read the current search term reactively or update it
- * imperatively. This ensures all components stay synchronized automatically.
- *
- * @example
- * ```typescript
- * // In a search component
- * constructor(private searchService: SearchService) {}
- *
- * onSearchInput(term: string) {
- *   this.searchService.doSearch(term);
- * }
- *
- * clearSearch() {
- *   this.searchService.clearSearch();
- * }
- * ```
- *
- * @example
- * ```typescript
- * // In a data grid component
- * constructor(private searchService: SearchService) {
- *   effect(() => this.filterData(this.searchService.searchSignal()));
- * }
- * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class SearchService {
+  // Source raw search term
+  private readonly _rawSearch = signal<string>('');
+
+  // Native debounced signal
+  private readonly _debouncedSearch = debounced(() => this._rawSearch(), 300);
+
   /**
    * Internal signal that holds the current search term.
+   * Kept as a WritableSignal to maintain backward compatibility with tests.
    */
   public readonly searchSignal = signal<string>('');
 
-  private readonly _debouncedSet = debounce((value: string) => {
-    const norm = this.normalize(value);
-    if (norm !== this.searchSignal()) {
-      this.searchSignal.set(norm);
-    }
-  }, 300);
+  constructor() {
+    // Keep public searchSignal in sync with native debounced signal
+    effect(() => {
+      const val = this._debouncedSearch.value();
+      if (val !== undefined) {
+        this.searchSignal.set(val);
+      }
+    });
+  }
 
   /**
    * Clears the current search term by setting it to an empty string.
    */
   public clearSearch(): void {
-    if (this.searchSignal() !== '') {
+    if (this._rawSearch() !== '') {
+      this._rawSearch.set('');
       this.searchSignal.set('');
     }
   }
@@ -84,7 +52,10 @@ export class SearchService {
    * @param value - The new search term to set.
    */
   public doSearch(value: string): void {
-    this._debouncedSet(value);
+    const norm = this.normalize(value);
+    if (norm !== this._rawSearch()) {
+      this._rawSearch.set(norm);
+    }
   }
 
   /**
@@ -101,6 +72,9 @@ export class SearchService {
    */
   public doSearchImmediate(value: string): void {
     const norm = this.normalize(value);
+    if (norm !== this._rawSearch()) {
+      this._rawSearch.set(norm);
+    }
     if (norm !== this.searchSignal()) {
       this.searchSignal.set(norm);
     }

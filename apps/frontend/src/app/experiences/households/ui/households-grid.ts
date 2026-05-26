@@ -1,7 +1,7 @@
 /**
  * @file Grid component for listing households with counts and tags.
  */
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '@common';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -20,7 +20,6 @@ interface ParamsType {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-households-grid',
   imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `

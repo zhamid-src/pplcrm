@@ -1,4 +1,4 @@
-import { Component, effect, inject, input, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
+import { Component, effect, inject, input, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddListType, UpdateHouseholdsType, UpdatePersonsType, debounce } from '@common';
@@ -20,7 +20,6 @@ import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-build
 
 /** Grid component for filtering households when creating lists */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-household-filter-grid',
   imports: [DataGrid],
   template: `<pc-datagrid

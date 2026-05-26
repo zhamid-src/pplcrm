@@ -1,8 +1,7 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 @Component({
   selector: 'tr[pc-dg-row]',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: ''
 })
 export class DataGridRowComponent {

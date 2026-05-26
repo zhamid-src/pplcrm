@@ -2,7 +2,7 @@
  * @file Component for creating or updating individual person records.
  */
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, effect, inject, input, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, OnInit, computed, effect, inject, input, signal } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
@@ -28,7 +28,6 @@ import { AddressType, Persons } from 'common/src/lib/kysely.models';
  * Handles both "new" (creation) and "edit" (update) modes.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-person-detail',
   imports: [DatePipe, FormField, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
   templateUrl: './person-detail.html',

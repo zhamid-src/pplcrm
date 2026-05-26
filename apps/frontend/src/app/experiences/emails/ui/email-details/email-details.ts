@@ -1,17 +1,7 @@
 /**
  * @file Container component for email details view.
  */
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-  untracked,
-} from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { EmailsStore } from '../../services/store/emailstore';
@@ -23,7 +13,6 @@ import type { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-details',
   imports: [EmailHeader, EmailBody, EmailComments],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {

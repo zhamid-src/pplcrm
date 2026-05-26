@@ -1,4 +1,4 @@
-import { Component, input, output , ChangeDetectionStrategy} from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -8,7 +8,6 @@ import { PcIconNameType } from '@icons/icons.index';
  * Can be used for toggle buttons like play/pause, expand/collapse, etc.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-swap',
   imports: [ReactiveFormsModule, Icon],
   template: `<label

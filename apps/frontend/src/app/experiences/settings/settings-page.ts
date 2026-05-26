@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, inject, signal, ChangeDetectionStrategy, WritableSignal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { form, email, pattern, FormField } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
@@ -21,7 +21,6 @@ interface SectionState {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-settings-page',
   imports: [FormField, Icon, MsSyncSettings],
   templateUrl: './settings-page.html',

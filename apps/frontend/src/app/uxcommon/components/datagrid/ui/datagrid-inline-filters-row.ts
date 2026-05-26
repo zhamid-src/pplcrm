@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 
 import { DataGrid } from '../datagrid';
 import type { ColumnDef as ColDef } from '../grid-defaults';
 
 @Component({
   selector: 'pc-dg-inline-filters-row',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-inline-filters-row.html',
 })
 export class DataGridInlineFiltersRowComponent {

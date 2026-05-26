@@ -1,4 +1,4 @@
-import { Component, inject, viewChild, ChangeDetectionStrategy, signal } from '@angular/core';
+import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { TRPCClientError } from '@trpc/client';
@@ -12,7 +12,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
  * and handles validation, submission, and error feedback.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-add-tag',
   imports: [FormField, AddBtnRow],
   template: `<div class="flex min-h-full flex-col bg-base-100">

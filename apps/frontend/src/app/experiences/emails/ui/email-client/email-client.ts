@@ -1,7 +1,7 @@
 /**
  * @file Container component for the email client, orchestrating folder, list and details components.
  */
-import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
+import { Component, inject, signal, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
@@ -16,7 +16,6 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-client',
   imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block h-full',
     '(document:keydown)': 'handleDocumentKeydown($event)',

@@ -2,7 +2,7 @@
  * @file Component handling comments for an email.
  */
 import { DatePipe, SlicePipe } from "@angular/common";
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked, viewChild } from "@angular/core";
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from "@angular/forms";
 import type { IAuthUser } from "@common";
 import { Icon } from "@uxcommon/components/icons/icon";
@@ -19,7 +19,6 @@ import type { EmailCommentType, EmailType } from "common/src/lib/models";
 @Component({
   selector: 'pc-email-comments',
   imports: [DatePipe, SlicePipe, FormsModule, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-comments.html',
 })
 export class EmailComments {

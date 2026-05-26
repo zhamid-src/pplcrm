@@ -1,8 +1,7 @@
-import { Component, ElementRef, input, output, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
+import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { debounce } from '@common';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-autocomplete',
   template: `
     <input

@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -18,7 +18,6 @@ interface DuplicateGroup {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-duplicate-manager',
   imports: [CommonModule, Icon],
   template: `

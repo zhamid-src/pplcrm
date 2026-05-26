@@ -1,7 +1,7 @@
 /**
  * @file Component displaying the body of an email.
  */
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -15,7 +15,6 @@ import { environment } from '../../../../../environments/environment';
 @Component({
   selector: 'pc-email-body',
   imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
     <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
     @if (attachments().length > 0) {

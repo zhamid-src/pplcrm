@@ -1,7 +1,7 @@
 /**
  * @file Component for displaying people associated with a household.
  */
-import { Component, effect, inject, input, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '@common';
 
@@ -12,7 +12,6 @@ import { PersonsService } from '../services/persons-service';
  * Each person is shown as a link to their detail page.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-people-in-household',
   imports: [RouterModule],
   template: `<div>

@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -6,7 +6,6 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthUsersService } from '../services/authusers-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-user-add',
   imports: [FormField],
   template: `

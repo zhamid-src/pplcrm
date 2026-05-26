@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { IAuthUser } from '@common';
@@ -14,7 +14,6 @@ import { TimeAgoPipe } from '../../../uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '../../../uxcommon/mentions/mention-controller';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-task-detail',
   imports: [DatePipe, DecimalPipe, SlicePipe, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
   templateUrl: './task-detail.html',

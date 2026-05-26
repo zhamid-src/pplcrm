@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -16,8 +16,7 @@ export type CsvImportSummary = {
   selector: 'pc-csv-importer',
   imports: [FormsModule, Icon],
   templateUrl: './csv-import.html',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-})
+  })
 export class CsvImportComponent {
   private readonly alerts = inject(AlertService);
 
