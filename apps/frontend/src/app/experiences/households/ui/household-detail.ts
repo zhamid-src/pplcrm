@@ -2,7 +2,7 @@
  * @file Component for creating or editing households and managing their tags and members.
  */
 import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
-import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute } from '@angular/router';
 import { UpdateHouseholdsType } from '@common';
@@ -63,6 +63,41 @@ export class HouseholdDetail implements OnInit {
 
   /** Signal-based form control group */
   protected readonly form = form(this.payload);
+
+  /** Formatted address string computed from the payload */
+  protected readonly addressString = computed(() => {
+    const raw = this.payload();
+
+    // If formatted_address is present (e.g. populated via Google Places autocomplete)
+    if (raw.formatted_address) {
+      return raw.formatted_address;
+    }
+
+    const parts: string[] = [];
+
+    const streetParts = [
+      raw.apt ? `Apt ${raw.apt}` : null,
+      raw.street_num,
+      raw.street1,
+      raw.street2,
+    ].filter(Boolean);
+
+    const locationParts = [
+      raw.city,
+      raw.state,
+      raw.zip,
+      raw.country,
+    ].filter(Boolean);
+
+    if (streetParts.length) {
+      parts.push(streetParts.join(' ').trim());
+    }
+    if (locationParts.length) {
+      parts.push(locationParts.join(', ').trim());
+    }
+
+    return parts.join(', ').trim();
+  });
 
   /** ID of the household being edited */
   protected id: string | null = null;
