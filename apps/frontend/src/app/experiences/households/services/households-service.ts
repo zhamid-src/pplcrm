@@ -145,4 +145,18 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.households.exportCsv.mutate(input);
   }
+
+  /**
+   * Find potential duplicate households.
+   */
+  public findPotentialDuplicates(): Promise<any[]> {
+    return this.api.households.findPotentialDuplicates.query();
+  }
+
+  /**
+   * Merge source household into target household.
+   */
+  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
+    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
+  }
 }

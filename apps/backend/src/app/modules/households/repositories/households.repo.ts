@@ -322,4 +322,234 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .select('tags.name')
       .execute();
   }
+
+  /**
+   * Find potential duplicates within the tenant (sharing identical full address fingerprint).
+   */
+  public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
+    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', tenant_id)
+      .executeTakeFirst();
+    const placeholderHhId = tenantRow?.placeholder_household_id;
+
+    const duplicateAddresses = await this.getSelect()
+      .select([
+        'address_fp_full',
+      ])
+      .select((eb) => [
+        eb.fn.count('households.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenant_id)
+      .where('address_fp_full', 'is not', null)
+      .where(sql`trim(address_fp_full)`, '!=', '')
+      .$if(!!placeholderHhId, (qb) => qb.where('id', '!=', placeholderHhId!))
+      .groupBy('address_fp_full')
+      .having(sql`count(households.id)`, '>', 1)
+      .execute();
+
+    const hhIds = new Set<string>();
+    for (const group of duplicateAddresses) {
+      const ids = group.ids;
+      if (Array.isArray(ids)) {
+        ids.forEach((id) => hhIds.add(String(id)));
+      }
+    }
+
+    if (hhIds.size === 0) return [];
+
+    const dbRows = await this.getSelect()
+      .select([
+        'households.id',
+        'households.street_num',
+        'households.street1',
+        'households.street2',
+        'households.city',
+        'households.state',
+        'households.zip',
+        'households.country',
+        'households.apt',
+        'households.home_phone',
+        'households.notes',
+        'households.created_at',
+      ])
+      .where('households.tenant_id', '=', tenant_id)
+      .where('households.id', 'in', Array.from(hhIds))
+      .execute();
+
+    const hhMap = new Map<string, any>();
+    for (const row of dbRows) {
+      hhMap.set(String(row.id), {
+        ...row,
+        id: String(row.id),
+      });
+    }
+
+    // Now fetch all persons belonging to these duplicate household IDs
+    const persons = await (BaseRepository as any)['_db'].selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', Array.from(hhIds))
+      .execute();
+
+    const hhToPersons = new Map<string, any[]>();
+    for (const p of persons) {
+      const hhId = String(p.household_id);
+      if (!hhToPersons.has(hhId)) {
+        hhToPersons.set(hhId, []);
+      }
+      hhToPersons.get(hhId)!.push(p);
+    }
+
+    const groups: Array<{ reason: string; households: any[] }> = [];
+    for (const group of duplicateAddresses) {
+      const groupHouseholds = group.ids.map((id) => {
+        const hh = hhMap.get(id);
+        if (hh) {
+          return {
+            ...hh,
+            persons: hhToPersons.get(id) || [],
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (groupHouseholds.length > 1) {
+        const first = groupHouseholds[0];
+        const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip].filter(Boolean).join(' ');
+        groups.push({
+          reason: `Matching Address: "${addrStr}"`,
+          households: groupHouseholds,
+        });
+      }
+    }
+    return groups;
+  }
+
+  /**
+   * Merges a source household record into a target household record in a transaction.
+   */
+  public async mergeHouseholds(input: {
+    tenant_id: string;
+    target_id: string;
+    source_id: string;
+    user_id: string;
+  }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
+      const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
+
+      if (!target || !source) {
+        throw new Error('Target or Source household not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, any> = {};
+      const fields = [
+        'apt',
+        'street_num',
+        'street1',
+        'street2',
+        'city',
+        'state',
+        'zip',
+        'country',
+        'home_phone',
+        'notes',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if ((targetVal == null || String(targetVal).trim() === '') && (sourceVal != null && String(sourceVal).trim() !== '')) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_households_tags)
+      const targetTags = await trx.selectFrom('map_households_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx.selectFrom('map_households_tags')
+        .select(['id', 'tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx.insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx.deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_households)
+      const targetLists = await trx.selectFrom('map_lists_households')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx.selectFrom('map_lists_households')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx.insertInto('map_lists_households')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              list_id: sl.list_id as any,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx.deleteFrom('map_lists_households')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 4. Reassign people (persons.household_id)
+      await trx.updateTable('persons')
+        .set({ household_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 5. Delete source household
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
 }
