@@ -1,7 +1,7 @@
 /**
  * @file Service responsible for managing household data via tRPC.
  */
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { ExportCsvInputType, ExportCsvResponseType, UpdateHouseholdsType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -12,9 +12,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
  *
  * @see {@link AbstractAPIService}
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class HouseholdsService extends AbstractAPIService<'households', never> {
   /**
    * Add a new household to the database.

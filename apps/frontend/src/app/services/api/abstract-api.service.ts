@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
 import { TRPCService } from './trpc-service';
 
@@ -36,9 +36,7 @@ import { Models } from 'common/src/lib/kysely.models';
  * }
  * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
   /** Increments each time a refresh is requested. Consumers can effect() on this. */
   public readonly refreshCount = signal(0);

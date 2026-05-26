@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import {
   AddTeamType,
   ExportCsvInputType,
@@ -36,7 +36,7 @@ export interface TeamAssignmentInfo {
   is_captain: boolean;
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   public add(row: AddTeamType) {
     return this.api.teams.add.mutate(row) as Promise<TeamDetail>;

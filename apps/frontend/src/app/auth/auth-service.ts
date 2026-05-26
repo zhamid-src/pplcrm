@@ -3,7 +3,7 @@
  * Provides comprehensive authentication functionality including sign-in, sign-up, password reset,
  * and session management through tRPC communication with the backend.
  */
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
@@ -35,9 +35,7 @@ import { TRPCError } from '@trpc/server';
  * }
  * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class AuthService extends TRPCService<'authusers'> {
   /** Reactive signal holding the currently authenticated user state */
   private user = signal<IAuthUser | null>(null);

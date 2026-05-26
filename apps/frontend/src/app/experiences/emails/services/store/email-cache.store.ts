@@ -2,12 +2,12 @@
  * @file Caching + de-duped loading for email bodies & headers.
  * Owns: body/header caches, "loading" set, and combined fetch helpers.
  */
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { computed, inject, signal, Service } from '@angular/core';
 
 import { EmailsService } from '../emails-service';
 import type { EmailId } from './email-state.store';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailCacheStore {
   /** Cache for email body HTML content, keyed by email ID */
   private readonly emailBodiesCache = signal<Record<string, string>>({});

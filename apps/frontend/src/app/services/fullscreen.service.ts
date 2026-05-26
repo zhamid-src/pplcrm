@@ -1,6 +1,6 @@
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class FullScreenService {
   /** True iff the document is actually in fullscreen (kept in sync by events) */
   private readonly _isFullScreen = signal<boolean>(false);

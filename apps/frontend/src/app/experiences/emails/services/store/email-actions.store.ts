@@ -2,7 +2,7 @@
  * @file Mutating actions (assign, favourite, status, comments) with optimistic flows.
  * Centralizes rollback + optional refresh (folder contents & counts).
  */
-import { Injectable, inject, signal } from '@angular/core';
+import { inject, signal, Service } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
@@ -13,7 +13,7 @@ import { type EmailId, EmailStateStore } from './email-state.store';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import type { EmailDraftType, EmailType } from 'common/src/lib/models';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailActionsStore {
   public readonly sendingCount = signal(0);
   private readonly alerts = inject(AlertService);

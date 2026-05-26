@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -11,7 +11,7 @@ import {
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
   public add(row: InviteAuthUserType) {
     return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {

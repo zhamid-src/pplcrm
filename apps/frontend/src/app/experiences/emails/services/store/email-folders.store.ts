@@ -2,7 +2,7 @@
  * @file Folder list + counts + selection, plus loading emails for a folder.
  * Injects EmailStateStore to write normalized emails when a folder is selected.
  */
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { computed, inject, signal, Service } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { EmailsService } from '../emails-service';
@@ -10,7 +10,7 @@ import { EmailStateStore } from './email-state.store';
 import { ServerEmail } from 'common/src/lib/emails';
 import type { EmailFolderType } from 'common/src/lib/models';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailFoldersStore {
   /** Available email folders */
   private readonly emailFolders = signal<EmailFolderType[]>([]);

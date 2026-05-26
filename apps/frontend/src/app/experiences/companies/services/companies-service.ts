@@ -1,10 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class CompaniesService extends AbstractAPIService<'companies', any> {
   public add(row: any) {
     return this.api.companies.add.mutate(row);

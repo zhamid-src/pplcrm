@@ -1,7 +1,7 @@
 /**
  * @file Reusable dialog service for confirm/alert/prompt using <dialog>.
  */
-import { Injectable, signal, computed } from '@angular/core';
+import { signal, computed, Service } from '@angular/core';
 
 
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
@@ -55,7 +55,7 @@ export interface PromptOptions extends BaseDialogOptions {
   inputPlaceholder?: string;
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ConfirmDialogService {
   /** Internal resolver for the pending promise */
   private _resolve: ((value?: any) => void) | null = null;

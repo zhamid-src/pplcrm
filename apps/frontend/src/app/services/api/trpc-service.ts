@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
 import { ErrorService } from '../error.service';
@@ -46,7 +46,7 @@ import { refreshLink } from './trpc-refreshlink';
  * @example
  * ```typescript
  * // Extending for a specific entity
- * @Injectable()
+ * @Service()
  * class PersonsService extends TRPCService<'persons'> {
  *   async getPersons() {
  *     return this.api.persons.getAll.query();
@@ -65,9 +65,7 @@ import { refreshLink } from './trpc-refreshlink';
  * );
  * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class TRPCService<T> {
   /** Global error service */
   protected readonly errorSvc = inject(ErrorService);

@@ -1,12 +1,10 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { AddListType, ExportCsvInputType, ExportCsvResponseType, UpdateListType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 /** Service handling CRUD operations for list entities. */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   /** Add a new list (opt-out of global error toast to avoid duplicates) */
   public add(row: AddListType) {

@@ -1,7 +1,7 @@
 /**
  * @file Service for interacting with the email backend via tRPC.
  */
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '@common';
 
 import { TRPCService } from '../../../services/api/trpc-service';
@@ -11,7 +11,7 @@ import { EmailDraftType, EmailType } from 'common/src/lib/models';
 import { environment } from '../../../../environments/environment';
 
 /** Service for interacting with email backend via tRPC */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
   /**
    * Add a comment to an email.

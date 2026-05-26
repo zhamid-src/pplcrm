@@ -1,9 +1,9 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { computed, signal, Service } from '@angular/core';
 
 import { ServerEmail } from 'common/src/lib/emails';
 import type { EmailType } from 'common/src/lib/models';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailStateStore {
   /** Currently selected email ID */
   public readonly currentSelectedEmailId = signal<string | null>(null);

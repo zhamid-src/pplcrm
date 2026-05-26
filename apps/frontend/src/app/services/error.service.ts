@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
 import { JSendServerError } from '@common';
 import { TRPCClientError } from '@trpc/client';
@@ -14,7 +14,7 @@ import { TokenService } from './api/token-service';
  * navigation based on HTTP status codes.  Business logic failures should be
  * handled by the calling component and should not reach this service.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ErrorService {
   private readonly alerts = inject(AlertService);
   private readonly router = inject(Router);
