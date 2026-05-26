@@ -78,10 +78,6 @@ describe('Navbar Component', () => {
     component = fixture.componentInstance;
   });
 
-  afterEach(() => {
-    
-  });
-
   it('should create the component', () => {
     expect(component).toBeTruthy();
   });

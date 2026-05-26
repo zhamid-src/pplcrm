@@ -22,10 +22,7 @@ describe('AutoComplete Component', () => {
     component = fixture.componentInstance;
     fixture.componentRef.setInput('filterSvc', mockFilterSvc);
     fixture.detectChanges();
-    afterEach(() => {
-    
   });
-});
 
   it('should create the component', () => {
     expect(component).toBeTruthy();

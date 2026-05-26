@@ -14,7 +14,6 @@ import type {
   Selectable,
   Updateable,
 } from 'kysely';
-import type { ExtractColumnType } from 'node_modules/kysely/dist/esm/util/type-utils';
 import type { EmailStatus } from './emails';
 
 export type Keys<T> = keyof T;
@@ -115,10 +114,8 @@ export type TablesOperationMap = {
   };
 };
 
-export type TypeColumnValue<TTable extends keyof Models, TColumn extends keyof Models[TTable]> = ExtractColumnType<
-  Models,
-  TTable,
-  TColumn
+export type TypeColumnValue<TTable extends keyof Models, TColumn extends keyof Models[TTable]> = UnwrapSelect<
+  Models[TTable][TColumn]
 >;
 
 /*
