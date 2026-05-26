@@ -46,12 +46,23 @@
         </div>
         }
 
+        @if (!household()?.is_placeholder && addressString()) {
+        <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
+          <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
+          <div class="flex flex-col">
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Current Address</span>
+            <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
+          </div>
+        </div>
+        }
+
         <div class="flex flex-col gap-2">
           <label class="text-sm font-medium text-base-content/70">Search address</label>
           <input
             type="text"
             class="input w-full"
             placeholder="Start typing an address…"
+            autocomplete="one-time-code"
             [options]="options"
             ngx-gp-autocomplete
             (onAddressChange)="handleAddressChange($event)"

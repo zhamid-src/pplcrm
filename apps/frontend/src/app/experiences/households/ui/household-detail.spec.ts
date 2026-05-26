@@ -128,6 +128,7 @@ describe('HouseholdDetail', () => {
       expect(mockHouseholdsSvc.getById).not.toHaveBeenCalled();
       expect(component['payload']().city).toBe('');
       expect(component['form']().dirty()).toBe(false);
+      expect(component['addressString']()).toBe('');
     });
 
     it('should call householdsSvc.add when saving new household', async () => {
@@ -185,6 +186,31 @@ describe('HouseholdDetail', () => {
       expect(payload.notes).toBe('Google HQ');
       expect(component['tags']).toEqual(expect.arrayContaining(['donor', 'volunteer']));
       expect(component['peopleInHouseholdCount']()).toBe(3);
+      expect(component['addressString']()).toBe('1600 Amphitheatre Pkwy, Mountain View, CA');
+    });
+
+    it('should dynamically update addressString when address components are modified', async () => {
+      await component.ngOnInit();
+      fixture.detectChanges();
+
+      expect(component['addressString']()).toBe('1600 Amphitheatre Pkwy, Mountain View, CA');
+
+      // Clear formatted address and set custom components
+      component['payload'].update((prev) => ({
+        ...prev,
+        formatted_address: '',
+        apt: '4B',
+        street_num: '123',
+        street1: 'Main St',
+        street2: 'Floor 2',
+        city: 'Toronto',
+        state: 'ON',
+        zip: 'M5V 2N2',
+        country: 'Canada',
+      }));
+      fixture.detectChanges();
+
+      expect(component['addressString']()).toBe('Apt 4B 123 Main St Floor 2, Toronto, ON, M5V 2N2, Canada');
     });
 
     it('should update address details on handleAddressChange', async () => {
