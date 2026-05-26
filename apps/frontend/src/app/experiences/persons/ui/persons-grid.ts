@@ -135,6 +135,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       field: 'address',
       headerName: 'Address',
       editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
       valueGetter: (params: any) => {
         const data = params?.data;
@@ -149,7 +150,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || '';
+        return parts.join(', ').trim() || 'Unknown Address';
       },
     },
     {
@@ -256,6 +257,18 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   protected confirmOpenEditOnDoubleClick(event: any) {
     this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
     this.confirmAddressChange();
+  }
+
+  /**
+   * Handles click events on the Address cell.
+   * Navigates directly to the households detail page for the selected address.
+   * @param event - The cell event carrying row data
+   */
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      this.router.navigate(['households', householdId]);
+    }
   }
 
   // --- Import CSV Flow ---

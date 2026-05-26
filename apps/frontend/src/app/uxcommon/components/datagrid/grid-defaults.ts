@@ -11,6 +11,7 @@ export interface ColumnDef {
   field?: string;
   headerName?: string;
   hide?: boolean;
+  onCellClicked?: (event: any) => void;
   onCellDoubleClicked?: (event: any) => void;
   tagColumn?: boolean;
   valueFormatter?: (p: { data: any; value: any; colDef: ColumnDef }) => any;
