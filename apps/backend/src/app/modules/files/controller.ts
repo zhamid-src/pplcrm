@@ -11,7 +11,7 @@ export class FilesController extends BaseController<'files', FilesRepo> {
   }
 
   public async getAllFiles(auth: IAuthKeyPayload, options?: any) {
-    return this.getAll(auth.tenant_id, options);
+    return this.getAllWithCounts(auth.tenant_id, options);
   }
 
   public override async delete(tenant_id: string, id: string, userId?: string): Promise<boolean> {

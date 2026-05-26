@@ -176,6 +176,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('households', 'persons.household_id', 'households.id')
         .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
         .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
         .where('households.tenant_id', '=', tenantId)
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!))
         .$if(!!searchStr, (qb) => {
@@ -188,6 +189,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             LOWER(persons.mobile) LIKE ${text} OR
             LOWER(households.city) LIKE ${text} OR
             LOWER(households.street1) LIKE ${text} OR
+            LOWER(companies.name) LIKE ${text} OR
             LOWER(tags.name) LIKE ${text}
           )`,
           );
@@ -204,6 +206,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
       q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
       q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name']);
 
       // Apply advanced query builder filters if present
       const columnMapping = {
@@ -217,6 +220,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         street_num: { col: 'households.street_num::text', isCast: true },
         zip: { col: 'households.zip' },
         tags: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
       };
       q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
 
@@ -240,6 +244,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.mobile',
         'persons.notes',
         'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
         'households.country',
         'households.zip',
         'households.state',
@@ -258,6 +264,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.mobile',
         'persons.notes',
         'persons.household_id',
+        'persons.company_id',
+        'companies.name',
         'households.country',
         'households.zip',
         'households.state',

@@ -35,7 +35,7 @@ import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-build
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
   ></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useClass: HouseholdsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
 })
 export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholdsType> {
   protected col: ColDef[] = [
@@ -69,7 +69,7 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
   ></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useClass: PersonsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
 })
 export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
   protected col: ColDef[] = [

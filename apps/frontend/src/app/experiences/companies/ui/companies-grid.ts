@@ -18,7 +18,7 @@ import { CompaniesService } from '../services/companies-service';
       plusIcon="plus"
     ></pc-datagrid>
   `,
-  providers: [{ provide: AbstractAPIService, useClass: CompaniesService }],
+  providers: [{ provide: AbstractAPIService, useExisting: CompaniesService }],
 })
 export class CompaniesGrid extends DataGrid<'companies', any> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {

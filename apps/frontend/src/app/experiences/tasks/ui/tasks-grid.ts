@@ -33,7 +33,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       (closeSummary)="importSummary.set(null)"
     />
   `,
-  providers: [{ provide: AbstractAPIService, useClass: TasksService }],
+  providers: [{ provide: AbstractAPIService, useExisting: TasksService }],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
   private readonly auth = inject(AuthService);

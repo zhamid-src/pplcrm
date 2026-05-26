@@ -66,11 +66,11 @@ describe('CompaniesController', () => {
   it('should call getAllCompanies and list records from repository', async () => {
     const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
     const mockCompanies = [{ id: '123', name: 'Acme Corp' }];
-    const spy = vi.spyOn(controller, 'getAll').mockResolvedValue(mockCompanies as any);
+    const spy = vi.spyOn(controller, 'getAllWithCounts').mockResolvedValue({ rows: mockCompanies, count: mockCompanies.length } as any);
 
     const result = await controller.getAllCompanies(auth, { limit: 10 });
 
     expect(spy).toHaveBeenCalledWith('tenant-1', { limit: 10 });
-    expect(result).toEqual(mockCompanies);
+    expect(result).toEqual({ rows: mockCompanies, count: mockCompanies.length });
   });
 });
