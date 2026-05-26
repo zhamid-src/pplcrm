@@ -20,7 +20,7 @@ import { AuthUsersService } from '../services/authusers-service';
       plusIcon="user-plus"
     ></pc-datagrid>
   `,
-  providers: [{ provide: AbstractAPIService, useClass: AuthUsersService }],
+  providers: [{ provide: AbstractAPIService, useExisting: AuthUsersService }],
 })
 export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {

@@ -20,7 +20,7 @@ import { NewslettersService } from '../services/newsletters-service';
       plusIcon="add-notes"
     ></pc-datagrid>
   `,
-  providers: [{ provide: AbstractAPIService, useClass: NewslettersService }],
+  providers: [{ provide: AbstractAPIService, useExisting: NewslettersService }],
 })
 export class NewslettersGridComponent extends DataGrid<'newsletters', UpdateMarketingEmailType> {
   private readonly countFormatter = new Intl.NumberFormat(undefined, {

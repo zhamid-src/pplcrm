@@ -109,6 +109,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     { field: 'last_name', headerName: 'Last Name', editable: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
     {
       field: 'home_phone',
       headerName: 'Home phone',

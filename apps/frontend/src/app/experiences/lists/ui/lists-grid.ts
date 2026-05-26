@@ -20,7 +20,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     plusIcon="add-list"
     addRoute="add"
   ></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useClass: ListsService }],
+  providers: [{ provide: AbstractAPIService, useExisting: ListsService }],
 })
 export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   private readonly refreshSvc = inject(ListsRefreshService);

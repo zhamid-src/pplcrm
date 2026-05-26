@@ -33,6 +33,6 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   }
 
   public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
-    return this.getAll(auth.tenant_id, options);
+    return this.getAllWithCounts(auth.tenant_id, options);
   }
 }
