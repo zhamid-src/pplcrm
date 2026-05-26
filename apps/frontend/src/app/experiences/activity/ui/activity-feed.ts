@@ -1,5 +1,6 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -7,7 +8,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
 @Component({
   selector: 'pc-activity-feed',
-  imports: [CommonModule, Icon],
+  imports: [CommonModule, RouterLink, Icon],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Header -->
@@ -18,7 +19,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
             User Activity Feed
           </h1>
           <p class="text-sm text-base-content/60 mt-1">
-            Real-time audit log of changes made to contacts, tasks, and system settings.
+            Real-time audit log of changes made to contacts, emails, tasks, and system settings.
           </p>
         </div>
         <button class="btn btn-outline btn-sm gap-2" (click)="refreshFeed()">
@@ -49,7 +50,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
         <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
           <div *ngFor="let act of activities()" class="relative group">
             <!-- Icon Indicator -->
-            <div 
+            <div
               class="absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200"
               [ngClass]="getActivityClass(act.activity)"
             >
@@ -72,17 +73,18 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
                     <p class="text-sm font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
                       {{ getActivityDescription(act) }}
-                      <span class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5">{{ act.entity }}</span>
+                      <!-- Entity link -->
+                      @if (getEntityLink(act); as link) {
+                        <a
+                          [routerLink]="link.path"
+                          [queryParams]="link.params"
+                          class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5 hover:badge-primary cursor-pointer"
+                        >{{ act.entity }}{{ link.label ? ': ' + link.label : '' }}</a>
+                      } @else {
+                        <span class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5">{{ act.entity }}</span>
+                      }
                     </p>
                     <span class="text-[11px] text-base-content/40 whitespace-nowrap">{{ act.created_at | date:'short' }}</span>
-                  </div>
-
-                  <!-- Metadata (Optional Details) -->
-                  <div *ngIf="hasMetadata(act)" class="mt-2 text-xs bg-base-200/50 p-2.5 rounded-lg border border-base-300 text-base-content/70 font-mono overflow-x-auto">
-                    <span *ngIf="act.metadata?.id">Record ID: {{ act.metadata.id }}</span>
-                    <span *ngIf="act.metadata?.file_name">File: {{ act.metadata.file_name }}</span>
-                    <span *ngIf="act.metadata?.count">Count: {{ act.metadata.count }}</span>
-                    <span *ngIf="act.metadata?.target_id">Primary: {{ act.metadata.target_id }} | Duplicate: {{ act.metadata.source_id }}</span>
                   </div>
                 </div>
               </div>
@@ -92,8 +94,8 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
         <!-- Load More Button -->
         <div *ngIf="hasMore()" class="flex justify-center pt-4">
-          <button 
-            class="btn btn-outline btn-primary gap-2" 
+          <button
+            class="btn btn-outline btn-primary gap-2"
             [disabled]="isLoading()"
             (click)="loadMore()"
           >
@@ -167,46 +169,77 @@ export class ActivityFeed implements OnInit {
 
   protected getActivityIcon(activity: string): PcIconNameType {
     switch (activity) {
-      case 'create': return 'plus';
-      case 'update': return 'pencil-square';
-      case 'delete': return 'trash';
-      case 'merge': return 'merge';
-      case 'import': return 'arrow-up-tray';
-      case 'export': return 'arrow-down-tray';
-      case 'assign': return 'user-plus';
-      default: return 'information-circle';
+      case 'create':   return 'plus';
+      case 'update':   return 'pencil-square';
+      case 'delete':   return 'trash';
+      case 'merge':    return 'merge';
+      case 'import':   return 'arrow-up-tray';
+      case 'export':   return 'arrow-down-tray';
+      case 'assign':   return 'user-plus';
+      case 'unassign': return 'user-circle';
+      case 'close':    return 'check-circle';
+      case 'reopen':   return 'arrow-path';
+      default:         return 'information-circle';
     }
   }
 
   protected getActivityClass(activity: string): string {
     switch (activity) {
-      case 'create': return 'border-success text-success';
-      case 'update': return 'border-info text-info';
-      case 'delete': return 'border-error text-error';
-      case 'merge': return 'border-warning text-warning';
-      case 'import': return 'border-secondary text-secondary';
-      case 'export': return 'border-primary text-primary';
-      case 'assign': return 'border-accent text-accent';
-      default: return 'border-base-content/40 text-base-content/60';
+      case 'create':   return 'border-success text-success';
+      case 'update':   return 'border-info text-info';
+      case 'delete':   return 'border-error text-error';
+      case 'merge':    return 'border-warning text-warning';
+      case 'import':   return 'border-secondary text-secondary';
+      case 'export':   return 'border-primary text-primary';
+      case 'assign':   return 'border-accent text-accent';
+      case 'unassign': return 'border-base-content/40 text-base-content/60';
+      case 'close':    return 'border-success text-success';
+      case 'reopen':   return 'border-warning text-warning';
+      default:         return 'border-base-content/40 text-base-content/60';
     }
   }
 
   protected getActivityDescription(act: any): string {
     const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
+    const meta = act.metadata ?? {};
     switch (act.activity) {
-      case 'create': return `created a new ${act.entity} record${qty}`;
-      case 'update': return `updated the ${act.entity} record`;
-      case 'delete': return `deleted ${act.entity} record(s)${qty}`;
-      case 'merge': return `merged duplicate ${act.entity} records`;
-      case 'import': return `imported data into ${act.entity}${qty}`;
-      case 'export': return `exported ${act.entity} data${qty}`;
-      case 'assign': return `assigned a ${act.entity}`;
-      default: return `performed ${act.activity} action on ${act.entity}`;
+      case 'create':   return `created a new ${act.entity} record${qty}`;
+      case 'update':   return `updated the ${act.entity} record`;
+      case 'delete':   return `deleted ${act.entity} record(s)${qty}`;
+      case 'merge':    return `merged duplicate ${act.entity} records`;
+      case 'import':   return `imported data into ${act.entity}${qty}`;
+      case 'export':   return `exported ${act.entity} data${qty}`;
+      case 'assign': {
+        const assignee = meta['assigned_to_name'] ?? 'someone';
+        return `assigned ${act.entity} to ${assignee}`;
+      }
+      case 'unassign': return `unassigned ${act.entity}`;
+      case 'close':    return `closed ${act.entity}`;
+      case 'reopen':   return `reopened ${act.entity}`;
+      default:         return `performed ${act.activity} action on ${act.entity}`;
     }
   }
 
-  protected hasMetadata(act: any): boolean {
-    if (!act.metadata) return false;
-    return Object.keys(act.metadata).length > 0;
+  /**
+   * Returns a router link config for the entity, or null if no link applies.
+   */
+  protected getEntityLink(act: any): { path: string; params?: Record<string, string>; label?: string } | null {
+    const id = act.entity_id;
+    if (!id) return null;
+
+    switch (act.entity) {
+      case 'email':
+        // Deep-link to inbox and pre-select the email
+        return { path: '/inbox', params: { email: id }, label: undefined };
+      case 'person':
+      case 'contact':
+        return { path: `/contacts/${id}`, label: undefined };
+      case 'household':
+        return { path: `/households/${id}`, label: undefined };
+      case 'task':
+        return { path: `/tasks/${id}`, label: undefined };
+      default:
+        return null;
+    }
   }
 }

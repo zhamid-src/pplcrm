@@ -71,6 +71,7 @@ export class EmailsStore {
   // ----------------- Cache computed factories -----------------
   public readonly getEmailBodyById = this.cache.getEmailBodyById;
   public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
+  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
 
   /** Whether the email body is expanded to fill the window */
   public readonly isBodyExpanded = this.state.isBodyExpanded;
@@ -80,8 +81,8 @@ export class EmailsStore {
     return this.actions.addComment(emailId, authorId, commentText);
   }
 
-  public assignEmailToUser(emailId: EmailId, userId: string | null) {
-    return this.actions.assignEmailToUser(emailId, userId);
+  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
+    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
   }
 
   public deleteComment(emailId: EmailId, commentId: string | number) {
@@ -107,6 +108,10 @@ export class EmailsStore {
 
   public loadEmailWithHeaders(emailId: EmailId) {
     return this.cache.loadEmailWithHeaders(emailId);
+  }
+
+  public loadEmailActivities(emailId: EmailId) {
+    return this.cache.loadEmailActivities(emailId);
   }
 
   /** Load emails for a folder, then set hasAttachment flags (bulk). */

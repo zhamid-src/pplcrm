@@ -15,6 +15,9 @@ export class EmailCacheStore {
   /** Cache for email header data with recipients, keyed by email ID */
   private readonly emailHeadersCache = signal<Record<string, any>>({});
 
+  /** Cache for email activity log rows, keyed by email ID */
+  private readonly emailActivitiesCache = signal<Record<string, any[] | null>>({});
+
   /** Track emails currently being loaded to prevent duplicate requests */
   private readonly loadingEmails = signal<Set<string>>(new Set());
   private readonly svc = inject(EmailsService);
@@ -26,6 +29,10 @@ export class EmailCacheStore {
   /** Factory: computed header by id */
   public getEmailHeaderById = (emailId: EmailId | null) =>
     computed(() => (emailId ? this.emailHeadersCache()[String(emailId)] : undefined));
+
+  /** Factory: computed activity log by email id (undefined = not yet loaded, null = loaded empty) */
+  public getEmailActivitiesById = (emailId: EmailId | null) =>
+    computed(() => (emailId ? this.emailActivitiesCache()[String(emailId)] : undefined));
 
   /** Update header cache after adding a comment */
   public appendCommentToHeader(emailId: EmailId, createdComment: any): void {
@@ -86,6 +93,20 @@ export class EmailCacheStore {
       return { body: '', header: null };
     } finally {
       this.unmarkLoading(key);
+    }
+  }
+
+  /** Load activity log for an email (always fetches fresh) */
+  public async loadEmailActivities(emailId: EmailId): Promise<any[]> {
+    const key = String(emailId);
+    try {
+      const rows = (await this.svc.getActivities(key)) as any[];
+      this.setInCache(this.emailActivitiesCache, key, rows ?? []);
+      return rows ?? [];
+    } catch (err) {
+      console.error(`Failed to load activities for email ${key}:`, err);
+      this.setInCache(this.emailActivitiesCache, key, []);
+      return [];
     }
   }
 

@@ -30,9 +30,9 @@ export class EmailActionsStore {
   }
 
   /** Assign/unassign with optimistic update and refreshes */
-  public async assignEmailToUser(emailId: EmailId, userId: string | null): Promise<void> {
+  public async assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null): Promise<void> {
     const key = String(emailId);
-    await this.updateProperty(key, { assigned_to: userId ?? undefined }, () => this.svc.assign(key, userId), {
+    await this.updateProperty(key, { assigned_to: userId ?? undefined }, () => this.svc.assign(key, userId, assigneeName), {
       refreshFolder: true,
       refreshCounts: true,
     });
