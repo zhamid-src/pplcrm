@@ -39,6 +39,7 @@ export interface ISidebarItem {
    * The name of the item. It's shown on the sidebar
    */
   name: string;
+  short_name?: string;
 
   /**
    * The parent of this item. If this is not set then it's a top level item
@@ -111,6 +112,7 @@ export const SidebarItems: ISidebarItem[] = [
   },
   {
     name: `COMMUNICATIONS`,
+    short_name: 'COMMS',
     type: 'subheading',
     children: [
       {

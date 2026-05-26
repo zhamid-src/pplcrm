@@ -31,7 +31,9 @@
       class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
-      <span [class.text-[10px]]="isDrawerHalf() && !hoveringSidebar()"> {{ item.name }} </span>
+      <span [class.text-[10px]]="isDrawerHalf() && !hoveringSidebar()">
+        @if (isDrawerHalf() && !hoveringSidebar()) { {{ item.short_name || item.name}} } @else { {{ item.name }} }
+      </span>
       @if (item.children?.length) {
       <pc-swap
         class="rotate-90 invisible mr-2"
