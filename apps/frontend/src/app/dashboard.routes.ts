@@ -21,6 +21,10 @@ export const dashboardRoutes: Routes = [
         loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
       },
       {
+        path: 'duplicates',
+        loadComponent: () => import('./experiences/persons/ui/duplicate-manager').then((m) => m.DuplicateManager),
+      },
+      {
         path: ':id',
         loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
       },
@@ -190,5 +194,31 @@ export const dashboardRoutes: Routes = [
   {
     path: 'export',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-detail').then((m) => m.CompanyDetail),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-detail').then((m) => m.CompanyDetail),
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
   },
 ];

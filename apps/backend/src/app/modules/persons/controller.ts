@@ -43,6 +43,17 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /**
+   * Get all persons that belong to a given company.
+   */
+  public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getByCompanyId({
+      id: company_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
+  }
+
+  /**
    * Get all distinct tags assigned to any person in the tenant.
    */
   public getDistinctTags(auth: IAuthKeyPayload) {

@@ -1,4 +1,4 @@
-import { SelectQueryBuilder } from "kysely";
+import { SelectQueryBuilder, Transaction } from "kysely";
 
 import { BaseRepository } from "./base.repo";
 import { Models, OperationDataType } from "common/src/lib/kysely.models";
@@ -43,7 +43,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     quantity?: number | null;
     metadata?: Record<string, unknown> | null;
     performed_by?: string | null;
-  }) {
+  }, trx?: Transaction<Models>) {
     const actor = input.performed_by ?? input.user_id;
     const row = {
       tenant_id: input.tenant_id,
@@ -55,8 +55,39 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       createdby_id: actor,
       updatedby_id: actor,
     } as OperationDataType<'user_activity', 'insert'>;
-    await this.add({ row });
+    await this.add({ row }, trx);
+  }
+
+  public async getAllWithUser(tenant_id: string, options: QueryParams<'user_activity'>) {
+    const query = this.getSelect()
+      .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+      .select([
+        'user_activity.id',
+        'user_activity.activity',
+        'user_activity.entity',
+        'user_activity.quantity',
+        'user_activity.metadata',
+        'user_activity.created_at',
+        'authusers.first_name',
+        'authusers.last_name',
+        'authusers.email',
+      ])
+      .where('user_activity.tenant_id', '=', tenant_id)
+      .orderBy('user_activity.created_at', 'desc')
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+      );
+
+    const countResult = await this.getSelect()
+      .select(({ fn }) => [fn.count('user_activity.id').as('total')])
+      .where('user_activity.tenant_id', '=', tenant_id)
+      .executeTakeFirst();
+    const count = Number(countResult?.total ?? 0);
+
+    const rows = await query.execute();
+    return { rows, count };
   }
 }
 
-export type UserActivityType = 'import' | 'export';
+export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'merge';
+import { QueryParams } from './base.repo';

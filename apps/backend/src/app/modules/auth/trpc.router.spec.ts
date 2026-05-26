@@ -97,6 +97,7 @@ describe('AuthController Integration', () => {
     if (user) {
       await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
       await db.deleteFrom('tags').where('createdby_id', '=', user.id).execute();
+      await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
@@ -147,6 +148,7 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('authusers').where('id', '=', result.id).execute();
     await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', creator.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('households').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', creator.tenant_id).execute();
@@ -193,6 +195,7 @@ describe('AuthController Integration', () => {
     // Clean up
     await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
@@ -258,6 +261,7 @@ describe('AuthController Integration', () => {
     // Clean up
     await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();

@@ -32,6 +32,7 @@ export const UpdateHouseholdsObj = z.object({
 export const UpdatePersonsObj = z.object({
   campaign_id: idSchema.optional(),
   household_id: idSchema.optional(),
+  company_id: idSchema.optional().nullable(),
   email: nullableEmailSchema,
   email2: nullableEmailSchema,
   first_name: z.string().trim().max(100, 'First name is too long').nullish(),

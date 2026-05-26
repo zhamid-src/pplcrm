@@ -172,6 +172,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.getByHouseholdId.query({ id: id, options });
   }
 
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
   /**
    * Get a single person by ID.
    *
@@ -274,6 +278,20 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.persons.exportCsv.mutate(input);
+  }
+
+  /**
+   * Find potential duplicate records in the database.
+   */
+  public findPotentialDuplicates(): Promise<any[]> {
+    return this.api.persons.findPotentialDuplicates.query();
+  }
+
+  /**
+   * Merge a source duplicate contact into a target primary contact.
+   */
+  public mergePersons(target_id: string, source_id: string): Promise<any> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
   }
 }
 

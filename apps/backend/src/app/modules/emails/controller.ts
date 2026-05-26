@@ -9,6 +9,7 @@ import { BaseController } from '../../lib/base.controller';
 import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
 import { TypeTenantId } from 'common/src/lib/kysely.models';
 import { EmailDraftType } from 'common/src/lib/models';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -51,6 +52,27 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
 
       if (!updated) throw new NotFoundError('Email not found');
+
+      if (user_id) {
+        try {
+          const email = await this.getRepo().getOneBy('id', { tenant_id, value: id }) as any;
+          if (email) {
+            const subject = email.subject || '(No Subject)';
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id,
+              user_id,
+              title: 'Email Assigned',
+              message: `You have been assigned the email: "${subject}"`,
+              type: 'email',
+              link: '/inbox',
+            });
+          }
+        } catch (nErr) {
+          console.error('Failed to push notification for email assignment', nErr);
+        }
+      }
+
       return updated;
     } catch (err) {
       if (err instanceof AppError) throw err;

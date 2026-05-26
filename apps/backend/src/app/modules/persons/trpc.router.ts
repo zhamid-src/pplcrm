@@ -62,6 +62,12 @@ function getByHouseholdId() {
     .query(wrapTrpc(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options)));
 }
 
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(wrapTrpc(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options)));
+}
+
 function getById() {
   return authProcedure
     .input(idSchema)
@@ -124,6 +130,16 @@ function importMany() {
   return authProcedure.input(Input).mutation(({ input, ctx }) => personsService.importRows(input, ctx.auth));
 }
 
+function findPotentialDuplicates() {
+  return authProcedure.query(wrapTrpc(({ ctx }) => personsService.findPotentialDuplicates(ctx.auth)));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(wrapTrpc(({ input, ctx }) => personsService.mergePersons(input, ctx.auth)));
+}
+
 export const PersonsRouter = router({
   add: add(),
   count: count(),
@@ -139,6 +155,9 @@ export const PersonsRouter = router({
   deleteMany: deleteMany(),
   getDistinctTags: getDistinctTags(),
   getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
+  findPotentialDuplicates: findPotentialDuplicates(),
+  mergePersons: mergePersons(),
 });

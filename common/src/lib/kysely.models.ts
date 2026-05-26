@@ -64,6 +64,9 @@ export interface Models {
   user_activity: UserActivity;
   ms_oauth_tokens: MsOauthTokens;
   data_imports: DataImports;
+  companies: Companies;
+  files: Files;
+  notifications: Notifications;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -240,6 +243,7 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   mobile: string | null;
   home_phone: string | null;
   file_id: string | null;
+  company_id: string | null;
   json: Json | null;
   notes: string | null;
 }
@@ -464,6 +468,43 @@ export interface TaskAttachments extends RecordType {
   url: string | null;
 }
 
+export interface Companies extends RecordType {
+  name: string;
+  description: string | null;
+  website: string | null;
+  email: string | null;
+  phone: string | null;
+  industry: string | null;
+  notes: string | null;
+  json: Json | null;
+}
+
+export interface Files {
+  id: Generated<string>;
+  tenant_id: string;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  storage_key: string;
+  sha256_hex: string | null;
+  uploaded_by: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Notifications {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
 type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
 
@@ -478,3 +519,4 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
+
