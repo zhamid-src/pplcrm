@@ -10,6 +10,7 @@ export interface ColumnDef {
   equals?: (a: any, b: any) => boolean;
   field?: string;
   headerName?: string;
+  hide?: boolean;
   onCellDoubleClicked?: (event: any) => void;
   tagColumn?: boolean;
   valueFormatter?: (p: { data: any; value: any; colDef: ColumnDef }) => any;

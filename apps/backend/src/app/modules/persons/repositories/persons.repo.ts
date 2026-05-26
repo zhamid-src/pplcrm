@@ -252,6 +252,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.home_phone',
         'households.city',
         'households.street1',
+        'households.street2',
         'households.street_num',
         'households.apt',
         fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
@@ -272,6 +273,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.home_phone',
         'households.city',
         'households.street1',
+        'households.street2',
         'households.street_num',
         'households.apt',
       ])

@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { Injectable, computed, effect, signal, untracked } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class GridStoreService {
@@ -159,7 +159,7 @@ export class GridStoreService {
       };
       const data = JSON.parse(raw || '{}') as unknown as Persisted;
       if (data.sorting) this.sorting.set(data.sorting);
-      if (data.visibility) this.colVisibility.set(data.visibility);
+      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
       if (data.filters) this.filterValues.set(data.filters);
       if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
       if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
