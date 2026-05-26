@@ -604,7 +604,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
     // Initialize column visibility defaults
     const vis: Record<string, boolean> = {};
-    for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = true;
+    for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = c.hide !== true;
     this.colVisibility.set(vis);
     // Build TanStack columns
     this.tsColumns = this.tableSvc.buildTsColumns(this.colDefsWithEdit);

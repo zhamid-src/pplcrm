@@ -133,51 +133,80 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
     },
     {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [
+          data.apt ? `Apt ${data.apt}` : null,
+          data.street_num,
+          data.street1,
+          data.street2,
+        ].filter(Boolean);
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || '';
+      },
+    },
+    {
       field: 'street_num',
       headerName: 'Street Number',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'apt',
       headerName: 'Apt',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'street1',
       headerName: 'Street 1',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'street2',
       headerName: 'Street 2',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'city',
       headerName: 'City',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'state',
       headerName: 'State/Province',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'zip',
       headerName: 'Zip/Province',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'country',
       headerName: 'Country',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
