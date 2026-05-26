@@ -184,4 +184,152 @@ describe('PersonsRepo Integration', () => {
     expect(stats.total).toBe(1);
     expect(stats.last_created_at).toBeInstanceOf(Date);
   });
+
+  it('should find potential duplicates by name + household and name + address', async () => {
+    // 1. Name + Household duplicates (Jane Doe in same household)
+    const p1 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Jane',
+        last_name: 'Doe',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const p2 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'jane',
+        last_name: 'doe',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    // 2. Name + Address duplicates (John Smith in different households but same address fingerprint)
+    // Create a second household with same address fingerprint
+    const householdId2 = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db.insertInto('households').values({
+      id: householdId2,
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      address_fp_full: '123 Main St, Springfield',
+      createdby_id: userId,
+      updatedby_id: userId,
+    }).execute();
+
+    // Update first household's address fingerprint to match
+    await db.updateTable('households')
+      .set({ address_fp_full: '123 Main St, Springfield' })
+      .where('id', '=', householdId)
+      .execute();
+
+    const p3 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'John',
+        last_name: 'Smith',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const p4 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId2,
+        first_name: 'john',
+        last_name: 'smith',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const dups = await repo.findPotentialDuplicates(tenantId);
+    expect(dups.length).toBeGreaterThanOrEqual(2);
+
+    const householdGroup = dups.find(d => d.reason.includes('Same Household'));
+    expect(householdGroup).toBeDefined();
+    expect(householdGroup.persons.map((p: any) => p.id)).toContain(p1.id);
+    expect(householdGroup.persons.map((p: any) => p.id)).toContain(p2.id);
+
+    const addressGroup = dups.find(d => d.reason.includes('Same Address'));
+    expect(addressGroup).toBeDefined();
+    expect(addressGroup.persons.map((p: any) => p.id)).toContain(p3.id);
+    expect(addressGroup.persons.map((p: any) => p.id)).toContain(p4.id);
+  });
+
+  it('should transactionally merge source person into target person', async () => {
+    const target = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Primary',
+        last_name: 'User',
+        email: 'primary@example.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const source = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Primary',
+        last_name: 'User',
+        mobile: '123-456-7890',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db.insertInto('tags').values({
+      id: randTagId,
+      tenant_id: tenantId,
+      name: 'MergeTag',
+      deletable: true,
+      createdby_id: userId,
+      updatedby_id: userId,
+    }).execute();
+
+    await db.insertInto('map_peoples_tags').values({
+      tenant_id: tenantId,
+      person_id: source.id,
+      tag_id: randTagId,
+      createdby_id: userId,
+      updatedby_id: userId,
+    }).execute();
+
+    await repo.mergePersons({
+      tenant_id: tenantId,
+      target_id: target.id,
+      source_id: source.id,
+      user_id: userId,
+    });
+
+    const updatedTarget = await repo.getOneBy('id', { tenant_id: tenantId, value: target.id });
+    expect(updatedTarget?.mobile).toBe('123-456-7890');
+
+    const targetTags = await db.selectFrom('map_peoples_tags')
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', target.id)
+      .selectAll()
+      .execute();
+    expect(targetTags.map((t: any) => t.tag_id)).toContain(randTagId);
+
+    const checkSource = await repo.getOneBy('id', { tenant_id: tenantId, value: source.id });
+    expect(checkSource).toBeUndefined();
+  });
 });
