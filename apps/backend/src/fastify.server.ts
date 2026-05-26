@@ -34,7 +34,9 @@ export class FastifyServer {
           target: 'pino-pretty', // Prettified logging output
         },
       },
-      ignoreTrailingSlash: true,
+      routerOptions: {
+        ignoreTrailingSlash: true,
+      },
       exposeHeadRoutes: false,
     });
 
