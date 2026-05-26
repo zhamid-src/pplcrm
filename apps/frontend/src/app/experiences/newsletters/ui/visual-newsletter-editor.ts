@@ -156,7 +156,6 @@ import {
                                       ✕
                                     </button>
                                   </div>
-
                                   <!-- Block Renderers inside standard tables to mimic layout -->
                                   <!-- HEADING BLOCK -->
                                   @if (block.type === 'heading') {
@@ -169,13 +168,13 @@ import {
                                           [style.font-size]="block.styles?.fontSize || '24px'"
                                           [style.text-align]="block.styles?.textAlign || 'center'"
                                           class="font-sans font-bold px-6 leading-tight select-none"
+                                          [innerHTML]="resolveVariablesForPreview(block.content || 'Heading Block', false)"
                                         >
-                                          {{ block.content || 'Heading Block' }}
                                         </td>
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- TEXT BLOCK -->
                                   @if (block.type === 'text') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -187,13 +186,13 @@ import {
                                           [style.font-size]="block.styles?.fontSize || '16px'"
                                           [style.text-align]="block.styles?.textAlign || 'left'"
                                           class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
+                                          [innerHTML]="resolveVariablesForPreview(block.content || 'Click here to write some text...', false)"
                                         >
-                                          {{ block.content || 'Click here to write some text...' }}
                                         </td>
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- IMAGE BLOCK -->
                                   @if (block.type === 'image') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -214,7 +213,7 @@ import {
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- BUTTON BLOCK -->
                                   @if (block.type === 'button') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -237,8 +236,8 @@ import {
                                                   class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
                                                   [style.color]="block.styles?.color || '#ffffff'"
                                                   [style.font-size]="block.styles?.fontSize || '16px'"
+                                                  [innerHTML]="resolveVariablesForPreview(block.content || 'Click Me', true)"
                                                 >
-                                                  {{ block.content || 'Click Me' }}
                                                 </span>
                                               </td>
                                             </tr>
@@ -247,7 +246,7 @@ import {
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- DIVIDER BLOCK -->
                                   @if (block.type === 'divider') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -266,7 +265,7 @@ import {
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- SPACER BLOCK -->
                                   @if (block.type === 'spacer') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -280,7 +279,7 @@ import {
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- SOCIAL LINKS BLOCK -->
                                   @if (block.type === 'social') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -317,7 +316,7 @@ import {
                                       </tr>
                                     </table>
                                   }
-
+ 
                                   <!-- FOOTER BLOCK -->
                                   @if (block.type === 'footer') {
                                     <table
@@ -334,8 +333,8 @@ import {
                                           [style.padding-bottom.px]="block.styles?.paddingBottom || 24"
                                           class="font-sans px-6 text-xs text-center leading-normal"
                                         >
-                                          <p class="font-bold mb-1">{{ block.footerCompany || 'Company Name Inc.' }}</p>
-                                          <p class="mb-3">{{ block.footerAddress || '123 Address Rd, City, State' }}</p>
+                                          <p class="font-bold mb-1" [innerHTML]="resolveVariablesForPreview(block.footerCompany || 'Company Name Inc.', false)"></p>
+                                          <p class="mb-3 whitespace-pre-wrap" [innerHTML]="resolveVariablesForPreview(block.footerAddress || '123 Address Rd, City, State', false)"></p>
                                           <p>
                                             You are receiving this email because you opted in on our website.
                                             <br />
@@ -515,6 +514,64 @@ import {
                         (ngModelChange)="updateBlocks()"
                       ></textarea>
                     }
+                    
+                    <!-- Quick-Insert Variables -->
+                    <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
+                        <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+                      </div>
+                      <div class="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'FirstName', 'content')"
+                          title="Click to insert First Name placeholder"
+                        >
+                          + First Name
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'LastName', 'content')"
+                          title="Click to insert Last Name placeholder"
+                        >
+                          + Last Name
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'Email', 'content')"
+                          title="Click to insert Email placeholder"
+                        >
+                          + Email
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'Company', 'content')"
+                          title="Click to insert Company placeholder"
+                        >
+                          + Company
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'JobTitle', 'content')"
+                          title="Click to insert Job Title placeholder"
+                        >
+                          + Job Title
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'Phone', 'content')"
+                          title="Click to insert Phone placeholder"
+                        >
+                          + Phone
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- Text Styles -->
@@ -644,6 +701,40 @@ import {
                       [(ngModel)]="block.content"
                       (ngModelChange)="updateBlocks()"
                     />
+                    
+                    <!-- Quick-Insert Variables -->
+                    <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
+                        <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+                      </div>
+                      <div class="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'FirstName', 'content')"
+                          title="Click to insert First Name placeholder"
+                        >
+                          + First Name
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'LastName', 'content')"
+                          title="Click to insert Last Name placeholder"
+                        >
+                          + Last Name
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                          (click)="insertVariable(block, 'Email', 'content')"
+                          title="Click to insert Email placeholder"
+                        >
+                          + Email
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="form-control">
@@ -805,6 +896,15 @@ import {
                       [(ngModel)]="block.footerCompany"
                       (ngModelChange)="updateBlocks()"
                     />
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+                        (click)="insertVariable(block, 'Company', 'footerCompany')"
+                      >
+                        + Company
+                      </button>
+                    </div>
                   </div>
 
                   <div class="form-control">
@@ -814,6 +914,29 @@ import {
                       [(ngModel)]="block.footerAddress"
                       (ngModelChange)="updateBlocks()"
                     ></textarea>
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+                        (click)="insertVariable(block, 'Company', 'footerAddress')"
+                      >
+                        + Company
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+                        (click)="insertVariable(block, 'Phone', 'footerAddress')"
+                      >
+                        + Phone
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+                        (click)="insertVariable(block, 'Email', 'footerAddress')"
+                      >
+                        + Email
+                      </button>
+                    </div>
                   </div>
 
                   <div class="form-control">
@@ -922,6 +1045,57 @@ export class VisualNewsletterEditorComponent implements OnInit {
   }
   protected getSocialIconColor(platform: string, style: string) {
     return getSocialIconColor(platform, style);
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  protected getMockVariableValue(name: string): string | undefined {
+    const mocks: Record<string, string> = {
+      FirstName: 'John',
+      LastName: 'Doe',
+      Email: 'john.doe@example.com',
+      Company: 'Acme Corporation',
+      JobTitle: 'Software Engineer',
+      Phone: '(555) 123-4567',
+    };
+    const key = Object.keys(mocks).find((k) => k.toLowerCase() === name.toLowerCase());
+    return key ? mocks[key] : undefined;
+  }
+
+  protected resolveVariablesForPreview(text: string | undefined, isButton = false): string {
+    if (!text) return '';
+    const escaped = this.escapeHtml(text);
+    return escaped.replace(/\{([a-zA-Z0-9_]+)(?:\|([^}]+))?\}/g, (match, varName, fallback) => {
+      const mockValue = this.getMockVariableValue(varName);
+      const displayValue = mockValue !== undefined ? mockValue : (fallback !== undefined ? fallback : match);
+      if (isButton) {
+        return `<span class="border-b border-dashed border-current font-semibold" title="Variable: ${match}">${displayValue}</span>`;
+      }
+      return `<span class="border-b border-dashed border-primary/60 text-primary font-semibold animate-pulse" title="Variable: ${match}">${displayValue}</span>`;
+    });
+  }
+
+  protected insertVariable(
+    block: EmailBlock,
+    variableName: string,
+    field: 'content' | 'footerCompany' | 'footerAddress' = 'content',
+  ): void {
+    const placeholder = `{${variableName}}`;
+    if (field === 'content') {
+      block.content = (block.content || '') + placeholder;
+    } else if (field === 'footerCompany') {
+      block.footerCompany = (block.footerCompany || '') + placeholder;
+    } else if (field === 'footerAddress') {
+      block.footerAddress = (block.footerAddress || '') + placeholder;
+    }
+    this.updateBlocks();
   }
 
   // Computed signals
