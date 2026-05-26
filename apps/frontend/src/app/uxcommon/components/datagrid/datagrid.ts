@@ -1183,6 +1183,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
+  /** Bridge for column-level click handlers */
+  protected handleCellClick(row: any, col: ColDef) {
+    if (typeof col.onCellClicked === 'function') {
+      col.onCellClicked({ data: row, colDef: col });
+    }
+  }
+
   /** Bridge for column-level double-click handlers */
   protected handleCellDblClick(row: any, col: ColDef) {
     if (this.isCellEditable(row, col)) {
@@ -1293,6 +1300,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!col) return false;
     if (this.isCellEditable(row, col)) return false;
     if (typeof col.onCellDoubleClicked === 'function') return true;
+    if (typeof col.onCellClicked === 'function') return true;
     return !this.disableView();
   }
 
@@ -1300,6 +1308,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!col) return false;
     if (this.isEditable(col)) return false;
     if (typeof col.onCellDoubleClicked === 'function') return true;
+    if (typeof col.onCellClicked === 'function') return true;
     return !this.disableView();
   }
 

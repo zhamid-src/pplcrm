@@ -185,6 +185,7 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   notes: string | null;
   address_fp_street: string | null;
   address_fp_full: string | null;
+  is_placeholder?: boolean;
 }
 
 interface MapCampaignsUsers extends RecordType {

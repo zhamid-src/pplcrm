@@ -1,8 +1,17 @@
 <!-- Template for household detail view -->
 <div class="flex min-h-full flex-col bg-base-100">
+  @if (household()?.is_placeholder) {
+  <div class="alert alert-warning mb-4 shadow rounded-lg max-w-4xl mx-auto mt-4 flex gap-3">
+    <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
+    <div class="flex flex-col">
+      <span class="font-bold">System Placeholder Household</span>
+      <span class="text-xs font-light">This household is a permanent placeholder for people with no address and cannot be edited.</span>
+    </div>
+  </div>
+  }
   <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
   <form (submit)="$event.preventDefault()" class="mx-5 mt-10 sm:mx-10">
-    <fieldset [disabled]="isLoading()">
+    <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
       <div class="flex flex-col gap-4">
         @if (!household()?.id) {
         <label class="label text-base font-light">All fields are optional, but try to add as much as possible </label>
@@ -46,6 +55,7 @@
             [options]="options"
             ngx-gp-autocomplete
             (onAddressChange)="handleAddressChange($event)"
+            [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
           />
         </div>
 
@@ -82,6 +92,8 @@
         <pc-tags
           [tags]="tags"
           [enableAutoComplete]="true"
+          [readonly]="household()?.is_placeholder ?? false"
+          [canDelete]="!(household()?.is_placeholder ?? false)"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"
         ></pc-tags>

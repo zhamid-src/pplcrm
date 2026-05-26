@@ -1,7 +1,7 @@
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, UpdateHouseholdsType, getAllOptionsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
-import { QueryParams } from '../../lib/base.repo';
+import { BaseRepository, QueryParams } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
@@ -85,12 +85,36 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.add(row as OperationDataType<'households', 'insert'>);
   }
 
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const household = await super.getOneById(input);
+    if (!household) return undefined;
+
+    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', input.tenant_id)
+      .executeTakeFirst();
+
+    const is_placeholder = tenantRow?.placeholder_household_id ? String(tenantRow.placeholder_household_id) === String((household as any).id) : false;
+    return {
+      ...household,
+      is_placeholder,
+    } as any;
+  }
+
   /**
    * Override update to recompute address fingerprints when address fields change.
    * The fingerprint update is attempted in a separate step so that the main update
    * always succeeds — even if the address_fp_* columns have not been migrated yet.
    */
   public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'households', 'update'> }) {
+    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
+    if (placeholders.has(input.id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'The placeholder household cannot be edited.',
+      });
+    }
+
     const keys = Object.keys(input.row || {});
     const affectsAddress = keys.some((k) =>
       ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
@@ -140,6 +164,14 @@ export class HouseholdsController extends BaseController<'households', Household
    * @returns The result of the map insertion
    */
   public async attachTag(household_id: string, name: string, auth: IAuthKeyPayload) {
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot attach tags to the placeholder household.',
+      });
+    }
+
     const row = {
       name,
       tenant_id: auth.tenant_id,
@@ -169,6 +201,14 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param tag_name - Name of the tag to remove
    */
   public async detachTag(tenant_id: string, household_id: string, tag_name: string) {
+    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot detach tags from the placeholder household.',
+      });
+    }
+
     const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
     if (tag?.id) {
       const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id);

@@ -1,6 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { vi, describe, beforeEach, beforeAll, it, expect } from 'vitest';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Loader } from '@googlemaps/js-api-loader';
 import { HouseholdsService } from '../services/households-service';
@@ -78,6 +78,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   await TestBed.configureTestingModule({
     imports: [HouseholdDetail],
     providers: [
+      provideRouter([]),
       { provide: HouseholdsService, useValue: mockHouseholdsSvc },
       { provide: PersonsService, useValue: mockPersonsSvc },
       { provide: TagsService, useValue: mockTagsSvc },
