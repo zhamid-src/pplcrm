@@ -4,6 +4,8 @@ import { AuthService } from '../../../auth/auth-service';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { TeamsService } from '../../teams/services/teams-service';
+import { CompaniesService } from '../../companies/services/companies-service';
+import { TagsService } from '../../tags/services/tags-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
@@ -57,6 +59,16 @@ describe('PersonDetail', () => {
       getTeamsForVolunteer: vi.fn().mockResolvedValue([{ id: 't1', name: 'Security', is_captain: false }]),
     };
 
+    const mockCompaniesSvc = {
+      getAll: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
+    };
+
+    const mockTagsSvc = {
+      findByName: vi.fn().mockResolvedValue([]),
+      getAll: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
+      getAllWithCounts: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
+    };
+
     mockRoute = {
       snapshot: {
         paramMap: {
@@ -75,6 +87,8 @@ describe('PersonDetail', () => {
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: TeamsService, useValue: mockTeamsSvc },
+        { provide: CompaniesService, useValue: mockCompaniesSvc },
+        { provide: TagsService, useValue: mockTagsSvc },
         { provide: ActivatedRoute, useValue: mockRoute },
       ],
     }).compileComponents();

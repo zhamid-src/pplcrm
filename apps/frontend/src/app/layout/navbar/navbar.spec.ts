@@ -5,6 +5,8 @@ import { FullScreenService } from '../../services/fullscreen.service';
 import { SearchService } from '../../services/api/search-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { NotificationsService } from '../../services/api/notifications-service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { provideRouter } from '@angular/router';
 
@@ -47,6 +49,17 @@ describe('Navbar Component', () => {
       toggleTheme: vi.fn()
     };
 
+    const mockNotificationsSvc = {
+      getLatest: vi.fn().mockResolvedValue([]),
+      getUnreadCount: vi.fn().mockResolvedValue(0),
+      markRead: vi.fn().mockResolvedValue(undefined),
+      markAllRead: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockEmailActionsStore = {
+      sendingCount: vi.fn().mockReturnValue(0),
+    };
+
     await TestBed.configureTestingModule({
       imports: [Navbar],
       providers: [
@@ -55,7 +68,9 @@ describe('Navbar Component', () => {
         { provide: FullScreenService, useValue: mockFullScreenSvc },
         { provide: SearchService, useValue: mockSearchSvc },
         { provide: SidebarService, useValue: mockSidebarSvc },
-        { provide: ThemeService, useValue: mockThemeSvc }
+        { provide: ThemeService, useValue: mockThemeSvc },
+        { provide: NotificationsService, useValue: mockNotificationsSvc },
+        { provide: EmailActionsStore, useValue: mockEmailActionsStore },
       ]
     }).compileComponents();
 
