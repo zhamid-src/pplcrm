@@ -35,4 +35,9 @@ export class StorageService {
       stream.on('error', (err) => reject(err));
     });
   }
+
+  public async delete(key: string): Promise<void> {
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    await blockBlobClient.deleteIfExists();
+  }
 }

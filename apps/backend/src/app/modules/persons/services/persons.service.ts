@@ -513,6 +513,31 @@ export class PersonsService {
     });
   }
 
+  public async findPotentialDuplicates(auth: IAuthKeyPayload) {
+    return this.personsRepo.findPotentialDuplicates(auth.tenant_id);
+  }
+
+  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
+    const result = await this.personsRepo.mergePersons({
+      tenant_id: auth.tenant_id,
+      target_id: input.target_id,
+      source_id: input.source_id,
+      user_id: auth.user_id,
+    });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'merge' as any,
+      entity: 'persons',
+      quantity: 1,
+      metadata: {
+        target_id: input.target_id,
+        source_id: input.source_id,
+      },
+    });
+    return result;
+  }
+
   private async addToMap(row: {
     tag_id: string | undefined;
     person_id: string;

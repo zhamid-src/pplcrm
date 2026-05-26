@@ -298,6 +298,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   /**
+   * Get all people belonging to a specific company.
+   */
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  /**
    * Get all unique tag names assigned to people in the tenant.
    *
    * @param tenant_id - The tenant ID
@@ -340,4 +353,332 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
       .executeTakeFirst();
   }
+
+  /**
+   * Find potential duplicates within the tenant (sharing identical email or same name at same address/household).
+   */
+  public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
+    const duplicateEmails = await this.getSelect()
+      .select([
+        sql<string>`lower(email)`.as('email_lower'),
+      ])
+      .select((eb) => [
+        eb.fn.count('persons.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenant_id)
+      .where('email', 'is not', null)
+      .where(sql`trim(email)`, '!=', '')
+      .groupBy(sql`lower(email)`)
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', tenant_id)
+      .executeTakeFirst();
+    const placeholderHhId = tenantRow?.placeholder_household_id;
+
+    const duplicateNamesInSameHousehold = await this.getSelect()
+      .select([
+        sql<string>`lower(first_name)`.as('first_name_lower'),
+        sql<string>`lower(last_name)`.as('last_name_lower'),
+        'household_id',
+      ])
+      .select((eb) => [
+        eb.fn.count('persons.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenant_id)
+      .where('first_name', 'is not', null)
+      .where('last_name', 'is not', null)
+      .where(sql`trim(first_name)`, '!=', '')
+      .where(sql`trim(last_name)`, '!=', '')
+      .where('household_id', 'is not', null)
+      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId!))
+      .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    const duplicateNamesInSameAddress = await this.getSelect()
+      .innerJoin('households', 'persons.household_id', 'households.id')
+      .select([
+        sql<string>`lower(persons.first_name)`.as('first_name_lower'),
+        sql<string>`lower(persons.last_name)`.as('last_name_lower'),
+        'households.address_fp_full',
+      ])
+      .select((eb) => [
+        eb.fn.count('persons.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
+      ])
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.first_name', 'is not', null)
+      .where('persons.last_name', 'is not', null)
+      .where(sql`trim(persons.first_name)`, '!=', '')
+      .where(sql`trim(persons.last_name)`, '!=', '')
+      .where('households.address_fp_full', 'is not', null)
+      .where(sql`trim(households.address_fp_full)`, '!=', '')
+      .groupBy([sql`lower(persons.first_name)`, sql`lower(persons.last_name)`, 'households.address_fp_full'])
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    const duplicateIds = new Set<string>();
+    for (const group of [...duplicateEmails, ...duplicateNamesInSameHousehold, ...duplicateNamesInSameAddress]) {
+      const ids = group.ids;
+      if (Array.isArray(ids)) {
+        ids.forEach((id) => duplicateIds.add(String(id)));
+      }
+    }
+
+    if (duplicateIds.size === 0) {
+      return [];
+    }
+
+    const dbRows = await this.getSelect()
+      .select([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+      ])
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.id', 'in', Array.from(duplicateIds))
+      .execute();
+
+    const personsMap = new Map<string, any>();
+    for (const row of dbRows) {
+      personsMap.set(String(row.id), {
+        ...row,
+        id: String(row.id),
+      });
+    }
+
+    const groups: Array<{ reason: string; persons: any[] }> = [];
+
+    const groupedByEmail = new Map<string, string[]>();
+    for (const group of duplicateEmails) {
+      groupedByEmail.set(group.email_lower, group.ids);
+    }
+    for (const [email, ids] of groupedByEmail) {
+      const groupPersons = ids.map((id) => personsMap.get(id)).filter(Boolean);
+      if (groupPersons.length > 1) {
+        groups.push({
+          reason: `Matching Email: "${email}"`,
+          persons: groupPersons,
+        });
+      }
+    }
+
+    for (const group of duplicateNamesInSameHousehold) {
+      const groupPersons = group.ids.map((id) => personsMap.get(id)).filter(Boolean);
+      if (groupPersons.length > 1) {
+        const alreadyGrouped = groups.some(
+          (g) => g.persons.length === groupPersons.length && g.persons.every((p) => groupPersons.some((gp) => gp.id === p.id)),
+        );
+        if (!alreadyGrouped) {
+          groups.push({
+            reason: `Matching Name at Same Household: "${groupPersons[0].first_name} ${groupPersons[0].last_name}"`,
+            persons: groupPersons,
+          });
+        }
+      }
+    }
+
+    for (const group of duplicateNamesInSameAddress) {
+      const groupPersons = group.ids.map((id) => personsMap.get(id)).filter(Boolean);
+      if (groupPersons.length > 1) {
+        const alreadyGrouped = groups.some(
+          (g) => g.persons.length === groupPersons.length && g.persons.every((p) => groupPersons.some((gp) => gp.id === p.id)),
+        );
+        if (!alreadyGrouped) {
+          groups.push({
+            reason: `Matching Name at Same Address: "${groupPersons[0].first_name} ${groupPersons[0].last_name}"`,
+            persons: groupPersons,
+          });
+        }
+      }
+    }
+
+    return groups;
+  }
+
+  /**
+   * Merges a source person record into a target person record in a transaction.
+   */
+  public async mergePersons(input: {
+    tenant_id: string;
+    target_id: string;
+    source_id: string;
+    user_id: string;
+  }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
+      const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, any> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if ((targetVal == null || String(targetVal).trim() === '') && (sourceVal != null && String(sourceVal).trim() !== '')) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx.selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx.selectFrom('map_peoples_tags')
+        .select(['id', 'tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx.insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx.deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx.selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx.selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx.insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id as any,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx.deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx.selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx.selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx.insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id as any,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx.deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 5. Reassign captaincy if source was captain of any team
+      await trx.updateTable('teams')
+        .set({ team_captain_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx.selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
+          .execute();
+        if (remainingHhMembers.length === 0) {
+          await trx.deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
+        }
+      }
+
+      return { success: true };
+    });
+  }
 }
+

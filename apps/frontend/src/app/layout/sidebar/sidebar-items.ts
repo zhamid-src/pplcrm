@@ -84,7 +84,7 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `PEOPLE`,
+    name: `CONTACTS`,
     type: 'subheading',
     children: [
       {
@@ -93,20 +93,37 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'identification',
       },
       {
+        name: `Duplicates`,
+        route: '/people/duplicates',
+        icon: 'document-duplicate',
+      },
+      {
         name: `Households`,
         route: '/households',
         icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+    ],
+  },
+  {
+    name: `COMMUNICATIONS`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
       },
       {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',
       },
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
+
       {
         name: 'Newsletter',
         route: '/newsletter',
@@ -170,6 +187,16 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Imports',
         route: '/imports',
         icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
+      {
+        name: 'Activity Feed',
+        route: '/activity',
+        icon: 'clipboard-document-list',
       },
       {
         name: 'Tags',

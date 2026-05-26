@@ -44,8 +44,25 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param trx - Optional Kysely transaction context
    * @returns A Promise resolving to the inserted row
    */
-  public add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
-    return this.repo.add({ row }, trx);
+  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+    const result = await this.repo.add({ row }, trx);
+    try {
+      const actor = (row as any).createdby_id;
+      const tenant = (row as any).tenant_id;
+      if (actor && tenant) {
+        await this.userActivity.log({
+          tenant_id: tenant,
+          user_id: actor,
+          activity: 'create',
+          entity: String(this.repo.getTableName()),
+          quantity: 1,
+          metadata: { id: (result as any)?.id },
+        }, trx);
+      }
+    } catch (e) {
+      console.error('Failed to log create activity', e);
+    }
+    return result;
   }
 
   /**
@@ -55,8 +72,28 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param trx - Optional Kysely transaction context
    * @returns A Promise resolving to the inserted rows
    */
-  public addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
-    return this.repo.addMany({ rows }, trx);
+  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
+    const result = await this.repo.addMany({ rows }, trx);
+    try {
+      const firstRow = rows[0];
+      if (firstRow) {
+        const actor = (firstRow as any).createdby_id;
+        const tenant = (firstRow as any).tenant_id;
+        if (actor && tenant) {
+          await this.userActivity.log({
+            tenant_id: tenant,
+            user_id: actor,
+            activity: 'create',
+            entity: String(this.repo.getTableName()),
+            quantity: rows.length,
+            metadata: { count: rows.length },
+          }, trx);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to log addMany activity', e);
+    }
+    return result;
   }
 
   /**
@@ -66,11 +103,26 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param idToDelete - The row's ID
    * @returns A Promise resolving to the deleted row (if any)
    */
-  public delete(tenant_id: TypeTenantId<T>, idToDelete: string) {
-    return this.repo.delete({
+  public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
+    const result = await this.repo.delete({
       tenant_id,
       id: idToDelete,
     });
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id: tenant_id as string,
+          user_id: userId,
+          activity: 'delete',
+          entity: String(this.repo.getTableName()),
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log delete activity', e);
+    }
+    return result;
   }
 
   /**
@@ -154,8 +206,24 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @param input.row - Partial data to update
    * @returns A Promise resolving to the updated row
    */
-  public update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
-    return this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
+  public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+    const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
+    try {
+      const actor = (input.row as any).updatedby_id;
+      if (actor) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: actor,
+          activity: 'update',
+          entity: String(this.repo.getTableName()),
+          quantity: 1,
+          metadata: { id: input.id },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log update activity', e);
+    }
+    return result;
   }
 
   /**

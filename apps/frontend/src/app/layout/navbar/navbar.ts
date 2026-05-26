@@ -6,6 +6,7 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router } from '@angular/router';
 
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
@@ -13,6 +14,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -32,6 +34,11 @@ export class Navbar {
   private readonly fullscreen = inject(FullScreenService);
   private readonly searchSvc = inject(SearchService);
   private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
+
+  public readonly notifications = signal<any[]>([]);
+  public readonly unreadCount = signal<number>(0);
 
   protected isMobileOpen() {
     return this.sideBarSvc.isMobileOpen();
@@ -52,6 +59,62 @@ export class Navbar {
           this.searchInputRef()?.nativeElement?.focus();
         });
     });
+
+    this.refresh();
+    setInterval(() => this.refresh(), 30000);
+  }
+
+  protected async refresh() {
+    try {
+      const [list, count] = await Promise.all([
+        this.notificationsSvc.getLatest(),
+        this.notificationsSvc.getUnreadCount(),
+      ]);
+      this.notifications.set(list || []);
+      this.unreadCount.set(count || 0);
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    }
+  }
+
+  protected async clickNotification(notif: any) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.refresh();
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      this.router.navigateByUrl(notif.link);
+    }
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.refresh();
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: any): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   /**

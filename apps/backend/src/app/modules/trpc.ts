@@ -16,6 +16,11 @@ import { TeamsRouter } from './teams/trpc.router';
 import { SettingsRouter } from './settings/trpc.router';
 import { ImportsRouter } from './imports/trpc.router';
 import { MsSyncRouter } from './ms-sync/trpc.router';
+import { CompaniesRouter } from './companies/trpc.router';
+import { ActivityRouter } from './activity/trpc.router';
+import { FilesRouter } from './files/trpc.router';
+import { DashboardRouter } from './dashboard/trpc.router';
+import { NotificationsRouter } from './notifications/trpc.router';
 
 /**
  * Inferred type representing the full structure of the tRPC API.
@@ -47,6 +52,11 @@ export const trpcRouter = router({
   settings: SettingsRouter,
   imports: ImportsRouter,
   msSync: MsSyncRouter,
+  companies: CompaniesRouter,
+  activity: ActivityRouter,
+  files: FilesRouter,
+  dashboard: DashboardRouter,
+  notifications: NotificationsRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -75,3 +85,13 @@ export { SettingsRouter } from './settings/trpc.router';
 export { ImportsRouter } from './imports/trpc.router';
 
 export { MsSyncRouter } from './ms-sync/trpc.router';
+
+export { CompaniesRouter } from './companies/trpc.router';
+
+export { ActivityRouter } from './activity/trpc.router';
+
+export { FilesRouter } from './files/trpc.router';
+
+export { DashboardRouter } from './dashboard/trpc.router';
+
+export { NotificationsRouter } from './notifications/trpc.router';

@@ -1,40 +1,245 @@
-<!-- Sidebar -->
-<p class="min-h-max w-full pt-72 text-center text-3xl">Summary module</p>
-
-<pc-tags [tags]="['hello','you','fool']" [readonly]="readonly" [canDelete]="canDelete"></pc-tags>
-
-<button class="btn" (click)="Info()">Info</button>
-<button class="btn" (click)="Success()">Success</button>
-<button class="btn" (click)="Warning()">Warning</button>
-<button class="btn" (click)="Error()">Error</button>
-<button class="btn" (click)="spinner()">Spinner</button>
-<button class="btn" (click)="toggleRaven()">Raven</button>
-
-@if (isLoading()) {
-<div class="loading loading-bars loading-xl"></div>
-} @if (ravenLoaded()) {
-<div class="animate-pulse">
-  <pc-icon name="loading" class="" [size]="12"></pc-icon>
-</div>
-}
-
-<!-- ── Icon Gallery ───────────────────────────────────────── -->
-<div class="mx-6 mt-12 mb-16">
-  <h2 class="text-xl font-semibold mb-1">Icon Library</h2>
-  <p class="text-sm text-base-content/60 mb-6">{{ iconList.length }} icons — hover for name</p>
-
-  <div class="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-3">
-    @for (icon of iconList; track icon.name) {
-    <div
-      class="group flex flex-col items-center gap-1.5 rounded-xl border border-base-300 bg-base-100 p-3 cursor-default
-             hover:border-primary hover:bg-primary/10 hover:shadow transition-all duration-150 relative"
-      [title]="icon.name"
-    >
-      <pc-icon [name]="icon.name" [size]="6" class="text-base-content group-hover:text-primary transition-colors"></pc-icon>
-      <span class="text-[10px] text-base-content/50 group-hover:text-primary text-center leading-tight break-all transition-colors">
-        {{ icon.name }}
-      </span>
+<div class="p-6 max-w-7xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="presentation-chart-line" class="text-primary" [size]="7"></pc-icon>
+        CRM Summary Dashboard
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Overview of key performance metrics, email response rates, and contact database growth.
+      </p>
     </div>
-    }
+    <button class="btn btn-outline btn-sm gap-2" (click)="loadStats()" [disabled]="isLoading()">
+      <span *ngIf="isLoading()" class="loading loading-spinner loading-xs"></span>
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload Stats
+    </button>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div *ngIf="isLoading() && linePoints().length === 0" class="flex flex-col items-center justify-center py-32">
+    <span class="loading loading-bars loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
+  </div>
+
+  <div *ngIf="linePoints().length > 0" class="space-y-6">
+    <!-- Metric Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Card 1 -->
+      <div class="card bg-base-100 border border-base-300 shadow-md">
+        <div class="card-body p-5 flex flex-row items-center justify-between">
+          <div>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Inbox Assigned</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">{{ totalAssignedCount() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">Open email conversations</p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+            <pc-icon name="envelope" [size]="6.5"></pc-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="card bg-base-100 border border-base-300 shadow-md">
+        <div class="card-body p-5 flex flex-row items-center justify-between">
+          <div>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Avg 1st Response</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">{{ avgFirstResponse() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">Time to reply or comment</p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info">
+            <pc-icon name="clock" [size]="6.5"></pc-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="card bg-base-100 border border-base-300 shadow-md">
+        <div class="card-body p-5 flex flex-row items-center justify-between">
+          <div>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Avg Time to Close</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">{{ avgTimeToClose() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">From arrival to closed status</p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center text-success">
+            <pc-icon name="check-circle" [size]="6.5"></pc-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="card bg-base-100 border border-base-300 shadow-md">
+        <div class="card-body p-5 flex flex-row items-center justify-between">
+          <div>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Contacts Growth</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">+{{ activeContactsCount() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">New contacts (last 30 days)</p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+            <pc-icon name="user-plus" [size]="6.5"></pc-icon>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left / Main Chart: Contacts Growth Line -->
+      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+        <div class="card-body p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
+              New Contacts Growth
+            </h3>
+            <span class="text-xs text-base-content/55">Last 30 Days</span>
+          </div>
+
+          <div class="relative w-full h-[220px]">
+            <svg viewBox="0 0 600 200" class="w-full h-full overflow-visible">
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"></stop>
+                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"></stop>
+                </linearGradient>
+              </defs>
+
+              <!-- Grid Lines -->
+              <line x1="20" y1="20" x2="580" y2="20" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
+              <line x1="20" y1="65" x2="580" y2="65" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
+              <line x1="20" y1="110" x2="580" y2="110" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
+              <line x1="20" y1="155" x2="580" y2="155" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
+              <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
+
+              <!-- Line paths -->
+              <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
+              <path [attr.d]="linePath()" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+
+              <!-- Interactive Points -->
+              <circle 
+                *ngFor="let p of linePoints(); let first = first; let last = last" 
+                [attr.cx]="p.x" 
+                [attr.cy]="p.y" 
+                r="4.5" 
+                fill="#ffffff" 
+                stroke="#3b82f6" 
+                stroke-width="2"
+                class="hover:scale-150 transition-all duration-150 cursor-pointer"
+                [attr.title]="p.date + ': ' + p.count + ' new contacts'"
+              ></circle>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Donut Chart - Emails Assigned -->
+      <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-6 flex flex-col justify-between">
+          <div class="mb-2">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+              Open Conversations
+            </h3>
+            <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
+          </div>
+
+          <div class="flex items-center justify-center py-4">
+            <div *ngIf="assignedRepSlices().length === 0" class="text-sm text-base-content/40 py-10 italic">
+              No open emails assigned.
+            </div>
+
+            <svg *ngIf="assignedRepSlices().length > 0" width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90">
+              <circle cx="80" cy="80" r="60" fill="transparent" stroke="currentColor" class="text-base-300/30" stroke-width="14"></circle>
+              <circle 
+                *ngFor="let slice of assignedRepSlices()" 
+                cx="80" 
+                cy="80" 
+                r="60" 
+                fill="transparent" 
+                [attr.stroke]="slice.color" 
+                stroke-width="14"
+                [attr.stroke-dasharray]="slice.strokeDash"
+                [attr.stroke-dashoffset]="slice.strokeOffset"
+                stroke-linecap="round"
+              ></circle>
+            </svg>
+          </div>
+
+          <!-- Legend -->
+          <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
+            <div *ngFor="let slice of assignedRepSlices()" class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
+                <span class="font-semibold text-base-content">{{ slice.name }}</span>
+              </div>
+              <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Chart: Closed Emails by Rep -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="check-circle" class="text-primary" [size]="5"></pc-icon>
+              Emails Closed by Rep
+            </h3>
+            <span class="text-xs text-base-content/50">Performance metrics</span>
+          </div>
+
+          <div *ngIf="closedRepBars().length === 0" class="text-sm text-base-content/40 py-16 italic text-center">
+            No emails closed by representatives.
+          </div>
+
+          <div *ngIf="closedRepBars().length > 0" class="relative w-full h-[180px]">
+            <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
+              <g *ngFor="let bar of closedRepBars(); let idx = index">
+                <!-- Label -->
+                <text x="10" [attr.y]="bar.y + 14" fill="currentColor" class="text-base-content text-xs font-semibold" text-anchor="start">
+                  {{ bar.name }}
+                </text>
+                <!-- Bar Background -->
+                <rect x="130" [attr.y]="bar.y" width="360" height="18" rx="4" fill="currentColor" class="text-base-200/50"></rect>
+                <!-- Bar Foreground -->
+                <rect x="130" [attr.y]="bar.y" [attr.width]="bar.width" height="18" rx="4" fill="#10b981" class="transition-all duration-500 ease-out"></rect>
+                <!-- Value -->
+                <text [attr.x]="135 + bar.width" [attr.y]="bar.y + 13" fill="currentColor" class="text-base-content text-[11px] font-mono font-bold">
+                  {{ bar.count }}
+                </text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Info Card -->
+      <div class="card bg-base-200/40 border border-base-300 shadow-xl flex flex-col justify-between">
+        <div class="card-body p-6">
+          <h4 class="font-bold text-base-content flex items-center gap-2 mb-3">
+            <pc-icon name="information-circle" class="text-primary" [size]="4.5"></pc-icon>
+            Dashboard Insights
+          </h4>
+          <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
+            <p>
+              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or comment on incoming inbox messages.
+            </p>
+            <p>
+              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands in the inbox until it is marked closed.
+            </p>
+            <p>
+              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach campaigns and imports.
+            </p>
+          </div>
+          <div class="alert alert-info py-2 text-[10px] mt-4">
+            <span>Data is aggregated in real-time. Hit "Reload Stats" to fetch the latest analytics.</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

@@ -1,71 +1,135 @@
-import { Component, inject, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, inject, signal, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { icons } from '@uxcommon/components/icons/icons.index';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, Icon],
   selector: 'pc-summary',
-  imports: [Tags, Icon],
   templateUrl: './summary.html',
 })
-export class Summary {
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+
   private readonly _loading = createLoadingGate();
-  private readonly alert = inject(AlertService);
-
   protected readonly isLoading = this._loading.visible;
-  protected ravenLoaded = signal(false);
 
-  /** All registered icons, sorted alphabetically, for the gallery */
-  protected readonly iconList = Object.keys(icons)
-    .filter((k) => k !== 'none')
-    .sort()
-    .map((name) => ({ name: name as keyof typeof icons }));
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
 
-  public canDelete = true;
-  public readonly = false;
+  // SVG Chart data
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<any[]>([]);
+  protected readonly closedRepBars = signal<any[]>([]);
+  protected readonly assignedRepSlices = signal<any[]>([]);
 
-  public Error() {
-    this.alert.show({
-      text: 'This is an error alert',
-      type: 'error',
-    });
+  public ngOnInit() {
+    this.loadStats();
   }
 
-  public Info() {
-    this.alert.showInfo("This is an <a href='/households' class='link'>info</a> alert");
-  }
-
-  public Success() {
-    this.alert.show({
-      text: 'This is an success alert',
-      type: 'success',
-      title: 'SUCCESS!',
-      OKBtn: 'OK',
-    });
-  }
-
-  public Warning() {
-    this.alert.show({
-      text: 'This is an warning alert',
-      type: 'warning',
-      title: 'W!',
-    });
-  }
-
-  public spinner() {
-    console.log('spinner starting');
+  protected async loadStats() {
     const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
 
-    setTimeout(() => {
-      console.log('spinner ending');
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      this.totalAssignedCount.set(totalAssigned);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      this.activeContactsCount.set(totalNewContacts);
+
+      // Line Chart: Contacts Growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: any) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points = growth.map((g: any, i: number) => {
+        const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+        const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+        return { x, y, date: g.date, count: g.count };
+      });
+      this.linePoints.set(points);
+
+      if (points.length > 0) {
+        const lPath = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        const firstX = points[0].x;
+        const lastX = points[points.length - 1].x;
+        this.areaPath.set(`${lPath} L ${lastX} ${height - padding} L ${firstX} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      // Bar Chart: Closed Emails by Rep
+      const closed = stats.emailsClosed || [];
+      const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
+      const barMaxWidth = 360;
+      this.closedRepBars.set(closed.map((c: any, i: number) => ({
+        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        count: c.count,
+        width: (c.count / maxClosed) * barMaxWidth,
+        y: i * 40 + 10,
+      })));
+
+      // Donut Chart: Assigned Emails by Rep
+      const assigned = stats.emailsAssigned || [];
+      const radius = 60;
+      const circ = 2 * Math.PI * radius;
+      let cumulativeCount = 0;
+      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+      this.assignedRepSlices.set(assigned.map((a: any, i: number) => {
+        const countVal = Number(a.count || 0);
+        const pct = totalAssigned > 0 ? (countVal / totalAssigned) : 0;
+        const sliceCirc = pct * circ;
+        const strokeDash = `${sliceCirc} ${circ}`;
+        const strokeOffset = circ - (cumulativeCount / totalAssigned) * circ;
+        cumulativeCount += countVal;
+        return {
+          name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
+          count: countVal,
+          percentage: Math.round(pct * 100),
+          strokeDash,
+          strokeOffset,
+          color: colors[i % colors.length],
+        };
+      }));
+
+    } catch (err: any) {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
       end();
-    }, 300);
+    }
   }
 
-  public toggleRaven() {
-    this.ravenLoaded.set(!this.ravenLoaded());
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
   }
 }

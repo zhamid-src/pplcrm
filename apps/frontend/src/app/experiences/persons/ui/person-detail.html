@@ -95,6 +95,15 @@
           </label>
         </div>
 
+        <div class="flex flex-col md:flex-row gap-2">
+          <select class="select select-bordered w-full" [formField]="form.company_id">
+            <option value="">-- Select Company --</option>
+            @for (c of companies(); track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+            }
+          </select>
+        </div>
+
         @if (householdId()) {
         <div class="text-sm pl-1 flex gap-2">
           Address: <span class="font-light">{{ addressString() }}</span>

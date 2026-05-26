@@ -56,8 +56,96 @@
       </div>
     }
 
-    <!-- notifications -->
-    <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle relative" (click)="refresh()">
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+          <span class="badge badge-primary badge-xs absolute top-1.5 right-1.5 animate-pulse">
+            {{ unreadCount() }}
+          </span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3 class="font-semibold text-sm">Notifications</h3>
+            @if (unreadCount() > 0) {
+              <button
+                class="text-xs text-primary hover:underline font-medium"
+                (click)="markAllAsRead($event)"
+              >
+                Mark all read
+              </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30">
+            @if (notifications().length === 0) {
+              <div class="flex flex-col items-center justify-center py-8 text-base-400">
+                <pc-icon name="bell" class="opacity-20 mb-2 w-6 h-6"></pc-icon>
+                <p class="text-xs font-light">All caught up!</p>
+              </div>
+            } @else {
+              @for (notif of notifications(); track notif.id) {
+                <div
+                  class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+                  [class.bg-primary/5]="!notif.read"
+                  (click)="clickNotification(notif)"
+                >
+                  <!-- Icon Based on Type -->
+                  <div class="flex-shrink-0">
+                    <div
+                      class="w-8 h-8 rounded-lg flex items-center justify-center"
+                      [class.bg-info/10]="notif.type === 'info'"
+                      [class.text-info]="notif.type === 'info'"
+                      [class.bg-primary/10]="notif.type === 'email'"
+                      [class.text-primary]="notif.type === 'email'"
+                      [class.bg-warning/10]="notif.type === 'task'"
+                      [class.text-warning]="notif.type === 'task'"
+                    >
+                      @if (notif.type === 'email') {
+                        <pc-icon name="envelope" class="w-4 h-4"></pc-icon>
+                      } @else if (notif.type === 'task') {
+                        <pc-icon name="clipboard-document-list" class="w-4 h-4"></pc-icon>
+                      } @else {
+                        <pc-icon name="information-circle" class="w-4 h-4"></pc-icon>
+                      }
+                    </div>
+                  </div>
+
+                  <!-- Message Details -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex justify-between items-start gap-1">
+                      <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">
+                        {{ notif.title }}
+                      </p>
+                      <span class="text-[10px] text-base-400 whitespace-nowrap">
+                        {{ formatTime(notif.created_at) }}
+                      </span>
+                    </div>
+                    <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">
+                      {{ notif.message }}
+                    </p>
+                  </div>
+
+                  <!-- Unread dot indicator -->
+                  @if (!notif.read) {
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"></span>
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+                  }
+                </div>
+              }
+            }
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- profile drop down -->
     <div class="dropdown dropdown-end">

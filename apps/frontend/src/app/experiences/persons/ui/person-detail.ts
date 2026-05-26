@@ -19,6 +19,7 @@ import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
+import { CompaniesService } from '../../companies/services/companies-service';
 import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 
@@ -39,6 +40,7 @@ export class PersonDetail implements OnInit {
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly teamsSvc = inject(TeamsService);
+  private readonly companiesSvc = inject(CompaniesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -64,6 +66,7 @@ export class PersonDetail implements OnInit {
   protected readonly emailError = signal<string | null>(null);
   protected readonly person = signal<Persons | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly companies = signal<any[]>([]);
 
   /** Backing payload signal for person data */
   protected readonly payload = signal({
@@ -75,6 +78,7 @@ export class PersonDetail implements OnInit {
     home_phone: '',
     mobile: '',
     notes: '',
+    company_id: '',
   });
 
   /** Signal form for person data validation and status tracking */
@@ -145,6 +149,16 @@ export class PersonDetail implements OnInit {
   /** Lifecycle hook to initialize the component and load person data */
   public ngOnInit() {
     this.loadPerson();
+    this.loadCompanies();
+  }
+
+  private async loadCompanies() {
+    try {
+      const res = await this.companiesSvc.getAll();
+      this.companies.set(res.rows || []);
+    } catch {
+      this.companies.set([]);
+    }
   }
 
   /**
@@ -154,7 +168,11 @@ export class PersonDetail implements OnInit {
   public save(done?: () => void) {
     this.form().markAsTouched();
     if (this.form().invalid()) return;
-    const data = this.payload() as UpdatePersonsType;
+    const raw = this.payload();
+    const data = {
+      ...raw,
+      company_id: raw.company_id || null,
+    } as any;
     return this.id ? this.update(data, done) : this.add(data, done);
   }
 
@@ -513,6 +531,7 @@ export class PersonDetail implements OnInit {
       home_phone: person.home_phone ?? '',
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
+      company_id: person.company_id ?? '',
     });
   }
 
