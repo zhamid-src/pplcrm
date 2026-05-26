@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, effect, inject, output, signal, computed } from '@angular/core';
+import { Component, effect, inject, output, signal, computed } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
@@ -8,7 +8,6 @@ import type { EmailType } from 'common/src/lib/models';
 @Component({
   selector: 'pc-email-list',
   imports: [Icon, TimeAgoPipe],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'email-list.html',
 })
 export class EmailList {

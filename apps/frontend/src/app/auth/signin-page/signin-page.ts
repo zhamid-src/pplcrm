@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
@@ -36,7 +36,6 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * ```
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-login',
   imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { form, FormField, required } from '@angular/forms/signals';
@@ -9,7 +9,6 @@ import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-company-detail',
   imports: [CommonModule, FormField, Icon, PeopleInCompany],
   template: `

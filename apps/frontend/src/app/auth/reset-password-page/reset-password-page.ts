@@ -1,7 +1,7 @@
 /**
  * Component for initiating the password reset email flow.
  */
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { form, submit, required, email, FormField } from '@angular/forms/signals';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -15,7 +15,6 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * Allows users to enter their email and request a reset link.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-reset-password',
   imports: [FormField, Alerts],
   templateUrl: './reset-password-page.html',

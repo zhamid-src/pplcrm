@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { IAuthUser, signUpInputType } from '@common';
@@ -17,7 +17,6 @@ import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/au
  * and integration with a password breach checker.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-signup',
   imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
   templateUrl: './signup-page.html',

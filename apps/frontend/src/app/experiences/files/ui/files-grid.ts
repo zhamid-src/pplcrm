@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FilesService } from '../services/files.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -8,7 +8,6 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-files-grid',
   imports: [CommonModule, Icon],
   template: `

@@ -1,10 +1,9 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 
 @Component({
   selector: 'pc-dg-filter-panel',
   imports: [Icon],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-filter-panel.html',
 })
 export class DataGridFilterPanelComponent {

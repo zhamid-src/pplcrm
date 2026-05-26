@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Icon } from '@icons/icon';
 
 import { DataGrid } from '../datagrid';
@@ -7,7 +7,6 @@ import { GridActionComponent } from '../tool-button';
 @Component({
   selector: 'pc-dg-toolbar',
   imports: [GridActionComponent, Icon],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {

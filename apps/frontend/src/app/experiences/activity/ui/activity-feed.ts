@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -6,7 +6,6 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-activity-feed',
   imports: [CommonModule, Icon],
   template: `

@@ -1,7 +1,7 @@
 /**
  * Navigation bar component providing search, theme switching, and user actions.
  */
-import { Component, ElementRef, effect, inject, signal, viewChild , ChangeDetectionStrategy} from '@angular/core';
+import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -17,7 +17,6 @@ import { EmailActionsStore } from '../../experiences/emails/services/store/email
 import { NotificationsService } from '../../services/api/notifications-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-navbar',
   imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective],
   templateUrl: './navbar.html',

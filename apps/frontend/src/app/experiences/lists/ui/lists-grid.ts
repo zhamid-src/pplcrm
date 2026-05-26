@@ -1,7 +1,7 @@
 /**
  * Grid component for viewing and editing lists of people or households.
  */
-import { Component, effect, inject, untracked, ChangeDetectionStrategy } from '@angular/core';
+import { Component, effect, inject, untracked } from '@angular/core';
 import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -10,7 +10,6 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-lists-grid',
   imports: [DataGrid],
   template: `<pc-datagrid

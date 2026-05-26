@@ -1,7 +1,7 @@
 /**
  * @file Component for assigning an email to a user.
  */
-import { Component, effect, inject, input, signal , ChangeDetectionStrategy} from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -11,7 +11,6 @@ import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-email-assign',
   imports: [Icon],
   template: `<div class="flex items-center gap-2 mt-1">

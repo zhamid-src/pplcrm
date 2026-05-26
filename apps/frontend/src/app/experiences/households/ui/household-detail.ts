@@ -2,7 +2,7 @@
  * @file Component for creating or editing households and managing their tags and members.
  */
 import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
-import { Component, OnInit, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute } from '@angular/router';
 import { UpdateHouseholdsType } from '@common';
@@ -22,7 +22,6 @@ import { Households } from 'common/src/lib/kysely.models';
  * It supports both creating a new household and editing an existing one.
  */
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-household-detail',
   imports: [FormField, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold, Icon],
   templateUrl: './household-detail.html',

@@ -1,9 +1,8 @@
-import { Component, effect, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-people-in-company',
   imports: [RouterModule],
   template: `<div>

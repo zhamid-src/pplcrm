@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
@@ -11,8 +11,7 @@ import { ImportsService } from '../services/imports-service';
   selector: 'pc-imports-page',
   imports: [FormsModule, Icon],
   templateUrl: './imports-page.html',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-})
+  })
 export class ImportsPage {
   private readonly destroyRef = inject(DestroyRef);
   private readonly alerts = inject(AlertService);

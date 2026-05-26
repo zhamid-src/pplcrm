@@ -1,20 +1,10 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  effect,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { ConfirmDialogService, DialogVariant } from '../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-dialog-host',
   imports: [Icon],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <dialog #dlg class="modal">
       @if (state()) {

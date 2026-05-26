@@ -1,21 +1,6 @@
 //tsco: ignore
 
-import {
-  AfterViewInit,
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  OnDestroy,
-  OnInit,
-  computed,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
@@ -70,7 +55,6 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
     EditableCellDirective,
     HeaderResizeDirective,
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',
   providers: [

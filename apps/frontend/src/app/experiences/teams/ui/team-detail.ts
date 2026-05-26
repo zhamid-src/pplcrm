@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal, ChangeDetectionStrategy, untracked } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { form, required, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType } from '@common';
@@ -15,7 +15,6 @@ interface PersonOption {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-team-detail',
   imports: [FormField, RouterModule, Icon],
   templateUrl: './team-detail.html',

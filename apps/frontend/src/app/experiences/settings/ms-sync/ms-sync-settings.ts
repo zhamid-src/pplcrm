@@ -3,14 +3,13 @@
  * Allows users to connect their Microsoft account, trigger a manual sync,
  * and disconnect their account.
  */
-import { Component, OnInit, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TRPCService } from '../../../services/api/trpc-service';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-ms-sync-settings',
   imports: [Icon],
   template: `

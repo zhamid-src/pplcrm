@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, output , ChangeDetectionStrategy} from '@angular/core';
+import { Component, OnInit, inject, input, output } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 
@@ -11,7 +11,6 @@ interface TagView {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'pc-tags',
   imports: [TagItem, AutoComplete],
   template: `@if (!readonly()) {
