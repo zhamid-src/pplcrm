@@ -247,6 +247,7 @@ export class CompanyDetail implements OnInit {
       const end = this._loading.begin();
       this.companiesSvc.update(this.id, raw)
         .then(() => {
+          this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company updated successfully');
           this.router.navigate(['/companies']);
         })
@@ -256,6 +257,7 @@ export class CompanyDetail implements OnInit {
       const end = this._loading.begin();
       this.companiesSvc.add(raw)
         .then(() => {
+          this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company added successfully');
           this.router.navigate(['/companies']);
         })
