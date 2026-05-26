@@ -31,7 +31,7 @@ describe('trpc-refreshlink', () => {
       url: '/current-url',
     };
 
-    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+    globalThis.fetch = vi.fn().mockImplementation(async (_url, _init) => {
       fetchCount++;
       return {
         ok: true,
@@ -55,7 +55,7 @@ describe('trpc-refreshlink', () => {
   });
 
   it('should coalesce parallel token refreshes into a single fetch request', async () => {
-    const link = refreshLink(mockTokenSvc, mockRouter)();
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
 
     const executeLink = () => {
       return new Promise((resolve, reject) => {
@@ -65,12 +65,13 @@ describe('trpc-refreshlink', () => {
           path: 'testPath',
           input: {},
           context: {},
+          signal: new AbortController().signal,
         };
         const mockNext = vi.fn().mockReturnValue({
           subscribe: (observer: Observer<any, any>) => {
             observer.next('result');
             observer.complete();
-            return { unsubscribe: () => {} };
+            return { unsubscribe: vi.fn() };
           },
         });
 

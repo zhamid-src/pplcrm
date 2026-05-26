@@ -39,8 +39,6 @@ import {
 } from 'common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
-import { GroupByArg } from 'node_modules/kysely/dist/esm/parser/group-by-parser';
-
 const dialect = new PostgresDialect({
   pool: new Pool(env.db),
 });
@@ -361,7 +359,7 @@ export class BaseRepository<T extends keyof Models> {
       );
     }
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy as GroupByArg<Models, T, unknown>) : query;
+    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
     return query;
   }
 

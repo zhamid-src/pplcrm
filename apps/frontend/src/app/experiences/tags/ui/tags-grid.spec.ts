@@ -5,7 +5,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { signal } from '@angular/core';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 class MockApiService {
   refreshCount = signal(0);
@@ -63,7 +63,7 @@ describe('TagsGridComponent', () => {
 
     it('should extract color from the column definition renderer parameters', () => {
       const colorDef = component['col'].find(c => c.field === 'color');
-      const renderer = colorDef?.cellRenderer as Function;
+      const renderer = colorDef?.cellRenderer as (params: any) => string;
       
       const htmlFromValue = renderer({ value: '#00ff00' });
       expect(htmlFromValue).toContain('#00ff00');

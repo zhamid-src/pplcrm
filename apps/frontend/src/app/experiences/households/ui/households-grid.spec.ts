@@ -150,13 +150,13 @@ describe('HouseholdsGrid', () => {
     const formattedPlaceholder = street1Col?.valueFormatter?.({
       data: { is_placeholder: true },
       value: null,
-    });
+    } as any);
     expect(formattedPlaceholder).toBe('People with no addresses');
 
     const formattedRegular = street1Col?.valueFormatter?.({
       data: { is_placeholder: false },
       value: '123 Main St',
-    });
+    } as any);
     expect(formattedRegular).toBe('123 Main St');
   });
 

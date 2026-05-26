@@ -351,7 +351,7 @@ export class MsSyncService {
       let bodyHtml = msg.body?.content ?? '';
       for (const file of uploadedFiles) {
         if (file.is_inline && file.cid) {
-          const cidEscaped = file.cid.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
           bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
         }

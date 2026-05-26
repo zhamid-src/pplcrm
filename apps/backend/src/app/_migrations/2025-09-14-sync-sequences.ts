@@ -11,4 +11,6 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`SELECT setval('email_comments_id_seq', COALESCE(max(id), 1)) FROM email_comments`.execute(db);
 }
 
-export async function down(_db: Kysely<any>): Promise<void> {}
+export async function down(_db: Kysely<any>): Promise<void> {
+  // No rollback needed for sequence synchronization
+}

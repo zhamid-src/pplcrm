@@ -67,7 +67,7 @@ describe('ListsGridComponent', () => {
 
   it('should format list_size correctly for dynamic vs static lists', () => {
     const listSizeCol = component['col'].find(c => c.field === 'list_size');
-    const formatter = listSizeCol?.valueFormatter as Function;
+    const formatter = listSizeCol?.valueFormatter as (params: any) => any;
 
     expect(formatter).toBeDefined();
 
@@ -83,7 +83,7 @@ describe('ListsGridComponent', () => {
   });
 
   it('should call refresh when refreshCount signal increments', async () => {
-    vi.spyOn(component, 'refresh').mockImplementation(() => {});
+    vi.spyOn(component as any, 'refresh').mockImplementation(vi.fn());
 
     await component.ngOnInit();
 
@@ -92,15 +92,15 @@ describe('ListsGridComponent', () => {
     // Effect runs asynchronously; flush microtasks
     await fixture.whenStable();
 
-    expect(component.refresh).toHaveBeenCalled();
+    expect((component as any).refresh).toHaveBeenCalled();
   });
 
   it('should not call refresh on initial render (refreshCount === 0)', async () => {
-    vi.spyOn(component, 'refresh').mockImplementation(() => {});
+    vi.spyOn(component as any, 'refresh').mockImplementation(vi.fn());
 
     await component.ngOnInit();
 
     // No trigger — refreshCount stays 0
-    expect(component.refresh).not.toHaveBeenCalled();
+    expect((component as any).refresh).not.toHaveBeenCalled();
   });
 });

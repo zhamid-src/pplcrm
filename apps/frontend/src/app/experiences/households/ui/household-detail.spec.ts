@@ -1,5 +1,4 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
-import { signal } from '@angular/core';
 import { vi, describe, beforeEach, beforeAll, it, expect } from 'vitest';
 import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -90,7 +89,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
 
   fixture = TestBed.createComponent(HouseholdDetail);
   component = fixture.componentInstance;
-  
+
   // Set component input mode
   fixture.componentRef.setInput('mode', mode);
 };
@@ -101,16 +100,16 @@ describe('HouseholdDetail', () => {
     (globalThis as any).google = {
       maps: {
         places: {
-          Autocomplete: function() {
+          Autocomplete: function () {
             return {
               addListener: vi.fn().mockReturnValue({
                 remove: vi.fn(),
               }),
               getPlace: vi.fn(),
             };
-          }
-        }
-      }
+          },
+        },
+      },
     };
   });
 
@@ -142,7 +141,7 @@ describe('HouseholdDetail', () => {
 
       // Trigger save
       component['save']();
-      
+
       // Wait for tRPC mock response
       await mockHouseholdsSvc.add.mock.results[0].value;
       fixture.detectChanges();
@@ -178,7 +177,7 @@ describe('HouseholdDetail', () => {
       expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
       expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123');
       expect(mockHouseholdsSvc.getPeopleCount).toHaveBeenCalledWith('123');
-      
+
       const payload = component['payload']();
       expect(payload.city).toBe('Mountain View');
       expect(payload.street1).toBe('Amphitheatre Pkwy');
@@ -231,7 +230,7 @@ describe('HouseholdDetail', () => {
 
       // Trigger save
       component['save']();
-      
+
       // Wait for tRPC mock response
       await mockHouseholdsSvc.update.mock.results[0].value;
       fixture.detectChanges();

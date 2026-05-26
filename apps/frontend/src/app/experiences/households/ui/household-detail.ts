@@ -80,8 +80,6 @@ export class HouseholdDetail implements OnInit {
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
 
-  constructor() {}
-
   /**
    * Handles address selection and parses Google Places data into form.
    * @param place - Google PlaceResult object from address input

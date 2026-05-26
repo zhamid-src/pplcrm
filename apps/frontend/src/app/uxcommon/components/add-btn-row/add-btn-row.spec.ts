@@ -35,7 +35,7 @@ describe('AddBtnRow', () => {
       imports: [TestHostComponent],
       providers: [
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } },
-        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
       ],
     }).compileComponents();
 

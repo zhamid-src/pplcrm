@@ -17,14 +17,13 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": "./",
     "paths": {
-      "@common": ["common/src/index.ts"],
-      "@experiences/*": ["apps/frontend/src/app/experiences/*"],
-      "@icons/*": ["apps/frontend/src/app/uxcommon/components/icons/*"],
-      "@uxcommon/*": ["apps/frontend/src/app/uxcommon/*"],
-      "common/*": ["common/*"]
+      "@common": ["./common/src/index.ts"],
+      "@experiences/*": ["./apps/frontend/src/app/experiences/*"],
+      "@icons/*": ["./apps/frontend/src/app/uxcommon/components/icons/*"],
+      "@uxcommon/*": ["./apps/frontend/src/app/uxcommon/*"],
+      "common/*": ["./common/*"],
+      "apps/*": ["./apps/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]
