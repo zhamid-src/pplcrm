@@ -2,7 +2,7 @@
  * @fileoverview Theme management service for application-wide light/dark mode support.
  * Provides reactive theme switching with system preference detection and persistent storage.
  */
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 
 /**
  * Service for managing application theme with reactive state and persistent storage.
@@ -42,9 +42,7 @@ import { Injectable, signal } from '@angular/core';
  * </div>
  * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class ThemeService {
   /**
    * Reactive signal representing the current theme ('light' or 'dark').

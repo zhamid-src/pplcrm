@@ -1,4 +1,4 @@
-import { ErrorHandler, Injectable, inject } from '@angular/core';
+import { ErrorHandler, inject, Service } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TRPCClientError } from '@trpc/client';
 import { JSendFailError, JSendServerError } from '@common';
@@ -9,7 +9,7 @@ import { ErrorService } from './error.service';
  * Global Angular error handler.  Only handles errors that haven't already been
  * processed by the HTTP interceptor or tRPC links.
  */
-@Injectable()
+@Service()
 export class GlobalErrorHandler implements ErrorHandler {
   private readonly errors = inject(ErrorService);
 

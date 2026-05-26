@@ -1,9 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
 
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class NotificationsService extends TRPCService<'notifications'> {
   public getLatest() {
     return this.api.notifications.getLatest.query();

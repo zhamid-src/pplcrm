@@ -1,14 +1,12 @@
 /**
  * Service responsible for managing sidebar items and drawer open state.
  */
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 
 
 import { ISidebarItem, SidebarItems } from './sidebar-items';
 
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 /**
  * Provides utility methods for controlling the sidebar and retrieving its items.
  */

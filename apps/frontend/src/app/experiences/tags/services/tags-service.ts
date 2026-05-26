@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { AddTagType, ExportCsvInputType, ExportCsvResponseType, UpdateTagType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -10,9 +10,7 @@ import { Tags } from 'common/src/lib/kysely.models';
  *
  * Extends `AbstractAPIService` to inherit standard CRUD operations.
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   /**
    * Adds a new tag to the backend.

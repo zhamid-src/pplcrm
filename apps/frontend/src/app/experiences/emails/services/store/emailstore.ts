@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { computed, inject, signal, Service } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmailStatus } from '@common';
@@ -10,7 +10,7 @@ import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
 import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class EmailsStore {
   // ----------------- Lazy per-email fallback -----------------
   //  private readonly _checked = new Set<string>();

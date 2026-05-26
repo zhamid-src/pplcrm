@@ -1,6 +1,6 @@
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ListsRefreshService {
   /** Increments each time a refresh is requested. Consumers can effect() on this. */
   public readonly refreshCount = signal(0);

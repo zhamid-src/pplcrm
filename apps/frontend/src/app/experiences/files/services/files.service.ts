@@ -1,10 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
 
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class FilesService extends AbstractAPIService<'files', any> {
   public add(_row: any) {
     return Promise.resolve({});

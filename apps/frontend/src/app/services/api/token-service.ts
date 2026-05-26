@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { IToken } from '@common';
 
 /**
@@ -40,9 +40,7 @@ import { IToken } from '@common';
  * const token = this.tokenService.getAuthToken();
  * ```
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class TokenService {
   /**
    * Controls token storage persistence mode.

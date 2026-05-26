@@ -3,7 +3,7 @@
  * Provides comprehensive CRUD operations, tag management, and household relationships
  * through type-safe tRPC communication with the backend.
  */
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -63,9 +63,7 @@ export interface DetachTagResult {
  *
  * @extends AbstractAPIService<DATA_TYPE, UpdatePersonsType>
  */
-@Injectable({
-  providedIn: 'root',
-})
+@Service()
 export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
   /**
    * Add a single person record to the backend.

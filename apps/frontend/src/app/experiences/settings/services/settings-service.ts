@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { signal, Service } from '@angular/core';
 
 import { SettingsEntryType } from '@common';
 
@@ -6,7 +6,7 @@ import { TRPCService } from '../../../services/api/trpc-service';
 
 export type TenantSettingsSnapshot = Record<string, unknown>;
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
   public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
   private readonly isPendingSignal = signal<boolean>(false);

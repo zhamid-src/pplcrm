@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import {
   AddMarketingEmailType,
   ExportCsvInputType,
@@ -10,7 +10,7 @@ import {
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
   public add(_row: AddMarketingEmailType) {
     return Promise.reject(new Error('Newsletters are read-only.'));
