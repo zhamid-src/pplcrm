@@ -136,6 +136,16 @@ function update() {
   ));
 }
 
+function findPotentialDuplicates() {
+  return authProcedure.query(wrapTrpc(({ ctx }) => households.findPotentialDuplicates(ctx.auth)));
+}
+
+function mergeHouseholds() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(wrapTrpc(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)));
+}
+
 const households = new HouseholdsController();
 
 /**
@@ -156,4 +166,6 @@ export const HouseholdsRouter = router({
   getAllWithPeopleCount: getAllWithPeopleCount(),
   getPeopleCount: getPeopleCount(),
   exportCsv: exportCsv(),
+  findPotentialDuplicates: findPotentialDuplicates(),
+  mergeHouseholds: mergeHouseholds(),
 });

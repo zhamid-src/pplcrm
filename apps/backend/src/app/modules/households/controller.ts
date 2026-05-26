@@ -271,4 +271,23 @@ export class HouseholdsController extends BaseController<'households', Household
       row: row as OperationDataType<'map_households_tags', 'insert'>,
     });
   }
+
+  /**
+   * Find potential duplicate households for a tenant.
+   */
+  public async findPotentialDuplicates(auth: IAuthKeyPayload) {
+    return this.getRepo().findPotentialDuplicates(auth.tenant_id);
+  }
+
+  /**
+   * Merge a duplicate household into a primary household.
+   */
+  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeHouseholds({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
 }

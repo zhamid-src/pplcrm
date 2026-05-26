@@ -59,4 +59,18 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.companies.exportCsv.mutate(input);
   }
+
+  /**
+   * Find potential duplicate companies.
+   */
+  public findPotentialDuplicates(): Promise<any[]> {
+    return this.api.companies.findPotentialDuplicates.query();
+  }
+
+  /**
+   * Merge source company into target company.
+   */
+  public mergeCompanies(targetId: string, sourceId: string): Promise<any> {
+    return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
+  }
 }

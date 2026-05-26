@@ -40,4 +40,11 @@ export const CompaniesRouter = router({
   update: authProcedure
     .input(z.object({ id: idSchema, data: CompanyInputSchema.partial() }))
     .mutation(wrapTrpc(({ input, ctx }) => companies.updateCompany(input.id, input.data, ctx.auth))),
+
+  findPotentialDuplicates: authProcedure
+    .query(wrapTrpc(({ ctx }) => companies.findPotentialDuplicates(ctx.auth))),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(wrapTrpc(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth))),
 });
