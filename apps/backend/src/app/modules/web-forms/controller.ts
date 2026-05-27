@@ -15,6 +15,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     super(new WebFormsRepo());
   }
 
+  public async getFormPublic(id: string) {
+    return this.getRepo().getByIdPublic(id);
+  }
+
   public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
     const row = {
       tenant_id: auth.tenant_id,

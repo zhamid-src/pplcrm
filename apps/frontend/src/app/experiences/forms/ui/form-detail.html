@@ -190,6 +190,21 @@
                   </div>
 
                   <div class="form-control">
+                    <label class="label text-xs font-semibold py-1 flex items-center justify-between">
+                      <span>Public Landing Page URL</span>
+                      <a [href]="formUrl()" target="_blank" class="text-xs text-primary hover:underline flex items-center gap-0.5">
+                        Open <pc-icon name="arrow-top-right-on-square" class="h-3 w-3"></pc-icon>
+                      </a>
+                    </label>
+                    <div class="flex gap-2">
+                      <input type="text" [value]="formUrl()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
+                      <button class="btn btn-sm btn-outline btn-primary" (click)="copyUrl()">
+                        <pc-icon name="document-duplicate" class="h-4 w-4"></pc-icon>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="form-control">
                     <label class="label text-xs font-semibold py-1">HTML Code</label>
                     <pre class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal">
 {{ embedSnippet() }}
