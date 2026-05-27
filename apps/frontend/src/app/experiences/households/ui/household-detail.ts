@@ -15,6 +15,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from 'common/src/lib/kysely.models';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 
 /**
  * Component for displaying and managing the details of a household.
@@ -28,6 +29,7 @@ import { Households, AddressType } from 'common/src/lib/kysely.models';
 export class HouseholdDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly householdsSvc = inject(HouseholdsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
   private readonly route = inject(ActivatedRoute);
 
   /** Whether a background operation is in progress */
@@ -41,6 +43,9 @@ export class HouseholdDetail implements OnInit {
 
   /** List of associated tag strings */
   protected tags: string[] = [];
+
+  /** List of associated issue strings */
+  protected issues: string[] = [];
 
   /** Flat payload backing signal for the form */
   protected readonly payload = signal({
@@ -184,18 +189,56 @@ export class HouseholdDetail implements OnInit {
    * Called when a tag is added in the UI
    * @param tag - The tag to attach to the household
    */
-  protected tagAdded(tag: string) {
+  protected async tagAdded(tag: string) {
     if (!this.id) return;
-    void this.householdsSvc.attachTag(this.id, tag);
+    try {
+      await this.householdsSvc.attachTag(this.id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
   }
 
   /**
    * Called when a tag is removed in the UI
    * @param tag - The tag to detach from the household
    */
-  protected tagRemoved(tag: string) {
+  protected async tagRemoved(tag: string) {
     if (!this.id) return;
-    void this.householdsSvc.detachTag(this.id, tag);
+    try {
+      await this.householdsSvc.detachTag(this.id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
+  }
+
+  /**
+   * Called when an issue is added in the UI
+   * @param issue - The issue to attach to the household
+   */
+  protected async issueAdded(issue: string) {
+    if (!this.id) return;
+    try {
+      await this.householdsSvc.attachTag(this.id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
+  }
+
+  /**
+   * Called when an issue is removed in the UI
+   * @param issue - The issue to detach from the household
+   */
+  protected async issueRemoved(issue: string) {
+    if (!this.id) return;
+    try {
+      await this.householdsSvc.detachTag(this.id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
   }
 
   /**
@@ -218,13 +261,14 @@ export class HouseholdDetail implements OnInit {
   }
 
   /**
-   * Loads tags associated with the current household
+   * Loads tags and issues associated with the current household
    */
   private async getTags() {
     if (!this.household || !this.id) {
       return;
     }
-    this.tags = await this.householdsSvc.getTags(this.id);
+    this.tags = await this.householdsSvc.getTags(this.id, 'tag');
+    this.issues = await this.householdsSvc.getTags(this.id, 'issue');
   }
 
   /**

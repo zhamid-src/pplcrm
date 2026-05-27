@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, input, output } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 
 import { TagItem } from './tagitem';
 import { TagPaletteService } from './tag-palette.service';
@@ -17,7 +18,7 @@ interface TagView {
       <pc-autocomplete
         (valueChange)="add($event)"
         [placeholder]="placeholder()"
-        [filterSvc]="enableAutoComplete() ? tagSvc : null"
+        [filterSvc]="enableAutoComplete() ? this : null"
       ></pc-autocomplete>
     }
     @let tagViews = displayTags();
@@ -25,7 +26,7 @@ interface TagView {
       <div class="my-1"></div>
       <div class="contents" [class.mt-2]="!readonly()">
         @if (!readonly()) {
-          <span class="font-light text-gray-400 mr-1 text-sm">Tags applied:</span>
+          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues applied:' : 'Tags applied:' }}</span>
         }
         @for (tag of tagViews; track tag.name) {
           <pc-tagitem
@@ -33,6 +34,7 @@ interface TagView {
             [name]="tag.name"
             [color]="tag.color"
             [canDelete]="canDelete()"
+            [isIssue]="type() === 'issue'"
             (click)="clicked(tag.name)"
             (close)="closed(tag.name)"
           ></pc-tagitem>
@@ -43,6 +45,7 @@ interface TagView {
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];
   private readonly paletteSvc = inject(TagPaletteService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
 
   /**
    * If the user adds a new tag then this event is emitted with the new tag.
@@ -92,6 +95,7 @@ export class Tags implements OnInit {
    * allows users to add more tags. The default is false.
    */
   public readonly = input<boolean>(false);
+  public readonly type = input<'tag' | 'issue'>('tag');
   public tagSvc = inject(TagsService);
   public tags = input<string[]>([]);
 
@@ -138,7 +142,7 @@ export class Tags implements OnInit {
     if (!key || key.length === 0) {
       return [];
     }
-    const names = (await this.tagSvc.findByName(key)) as { name: string }[];
+    const names = (await this.tagSvc.findByName(key, this.type())) as { name: string }[];
     return names.map((m) => m.name);
   }
 
@@ -167,6 +171,8 @@ export class Tags implements OnInit {
     if (index === -1) {
       this.tags().unshift(tagName);
       this.tagAdded.emit(tagName);
+      // Invalidate the options cache so the grid's inline dropdown reflects this new value
+      this.tagOptionsSvc.invalidate(this.type());
     } else {
       // Bring tag that maches to the front.
       const [tag] = this.tags().splice(index, 1); // remove it

@@ -66,6 +66,21 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
+        data: { shouldReuse: true, key: 'issuesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
     path: 'lists',
     children: [
       {

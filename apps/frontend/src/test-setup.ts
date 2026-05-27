@@ -1,4 +1,5 @@
 import '@angular/compiler';
+import '@angular/localize/init';
 import '@analogjs/vite-plugin-angular/setup-vitest';
 
 import { vi } from 'vitest';

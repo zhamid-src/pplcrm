@@ -93,8 +93,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param id - Person ID
    * @param tag_name - Tag to attach
    */
-  public attachTag(id: string, tag_name: string) {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name });
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
   }
 
   /**
@@ -131,8 +131,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param id - Person ID
    * @param tag_name - Tag to detach
    */
-  public detachTag(id: string, tag_name: string) {
-    return this.api.persons.detachTag.mutate({ id, tag_name }) as Promise<DetachTagResult>;
+  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type }) as Promise<DetachTagResult>;
   }
 
   /**
@@ -234,8 +234,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param id - Person ID
    * @returns Array of tag names
    */
-  public async getTags(id: string) {
-    const tags = await this.api.persons.getTags.query(id);
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
     return tags.map((tag: { name: string }) => tag.name);
   }
 

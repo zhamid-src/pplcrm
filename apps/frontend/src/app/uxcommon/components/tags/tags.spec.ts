@@ -98,7 +98,7 @@ describe('Tags Component', () => {
     fixture.detectChanges();
 
     const result = await component.filter('VI');
-    expect(mockTagsService.findByName).toHaveBeenCalledWith('VI');
+    expect(mockTagsService.findByName).toHaveBeenCalledWith('VI', 'tag');
     expect(result).toEqual(['VIP']);
   });
   

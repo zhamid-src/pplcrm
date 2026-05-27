@@ -108,7 +108,7 @@ describe('PersonDetail', () => {
 
     expect(component['id']).toBe('p1');
     expect(mockPersonsSvc.getById).toHaveBeenCalledWith('p1');
-    expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1');
+    expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'tag');
     expect(component['person']()?.first_name).toBe('John');
     expect(component['tags']()).toContain('volunteer');
     expect(component['payload']().first_name).toBe('John');
@@ -184,7 +184,7 @@ describe('PersonDetail', () => {
 
     expect(mockTeamsSvc.getTeamsForVolunteer).toHaveBeenCalledWith('p1');
     expect(mockConfirmDlg.confirm).toHaveBeenCalled();
-    expect(mockPersonsSvc.detachTag).toHaveBeenCalledWith('p1', 'volunteer');
+    expect(mockPersonsSvc.detachTag).toHaveBeenCalledWith('p1', 'volunteer', 'tag');
   });
 
   it('should assign new pending household if in new mode', async () => {

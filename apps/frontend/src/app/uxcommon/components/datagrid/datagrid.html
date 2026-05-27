@@ -302,6 +302,7 @@
             (isTagColumn(col) && tagList.length) {
             <pc-tags
               [tags]="tagList"
+              [type]="col.cellRendererParams?.tagType || 'tag'"
               [readonly]="true"
               [canDelete]="false"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"

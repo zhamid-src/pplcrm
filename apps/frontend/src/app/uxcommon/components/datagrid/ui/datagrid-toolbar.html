@@ -98,6 +98,67 @@
   </li>
   }
 
+  <!-- Issue Filter Dropdown -->
+  @if (grid.showIssueFilter()) {
+  <li class="dropdown dropdown-end">
+    <label
+      tabindex="0"
+      class="btn btn-ghost btn-sm relative"
+      [class.text-primary]="grid.selectedIssues().length > 0"
+      title="Filter by issues"
+    >
+      <pc-icon name="shield-exclamation"></pc-icon>
+      @if (grid.selectedIssues().length > 0) {
+      <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">{{ grid.selectedIssues().length }}</span>
+      }
+    </label>
+    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[2] w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2">
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>Filter by Issues</span>
+        @if (grid.selectedIssues().length > 0) {
+        <button class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]" (click)="grid.clearIssuesFilter()">Clear Filter</button>
+        }
+      </div>
+      <div>
+        <input
+          type="text"
+          placeholder="Search issues..."
+          class="input input-bordered input-xs w-full bg-base-100"
+          [value]="grid.issueSearchQuery()"
+          (input)="grid.issueSearchQuery.set($any($event.target).value)"
+        />
+      </div>
+
+      <div class="flex gap-2 text-[11px] text-primary px-1">
+        <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">Select all</button>
+        <span class="text-base-300">|</span>
+        <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">Clear</button>
+      </div>
+
+      <div class="border-t border-base-200 my-0.5"></div>
+
+      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
+        @if (grid.filteredAvailableIssues().length === 0) {
+        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No issues found</div>
+        } @else {
+          @for (issue of grid.filteredAvailableIssues(); track issue) {
+          <label class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-xs shrink-0"
+              [checked]="grid.selectedIssues().includes(issue)"
+              (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
+            />
+            <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="issue">{{ issue }}</span>
+          </label>
+          }
+        }
+      </div>
+    </div>
+
+  </li>
+  }
+
   <pc-grid-action
     icon="adjustments-horizontal"
     tip="Advanced Query Builder"

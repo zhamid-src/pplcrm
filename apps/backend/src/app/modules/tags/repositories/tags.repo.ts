@@ -1,7 +1,4 @@
-/**
- * Repository for tag records and their associations.
- */
-import { ReferenceExpression, SelectQueryBuilder, Transaction, sql } from 'kysely';
+import { ReferenceExpression, SelectQueryBuilder, Transaction, sql, Selectable } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models, OperationDataType, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
@@ -16,6 +13,49 @@ export class TagsRepo extends BaseRepository<'tags'> {
    */
   constructor() {
     super('tags');
+  }
+
+  /**
+   * Insert a tag or return an existing one based on name + type.
+   */
+  public override async addOrGet<K extends keyof Models['tags'] & string>(
+    input: {
+      row: OperationDataType<'tags', 'insert'>;
+      onConflictColumn: K;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<Selectable<Models['tags']> | undefined> {
+    const type = input.row.type ?? 'tag';
+    const insertResult = await this.getInsert(trx)
+      .values(input.row)
+      .onConflict((oc) => oc.columns(['tenant_id', 'name', 'type']).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) return insertResult as unknown as Selectable<Models['tags']>;
+
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.row.tenant_id)
+      .where('name', '=', input.row.name)
+      .where('type', '=', type)
+      .executeTakeFirst() as any;
+  }
+
+  public override getAll(
+    input: {
+      tenant_id: TypeTenantId<'tags'>;
+      options?: QueryParams<'tags'> & { type?: 'tag' | 'issue' };
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx);
+    query = query.where('tenant_id', '=', input.tenant_id);
+    const type = (input.options as any)?.type;
+    if (type) {
+      query = query.where('type', '=', type);
+    }
+    return query.execute();
   }
 
   /**
@@ -73,6 +113,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .select(['id', 'deletable', 'color'])
         .where('tenant_id', '=', input.tenant_id)
         .where('name', '=', seed.name)
+        .where('type', '=', 'tag')
         .executeTakeFirst();
 
       if (!existing) {
@@ -82,6 +123,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
           description: seed.description,
           color: seed.color ?? null,
           deletable: false,
+          type: 'tag',
           createdby_id: input.user_id,
           updatedby_id: input.user_id,
         } as OperationDataType<'tags', 'insert'>;
@@ -122,14 +164,15 @@ export class TagsRepo extends BaseRepository<'tags'> {
   public override async getAllWithCounts(
     input: {
       tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'>;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'> & { type?: 'tag' | 'issue' };
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams = input.options || {};
+    const options: JoinedQueryParams & { type?: 'tag' | 'issue' } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const type = options.type;
 
     // Pagination defaults
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
@@ -141,6 +184,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
         .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
         .where('tags.tenant_id', '=', tenantId)
+        .$if(!!type, (qb) => qb.where('tags.type', '=', type!))
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
           return qb.where(
@@ -178,10 +222,11 @@ export class TagsRepo extends BaseRepository<'tags'> {
         'tags.description',
         'tags.color',
         'tags.deletable',
+        'tags.type',
         fn.count('map_peoples_tags.person_id').as('use_count_people'),
         fn.count('map_households_tags.household_id').as('use_count_households'),
       ])
-      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable'])
+      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),
       )
@@ -200,14 +245,28 @@ export class TagsRepo extends BaseRepository<'tags'> {
    *
    * @param input.name - Tag name to match
    * @param input.tenant_id - Tenant scope
+   * @param input.type - Optional tag type
    * @param trx - Optional Kysely transaction
    * @returns Tag row containing only the `id`, or undefined if not found
    */
-  public getIdByName(input: { tenant_id: string; name: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
+  public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
+    let q = this.getSelect(trx)
       .select('id')
       .where('name', '=', input.name)
+      .where('tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('type', '=', input.type);
+    }
+    return q.executeTakeFirst();
+  }
+
+  public findByNameAndType(input: { tenant_id: string; name: string; type: 'tag' | 'issue' }, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .select(['name'])
       .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
+      .where('name', 'ilike', input.name + '%')
+      .where('type', '=', input.type)
+      .limit(3)
+      .execute();
   }
 }

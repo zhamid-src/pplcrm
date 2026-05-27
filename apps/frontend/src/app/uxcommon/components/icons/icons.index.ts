@@ -147,6 +147,7 @@ export const icons = {
   'reply-all': 'assets/icons/reply-all.svg',
   'restore-from-trash': 'assets/icons/restore-from-trash.svg',
   save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
   'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
   star: 'assets/icons/star.svg',
   'star-filled': 'assets/icons/star-filled.svg',

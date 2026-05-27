@@ -9,6 +9,7 @@ export class FetchController {
     archiveMode: boolean;
     searchText: string;
     limitToTags: string[];
+    limitToIssues?: string[];
     filterModel: Record<string, any>;
     sortState: Array<{ id: string; desc?: boolean }>;
     sortCol: string | null;
@@ -44,6 +45,7 @@ export class FetchController {
         startRow,
         endRow,
         tags: opts.limitToTags,
+        issues: opts.limitToIssues,
         filterModel: opts.filterModel,
         sortState: opts.sortState,
         sortCol: opts.sortCol,
@@ -75,6 +77,7 @@ export class FetchController {
     archiveMode: boolean;
     searchText: string;
     limitToTags: string[];
+    limitToIssues?: string[];
     advancedFilterModel?: any;
     gridSvc: {
       getAll(o: any): Promise<{ rows: any[]; count: number }>;
@@ -82,7 +85,12 @@ export class FetchController {
     };
     rowCanSelect?: ((row: any) => boolean) | null;
   }): Promise<{ ids: string[]; count: number }> {
-    const options: any = { searchStr: opts.searchText, tags: opts.limitToTags, advancedFilterModel: opts.advancedFilterModel };
+    const options: any = {
+      searchStr: opts.searchText,
+      tags: opts.limitToTags,
+      issues: opts.limitToIssues,
+      advancedFilterModel: opts.advancedFilterModel,
+    };
     const { rows } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
     const filteredRows = opts.rowCanSelect ? (rows ?? []).filter(opts.rowCanSelect) : (rows ?? []);
     const ids = filteredRows.map((r: any) => String(r.id)).filter(Boolean);

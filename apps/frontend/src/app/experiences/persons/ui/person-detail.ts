@@ -23,6 +23,7 @@ import { CompaniesService } from '../../companies/services/companies-service';
 import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
+import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 
 /**
  * Component for displaying and editing a single person's details.
@@ -44,6 +45,7 @@ export class PersonDetail implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
 
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
@@ -90,6 +92,7 @@ export class PersonDetail implements OnInit {
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
   protected tags = signal<string[]>([]);
+  protected issues = signal<string[]>([]);
 
   public readonly householdId = computed(
     () => (this.person()?.household_id ?? null) || this.pendingHouseholdId()
@@ -342,9 +345,14 @@ export class PersonDetail implements OnInit {
   }
 
   /** Attaches a tag to the person */
-  protected tagAdded(tag: string) {
+  protected async tagAdded(tag: string) {
     if (!this.id) return;
-    void this.personsSvc.attachTag(this.id, tag);
+    try {
+      await this.personsSvc.attachTag(this.id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
   }
 
   /** Detaches a tag from the person */
@@ -384,8 +392,9 @@ export class PersonDetail implements OnInit {
           }
         }
 
-        const result = await this.personsSvc.detachTag(this.id, tag);
+        const result = await this.personsSvc.detachTag(this.id, tag, 'tag');
         await this.updateTags();
+        await this.tagOptionsSvc.invalidate('tag');
         if (result?.removed_teams && result.removed_teams.length > 0) {
           const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
           this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
@@ -393,11 +402,40 @@ export class PersonDetail implements OnInit {
         return;
       }
 
-      await this.personsSvc.detachTag(this.id, tag);
+      await this.personsSvc.detachTag(this.id, tag, 'tag');
       await this.updateTags();
+      await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       this.alertSvc.showError(String(err));
       restoreTag();
+    }
+  }
+
+  /** Attaches an issue to the person */
+  protected async issueAdded(issue: string) {
+    if (!this.id) return;
+    try {
+      await this.personsSvc.attachTag(this.id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+    }
+  }
+
+  /** Detaches an issue from the person */
+  protected async issueRemoved(issue: string) {
+    if (!this.id) return;
+
+    const restoreIssue = () =>
+      this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
+
+    try {
+      await this.personsSvc.detachTag(this.id, issue, 'issue');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      this.alertSvc.showError(String(err));
+      restoreIssue();
     }
   }
 
@@ -424,6 +462,7 @@ export class PersonDetail implements OnInit {
           this.pendingHouseholdId.set(null);
           this.addressString.set(null);
           this.tags.set([]);
+          this.issues.set([]);
           this.form().reset();
         }
       })
@@ -569,13 +608,16 @@ export class PersonDetail implements OnInit {
   }
 
   /**
-   * Fetches tags associated with this person
+   * Fetches tags and issues associated with this person
    */
   private async updateTags() {
     if (!this.person()) return;
 
-    const tags = this.id ? await this.personsSvc.getTags(this.id) : [];
+    const tags = this.id ? await this.personsSvc.getTags(this.id, 'tag') : [];
     this.tags.set(tags);
+
+    const issues = this.id ? await this.personsSvc.getTags(this.id, 'issue') : [];
+    this.issues.set(issues);
   }
 
   private async loadVolunteerInfo() {

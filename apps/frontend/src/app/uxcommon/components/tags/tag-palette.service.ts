@@ -11,6 +11,7 @@ export class TagPaletteService {
 
   // Use Angular 22 resource to declaratively load tags
   private readonly tagsResource = resource({
+    params: () => (typeof this.tagsSvc?.refreshCount === 'function' ? this.tagsSvc.refreshCount() : 0),
     loader: async () => {
       try {
         if (typeof this.tagsSvc?.getAll === 'function') {
