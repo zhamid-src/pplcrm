@@ -13,6 +13,7 @@
           #searchInput
           type="text"
           placeholder="Search"
+          i18n-placeholder="@@navbar.search.placeholder"
           class="grow w-full"
           (blur)="onBlurSearchBar()"
           [value]="searchStr()"
@@ -38,6 +39,8 @@
       swapOffIcon="arrows-pointing-in"
       [checked]="!isFullScreenMode()"
       (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
     ></pc-swap>
 
     <!-- light / dark theme switcher -->
@@ -46,19 +49,21 @@
       swapOffIcon="moon"
       [checked]="themeSvc.getTheme() === 'light'"
       (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
     ></pc-swap>
 
     <!-- email sending status indicator -->
     @if (emailActions.sendingCount() > 0) {
       <div class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse">
         <span class="loading loading-spinner loading-xs text-primary"></span>
-        <span>Sending ({{ emailActions.sendingCount() }})...</span>
+        <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending">Sending ({{ emailActions.sendingCount() }})...</span>
       </div>
     }
 
     <!-- notifications drop down -->
     <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle relative" (click)="refresh()">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle relative" (click)="refresh()" aria-label="Notifications" i18n-aria-label="@@navbar.notifications.ariaLabel">
         <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
         @if (unreadCount() > 0) {
           <span class="badge badge-primary badge-xs absolute top-1.5 right-1.5 animate-pulse">
@@ -74,11 +79,12 @@
       >
         <div class="card-body p-0">
           <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3 class="font-semibold text-sm">Notifications</h3>
+            <h3 class="font-semibold text-sm" i18n="Navbar|Heading for notifications list@@navbar.notifications.heading">Notifications</h3>
             @if (unreadCount() > 0) {
               <button
                 class="text-xs text-primary hover:underline font-medium"
                 (click)="markAllAsRead($event)"
+                i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
               >
                 Mark all read
               </button>
@@ -89,7 +95,7 @@
             @if (notifications().length === 0) {
               <div class="flex flex-col items-center justify-center py-8 text-base-400">
                 <pc-icon name="bell" class="opacity-20 mb-2 w-6 h-6"></pc-icon>
-                <p class="text-xs font-light">All caught up!</p>
+                <p class="text-xs font-light" i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty">All caught up!</p>
               </div>
             } @else {
               @for (notif of notifications(); track notif.id) {
@@ -153,7 +159,7 @@
         <div
           class="bg-base-100 border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2"
         >
-          <img alt="User Profile Picture" src="assets/logo-sq.svg" class="p-1" />
+          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
         </div>
       </div>
 
@@ -163,13 +169,13 @@
         class="menu menu-md dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-44 cursor-pointer font-light shadow"
       >
         <li class="hover:text-primary">
-          <a> <pc-icon name="user-circle" /> Profile </a>
+          <a> <pc-icon name="user-circle"></pc-icon> <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container> </a>
         </li>
         <li class="hover:text-primary">
-          <a> <pc-icon name="cog-6-tooth" /> Settings </a>
+          <a> <pc-icon name="cog-6-tooth"></pc-icon> <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container> </a>
         </li>
         <li class="hover:text-primary" (click)="signOut()">
-          <a> <pc-icon name="arrow-left-start-on-rectangle" /> Sign out </a>
+          <a> <pc-icon name="arrow-left-start-on-rectangle"></pc-icon> <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container> </a>
         </li>
       </ul>
     </div>

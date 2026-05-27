@@ -3,27 +3,27 @@
   <progress class="progress h-1"></progress>
   } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span>All {{ displayedCount() }} rows on this page are selected.</span>
-    <a class="link hover:no-underline" (click)="selectAllMatching()">Select all {{ totalCountAll() }} rows</a>
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected">All {{ displayedCount() }} rows on this page are selected.</span>
+    <a class="link hover:no-underline" (click)="selectAllMatching()" i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching">Select all {{ totalCountAll() }} rows</a>
   </div>
   } @if (allSelected()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span>All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span>
-    <a class="link hover:no-underline" (click)="clearAllSelection()">Clear selection</a>
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected">All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span>
+    <a class="link hover:no-underline" (click)="clearAllSelection()" i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear">Clear selection</a>
   </div>
   }
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
     @if (isEmptyState() && !isFilteredEmpty()) {
     <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
-      <img class="max-w-52 opacity-70" src="assets/waiting.svg" alt="No results" />
-      <span class="text-base font-medium">Nothing here yet</span>
-      <span class="text-sm opacity-70">Add your first record using the + button above</span>
+      <img class="max-w-52 opacity-70" src="assets/waiting.svg" alt="No results" i18n-alt="@@datagrid.emptyState.imageAlt" />
+      <span class="text-base font-medium" i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading">Nothing here yet</span>
+      <span class="text-sm opacity-70" i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction">Add your first record using the + button above</span>
     </div>
     } @else if (isFilteredEmpty()) {
     <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
       <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-      <span class="text-base font-medium">No results match your filters</span>
-      <span class="text-sm opacity-70">Try clearing or adjusting your filters</span>
+      <span class="text-base font-medium" i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading">No results match your filters</span>
+      <span class="text-sm opacity-70" i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction">Try clearing or adjusting your filters</span>
     </div>
     }
     <table #gridTable class="table w-full">
@@ -69,6 +69,7 @@
                   [class.btn-ghost]="!isColFiltered(h.column.id)"
                   [class.btn-primary]="isColFiltered(h.column.id)"
                   title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
                 >
                   <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
                 </label>
@@ -76,7 +77,7 @@
                   @let col = getColDefById(h.column.id);
                   <li class="dropdown dropdown-right">
                     <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Filter</span><span>▸</span></label
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span><span>▸</span></label
                     >
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
                       @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
@@ -93,46 +94,47 @@
                         </label>
                       </li>
                       }
-                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)" i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter">Clear</a></li>
                       } @else {
                       <li class="px-2 py-1">
                         <input
                           class="input input-bordered input-xs w-full"
                           type="text"
                           placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
                           [value]="getFilterValue(h.column.id)"
                           (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
                         />
                       </li>
-                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)">Clear</a></li>
+                      <li class="px-2 pt-1"><a (click)="clearHeaderFilter(h.column.id)" i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter">Clear</a></li>
                       }
                     </ul>
                   </li>
                   <li class="dropdown dropdown-right">
                     <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Sort</span><span>▸</span></label
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span><span>▸</span></label
                     >
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li><a (click)="sortAsc(h)">Sort asc</a></li>
-                      <li><a (click)="sortDesc(h)">Sort desc</a></li>
-                      <li><a (click)="clearSort(h)">Clear sort</a></li>
+                      <li><a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc">Sort asc</a></li>
+                      <li><a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc">Sort desc</a></li>
+                      <li><a (click)="clearSort(h)" i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort">Clear sort</a></li>
                     </ul>
                   </li>
                   <li class="dropdown dropdown-right">
                     <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span>Column</span><span>▸</span></label
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel">Column</span><span>▸</span></label
                     >
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      <li><a (click)="hideColumn(h)">Hide</a></li>
+                      <li><a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide">Hide</a></li>
                       <li class="dropdown dropdown-right">
                         <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span>Columns</span><span>▸</span></label
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel">Columns</span><span>▸</span></label
                         >
                         <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
                           @for (cid of hiddenColumns(); track cid) {
-                          <li><a (click)="showColumnById(cid)">Show {{ columnLabelFor(cid) }}</a></li>
+                          <li><a (click)="showColumnById(cid)"><ng-container i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix">Show</ng-container> {{ columnLabelFor(cid) }}</a></li>
                           } @if (!hiddenColumns().length) {
-                          <li class="opacity-60 px-2 py-1">None hidden</li>
+                          <li class="opacity-60 px-2 py-1" i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden">None hidden</li>
                           }
                         </ul>
                       </li>
@@ -143,6 +145,7 @@
               <span
                 class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
                 title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
                 [pcHeaderResize]="headerResizeConfig(h)"
               ></span>
             </div>
@@ -178,7 +181,7 @@
               />
               }
               @let rowId = toId(r.original); @if (!disableView() && rowId) {
-              <span title="Open detail" aria-label="Open detail" (click)="openEdit(rowId); $event.stopPropagation();">
+              <span title="Open detail" i18n-title="@@datagrid.rows.openDetailTitle" aria-label="Open detail" i18n-aria-label="@@datagrid.rows.openDetailAriaLabel" (click)="openEdit(rowId); $event.stopPropagation();">
                 <pc-icon
                   name="arrow-top-right-on-square"
                   class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
@@ -224,6 +227,7 @@
                   type="text"
                   class="input input-bordered input-xs w-full"
                   placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
                   [ngModel]="tagSearch()"
                   (ngModelChange)="tagSearch.set($event)"
                   autofocus
@@ -243,7 +247,11 @@
                 </label>
                 } @if (!filteredTagChoices(col).length) {
                 <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  {{ tagSearch() ? 'No tags match "' + tagSearch() + '"' : 'No tags available' }}
+                  @if (tagSearch()) {
+                    <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch">No tags match "{{ tagSearch() }}"</ng-container>
+                  } @else {
+                    <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags">No tags available</ng-container>
+                  }
                 </div>
                 }
               </div>
@@ -252,6 +260,7 @@
                 <button
                   class="btn btn-primary btn-xs"
                   (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
                 >Done</button>
               </div>
             </div>
@@ -325,7 +334,7 @@
   </div>
   <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
     <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap">Page Size:</span>
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize">Page Size:</span>
       <select
         class="select select-bordered select-xs"
         [ngModel]="pageSize()"
@@ -338,7 +347,7 @@
         }
       </select>
     </div>
-    <div class="whitespace-nowrap">
+    <div class="whitespace-nowrap" i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range">
       <span class="font-normal">{{ displayStartIndex() }}</span> to
       <span class="font-normal">{{ displayEndIndex() }}</span> of
       <span class="font-normal">{{ totalCountAll() }}</span>
@@ -347,6 +356,7 @@
       <button
         class="btn btn-sm font-light join-item btn-ghost"
         title="First"
+        i18n-title="@@datagrid.pagination.firstTitle"
         [disabled]="!canPrev()"
         (click)="firstPage()"
       >
@@ -355,18 +365,20 @@
       <button
         class="btn btn-sm font-light join-item btn-ghost"
         title="Prev"
+        i18n-title="@@datagrid.pagination.prevTitle"
         [disabled]="!canPrev()"
         (click)="prevPage()"
       >
         <pc-icon name="chevron-left" [size]="4"></pc-icon>
       </button>
-      <button class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap">
+      <button class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap" i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage">
         Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
         <span class="font-normal">{{ totalPages() }}</span>
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
         title="Next"
+        i18n-title="@@datagrid.pagination.nextTitle"
         [disabled]="!canNext()"
         (click)="nextPage()"
       >
@@ -375,6 +387,7 @@
       <button
         class="btn btn-sm font-light join-item btn-ghost"
         title="Last"
+        i18n-title="@@datagrid.pagination.lastTitle"
         [disabled]="!canNext()"
         (click)="lastPage()"
       >
@@ -412,11 +425,11 @@
       <div>
         <h3 class="font-bold text-lg text-primary flex items-center gap-2">
           <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          Advanced Filter Builder
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading">Advanced Filter Builder</ng-container>
         </h3>
-        <p class="text-xs text-neutral-400 mt-1">Build complex matching rules with custom operators and conjunction logic.</p>
+        <p class="text-xs text-neutral-400 mt-1" i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description">Build complex matching rules with custom operators and conjunction logic.</p>
       </div>
-      <button class="btn btn-ghost btn-circle btn-sm" (click)="showAdvancedFilterBuilder.set(false)">
+      <button class="btn btn-ghost btn-circle btn-sm" (click)="showAdvancedFilterBuilder.set(false)" aria-label="Close modal" i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel">
         <pc-icon name="x-mark" [size]="4"></pc-icon>
       </button>
     </div>
@@ -425,7 +438,7 @@
     <div class="flex-1 overflow-y-auto py-6 space-y-4">
       <!-- Conjunction Selector -->
       <div class="flex items-center gap-3 bg-base-200/50 p-3 rounded-lg border border-base-200">
-        <span class="text-sm font-semibold">Match rules using:</span>
+        <span class="text-sm font-semibold" i18n="Datagrid|Conjunction selection prompt@@datagrid.advancedFilter.matchRulesPrompt">Match rules using:</span>
         <div class="join">
           <button
             class="btn btn-xs join-item"
@@ -433,7 +446,7 @@
             [class.btn-neutral]="advConjunction() !== 'AND'"
             (click)="advConjunction.set('AND')"
           >
-            AND (All)
+            <ng-container i18n="Datagrid|Conjunction rule AND (All)@@datagrid.advancedFilter.andLabel">AND (All)</ng-container>
           </button>
           <button
             class="btn btn-xs join-item"
@@ -441,7 +454,7 @@
             [class.btn-neutral]="advConjunction() !== 'OR'"
             (click)="advConjunction.set('OR')"
           >
-            OR (Any)
+            <ng-container i18n="Datagrid|Conjunction rule OR (Any)@@datagrid.advancedFilter.orLabel">OR (Any)</ng-container>
           </button>
         </div>
       </div>
@@ -474,12 +487,12 @@
               [value]="rule.op"
               (change)="updateAdvRule(rule.id, { op: $any($event.target).value })"
             >
-              <option value="contains">contains</option>
-              <option value="notContains">does not contain</option>
-              <option value="equals">equals</option>
-              <option value="notEquals">does not equal</option>
-              <option value="startsWith">starts with</option>
-              <option value="endsWith">ends with</option>
+              <option value="contains" i18n="Datagrid|Operator for containing substring@@datagrid.advancedFilter.op.contains">contains</option>
+              <option value="notContains" i18n="Datagrid|Operator for not containing substring@@datagrid.advancedFilter.op.notContains">does not contain</option>
+              <option value="equals" i18n="Datagrid|Operator for exact match@@datagrid.advancedFilter.op.equals">equals</option>
+              <option value="notEquals" i18n="Datagrid|Operator for not matching exactly@@datagrid.advancedFilter.op.notEquals">does not equal</option>
+              <option value="startsWith" i18n="Datagrid|Operator for starting with prefix@@datagrid.advancedFilter.op.startsWith">starts with</option>
+              <option value="endsWith" i18n="Datagrid|Operator for ending with suffix@@datagrid.advancedFilter.op.endsWith">ends with</option>
             </select>
           </div>
 
@@ -488,6 +501,7 @@
             <input
               type="text"
               placeholder="Enter value..."
+              i18n-placeholder="@@datagrid.advancedFilter.valuePlaceholder"
               class="input input-bordered input-sm w-full bg-base-100"
               [value]="rule.value"
               (input)="updateAdvRule(rule.id, { value: $any($event.target).value })"
@@ -498,6 +512,7 @@
           <button
             class="btn btn-ghost btn-circle btn-sm text-error hover:bg-error/10 shrink-0"
             title="Delete rule"
+            i18n-title="@@datagrid.advancedFilter.deleteRuleTitle"
             (click)="removeAdvRule(rule.id)"
           >
             <pc-icon name="trash" [size]="4"></pc-icon>
@@ -509,20 +524,20 @@
       <!-- Add Rule Button -->
       <button class="btn btn-outline btn-xs gap-1" (click)="addAdvRule()">
         <pc-icon name="plus" [size]="3"></pc-icon>
-        Add Condition
+        <ng-container i18n="Datagrid|Button label to add a new filter rule/condition@@datagrid.advancedFilter.addCondition">Add Condition</ng-container>
       </button>
     </div>
 
     <!-- Modal Footer Actions -->
     <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button class="btn btn-outline btn-error btn-sm" (click)="clearAdvancedFilter()">
+      <button class="btn btn-outline btn-error btn-sm" (click)="clearAdvancedFilter()" i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear">
         Clear Filters
       </button>
       <div class="flex gap-2">
-        <button class="btn btn-ghost btn-sm" (click)="showAdvancedFilterBuilder.set(false)">
+        <button class="btn btn-ghost btn-sm" (click)="showAdvancedFilterBuilder.set(false)" i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel">
           Cancel
         </button>
-        <button class="btn btn-primary btn-sm px-6" (click)="applyAdvancedFilter()">
+        <button class="btn btn-primary btn-sm px-6" (click)="applyAdvancedFilter()" i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply">
           Apply
         </button>
       </div>
