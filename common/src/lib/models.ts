@@ -32,6 +32,12 @@ import type {
   InviteAuthUserObj,
   UpdateAuthUserObj,
   ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
 } from './schema';
 
 /**
@@ -106,3 +112,12 @@ export type TasksType = z.infer<typeof TasksObj>;
 export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
 export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
 export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+

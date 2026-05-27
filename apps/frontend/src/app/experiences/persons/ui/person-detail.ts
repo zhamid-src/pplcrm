@@ -22,6 +22,7 @@ import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
+import { VolunteerService } from '../../../services/api/volunteer-service';
 
 /**
  * Component for displaying and editing a single person's details.
@@ -42,6 +43,7 @@ export class PersonDetail implements OnInit {
   private readonly companiesSvc = inject(CompaniesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly volunteerSvc = inject(VolunteerService);
 
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
@@ -66,6 +68,8 @@ export class PersonDetail implements OnInit {
   protected readonly person = signal<Persons | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly companies = signal<any[]>([]);
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
 
   /** Backing payload signal for person data */
   protected readonly payload = signal({
@@ -507,6 +511,7 @@ export class PersonDetail implements OnInit {
       this.person.set((await this.personsSvc.getById(this.id)) as Persons);
 
       await this.updateTags();
+      await this.loadVolunteerInfo();
 
       this.refreshForm();
     } finally {
@@ -571,5 +576,17 @@ export class PersonDetail implements OnInit {
 
     const tags = this.id ? await this.personsSvc.getTags(this.id) : [];
     this.tags.set(tags);
+  }
+
+  private async loadVolunteerInfo() {
+    if (!this.id) return;
+    try {
+      const stats = await this.volunteerSvc.getVolunteerStats(this.id);
+      this.volunteerStats.set(stats);
+      const history = await this.volunteerSvc.getHistoryForPerson(this.id);
+      this.volunteerHistory.set(history || []);
+    } catch (err) {
+      console.error('Failed to load volunteer info', err);
+    }
   }
 }

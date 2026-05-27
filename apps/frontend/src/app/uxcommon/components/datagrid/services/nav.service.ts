@@ -4,7 +4,13 @@ import type { ActivatedRoute, Router } from '@angular/router';
 @Injectable({ providedIn: 'root' })
 export class DataGridNavService {
   navigateIfValid(router: Router, route: ActivatedRoute, path: string | null | undefined): void {
-    if (path) router.navigate([path], { relativeTo: route });
+    if (path) {
+      if (path.startsWith('/')) {
+        router.navigate([path]);
+      } else {
+        router.navigate([path], { relativeTo: route });
+      }
+    }
   }
 
   viewIfAllowed(args: {

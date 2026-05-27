@@ -41,6 +41,12 @@ export type {
   ExportCsvInputType,
   ExportCsvResponseType,
   ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
 } from './lib/models';
 
 export {
@@ -78,6 +84,12 @@ export {
   phoneSchema,
   notesSchema,
   jsonSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

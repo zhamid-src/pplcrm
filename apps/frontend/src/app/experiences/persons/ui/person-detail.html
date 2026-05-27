@@ -55,8 +55,8 @@
 
             <div class="stat">
               <div class="stat-title">Volunteered</div>
-              <div class="stat-value">0</div>
-              <div class="stat-desc">↗︎ 400 (22%)</div>
+              <div class="stat-value">{{ volunteerStats()?.shifts_count || 0 }} shifts</div>
+              <div class="stat-desc">{{ volunteerStats()?.total_hours || 0.0 }} hours total</div>
             </div>
 
             <div class="stat">
@@ -144,6 +144,38 @@
         @if (householdId()) {
         <div class="divider mb-1">OTHERS IN HOUSEHOLD</div>
         <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="getId()"></pc-people-in-household>
+        }
+
+        @if (volunteerHistory().length > 0) {
+        <div class="divider mb-1">VOLUNTEER HISTORY</div>
+        <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-4 shadow-sm">
+          <table class="table table-sm w-full text-xs">
+            <thead>
+              <tr class="bg-base-200">
+                <th>Event Name</th>
+                <th>Date & Time</th>
+                <th>Status</th>
+                <th>Hours</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (shift of volunteerHistory(); track shift.id) {
+              <tr class="hover:bg-base-200/50">
+                <td class="font-semibold">{{ shift.event_name }}</td>
+                <td>{{ shift.start_time | date:'medium' }}</td>
+                <td>
+                  <span class="badge badge-sm" [class.badge-success]="shift.status === 'attended'" [class.badge-warning]="shift.status === 'signed_up'" [class.badge-error]="shift.status === 'no_show'">
+                    {{ shift.status }}
+                  </span>
+                </td>
+                <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                <td>{{ shift.notes || '--' }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
         }
 
         <pc-add-btn-row

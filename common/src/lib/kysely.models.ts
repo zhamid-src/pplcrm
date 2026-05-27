@@ -66,6 +66,8 @@ export interface Models {
   companies: Companies;
   files: Files;
   notifications: Notifications;
+  volunteer_events: VolunteerEvents;
+  volunteer_shifts: VolunteerShifts;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -502,6 +504,23 @@ export interface Notifications {
   link: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface VolunteerEvents extends RecordType {
+  name: string;
+  description: string | null;
+  location_address: string | null;
+  start_time: Timestamp;
+  end_time: Timestamp;
+  capacity: number | null;
+}
+
+export interface VolunteerShifts extends RecordType {
+  event_id: string;
+  person_id: string;
+  status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
+  hours_worked: number | null;
+  notes: string | null;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
