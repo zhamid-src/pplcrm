@@ -47,6 +47,37 @@ export function parseAddress(place: google.maps.places.PlaceResult): AddressType
 }
 
 /**
+ * Parses a modern Google Maps Place object into a custom AddressType.
+ *
+ * @param place - The modern Place object returned from the Google Places API.
+ * @returns An AddressType object with mapped fields.
+ */
+export function parsePlace(place: google.maps.places.Place): AddressType {
+  const address: AddressType = {};
+
+  const addressComponents = place.addressComponents;
+  if (!addressComponents || addressComponents.length === 0) {
+    return address;
+  }
+
+  addressComponents.forEach((component: any) => {
+    for (const mapKey in googleAddressToAddressTypeMap) {
+      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
+      if (component.types && googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]) !== -1) {
+        (address[key] as string) = key === 'country' ? component.shortText : component.longText;
+      }
+    }
+  });
+
+  address.formatted_address = place.formattedAddress ?? undefined;
+  address.lat = place.location?.lat() ?? undefined;
+  address.lng = place.location?.lng() ?? undefined;
+  address.type = (place.types && place.types[0]) ?? undefined;
+
+  return address;
+}
+
+/**
  * Google Places returns multiple types of address components.
  * This map defines the priority of those types for each internal address field.
  */

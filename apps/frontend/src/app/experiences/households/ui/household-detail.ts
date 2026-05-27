@@ -1,7 +1,6 @@
 /**
  * @file Component for creating or editing households and managing their tags and members.
  */
-import { NgxGpAutocompleteModule, NgxGpAutocompleteOptions } from '@angular-magic/ngx-gp-autocomplete';
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute } from '@angular/router';
@@ -9,13 +8,13 @@ import { UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { HouseholdsService } from '../services/households-service';
-import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
-import { Households } from 'common/src/lib/kysely.models';
+import { Households, AddressType } from 'common/src/lib/kysely.models';
 
 /**
  * Component for displaying and managing the details of a household.
@@ -23,7 +22,7 @@ import { Households } from 'common/src/lib/kysely.models';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormField, NgxGpAutocompleteModule, Tags, AddBtnRow, PeopleInHousehold, Icon],
+  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, PeopleInHousehold, Icon],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
@@ -103,12 +102,6 @@ export class HouseholdDetail implements OnInit {
   protected id: string | null = null;
   protected isLoading = this._loading.visible;
 
-  /** Options for Google Places autocomplete (Canada, geocode) */
-  protected options: NgxGpAutocompleteOptions = {
-    componentRestrictions: { country: ['CA'] },
-    types: ['geocode'],
-  };
-
   /** Count of people linked to the household */
   protected peopleInHouseholdCount = signal(0);
 
@@ -117,17 +110,15 @@ export class HouseholdDetail implements OnInit {
 
   /**
    * Handles address selection and parses Google Places data into form.
-   * @param place - Google PlaceResult object from address input
+   * @param address - AddressType object from autocomplete component
    */
-  public handleAddressChange(place: google.maps.places.PlaceResult) {
+  public handleAddressChange(address: AddressType) {
     const end = this._loading.begin();
     try {
-      if (!place?.address_components?.length) {
+      if (!address || !address.street1) {
         this.alertSvc.showError('Please select the correct address from the list or leave it blank');
         return;
       }
-      // Save the address by creating the household or updating
-      const address = parseAddress(place);
       this.payload.update((prev) => ({ ...prev, ...address }));
       this.form.street1().markAsDirty();
       this.addressVerified = true;
