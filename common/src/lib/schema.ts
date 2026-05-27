@@ -9,4 +9,5 @@ export * from './schemas/persons.schema';
 export * from './schemas/settings.schema';
 export * from './schemas/tasks.schema';
 export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
 

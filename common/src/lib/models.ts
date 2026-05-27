@@ -38,6 +38,9 @@ import type {
   AddVolunteerShiftObj,
   VolunteerShiftsObj,
   UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
 } from './schema';
 
 /**
@@ -120,4 +123,8 @@ export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
 export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
 export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
 export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
 

@@ -207,6 +207,24 @@ export const dashboardRoutes: Routes = [
     ],
   },
   {
+    path: 'forms',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
+        data: { shouldReuse: true, key: 'formsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/forms/ui/form-detail').then((m) => m.FormDetailComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-detail').then((m) => m.FormDetailComponent),
+      },
+    ],
+  },
+  {
     path: 'settings',
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
