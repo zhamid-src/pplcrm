@@ -14,6 +14,7 @@
     "@angular-magic/ngx-gp-autocomplete": "^2.0.2",
     "@angular/common": "22.0.0-next.11",
     "@angular/forms": "22.0.0-next.11",
+    "@angular/localize": "^22.0.0-next.11",
     "@angular/platform-browser": "22.0.0-next.11",
     "@angular/platform-browser-dynamic": "22.0.0-next.11",
     "@angular/router": "22.0.0-next.11",

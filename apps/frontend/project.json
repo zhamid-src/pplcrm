@@ -16,7 +16,8 @@
         "tsConfig": "apps/frontend/tsconfig.app.json",
         "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
         "styles": ["apps/frontend/src/styles.css"],
-        "scripts": []
+        "scripts": [],
+        "polyfills": ["@angular/localize/init"]
       },
       "configurations": {
         "production": {

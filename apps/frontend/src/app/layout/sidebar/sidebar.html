@@ -12,14 +12,14 @@
     [class.hidden]="!this.isDrawerFull()"
     class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
   >
-    <img src="../../assets/logo.svg" />
+    <img src="../../assets/logo.svg" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
   </div>
 
   <div
     [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
     class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
   >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" />
+    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
   </div>
 
   <!-- Sidebar Items -->
@@ -44,6 +44,8 @@
         [size]="4"
         [checked]="isCollapsed(item.name)"
         (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
       ></pc-swap>
 
       }
@@ -98,6 +100,8 @@
       [checked]="isDrawerFull()"
       animation="flip"
       (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
     ></pc-swap>
   </div>
 </div>
