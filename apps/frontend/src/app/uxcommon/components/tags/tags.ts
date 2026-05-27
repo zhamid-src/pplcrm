@@ -26,7 +26,7 @@ interface TagView {
       <div class="my-1"></div>
       <div class="contents" [class.mt-2]="!readonly()">
         @if (!readonly()) {
-          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues applied:' : 'Tags applied:' }}</span>
+          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues:' : 'Tags:' }}</span>
         }
         @for (tag of tagViews; track tag.name) {
           <pc-tagitem
