@@ -7,6 +7,7 @@ import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TagsService } from '../../tags/services/tags-service';
 import { HouseholdDetail } from './household-detail';
+import { AddressType } from 'common/src/lib/kysely.models';
 
 const mockHouseholdData = {
   id: '123',
@@ -96,23 +97,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
 };
 
 describe('HouseholdDetail', () => {
-  beforeAll(() => {
-    // Mock Google Maps API to prevent ngx-gp-autocomplete errors during instantiation
-    (globalThis as any).google = {
-      maps: {
-        places: {
-          Autocomplete: function () {
-            return {
-              addListener: vi.fn().mockReturnValue({
-                remove: vi.fn(),
-              }),
-              getPlace: vi.fn(),
-            };
-          },
-        },
-      },
-    };
-  });
+  // Loader mock handles loading. No google.maps.places.Autocomplete mock needed.
 
   describe('new mode', () => {
     beforeEach(async () => {
@@ -217,20 +202,19 @@ describe('HouseholdDetail', () => {
       await component.ngOnInit();
       fixture.detectChanges();
 
-      const mockPlace: any = {
-        address_components: [
-          { long_name: '100', short_name: '100', types: ['street_number'] },
-          { long_name: 'Robson St', short_name: 'Robson St', types: ['route'] },
-          { long_name: 'Vancouver', short_name: 'Vancouver', types: ['locality'] },
-          { long_name: 'BC', short_name: 'BC', types: ['administrative_area_level_1'] },
-          { long_name: 'Canada', short_name: 'CA', types: ['country'] },
-        ],
+      const mockAddress: AddressType = {
+        street_num: '100',
+        street1: 'Robson St',
+        city: 'Vancouver',
+        state: 'BC',
+        country: 'CA',
+        lat: 49.282,
+        lng: -123.12,
         formatted_address: '100 Robson St, Vancouver, BC, Canada',
-        geometry: { location: { lat: () => 49.282, lng: () => -123.12 } },
-        types: ['street_address'],
+        type: 'street_address',
       };
 
-      component.handleAddressChange(mockPlace);
+      component.handleAddressChange(mockAddress);
       fixture.detectChanges();
 
       const payload = component['payload']();
