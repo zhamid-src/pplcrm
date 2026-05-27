@@ -68,6 +68,7 @@ export interface Models {
   notifications: Notifications;
   volunteer_events: VolunteerEvents;
   volunteer_shifts: VolunteerShifts;
+  web_forms: WebForms;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -356,6 +357,15 @@ interface Newsletters extends RecordType {
   plain_text_content: string | null;
   top_links: Json | null;
   attachments: Json | null;
+}
+
+interface WebForms extends RecordType {
+  name: string;
+  description: string | null;
+  redirect_url: string | null;
+  target_tags: Json | null;
+  target_lists: Json | null;
+  status: 'active' | 'archived';
 }
 
 interface EmailComments extends RecordType {

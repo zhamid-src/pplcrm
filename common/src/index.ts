@@ -47,6 +47,9 @@ export type {
   AddVolunteerShiftType,
   VolunteerShiftsType,
   UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
 } from './lib/models';
 
 export {
@@ -90,6 +93,9 @@ export {
   AddVolunteerShiftObj,
   VolunteerShiftsObj,
   UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';
