@@ -22,8 +22,21 @@ describe('DataGridToolbarComponent', () => {
       toggleArchiveModePublic: vi.fn(),
       toggleColPublic: vi.fn(),
       filter: vi.fn(),
-      undo: vi.fn()
+      undo: vi.fn(),
+      // Tag filter mocks
+      showTagFilter: vi.fn().mockReturnValue(false),
+      selectedTags: vi.fn().mockReturnValue([]),
+      clearTagsFilter: vi.fn(),
+      tagSearchQuery: vi.fn().mockReturnValue(''),
+      filteredAvailableTags: vi.fn().mockReturnValue([]),
+      selectAllTags: vi.fn(),
+      clearAllTagsVisible: vi.fn(),
+      toggleTagFilter: vi.fn(),
+      // Columns mocks
+      getColDefsForToolbar: vi.fn().mockReturnValue([]),
+      getColVisibilityMap: vi.fn().mockReturnValue({})
     };
+
 
     await TestBed.configureTestingModule({
       imports: [DataGridToolbarComponent],

@@ -396,6 +396,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.doRefresh();
   }
 
+  public selectAllTags() {
+    const visible = this.filteredAvailableTags();
+    const current = new Set(this.selectedTags());
+    for (const tag of visible) {
+      current.add(tag);
+    }
+    this.selectedTags.set(Array.from(current));
+    this.doRefresh();
+  }
+
+  public clearAllTagsVisible() {
+    const visible = this.filteredAvailableTags();
+    const visibleSet = new Set(visible);
+    const next = this.selectedTags().filter((tag) => !visibleSet.has(tag));
+    this.selectedTags.set(next);
+    this.doRefresh();
+  }
+
   // Advanced Filter Builder State
   public readonly showAdvancedFilterBuilder = signal<boolean>(false);
   public readonly advConjunction = signal<'AND' | 'OR'>('AND');
