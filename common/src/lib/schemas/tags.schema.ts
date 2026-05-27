@@ -10,6 +10,7 @@ export const AddTagObj = z.object({
     .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
     .nullable()
     .optional(),
+  type: z.enum(['tag', 'issue']).default('tag').optional(),
 });
 
 export const UpdateTagObj = z.object({
@@ -21,4 +22,5 @@ export const UpdateTagObj = z.object({
     .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
     .nullable()
     .optional(),
+  type: z.enum(['tag', 'issue']).optional(),
 });

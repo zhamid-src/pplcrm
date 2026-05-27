@@ -44,7 +44,14 @@ function deleteTags() {
  * Find tags by partial or full name (autocomplete).
  */
 function findByName() {
-  return authProcedure.input(z.string().trim().max(100, 'Search term too long')).query(({ input, ctx }) => tags.findByName(input, ctx.auth));
+  return authProcedure
+    .input(
+      z.object({
+        name: z.string().trim().max(100, 'Search term too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      })
+    )
+    .query(({ input, ctx }) => tags.findByName(input, ctx.auth));
 }
 
 /**

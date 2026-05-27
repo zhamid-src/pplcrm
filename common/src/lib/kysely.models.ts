@@ -293,6 +293,7 @@ export interface Tags extends RecordType {
   description: string | null;
   color: string | null;
   deletable: boolean;
+  type: Generated<'tag' | 'issue'>;
 }
 
 export interface Tasks extends RecordType {

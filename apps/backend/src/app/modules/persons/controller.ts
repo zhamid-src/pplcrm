@@ -56,15 +56,15 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   /**
    * Get all distinct tags assigned to any person in the tenant.
    */
-  public getDistinctTags(auth: IAuthKeyPayload) {
-    return this.getRepo().getDistinctTags(auth.tenant_id);
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }
 
   /**
    * Get all tags associated with a specific person.
    */
-  public getTags(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id });
+  public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
   }
 
   /** Override deleteMany to clear dependent mappings before deleting persons */

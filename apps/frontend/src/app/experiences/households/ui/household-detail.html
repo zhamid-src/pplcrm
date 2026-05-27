@@ -95,11 +95,23 @@
         <div class="divider mb-1">ADDITIONAL</div>
         <pc-tags
           [tags]="tags"
+          type="tag"
           [enableAutoComplete]="true"
           [readonly]="household()?.is_placeholder ?? false"
           [canDelete]="!(household()?.is_placeholder ?? false)"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"
+        ></pc-tags>
+
+        <pc-tags
+          [tags]="issues"
+          type="issue"
+          [enableAutoComplete]="true"
+          placeholder="Enter issues, separated by comma"
+          [readonly]="household()?.is_placeholder ?? false"
+          [canDelete]="!(household()?.is_placeholder ?? false)"
+          (tagAdded)="issueAdded($event)"
+          (tagRemoved)="issueRemoved($event)"
         ></pc-tags>
 
         <label class="form-control">

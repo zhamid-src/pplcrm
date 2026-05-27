@@ -163,7 +163,7 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param auth - Auth context
    * @returns The result of the map insertion
    */
-  public async attachTag(household_id: string, name: string, auth: IAuthKeyPayload) {
+  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
     const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
     if (placeholders.has(household_id)) {
       throw new TRPCError({
@@ -177,6 +177,7 @@ export class HouseholdsController extends BaseController<'households', Household
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
+      type,
     };
 
     const tag = await this.tagsRepo.addOrGet({
@@ -200,7 +201,7 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param household_id - Household ID
    * @param tag_name - Name of the tag to remove
    */
-  public async detachTag(tenant_id: string, household_id: string, tag_name: string) {
+  public async detachTag(tenant_id: string, household_id: string, tag_name: string, type: 'tag' | 'issue' = 'tag') {
     const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
     if (placeholders.has(household_id)) {
       throw new TRPCError({
@@ -209,7 +210,7 @@ export class HouseholdsController extends BaseController<'households', Household
       });
     }
 
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name });
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
     if (tag?.id) {
       const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id);
       if (mapId) {
@@ -246,8 +247,8 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param auth - Auth context
    * @returns List of unique tag names
    */
-  public getDistinctTags(auth: IAuthKeyPayload) {
-    return this.getRepo().getDistinctTags(auth.tenant_id);
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }
 
   /**
@@ -257,8 +258,8 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param auth - Auth context
    * @returns List of tags for the household
    */
-  public getTags(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTags(id, auth.tenant_id);
+  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags(id, auth.tenant_id, type);
   }
 
   public override async exportCsv(

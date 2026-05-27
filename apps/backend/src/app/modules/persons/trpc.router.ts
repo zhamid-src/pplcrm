@@ -18,8 +18,14 @@ function add() {
 
 function attachTag() {
   return authProcedure
-    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(wrapTrpc(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, ctx.auth)));
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      })
+    )
+    .mutation(wrapTrpc(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)));
 }
 
 function count() {
@@ -38,12 +44,19 @@ function deleteOne() {
 
 function detachTag() {
   return authProcedure
-    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      })
+    )
     .mutation(wrapTrpc(({ input, ctx }) =>
       personsService.detachTag({
         tenant_id: ctx.auth.tenant_id,
         person_id: input.id,
         name: input.tag_name,
+        type: input.type ?? 'tag',
       }),
     ));
 }
@@ -76,7 +89,9 @@ function getById() {
 
 // Distinct tags
 function getDistinctTags() {
-  return authProcedure.query(wrapTrpc(({ ctx }) => persons.getDistinctTags(ctx.auth)));
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(wrapTrpc(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input)));
 }
 
 function exportCsv() {
@@ -89,7 +104,13 @@ function exportCsv() {
 }
 
 function getTags() {
-  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => persons.getTags(input, ctx.auth)));
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(wrapTrpc(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    }));
 }
 
 function update() {

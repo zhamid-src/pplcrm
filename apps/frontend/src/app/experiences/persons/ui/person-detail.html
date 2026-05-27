@@ -134,9 +134,19 @@
         }
         <pc-tags
           [tags]="tags()"
+          type="tag"
           [enableAutoComplete]="true"
           (tagAdded)="tagAdded($event)"
           (tagRemoved)="tagRemoved($event)"
+        ></pc-tags>
+
+        <pc-tags
+          [tags]="issues()"
+          type="issue"
+          [enableAutoComplete]="true"
+          placeholder="Enter issues, separated by comma"
+          (tagAdded)="issueAdded($event)"
+          (tagRemoved)="issueRemoved($event)"
         ></pc-tags>
 
         <textarea class="textarea textarea-bordered h-24 w-full" placeholder="Notes" [formField]="form.notes"></textarea>

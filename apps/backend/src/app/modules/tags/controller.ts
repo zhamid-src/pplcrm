@@ -28,6 +28,7 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
+      type: payload.type ?? 'tag',
     };
     try {
       return await this.add(row as OperationDataType<'tags', 'insert'>);
@@ -42,15 +43,16 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
   /**
    * Search for tags by name prefix. Returns up to 3 matches.
    *
-   * @param name - Name prefix to search for
+   * @param input - Contains name prefix and tag type
    * @param auth - Authenticated user's context
    * @returns Array of matching tags (up to 3)
    */
-  public async findByName(name: string, auth: IAuthKeyPayload) {
-    return this.find({
+  public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
+    const type = input.type ?? 'tag';
+    return this.getRepo().findByNameAndType({
       tenant_id: auth.tenant_id,
-      key: name,
-      column: 'name',
+      name: input.name,
+      type,
     });
   }
 

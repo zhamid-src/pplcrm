@@ -70,7 +70,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param tag_name - The name of the tag to attach
    * @returns Promise resolving when the tag is successfully attached
    */
-  public abstract attachTag(id: string, tag_name: string): Promise<unknown>;
+  public abstract attachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
 
   /**
    * Returns the total count of records in the table.
@@ -102,7 +102,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param tag_name - The name of the tag to detach
    * @returns Promise resolving to true if detachment was successful, never if operation fails
    */
-  public abstract detachTag(id: string, tag_name: string): Promise<boolean | Record<string, unknown>>;
+  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<boolean | Record<string, unknown>>;
 
   /**
    * Retrieves all records from the database with optional filtering and pagination.
@@ -166,7 +166,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * console.log('Record tags:', tags.join(', '));
    * ```
    */
-  public abstract getTags(id: string): Promise<string[]>;
+  public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
 
   /**
    * Updates an existing record with new data.

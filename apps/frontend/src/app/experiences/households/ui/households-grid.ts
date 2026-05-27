@@ -74,6 +74,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
   private readonly personsSvc = inject(PersonsService);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
   public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
 
@@ -155,6 +156,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
         type: 'households',
         obj: UpdateHouseholdsObj,
         service: this.gridSvc,
+        tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
       /**
@@ -178,6 +180,23 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
        */
       comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
     },
+    {
+      field: 'issues',
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.gridSvc,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+    },
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },
     { field: 'country', headerName: 'Country', editable: true },
@@ -197,14 +216,23 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
 
   public override async ngOnInit() {
     await this.loadTagOptions();
+    await this.loadIssueOptions();
     await super.ngOnInit();
   }
 
   private async loadTagOptions() {
     try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames();
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
     } catch {
       this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
     }
   }
 

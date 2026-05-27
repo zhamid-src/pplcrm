@@ -359,6 +359,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public rowCanSelect = input<(row: any) => boolean>(() => true);
   // gridOptions removed (unused)
   public limitToTags = input<string[]>([]);
+  public limitToIssues = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
 
@@ -367,6 +368,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly selectedTags = signal<string[]>([]);
   public readonly tagSearchQuery = signal<string>('');
 
+  public readonly allAvailableIssues = signal<string[]>([]);
+  public readonly selectedIssues = signal<string[]>([]);
+  public readonly issueSearchQuery = signal<string>('');
+
   public readonly filteredAvailableTags = computed(() => {
     const query = this.tagSearchQuery().toLowerCase().trim();
     const all = this.allAvailableTags();
@@ -374,9 +379,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return all.filter((tag) => tag.toLowerCase().includes(query));
   });
 
+  public readonly filteredAvailableIssues = computed(() => {
+    const query = this.issueSearchQuery().toLowerCase().trim();
+    const all = this.allAvailableIssues();
+    if (!query) return all;
+    return all.filter((issue) => issue.toLowerCase().includes(query));
+  });
+
   public readonly showTagFilter = computed(() => {
     const defs = this.colDefs();
     return defs.some(col => col.field === 'tags' || col.tagColumn === true);
+  });
+
+  public readonly showIssueFilter = computed(() => {
+    const defs = this.colDefs();
+    return defs.some(col => col.field === 'issues' || col.field === 'issue');
   });
 
   public toggleTagFilter(tag: string, checked: boolean) {
@@ -412,6 +429,42 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const visibleSet = new Set(visible);
     const next = this.selectedTags().filter((tag) => !visibleSet.has(tag));
     this.selectedTags.set(next);
+    this.doRefresh();
+  }
+
+  public toggleIssueFilter(issue: string, checked: boolean) {
+    const current = this.selectedIssues();
+    let next: string[];
+    if (checked) {
+      next = [...current, issue];
+    } else {
+      next = current.filter((i) => i !== issue);
+    }
+    this.selectedIssues.set(next);
+    this.doRefresh();
+  }
+
+  public clearIssuesFilter() {
+    this.selectedIssues.set([]);
+    this.issueSearchQuery.set('');
+    this.doRefresh();
+  }
+
+  public selectAllIssues() {
+    const visible = this.filteredAvailableIssues();
+    const current = new Set(this.selectedIssues());
+    for (const issue of visible) {
+      current.add(issue);
+    }
+    this.selectedIssues.set(Array.from(current));
+    this.doRefresh();
+  }
+
+  public clearAllIssuesVisible() {
+    const visible = this.filteredAvailableIssues();
+    const visibleSet = new Set(visible);
+    const next = this.selectedIssues().filter((issue) => !visibleSet.has(issue));
+    this.selectedIssues.set(next);
     this.doRefresh();
   }
 
@@ -554,6 +607,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
       filterModel: this.buildFilterModel(),
       tags: this.selectedTags(),
+      issues: this.selectedIssues(),
     } as getAllOptionsType;
   }
 
@@ -582,11 +636,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public async ngOnInit() {
     this.selectedTags.set([...this.limitToTags()]);
+    this.selectedIssues.set([...this.limitToIssues()]);
     try {
-      const tags = await this.dgTagOptionsSvc.getTagNames();
+      const tags = await this.dgTagOptionsSvc.getTagNames('tag');
       this.allAvailableTags.set(tags);
     } catch {
       this.allAvailableTags.set([]);
+    }
+    try {
+      const issues = await this.dgTagOptionsSvc.getTagNames('issue');
+      this.allAvailableIssues.set(issues);
+    } catch {
+      this.allAvailableIssues.set([]);
     }
     this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     // Initialize persistence key
@@ -1061,13 +1122,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     applyTags(next);
 
     try {
-      const removedTeamNames = await this.applyTagDiff(id, diff);
-      const finalTags = await this.refreshTagsFromServer(id, next);
+      const removedTeamNames = await this.applyTagDiff(id, diff, col);
+      const finalTags = await this.refreshTagsFromServer(id, next, col);
       applyTags(finalTags);
       this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
     } catch {
       applyTags(previous);
-      this.alertSvc.showError('Failed to update tags');
+      const errorMsg = col.cellRendererParams?.tagType === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
+      this.alertSvc.showError(errorMsg);
     }
   }
 
@@ -1081,11 +1143,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     };
   }
 
-  private async applyTagDiff(id: string, diff: TagDiff): Promise<string[]> {
+  private async applyTagDiff(id: string, diff: TagDiff, col?: ColDef): Promise<string[]> {
     const removedTeamNames: string[] = [];
+    const type = col?.cellRendererParams?.tagType ?? 'tag';
 
     for (const tag of diff.toRemove) {
-      const detachResult = await this.gridSvc.detachTag(id, tag);
+      const detachResult = await this.gridSvc.detachTag(id, tag, type);
       if (detachResult === false) {
         throw new Error('Tag removal was rejected');
       }
@@ -1098,15 +1161,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
 
     for (const tag of diff.toAdd) {
-      await this.gridSvc.attachTag(id, tag);
+      await this.gridSvc.attachTag(id, tag, type);
+    }
+
+    // Bust the cache so the next tag/issue dropdown open re-fetches fresh names
+    if (diff.toAdd.length > 0 || diff.toRemove.length > 0) {
+      this.dgTagOptionsSvc.invalidate(type as 'tag' | 'issue');
     }
 
     return removedTeamNames;
   }
 
-  private async refreshTagsFromServer(id: string, fallback: string[]): Promise<string[]> {
+  private async refreshTagsFromServer(id: string, fallback: string[], col?: ColDef): Promise<string[]> {
     try {
-      const refreshed = await this.gridSvc.getTags(id);
+      const type = col?.cellRendererParams?.tagType ?? 'tag';
+      const refreshed = await this.gridSvc.getTags(id, type);
       if (Array.isArray(refreshed)) {
         return [...refreshed];
       }
@@ -1660,6 +1729,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         archiveMode: this.archiveMode(),
         searchText: this.searchSvc.getFilterText(),
         limitToTags: this.selectedTags(),
+        limitToIssues: this.selectedIssues(),
         advancedFilterModel: this.hasActiveAdvancedFilters()
           ? {
               conjunction: this.advConjunction(),
@@ -1997,6 +2067,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       archiveMode: this.archiveMode(),
       searchText: this.searchSvc.getFilterText(),
       limitToTags: this.selectedTags(),
+      limitToIssues: this.selectedIssues(),
       filterModel: this.buildFilterModel(),
       sortState: this.sorting(),
       sortCol: this.sortCol(),
@@ -2036,6 +2107,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       startRow: 0,
       endRow,
       tags: this.selectedTags(),
+      issues: this.selectedIssues(),
       filterModel: this.buildFilterModel(),
       sortState: this.sorting(),
       sortCol: this.sortCol(),

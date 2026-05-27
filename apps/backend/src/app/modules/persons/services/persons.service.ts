@@ -94,12 +94,13 @@ export class PersonsService {
     });
   }
 
-  public async attachTag(person_id: string, name: string, auth: IAuthKeyPayload) {
+  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
     const row = {
       name,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
+      type,
     };
 
     const tag = await this.tagsRepo.addOrGet({
@@ -116,12 +117,17 @@ export class PersonsService {
     });
   }
 
-  public async detachTag(input: { tenant_id: string; person_id: string; name: string }) {
-    const tag = await this.tagsRepo.getIdByName(input);
+  public async detachTag(input: { tenant_id: string; person_id: string; name: string; type?: 'tag' | 'issue' }) {
+    const tag = await this.tagsRepo.getIdByName({
+      tenant_id: input.tenant_id,
+      name: input.name,
+      type: input.type ?? 'tag',
+    });
 
     if (tag?.id) {
       const id = await this.mapPersonsTagRepo.getId({
-        ...input,
+        tenant_id: input.tenant_id,
+        person_id: input.person_id,
         tag_id: tag.id,
       });
       if (id) {

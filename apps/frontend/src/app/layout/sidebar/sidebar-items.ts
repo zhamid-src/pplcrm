@@ -195,6 +195,11 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'label',
       },
       {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
         name: 'Forms',
         route: '/forms',
         icon: 'clipboard-document-list',

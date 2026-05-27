@@ -26,8 +26,14 @@ function add() {
  */
 function attachTag() {
   return authProcedure
-    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(wrapTrpc(({ input, ctx }) => households.attachTag(input.id, input.tag_name, ctx.auth)));
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      })
+    )
+    .mutation(wrapTrpc(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)));
 }
 
 /**
@@ -59,8 +65,14 @@ function deleteOne() {
  */
 function detachTag() {
   return authProcedure
-    .input(z.object({ id: idSchema, tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long') }))
-    .mutation(wrapTrpc(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name)));
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      })
+    )
+    .mutation(wrapTrpc(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag')));
 }
 
 /**
@@ -101,14 +113,22 @@ function getById() {
  * Get all distinct tags used across all households for the tenant.
  */
 function getDistinctTags() {
-  return authProcedure.query(wrapTrpc(({ ctx }) => households.getDistinctTags(ctx.auth)));
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(wrapTrpc(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)));
 }
 
 /**
  * Get all tags associated with a specific household.
  */
 function getTags() {
-  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => households.getTags(input, ctx.auth)));
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(wrapTrpc(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return households.getTags(id, ctx.auth, type);
+    }));
 }
 
 function exportCsv() {

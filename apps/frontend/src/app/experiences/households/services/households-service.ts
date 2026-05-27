@@ -38,8 +38,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * @param tag_name Tag to attach.
    * @returns A promise for the mutation.
    */
-  public attachTag(id: string, tag_name: string) {
-    return this.api.households.attachTag.mutate({ id: id, tag_name });
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
   }
 
   /**
@@ -74,8 +74,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * @param tag_name Tag to remove.
    * @returns A promise for the mutation.
    */
-  public detachTag(id: string, tag_name: string) {
-    return this.api.households.detachTag.mutate({ id: id, tag_name });
+  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
   }
 
   /**
@@ -105,8 +105,8 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    * @param id Household ID.
    * @returns A promise resolving to an array of tag names.
    */
-  public async getTags(id: string) {
-    const tags = await this.api.households.getTags.query(id);
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.households.getTags.query({ id, type });
     return tags.map((tag: { name: string }) => tag.name);
   }
 

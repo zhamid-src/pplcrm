@@ -25,6 +25,8 @@ export const getAllOptions = z
     orderBy: z.array(z.string()).optional(),
     groupBy: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
     advancedFilterModel: z
       .object({
         conjunction: z.enum(['AND', 'OR']),

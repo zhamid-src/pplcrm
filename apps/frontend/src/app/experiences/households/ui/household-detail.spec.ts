@@ -162,7 +162,7 @@ describe('HouseholdDetail', () => {
       expect(component).toBeTruthy();
       expect(component['id']).toBe('123');
       expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
-      expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123');
+      expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123', 'tag');
       expect(mockHouseholdsSvc.getPeopleCount).toHaveBeenCalledWith('123');
 
       const payload = component['payload']();
@@ -267,10 +267,10 @@ describe('HouseholdDetail', () => {
       fixture.detectChanges();
 
       component['tagAdded']('new-tag');
-      expect(mockHouseholdsSvc.attachTag).toHaveBeenCalledWith('123', 'new-tag');
+      expect(mockHouseholdsSvc.attachTag).toHaveBeenCalledWith('123', 'new-tag', 'tag');
 
       component['tagRemoved']('old-tag');
-      expect(mockHouseholdsSvc.detachTag).toHaveBeenCalledWith('123', 'old-tag');
+      expect(mockHouseholdsSvc.detachTag).toHaveBeenCalledWith('123', 'old-tag', 'tag');
     });
   });
 });

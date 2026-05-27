@@ -13,6 +13,7 @@ export class DataGridDataService {
     startRow: number;
     endRow: number;
     tags: string[];
+    issues?: string[];
     filterModel: Record<string, any>;
     sortState: Array<{ id: string; desc?: boolean }>;
     sortCol: string | null;
@@ -20,12 +21,13 @@ export class DataGridDataService {
     includeArchived?: boolean;
     advancedFilterModel?: any;
   }): Partial<getAllOptionsType> {
-    const { searchStr, startRow, endRow, tags, filterModel, sortState, sortCol, sortDir, includeArchived, advancedFilterModel } = args;
+    const { searchStr, startRow, endRow, tags, issues, filterModel, sortState, sortCol, sortDir, includeArchived, advancedFilterModel } = args;
     return {
       searchStr,
       startRow,
       endRow,
       tags,
+      issues,
       filterModel,
       includeArchived,
       advancedFilterModel,

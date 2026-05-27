@@ -125,8 +125,26 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         type: 'persons',
         obj: UpdatePersonsObj,
         service: this.gridSvc,
+        tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+    },
+    {
+      field: 'issues',
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.gridSvc,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
       equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
       valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
       comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
@@ -224,17 +242,27 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
   protected tagsInput = '';
+  protected issueOptionValues: string[] = [];
 
   public override async ngOnInit() {
     await this.loadTagOptions();
+    await this.loadIssueOptions();
     await super.ngOnInit();
   }
 
   private async loadTagOptions() {
     try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames();
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
     } catch {
       this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
     }
   }
 

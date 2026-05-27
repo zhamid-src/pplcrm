@@ -9,6 +9,30 @@ class TestTagsRepo extends BaseRepository<'tags'> {
   public getDb() {
     return (BaseRepository as any)._db;
   }
+
+  public override async addOrGet(
+    input: {
+      row: any;
+      onConflictColumn: 'name';
+    },
+    trx?: any,
+  ) {
+    const type = input.row.type ?? 'tag';
+    const insertResult = await this.getInsert(trx)
+      .values(input.row)
+      .onConflict((oc) => oc.columns(['tenant_id', 'name', 'type']).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) return insertResult as any;
+
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.row.tenant_id)
+      .where('name', '=', input.row.name)
+      .where('type', '=', type)
+      .executeTakeFirst() as any;
+  }
 }
 
 async function createTestSeed(db: any) {

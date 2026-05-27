@@ -47,14 +47,10 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return this.api.tags.count.query();
   }
 
-  /**
-   * Deletes a tag by ID.
-   *
-   * @param id - The ID of the tag to delete.
-   * @returns `true` if successful, otherwise `false`.
-   */
   public async delete(id: string): Promise<boolean> {
-    return Boolean(await this.api.tags.delete.mutate(id));
+    const res = Boolean(await this.api.tags.delete.mutate(id));
+    this.triggerRefresh();
+    return res;
   }
 
   /**
@@ -64,7 +60,9 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @returns `true` if deletion was successful, otherwise `false`.
    */
   public async deleteMany(ids: string[]): Promise<boolean> {
-    return Boolean(await this.api.tags.deleteMany.mutate(ids));
+    const res = Boolean(await this.api.tags.deleteMany.mutate(ids));
+    this.triggerRefresh();
+    return res;
   }
 
   /**
@@ -83,8 +81,8 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @param key - The search key.
    * @returns A Promise resolving to a list of matching tag names.
    */
-  public async filter(key: string) {
-    const names = (await this.findByName(key)) as AddTagType[];
+  public async filter(key: string, type: 'tag' | 'issue' = 'tag') {
+    const names = (await this.findByName(key, type)) as AddTagType[];
     return (names && names.filter((m) => m.name).map((m) => m.name)) || [];
   }
 
@@ -92,10 +90,11 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * Searches for tags that match a given name.
    *
    * @param name - Partial or full name to match.
+   * @param type - Optional tag/issue type.
    * @returns A Promise resolving with the matching tags.
    */
-  public findByName(name: string) {
-    return this.api.tags.findByName.query(name);
+  public findByName(name: string, type: 'tag' | 'issue' = 'tag') {
+    return this.api.tags.findByName.query({ name, type });
   }
 
   /**
@@ -151,8 +150,10 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @param data - The updated tag data.
    * @returns A Promise resolving with the result of the mutation.
    */
-  public update(id: string, data: UpdateTagType) {
-    return this.api.tags.update.mutate({ id: id, data });
+  public async update(id: string, data: UpdateTagType) {
+    const res = await this.api.tags.update.mutate({ id: id, data });
+    this.triggerRefresh();
+    return res;
   }
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {

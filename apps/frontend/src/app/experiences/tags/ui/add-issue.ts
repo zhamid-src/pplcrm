@@ -8,20 +8,19 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
 
 /**
- * A component for adding new tags to the system.
- * It includes a form with name and optional description,
- * and handles validation, submission, and error feedback.
+ * A component for adding new issues to the system.
+ * Identical to AddTag but hardcodes `type: 'issue'` on submission.
  */
 @Component({
-  selector: 'pc-add-tag',
+  selector: 'pc-add-issue',
   imports: [FormField, AddBtnRow],
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
         <label class="label text-base font-light">
-          Enter a unique tag name (and optionally, give it a description)
+          Enter a unique issue name (and optionally, give it a description)
         </label>
-        <input class="input" placeholder="Tag Name" [formField]="form.name" />
+        <input class="input" placeholder="Issue Name" [formField]="form.name" />
         <input class="input" placeholder="Optional description" [formField]="form.description" />
         <div class="flex items-center gap-2">
           <label class="label-text font-light text-sm">Colour</label>
@@ -35,29 +34,19 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
     </form>
   </div>`,
 })
-export class AddTag {
+export class AddIssue {
   private readonly alertSvc = inject(AlertService);
   private readonly tagSvc = inject(TagsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
-  /**
-   * Signal to track form submission (used to show _loadings or disable form).
-   */
   private _loading = createLoadingGate();
 
-  /**
-   * Backing payload signal for tag creation.
-   * Properties are typed as concrete strings to prevent compiler errors from nullable schema types.
-   */
   protected readonly payload = signal({
     name: '',
     description: '',
-    color: '#0ea5e9',
+    color: '#ef4444',
   });
 
-  /**
-   * Signal-based form with validations.
-   */
   public readonly form = form(this.payload, (p) => {
     required(p.name);
     pattern(p.color, /^#([0-9a-fA-F]{6})$/);
@@ -65,51 +54,29 @@ export class AddTag {
 
   protected isLoading = this._loading.visible;
 
-  /**
-   * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
-   * Populated after view initialization.
-   */
   public readonly addBtnRow = viewChild(AddBtnRow);
 
-  /**
-   * Submits the form to create a new tag.
-   * Shows success or error messages based on result.
-   * If successful, resets the `AddBtnRow` component's state.
-   */
   protected async add(event?: any) {
     if (event instanceof Event) {
       event.preventDefault();
     }
 
-    if (this.isLoading()) {
-      return;
-    }
+    if (this.isLoading()) return;
 
-
-    // force validation messages to appear
     this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      return;
-    }
+    if (!this.form().valid) return;
 
     await submit(this.form, {
       action: async () => {
         const end = this._loading.begin();
         try {
           const formObj = this.payload();
-          await this.tagSvc.add(formObj);
-          await this.tagOptionsSvc.invalidate('tag');
+          await this.tagSvc.add({ ...formObj, type: 'issue' });
+          await this.tagOptionsSvc.invalidate('issue');
           this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Tag added successfully.');
-          
-          // Reset the backing signal
-          this.payload.set({
-            name: '',
-            description: '',
-            color: '#0ea5e9'
-          });
+          this.alertSvc.showSuccess('Issue added successfully.');
 
+          this.payload.set({ name: '', description: '', color: '#ef4444' });
           this.addBtnRow()?.stayOrCancel();
         } catch (err: unknown) {
           if (err instanceof TRPCClientError) {

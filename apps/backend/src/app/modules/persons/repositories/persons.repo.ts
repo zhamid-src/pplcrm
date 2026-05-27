@@ -159,15 +159,17 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   public async getAllWithAddress(
     input: {
       tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
       tags?: string[];
+      issues?: string[];
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams = input.options || {};
+    const options: JoinedQueryParams & { issues?: string[] } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = options.searchStr?.toLowerCase();
     const tags = input.tags;
+    const issues = input.issues || options.issues;
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder
@@ -178,7 +180,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
         .leftJoin('companies', 'persons.company_id', 'companies.id')
         .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!))
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
           return qb.where(
@@ -205,7 +208,14 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
       q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
       q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
-      q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      }
+      if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
       q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name']);
 
       // Apply advanced query builder filters if present
@@ -220,6 +230,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         street_num: { col: 'households.street_num::text', isCast: true },
         zip: { col: 'households.zip' },
         tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
         company_name: { col: 'companies.name' },
       };
       q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
@@ -236,7 +247,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
     // Data query
     const rows = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [
+      .select(() => [
         'persons.id',
         'persons.first_name',
         'persons.last_name',
@@ -255,7 +266,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.street2',
         'households.street_num',
         'households.apt',
-        fn.agg<string[]>('array_agg', ['tags.name']).as('tags'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as('tags'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
       ])
       .groupBy([
         'persons.id',
@@ -326,11 +338,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
    * @param tenant_id - The tenant ID
    * @returns A list of unique tag names
    */
-  public getDistinctTags(tenant_id: string) {
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
     return this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
       .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
       .select('tags.name')
       .distinct()
       .execute();
@@ -341,16 +354,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
    *
    * @param input.id - Person ID
    * @param input.tenant_id - Tenant ID
+   * @param input.type - Optional tag/issue type
    * @returns List of tag names assigned to the person
    */
-  public getTags(input: { id: string; tenant_id: string }) {
-    return this.getSelect()
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
       .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .select('tags.name')
-      .execute();
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
   }
   /**
    * Find a person by email address (case-insensitive) within a tenant.
