@@ -21,6 +21,8 @@ import { ActivityRouter } from './activity/trpc.router';
 import { FilesRouter } from './files/trpc.router';
 import { DashboardRouter } from './dashboard/trpc.router';
 import { NotificationsRouter } from './notifications/trpc.router';
+import { VolunteerRouter } from './volunteer-events/trpc.router';
+
 
 /**
  * Inferred type representing the full structure of the tRPC API.
@@ -57,6 +59,7 @@ export const trpcRouter = router({
   files: FilesRouter,
   dashboard: DashboardRouter,
   notifications: NotificationsRouter,
+  volunteer: VolunteerRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -95,3 +98,5 @@ export { FilesRouter } from './files/trpc.router';
 export { DashboardRouter } from './dashboard/trpc.router';
 
 export { NotificationsRouter } from './notifications/trpc.router';
+
+export { VolunteerRouter } from './volunteer-events/trpc.router';

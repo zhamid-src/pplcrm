@@ -346,6 +346,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Inputs & Outputs
   public addRoute = input<string | null>(null);
+  public viewRoute = input<string | null>(null);
   public allowFilter = input<boolean>(true);
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
@@ -2108,12 +2109,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Navigates to view route for given ID or last hovered ID. */
   private view(id?: string) {
-    return this.navSvc.viewIfAllowed({
-      id,
-      lastRowHovered: this.lastRowHovered,
-      disableView: this.disableView(),
-      navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
-    });
+    const targetId = id || this.lastRowHovered;
+    if (!targetId || this.disableView()) return;
+
+    const vr = this.viewRoute();
+    if (vr) {
+      if (vr.startsWith('/')) {
+        void this.router.navigate([vr, targetId]);
+      } else {
+        void this.router.navigate([vr, targetId], { relativeTo: this.route });
+      }
+    } else {
+      void this.navSvc.viewIfAllowed({
+        id: targetId,
+        lastRowHovered: this.lastRowHovered,
+        disableView: this.disableView(),
+        navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
+      });
+    }
   }
 }
 

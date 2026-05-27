@@ -108,23 +108,31 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    path: 'schedule',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/volunteer/ui/events-grid').then((m) => m.EventsGridComponent),
+        data: { shouldReuse: true, key: 'eventsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+      },
+    ],
+  },
+
+  {
     path: 'volunteers',
     children: [
       {
         path: '',
         loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
         data: { shouldReuse: true, key: 'volunteersgridroot', tags: ['volunteer'] },
-      },
-    ],
-  },
-
-  {
-    path: 'donors',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'donorsgridroot', tags: ['donor'] },
       },
     ],
   },

@@ -94,11 +94,6 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'identification',
       },
       {
-        name: `Duplicates`,
-        route: '/people/duplicates',
-        icon: 'document-duplicate',
-      },
-      {
         name: `Households`,
         route: '/households',
         icon: 'house-modern',
@@ -107,6 +102,11 @@ export const SidebarItems: ISidebarItem[] = [
         name: `Companies`,
         route: '/companies',
         icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/people/duplicates',
+        icon: 'document-duplicate',
       },
     ],
   },
@@ -121,15 +121,14 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'envelope',
       },
       {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-
-      {
         name: 'Newsletter',
         route: '/newsletter',
         icon: 'megaphone',
+      },
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
       },
     ],
   },
@@ -162,16 +161,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Schedule',
         route: '/schedule',
         icon: 'clock',
-      },
-      {
-        name: 'Donors',
-        route: '/donors',
-        icon: 'banknotes',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
       },
     ],
   },
