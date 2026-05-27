@@ -77,6 +77,12 @@ export class FormDetailComponent implements OnInit {
 </form>`;
   });
 
+  protected readonly formUrl = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    return window.location.origin.replace(':4200', ':5000') + `/api/forms/view/${id}`;
+  });
+
   public ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (id && id !== 'add') {
@@ -118,6 +124,15 @@ export class FormDetailComponent implements OnInit {
     navigator.clipboard.writeText(code).then(
       () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
       () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected copyUrl(): void {
+    const url = this.formUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Form landing page URL copied!'),
+      () => this.alertSvc.showError('Failed to copy URL.'),
     );
   }
 
