@@ -48,6 +48,7 @@ export const icons = {
   'add-notes': 'assets/icons/add-notes.svg',
   'add-schedule': 'assets/icons/add-schedule.svg',
   'add-task': 'assets/icons/add-task.svg',
+  'add-users': 'assets/icons/add-users.svg',
   'add-volunteer': 'assets/icons/add-volunteer.svg',
   'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
   'archive-box': 'assets/icons/archive-box.svg',

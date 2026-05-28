@@ -16,7 +16,7 @@ import { AuthUsersService } from '../services/authusers-service';
       [disableExport]="true"
       [disableImport]="true"
       [addRoute]="'add'"
-      plusIcon="user-plus"
+      plusIcon="add-users"
     ></pc-datagrid>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: AuthUsersService }],
