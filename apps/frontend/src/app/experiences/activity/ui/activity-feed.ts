@@ -5,6 +5,8 @@ import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
+import { AuthService } from '../../../auth/auth-service';
+import { IAuthUser } from '@common';
 
 @Component({
   selector: 'pc-activity-feed',
@@ -31,6 +33,99 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
           <pc-icon name="arrow-path" [size]="4"></pc-icon>
           <ng-container i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label">Refresh Feed</ng-container>
         </button>
+      </div>
+
+      <!-- Filters -->
+      <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
+        <div class="card-body p-4 flex flex-col md:flex-row gap-4 items-end">
+          <!-- Search input -->
+          <div class="flex-1 w-full">
+            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Search Feed</span></label>
+            <div class="relative w-full">
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full pl-8"
+                placeholder="Search actor, item..."
+                [value]="searchStr()"
+                (input)="onSearch($event)"
+              />
+              <span class="absolute left-2.5 top-2.5 text-base-content/40">
+                <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
+              </span>
+            </div>
+          </div>
+
+          <!-- User filter -->
+          <div class="w-full md:w-44">
+            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">User</span></label>
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [value]="selectedUser()"
+              (change)="onUserChange($event)"
+            >
+              <option value="">All Users</option>
+              <option *ngFor="let u of users()" [value]="u.id">
+                {{ u.first_name }} {{ u.last_name || '' }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Item Type filter -->
+          <div class="w-full md:w-44">
+            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Item Type</span></label>
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [value]="selectedEntity()"
+              (change)="onEntityChange($event)"
+            >
+              <option value="">All Items</option>
+              <option value="persons">People</option>
+              <option value="households">Households</option>
+              <option value="tasks">Tasks</option>
+              <option value="emails">Emails</option>
+              <option value="newsletters">Newsletters</option>
+              <option value="web_forms">Forms</option>
+              <option value="volunteer_events">Volunteer Events</option>
+              <option value="volunteer_shifts">Volunteer Shifts</option>
+              <option value="companies">Companies</option>
+              <option value="teams">Teams</option>
+              <option value="tags">Tags</option>
+            </select>
+          </div>
+
+          <!-- Action filter -->
+          <div class="w-full md:w-44">
+            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Action</span></label>
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [value]="selectedActivity()"
+              (change)="onActivityChange($event)"
+            >
+              <option value="">All Actions</option>
+              <option value="create">Create</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+              <option value="merge">Merge</option>
+              <option value="import">Import</option>
+              <option value="export">Export</option>
+              <option value="assign">Assign</option>
+              <option value="unassign">Unassign</option>
+              <option value="close">Close</option>
+              <option value="reopen">Reopen</option>
+            </select>
+          </div>
+
+          <!-- Reset Button -->
+          <button
+            *ngIf="hasActiveFilters()"
+            class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
+            (click)="clearFilters()"
+            title="Clear all filters"
+          >
+            <pc-icon name="x-mark" [size]="4"></pc-icon>
+            Clear
+          </button>
+        </div>
       </div>
 
       <!-- Loading State -->
@@ -127,16 +222,34 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 export class ActivityFeed implements OnInit {
   private readonly activitySvc = inject(ActivityService);
   private readonly alertSvc = inject(AlertService);
+  private readonly authSvc = inject(AuthService);
 
   protected readonly activities = signal<any[]>([]);
   protected readonly isLoading = signal(false);
   protected readonly hasMore = signal(false);
 
+  protected readonly selectedUser = signal<string>('');
+  protected readonly selectedEntity = signal<string>('');
+  protected readonly selectedActivity = signal<string>('');
+  protected readonly searchStr = signal<string>('');
+  protected readonly users = signal<IAuthUser[]>([]);
+
   private readonly pageSize = 25;
   private currentOffset = 0;
+  private searchTimeout: any;
 
   public ngOnInit() {
+    this.loadUsers();
     this.refreshFeed();
+  }
+
+  private async loadUsers() {
+    try {
+      const u = await this.authSvc.getUsers();
+      this.users.set(u || []);
+    } catch (err) {
+      console.error('Failed to load users for filter', err);
+    }
   }
 
   protected async refreshFeed() {
@@ -155,6 +268,10 @@ export class ActivityFeed implements OnInit {
       const res = await this.activitySvc.getFeed({
         startRow: this.currentOffset,
         endRow: this.currentOffset + this.pageSize,
+        userId: this.selectedUser() || undefined,
+        entity: this.selectedEntity() || undefined,
+        activity: this.selectedActivity() || undefined,
+        searchStr: this.searchStr() || undefined,
       });
 
       if (replace) {
@@ -284,5 +401,46 @@ export class ActivityFeed implements OnInit {
       default:
         return null;
     }
+  }
+
+  protected onUserChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedUser.set(val);
+    this.refreshFeed();
+  }
+
+  protected onEntityChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedEntity.set(val);
+    this.refreshFeed();
+  }
+
+  protected onActivityChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedActivity.set(val);
+    this.refreshFeed();
+  }
+
+  protected onSearch(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.searchStr.set(val);
+    if (this.searchTimeout) {
+      clearTimeout(this.searchTimeout);
+    }
+    this.searchTimeout = setTimeout(() => {
+      this.refreshFeed();
+    }, 300);
+  }
+
+  protected hasActiveFilters(): boolean {
+    return !!(this.selectedUser() || this.selectedEntity() || this.selectedActivity() || this.searchStr());
+  }
+
+  protected clearFilters() {
+    this.selectedUser.set('');
+    this.selectedEntity.set('');
+    this.selectedActivity.set('');
+    this.searchStr.set('');
+    this.refreshFeed();
   }
 }

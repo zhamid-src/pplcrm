@@ -27,6 +27,9 @@ export const getAllOptions = z
     tags: z.array(z.string()).optional(),
     issues: z.array(z.string()).optional(),
     type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
     advancedFilterModel: z
       .object({
         conjunction: z.enum(['AND', 'OR']),
