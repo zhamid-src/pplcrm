@@ -1,0 +1,209 @@
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <!-- Loading State -->
+  @if (loading()) {
+  <div class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="font-medium text-sm">Loading your profile…</p>
+    </div>
+  </div>
+  } @else {
+  
+  <!-- Main Grid Layout -->
+  <div class="space-y-8">
+    
+    <!-- Profile Header Card -->
+    <div class="relative overflow-hidden rounded-2xl border border-base-200/60 bg-base-100 shadow-sm">
+      <!-- Decorative Gradient Banner -->
+      <div class="h-32 w-full bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+      
+      <!-- User Summary Section -->
+      <div class="flex flex-col gap-6 px-6 pb-6 md:flex-row md:items-end md:px-8 md:pb-8 -mt-10">
+        <!-- Initials Avatar -->
+        <div class="avatar placeholder">
+          <div class="w-24 h-24 rounded-full ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md">
+            <span>{{ initials() }}</span>
+          </div>
+        </div>
+        
+        <!-- User Identity Info -->
+        <div class="flex-1 space-y-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-3xl font-bold tracking-tight">{{ displayName() }}</h1>
+            <div class="flex items-center gap-1.5">
+              @if (detail()?.role) {
+              <span class="badge badge-primary badge-outline font-medium capitalize text-xs px-2.5 py-1.5">
+                {{ detail()?.role }}
+              </span>
+              }
+              @if (detail()?.verified) {
+              <span class="badge badge-success gap-1 text-xs font-semibold px-2.5 py-1.5">
+                <pc-icon name="check-circle" class="w-3.5 h-3.5"></pc-icon>
+                Verified
+              </span>
+              }
+            </div>
+          </div>
+          <p class="text-base-content/60">{{ detail()?.email }}</p>
+        </div>
+      </div>
+    </div>
+
+    @if (error()) {
+    <div class="alert alert-error shadow-sm rounded-xl">
+      <pc-icon name="exclamation-circle" class="w-5 h-5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <!-- Content Sections -->
+    <div class="grid gap-8 lg:grid-cols-3">
+      
+      <!-- Edit Profile Card (takes 2 cols on lg) -->
+      <div class="lg:col-span-2 space-y-6 rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-xl font-semibold tracking-tight">Edit Profile</h2>
+          <p class="text-sm text-base-content/60 mt-0.5">Update your personal information and contact details.</p>
+        </header>
+
+        <form (submit)="save($event)" class="space-y-6" novalidate>
+          <div class="grid gap-6 md:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="first_name" class="text-sm font-semibold text-base-content/80">First Name</label>
+              <input
+                id="first_name"
+                type="text"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                placeholder="Your first name"
+                [formField]="form.first_name"
+                autocomplete="given-name"
+              />
+              @if (form.first_name().invalid() && (form.first_name().dirty() || form.first_name().touched())) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-1">
+                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                First name is required.
+              </p>
+              }
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label for="last_name" class="text-sm font-semibold text-base-content/80">Last Name</label>
+              <input
+                id="last_name"
+                type="text"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                placeholder="Your last name"
+                [formField]="form.last_name"
+                autocomplete="family-name"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1.5 md:col-span-2">
+              <label for="email" class="text-sm font-semibold text-base-content/80">Email Address</label>
+              <input
+                id="email"
+                type="email"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                placeholder="you@example.com"
+                [formField]="form.email"
+                autocomplete="email"
+              />
+              @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-1">
+                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                Please enter a valid email address.
+              </p>
+              }
+            </div>
+          </div>
+
+          <!-- Form Action Footer -->
+          <div class="border-t border-base-200 pt-5 flex items-center justify-end gap-3">
+            <button
+              class="btn btn-ghost hover:bg-base-200"
+              type="button"
+              (click)="resetForm()"
+              [disabled]="saving() || !form().dirty()"
+            >
+              Reset
+            </button>
+            <button
+              class="btn btn-primary min-w-[120px]"
+              type="submit"
+              [disabled]="saving() || loading() || form().invalid() || !form().dirty()"
+            >
+              @if (saving()) {
+              <span class="loading loading-spinner loading-xs mr-2"></span>
+              } Save changes
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Account Metadata Card (takes 1 col on lg) -->
+      <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8 flex flex-col justify-between">
+        <div>
+          <header class="border-b border-base-200 pb-5 mb-6">
+            <h2 class="text-xl font-semibold tracking-tight">Account Metadata</h2>
+            <p class="text-sm text-base-content/60 mt-0.5">System identifier details and timestamps.</p>
+          </header>
+
+          <div class="space-y-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">User ID</p>
+              <p class="text-sm font-mono text-base-content/80 mt-1 select-all break-all bg-base-200/40 p-2 rounded-lg border border-base-200/50">
+                {{ detail()?.id }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Assigned Role</p>
+              <p class="text-sm font-semibold text-base-content/80 mt-1 capitalize">
+                {{ detail()?.role || 'User' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Member Since</p>
+              <p class="text-sm text-base-content/80 mt-1">
+                {{ detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : '—' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Last Profile Update</p>
+              <p class="text-sm text-base-content/80 mt-1">
+                {{ detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : '—' }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Statistics Section -->
+    @if (stats()) {
+    <div class="space-y-5">
+      <h2 class="text-xl font-bold tracking-tight">Your Activity & Impact</h2>
+      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        @for (card of activityCards(); track card.key) {
+        <div class="card bg-base-100 border border-base-200/60 shadow-sm hover:shadow-md transition-all duration-300">
+          <div class="card-body p-6 flex flex-row items-center gap-4">
+            <div class="p-3 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+              <pc-icon [name]="card.icon" class="w-6 h-6"></pc-icon>
+            </div>
+            <div class="flex-1 space-y-0.5">
+              <p class="text-xs font-medium text-base-content/50 uppercase tracking-wide">{{ card.title }}</p>
+              <h3 class="text-2xl font-bold text-base-content/95">{{ card.value }}</h3>
+              <p class="text-xs text-base-content/60">{{ card.subtitle }}</p>
+              @if (card.asOf) {
+              <span class="text-[10px] text-base-content/40 block mt-0.5">As of {{ formatAsOf(card.asOf) }}</span>
+              }
+            </div>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+    }
+
+  </div>
+  }
+</div>
