@@ -81,6 +81,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         user_id: auth.user_id,
         activity: 'assign',
         entity: 'volunteer_shifts',
+        entity_id: result?.id ? String(result.id) : null,
         quantity: 1,
         metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
       });
@@ -108,6 +109,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         user_id: auth.user_id,
         activity: 'update',
         entity: 'volunteer_shifts',
+        entity_id: id,
         quantity: 1,
         metadata: { id, status: payload.status },
       });
@@ -133,6 +135,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         user_id: auth.user_id,
         activity: 'delete',
         entity: 'volunteer_shifts',
+        entity_id: id,
         quantity: 1,
         metadata: { id },
       });

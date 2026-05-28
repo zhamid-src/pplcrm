@@ -55,6 +55,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           user_id: actor,
           activity: 'create',
           entity: String(this.repo.getTableName()),
+          entity_id: (result as any)?.id ? String((result as any).id) : null,
           quantity: 1,
           metadata: { id: (result as any)?.id },
         }, trx);
@@ -115,6 +116,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           user_id: userId,
           activity: 'delete',
           entity: String(this.repo.getTableName()),
+          entity_id: idToDelete ? String(idToDelete) : null,
           quantity: 1,
           metadata: { id: idToDelete },
         });
@@ -216,6 +218,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           user_id: actor,
           activity: 'update',
           entity: String(this.repo.getTableName()),
+          entity_id: input.id ? String(input.id) : null,
           quantity: 1,
           metadata: { id: input.id },
         });
