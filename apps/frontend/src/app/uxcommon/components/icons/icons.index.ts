@@ -69,6 +69,7 @@ export const icons = {
   briefcase: 'assets/icons/briefcase.svg',
   'chart-pie': 'assets/icons/chart-pie.svg',
   'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
   'chevron-double-left': 'assets/icons/chevron-double-left.svg',
   'chevron-double-right': 'assets/icons/chevron-double-right.svg',
   'chevron-down': 'assets/icons/chevron-down.svg',
