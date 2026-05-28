@@ -61,7 +61,14 @@ export class Icon {
 
     // If class already exists, merge; otherwise add new class attribute
     if (/\bclass=/.test(openTag)) {
-      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => `class=${q}${existing} ${cls}${q}`);
+      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => {
+        // Remove existing sizing classes to prevent override conflicts (e.g. w-6, h-6, size-6)
+        const cleaned = existing
+          .split(/\s+/)
+          .filter((c: string) => !/^(w-\d+(\.\d+)?|h-\d+(\.\d+)?|size-\d+(\.\d+)?)$/.test(c))
+          .join(' ');
+        return `class=${q}${cleaned} ${cls}${q}`.trim();
+      });
       return svg.replace(openTag, merged);
     } else {
       const augmented = openTag.replace(/^<svg\b/i, `<svg class="${cls}"`);
