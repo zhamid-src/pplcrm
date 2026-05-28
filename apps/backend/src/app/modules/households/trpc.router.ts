@@ -57,7 +57,7 @@ function deleteMany() {
  * Delete a single household by ID.
  */
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input)));
+  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)));
 }
 
 /**
@@ -72,7 +72,7 @@ function detachTag() {
         type: z.enum(['tag', 'issue']).default('tag').optional(),
       })
     )
-    .mutation(wrapTrpc(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag')));
+    .mutation(wrapTrpc(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id)));
 }
 
 /**

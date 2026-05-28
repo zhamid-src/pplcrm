@@ -127,6 +127,10 @@
         <pc-people-in-household [householdId]="id"></pc-people-in-household>
         }
 
+        @if (id) {
+        <pc-record-activities [entity]="'households'" [entityId]="id"></pc-record-activities>
+        }
+
         <pc-add-btn-row
           [isLoading]="isLoading()"
           [signalForm]="form"

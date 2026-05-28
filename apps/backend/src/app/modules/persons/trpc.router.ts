@@ -39,7 +39,7 @@ function deleteMany() {
 }
 
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input)));
+  return authProcedure.input(idSchema).mutation(wrapTrpc(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)));
 }
 
 function detachTag() {
@@ -57,6 +57,7 @@ function detachTag() {
         person_id: input.id,
         name: input.tag_name,
         type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
       }),
     ));
 }

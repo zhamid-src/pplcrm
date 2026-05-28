@@ -12,10 +12,11 @@ import { SanitizeHtmlPipe } from '../../../uxcommon/pipes/sanitize-html.pipe';
 import { MentionifyPipe } from '../../../uxcommon/pipes/mention.pipe';
 import { TimeAgoPipe } from '../../../uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '../../../uxcommon/mentions/mention-controller';
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 @Component({
   selector: 'pc-task-detail',
-  imports: [DatePipe, DecimalPipe, SlicePipe, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe],
+  imports: [DatePipe, DecimalPipe, SlicePipe, FormsModule, QuillModule, SanitizeHtmlPipe, MentionifyPipe, TimeAgoPipe, RecordActivities],
   templateUrl: './task-detail.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
@@ -24,7 +25,7 @@ export class TaskDetail implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly tasks = inject(TasksService);
 
-  private id = signal<string>('');
+  protected id = signal<string>('');
 
   protected readonly comments = signal<any[]>([]);
   protected readonly attachments = signal<any[]>([]);

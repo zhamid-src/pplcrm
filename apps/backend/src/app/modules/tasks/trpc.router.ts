@@ -12,7 +12,7 @@ const tasks = new TasksController();
 export const TasksRouter = router({
   add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
   count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
-  delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input)),
+  delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
   deleteMany: authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),

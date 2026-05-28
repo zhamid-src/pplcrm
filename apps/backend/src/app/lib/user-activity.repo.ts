@@ -65,6 +65,24 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
    * Returns rows joined with the acting user's name, ordered newest-first.
    */
   public async getForEntity(tenant_id: string, entity: string, entity_id: string) {
+    let entities = [entity];
+    const ent = entity.toLowerCase();
+    if (ent === 'person' || ent === 'persons' || ent === 'people') {
+      entities = ['person', 'persons'];
+    } else if (ent === 'household' || ent === 'households') {
+      entities = ['household', 'households'];
+    } else if (ent === 'company' || ent === 'companies') {
+      entities = ['company', 'companies'];
+    } else if (ent === 'task' || ent === 'tasks') {
+      entities = ['task', 'tasks', 'tasks_archived'];
+    } else if (ent === 'email' || ent === 'emails') {
+      entities = ['email', 'emails'];
+    } else if (ent === 'volunteer_event' || ent === 'volunteer_events') {
+      entities = ['volunteer_event', 'volunteer_events'];
+    } else if (ent === 'volunteer_shift' || ent === 'volunteer_shifts') {
+      entities = ['volunteer_shift', 'volunteer_shifts'];
+    }
+
     return (this.getSelect() as SelectQueryBuilder<Models, 'user_activity', any>)
       .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
       .select([
@@ -79,7 +97,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
         'authusers.last_name',
       ])
       .where('user_activity.tenant_id', '=', tenant_id)
-      .where('user_activity.entity', '=', entity)
+      .where('user_activity.entity', 'in', entities)
       .where('user_activity.entity_id', '=', entity_id)
       .orderBy('user_activity.created_at', 'desc')
       .execute();

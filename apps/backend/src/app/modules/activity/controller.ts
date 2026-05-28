@@ -10,4 +10,8 @@ export class ActivityController extends BaseController<'user_activity', UserActi
   public async getFeed(auth: IAuthKeyPayload, options?: any) {
     return this.getRepo().getAllWithUser(auth.tenant_id, options || {});
   }
+
+  public async getActivities(tenant_id: string, entity: string, entityId: string) {
+    return this.getRepo().getForEntity(tenant_id, entity, entityId);
+  }
 }

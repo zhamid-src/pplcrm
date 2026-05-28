@@ -68,7 +68,21 @@ export class PersonsService {
       updatedby_id: auth.user_id,
     };
 
-    return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'create',
+        entity: 'persons',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: { id: result?.id },
+      });
+    } catch (e) {
+      console.error('Failed to log create person activity', e);
+    }
+    return result;
   }
 
   public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
@@ -84,7 +98,7 @@ export class PersonsService {
       }
     }
 
-    return this.personsRepo.update({
+    const result = await this.personsRepo.update({
       tenant_id: auth.tenant_id,
       id,
       row: {
@@ -92,6 +106,20 @@ export class PersonsService {
         updatedby_id: auth.user_id,
       } as OperationDataType<'persons', 'update'>,
     });
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: id ? String(id) : null,
+        quantity: 1,
+        metadata: { id },
+      });
+    } catch (e) {
+      console.error('Failed to log update person activity', e);
+    }
+    return result;
   }
 
   public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
@@ -108,16 +136,32 @@ export class PersonsService {
       onConflictColumn: 'name',
     });
 
-    return this.addToMap({
+    const result = await this.addToMap({
       tag_id: tag?.id as string | undefined,
       person_id,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     });
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: person_id,
+        quantity: 1,
+        metadata: { id: person_id, action: `attach_${type}`, name },
+      });
+    } catch (e) {
+      console.error('Failed to log attach tag activity', e);
+    }
+
+    return result;
   }
 
-  public async detachTag(input: { tenant_id: string; person_id: string; name: string; type?: 'tag' | 'issue' }) {
+  public async detachTag(input: { tenant_id: string; person_id: string; name: string; type?: 'tag' | 'issue'; user_id?: string }) {
     const tag = await this.tagsRepo.getIdByName({
       tenant_id: input.tenant_id,
       name: input.name,
@@ -133,6 +177,22 @@ export class PersonsService {
       if (id) {
         await this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
       }
+    }
+
+    try {
+      if (input.user_id) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          activity: 'update',
+          entity: 'persons',
+          entity_id: input.person_id,
+          quantity: 1,
+          metadata: { id: input.person_id, action: `detach_${input.type ?? 'tag'}`, name: input.name },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log detach tag activity', e);
     }
 
     const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';

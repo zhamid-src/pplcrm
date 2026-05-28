@@ -7,10 +7,11 @@ import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [CommonModule, FormField, Icon, PeopleInCompany],
+  imports: [CommonModule, FormField, Icon, PeopleInCompany, RecordActivities],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
@@ -161,6 +162,9 @@ import { PeopleInCompany } from './people-in-company';
                 <pc-people-in-company [companyId]="id"></pc-people-in-company>
               </div>
             </div>
+
+            <!-- Activity history (Only when edit mode) -->
+            <pc-record-activities *ngIf="mode() === 'edit' && id" [entity]="'companies'" [entityId]="id"></pc-record-activities>
 
             <!-- Metadata Card -->
             <div *ngIf="mode() === 'edit'" class="card bg-base-200/50 border border-base-300 shadow-xl">

@@ -83,8 +83,24 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /** Override delete to reuse deleteMany path */
-  public override async delete(tenant_id: string, idToDelete: string): Promise<boolean> {
-    return this.deleteMany(tenant_id, [idToDelete]);
+  public override async delete(tenant_id: string, idToDelete: string, userId?: string): Promise<boolean> {
+    const result = await this.deleteMany(tenant_id, [idToDelete]);
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id: tenant_id,
+          user_id: userId,
+          activity: 'delete',
+          entity: 'persons',
+          entity_id: idToDelete ? String(idToDelete) : null,
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log delete person activity', e);
+    }
+    return result;
   }
 
   public override async exportCsv(
