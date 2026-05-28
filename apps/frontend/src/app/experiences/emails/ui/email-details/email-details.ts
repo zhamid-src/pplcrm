@@ -9,11 +9,12 @@ import { EmailBody } from '../email-body/email-body';
 import { EmailComments } from '../email-comments/email-comments';
 import { EmailHeader } from '../email-header/email-header';
 import { EmailActivities } from '../email-activities/email-activities';
+import { Icon } from '@icons/icon';
 import type { EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-details',
-  imports: [EmailHeader, EmailBody, EmailComments, EmailActivities],
+  imports: [EmailHeader, EmailBody, EmailComments, EmailActivities, Icon],
   templateUrl: 'email-details.html',
 })
 export class EmailDetails {
