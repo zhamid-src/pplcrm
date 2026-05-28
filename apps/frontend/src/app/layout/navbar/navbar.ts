@@ -60,7 +60,6 @@ export class Navbar {
     });
 
     this.refresh();
-    setInterval(() => this.refresh(), 30000);
   }
 
   protected async refresh() {
