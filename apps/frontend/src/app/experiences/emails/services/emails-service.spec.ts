@@ -66,6 +66,10 @@ describe('EmailsService', () => {
         syncNow: { mutate: vi.fn() },
         getConnectionStatus: { query: vi.fn() },
       },
+      googleSync: {
+        syncNow: { mutate: vi.fn() },
+        getConnectionStatus: { query: vi.fn() },
+      },
     };
 
     // Create a bare instance without invoking Angular inject()s
@@ -199,13 +203,27 @@ describe('EmailsService', () => {
   });
 
   describe('Sync Operations', () => {
-    it('should trigger email sync', async () => {
+    it('should trigger email sync when MS is connected', async () => {
       const mockResult = { inserted: 5 };
+      mockApi.msSync.getConnectionStatus.query.mockResolvedValue({ connected: true });
       mockApi.msSync.syncNow.mutate.mockResolvedValue(mockResult);
+      mockApi.googleSync.getConnectionStatus.query.mockResolvedValue({ connected: false });
 
       const result = await service.syncEmails();
 
       expect(mockApi.msSync.syncNow.mutate).toHaveBeenCalled();
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should trigger email sync when Google is connected', async () => {
+      const mockResult = { inserted: 3 };
+      mockApi.msSync.getConnectionStatus.query.mockResolvedValue({ connected: false });
+      mockApi.googleSync.getConnectionStatus.query.mockResolvedValue({ connected: true });
+      mockApi.googleSync.syncNow.mutate.mockResolvedValue(mockResult);
+
+      const result = await service.syncEmails();
+
+      expect(mockApi.googleSync.syncNow.mutate).toHaveBeenCalled();
       expect(result).toEqual(mockResult);
     });
 

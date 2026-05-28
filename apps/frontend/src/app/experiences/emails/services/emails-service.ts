@@ -171,14 +171,46 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.setStatus.mutate({ id, status });
   }
 
-  /** Trigger Microsoft email sync */
-  public syncEmails() {
-    return (this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>)(
-      undefined,
-      {
-        meta: { skipErrorHandler: true },
-      },
-    );
+  /** Trigger email sync for connected accounts (Microsoft and/or Google) */
+  public async syncEmails(): Promise<{ inserted: number }> {
+    let msResult = { inserted: 0 };
+    let googleResult = { inserted: 0 };
+    let msConnected = false;
+    let googleConnected = false;
+
+    // Check MS connection status
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.connected) {
+        msConnected = true;
+        msResult = await (this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>)(
+          undefined,
+          { meta: { skipErrorHandler: true } }
+        );
+      }
+    } catch (e) {
+      console.error('MS sync failed:', e);
+    }
+
+    // Check Google connection status
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.connected) {
+        googleConnected = true;
+        googleResult = await (this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>)(
+          undefined,
+          { meta: { skipErrorHandler: true } }
+        );
+      }
+    } catch (e) {
+      console.error('Google sync failed:', e);
+    }
+
+    if (!msConnected && !googleConnected) {
+      throw new Error('No email accounts connected');
+    }
+
+    return { inserted: msResult.inserted + googleResult.inserted };
   }
 
   /** Get connection status for Microsoft sync */
