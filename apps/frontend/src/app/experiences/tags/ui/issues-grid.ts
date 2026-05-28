@@ -41,7 +41,7 @@ class IssuesService extends TagsService {
 @Component({
   selector: 'pc-issues-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="shield-exclamation"></pc-datagrid>`,
+  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-issue"></pc-datagrid>`,
   providers: [
     IssuesService,
     { provide: AbstractAPIService, useExisting: IssuesService },

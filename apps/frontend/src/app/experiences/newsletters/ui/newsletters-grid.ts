@@ -16,7 +16,7 @@ import { NewslettersService } from '../services/newsletters-service';
       [disableImport]="true"
       [disableExport]="false"
       [addRoute]="'add'"
-      plusIcon="add-notes"
+      plusIcon="add-newsletter"
     ></pc-datagrid>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: NewslettersService }],
