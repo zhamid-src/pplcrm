@@ -20,6 +20,10 @@ const envSchema = z.object({
   MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
   AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
   AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -43,4 +47,8 @@ export const env = {
   msRedirectUri: parsedEnv.MS_REDIRECT_URI,
   azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
   azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
 };
