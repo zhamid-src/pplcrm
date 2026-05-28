@@ -235,20 +235,52 @@ export class ActivityFeed implements OnInit {
    * Returns a router link config for the entity, or null if no link applies.
    */
   protected getEntityLink(act: any): { path: string; params?: Record<string, string>; label?: string } | null {
-    const id = act.entity_id;
+    const metadata = act.metadata ?? {};
+    const id = act.entity_id || metadata.id || metadata.event_id;
     if (!id) return null;
 
-    switch (act.entity) {
+    const entity = act.entity?.toLowerCase();
+    switch (entity) {
       case 'email':
+      case 'emails':
         // Deep-link to inbox and pre-select the email
         return { path: '/inbox', params: { email: id }, label: undefined };
       case 'person':
+      case 'persons':
       case 'contact':
-        return { path: `/contacts/${id}`, label: undefined };
+      case 'contacts':
+        return { path: `/people/${id}`, label: undefined };
       case 'household':
+      case 'households':
         return { path: `/households/${id}`, label: undefined };
       case 'task':
+      case 'tasks':
+      case 'tasks_archived':
         return { path: `/tasks/${id}`, label: undefined };
+      case 'volunteer_events':
+      case 'volunteer_event':
+      case 'volunteer_shifts':
+      case 'volunteer_shift': {
+        const eventId = metadata.event_id || id;
+        return { path: `/schedule/${eventId}`, label: undefined };
+      }
+      case 'newsletter':
+      case 'newsletters':
+        return { path: `/newsletter/${id}`, label: undefined };
+      case 'web_forms':
+      case 'web_form':
+      case 'form':
+      case 'forms':
+        return { path: `/forms/${id}`, label: undefined };
+      case 'company':
+      case 'companies':
+        return { path: `/companies/${id}`, label: undefined };
+      case 'team':
+      case 'teams':
+        return { path: `/teams/${id}`, label: undefined };
+      case 'user':
+      case 'users':
+        return { path: `/users/${id}`, label: undefined };
       default:
         return null;
     }
