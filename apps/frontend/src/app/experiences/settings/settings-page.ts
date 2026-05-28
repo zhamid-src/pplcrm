@@ -7,6 +7,7 @@ import { SettingsEntryType } from '@common';
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
 import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -22,7 +23,7 @@ interface SectionState {
 
 @Component({
   selector: 'pc-settings-page',
-  imports: [FormField, Icon, MsSyncSettings],
+  imports: [FormField, Icon, MsSyncSettings, BillingSettingsComponent],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {

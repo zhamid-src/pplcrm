@@ -50,6 +50,19 @@ export class FastifyServer {
     });
     this.server.register(jsendPlugin);
 
+    // Register a content type parser for application/json that keeps raw body if path is webhook
+    this.server.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+      if (req.url.includes('/billing/webhook')) {
+        done(null, body);
+      } else {
+        try {
+          done(null, JSON.parse(body as string));
+        } catch (err: any) {
+          done(err, null);
+        }
+      }
+    });
+
     // Register REST routes
     this.server.register(routes);
 

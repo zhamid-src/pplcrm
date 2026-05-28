@@ -23,6 +23,7 @@ import { DashboardRouter } from './dashboard/trpc.router';
 import { NotificationsRouter } from './notifications/trpc.router';
 import { VolunteerRouter } from './volunteer-events/trpc.router';
 import { WebFormsRouter } from './web-forms/trpc.router';
+import { BillingRouter } from './billing/trpc.router';
 
 
 /**
@@ -62,6 +63,7 @@ export const trpcRouter = router({
   notifications: NotificationsRouter,
   volunteer: VolunteerRouter,
   webForms: WebFormsRouter,
+  billing: BillingRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -104,3 +106,5 @@ export { NotificationsRouter } from './notifications/trpc.router';
 export { VolunteerRouter } from './volunteer-events/trpc.router';
 
 export { WebFormsRouter } from './web-forms/trpc.router';
+
+export { BillingRouter } from './billing/trpc.router';

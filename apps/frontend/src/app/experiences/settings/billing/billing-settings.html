@@ -1,0 +1,281 @@
+@if (loading()) {
+<div class="flex h-48 items-center justify-center">
+  <div class="flex flex-col items-center gap-3 text-base-content/50">
+    <span class="loading loading-spinner loading-md"></span>
+    <p class="text-sm font-medium">Retrieving subscription details…</p>
+  </div>
+</div>
+} @else {
+<div class="space-y-8">
+  <!-- Sandbox/Mock Warning Notice -->
+  @if (details()?.isMockMode) {
+  <div class="alert alert-warning shadow-sm border-warning/20 bg-warning/5 text-warning-content rounded-xl flex items-start gap-3">
+    <pc-icon name="exclamation-triangle" class="h-5 w-5 mt-0.5 shrink-0" />
+    <div>
+      <h3 class="font-semibold text-sm">Sandbox Mode Enabled</h3>
+      <p class="text-xs opacity-90 mt-0.5">
+        Stripe is running in **Mock Mode** for local development. Clicking billing triggers will simulate Stripe responses instantly without making live credit card calls.
+      </p>
+    </div>
+  </div>
+  }
+
+  <!-- Current Subscription Header -->
+  <div class="grid gap-6 md:grid-cols-3">
+    <!-- Current Plan Summary -->
+    <div class="md:col-span-2 card bg-base-200/40 border border-base-200 rounded-2xl p-6 flex flex-col justify-between">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase font-bold tracking-wider text-base-content/50">Current Plan</span>
+          @if (details()?.hasActiveSubscription) {
+          <span class="badge badge-success gap-1 px-3 py-1 font-semibold text-xs">
+            <pc-icon name="check-circle" class="w-3.5 h-3.5" />
+            Active
+          </span>
+          } @else {
+          <span class="badge badge-error gap-1 px-3 py-1 font-semibold text-xs">
+            Inactive
+          </span>
+          }
+        </div>
+        
+        <div>
+          <h3 class="text-3xl font-extrabold capitalize text-base-content">
+            {{ details()?.plan }} Plan
+          </h3>
+          @if (details()?.hasActiveSubscription && details()?.endsAt) {
+          <p class="text-sm text-base-content/60 mt-1">
+            Your subscription will renew automatically on **{{ details()?.endsAt | date:'mediumDate' }}**.
+          </p>
+          } @else if (details()?.endsAt) {
+          <p class="text-sm text-error/80 mt-1 font-medium">
+            Your plan has expired or was canceled. Access ends on {{ details()?.endsAt | date:'mediumDate' }}.
+          </p>
+          } @else {
+          <p class="text-sm text-base-content/60 mt-1">
+            You are currently on the free trial version of PeopleCRM. Upgrade below to unlock all capabilities.
+          </p>
+          }
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="mt-6 flex flex-wrap items-center gap-3">
+        @if (details()?.stripeCustomerId) {
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm rounded-lg flex items-center gap-1.5"
+          [disabled]="actionPending()"
+          (click)="openPortal()"
+        >
+          <pc-icon name="cog-6-tooth" class="w-4 h-4" />
+          Manage Subscription
+        </button>
+        }
+
+        @if (details()?.isMockMode && details()?.hasActiveSubscription) {
+        <button
+          type="button"
+          class="btn btn-outline btn-error btn-sm rounded-lg"
+          [disabled]="actionPending()"
+          (click)="cancelMock()"
+        >
+          Mock Cancel Subscription
+        </button>
+        }
+      </div>
+    </div>
+
+    <!-- Quick Stats Summary -->
+    <div class="card bg-base-100 border border-base-200 rounded-2xl p-6 space-y-4">
+      <h4 class="text-xs uppercase font-bold tracking-wider text-base-content/50">Billing Account</h4>
+      
+      <div class="space-y-3 text-sm">
+        <div>
+          <span class="text-base-content/50 block text-xs">Organization Tenant ID</span>
+          <span class="font-mono text-base-content/80 font-medium">#{{ details()?.stripeCustomerId ? details()?.stripeCustomerId?.substring(0, 15) + '...' : 'Unregistered' }}</span>
+        </div>
+        <div>
+          <span class="text-base-content/50 block text-xs">Linked Card</span>
+          <span class="flex items-center gap-1.5 font-medium text-base-content/80 mt-0.5">
+            <pc-icon name="credit-card" class="w-4 h-4 text-base-content/40" />
+            •••• •••• •••• {{ details()?.hasActiveSubscription ? '4242' : 'N/A' }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plans Selection Grid -->
+  <div class="space-y-6">
+    <div>
+      <h3 class="text-xl font-bold tracking-tight text-base-content">Upgrade Options</h3>
+      <p class="text-sm text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-3">
+      <!-- Grassroots Plan Card -->
+      <div class="card bg-base-100 border border-base-200 rounded-2xl flex flex-col justify-between p-6 relative overflow-hidden transition-all hover:border-primary/30">
+        @if (details()?.plan === 'grassroots') {
+        <div class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl">
+          Active Plan
+        </div>
+        }
+        
+        <div class="space-y-4">
+          <div>
+            <h4 class="font-extrabold text-lg text-base-content">Grassroots</h4>
+            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">Best for small local candidates and municipal campaigns.</p>
+          </div>
+
+          <div class="flex items-baseline text-base-content">
+            <span class="text-4xl font-extrabold tracking-tight">$49</span>
+            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+          </div>
+
+          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Up to **5,000** contacts
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              **3 User Seats** included
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Shared Inbox (Email)
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Volunteer sign-up forms
+            </li>
+          </ul>
+        </div>
+
+        <div class="mt-6 pt-4">
+          <button
+            type="button"
+            class="btn btn-primary w-full rounded-xl"
+            [disabled]="details()?.plan === 'grassroots' || actionPending()"
+            (click)="subscribe('grassroots')"
+          >
+            @if (details()?.plan === 'grassroots') {
+              Current Tier
+            } @else {
+              Upgrade to Grassroots
+            }
+          </button>
+        </div>
+      </div>
+
+      <!-- Representative Plan Card -->
+      <div class="card bg-base-100 border-2 border-primary rounded-2xl flex flex-col justify-between p-6 relative overflow-hidden transition-all shadow-md">
+        @if (details()?.plan === 'representative') {
+        <div class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl">
+          Active Plan
+        </div>
+        } @else {
+        <div class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl">
+          Popular
+        </div>
+        }
+        
+        <div class="space-y-4">
+          <div>
+            <h4 class="font-extrabold text-lg text-base-content flex items-center gap-1.5">
+              Representative
+            </h4>
+            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">Best for state/provincial legislators and mid-sized campaign teams.</p>
+          </div>
+
+          <div class="flex items-baseline text-base-content">
+            <span class="text-4xl font-extrabold tracking-tight">$199</span>
+            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+          </div>
+
+          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Up to **50,000** contacts
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              **10 User Seats** included
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Shared Inbox (Email + SMS)
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Volunteer door-knocking tools
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Automated email sequences
+            </li>
+          </ul>
+        </div>
+
+        <div class="mt-6 pt-4">
+          <button
+            type="button"
+            class="btn btn-primary w-full rounded-xl"
+            [disabled]="details()?.plan === 'representative' || actionPending()"
+            (click)="subscribe('representative')"
+          >
+            @if (details()?.plan === 'representative') {
+              Current Tier
+            } @else {
+              Upgrade to Representative
+            }
+          </button>
+        </div>
+      </div>
+
+      <!-- Enterprise Card -->
+      <div class="card bg-base-100 border border-base-200 rounded-2xl flex flex-col justify-between p-6 transition-all hover:border-primary/30">
+        <div class="space-y-4">
+          <div>
+            <h4 class="font-extrabold text-lg text-base-content">Enterprise</h4>
+            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">For national parties, congressional bids, and large advocacy operations.</p>
+          </div>
+
+          <div class="flex items-baseline text-base-content">
+            <span class="text-3xl font-extrabold tracking-tight">Custom</span>
+          </div>
+
+          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Unlimited voter/contact records
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Custom user seat limits
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              SLA support & Dedicated IP
+            </li>
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="w-4 h-4 text-primary shrink-0" />
+              Custom API & integrations
+            </li>
+          </ul>
+        </div>
+
+        <div class="mt-6 pt-4">
+          <a
+            href="mailto:support@peoplecrm.example.com?subject=Enterprise Inquiry"
+            class="btn btn-outline btn-neutral w-full rounded-xl"
+          >
+            Contact Sales
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+}

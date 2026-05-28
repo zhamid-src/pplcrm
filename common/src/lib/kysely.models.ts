@@ -318,6 +318,11 @@ interface Tenants extends RecordType, AddressType {
   notes: string | null;
   /** ID of the tenant's permanent placeholder household (people with no address go here). */
   placeholder_household_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  subscription_plan: string | null;
+  subscription_status: string | null;
+  subscription_ends_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {

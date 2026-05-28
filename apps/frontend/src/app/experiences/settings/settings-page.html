@@ -43,6 +43,22 @@
           />
           Email Sync
         </button>
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('billing')"
+          [class.opacity-70]="!isSelected('billing')"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon
+            name="credit-card"
+            class="h-5 w-5 mr-2 opacity-80"
+            [class.text-primary]="isSelected('billing')"
+          />
+          Billing & Subscription
+        </button>
       </nav>
     </aside>
 
@@ -181,6 +197,17 @@
           <p class="mt-1 text-sm text-base-content/60">Connect your Office 365 mailbox to sync emails into your pplcrm inbox.</p>
         </header>
         <pc-ms-sync-settings></pc-ms-sync-settings>
+      </section>
+      }
+
+      <!-- Billing custom section -->
+      @if (isSelected('billing')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Billing & Subscription</h2>
+          <p class="mt-1 text-sm text-base-content/60">Manage your subscription plans, view invoice details, and update payment methods.</p>
+        </header>
+        <pc-billing-settings></pc-billing-settings>
       </section>
       }
     </main>
