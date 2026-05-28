@@ -166,13 +166,14 @@
       <!-- Menu -->
       <ul
         tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-44 cursor-pointer font-light shadow"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
+        (click)="closeDropdown()"
       >
         <li class="hover:text-primary">
-          <a> <pc-icon name="user-circle"></pc-icon> <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container> </a>
+          <a routerLink="/settings"> <pc-icon name="user-circle"></pc-icon> <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container> </a>
         </li>
         <li class="hover:text-primary">
-          <a> <pc-icon name="cog-6-tooth"></pc-icon> <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container> </a>
+          <a routerLink="/settings"> <pc-icon name="cog-6-tooth"></pc-icon> <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container> </a>
         </li>
         <li class="hover:text-primary" (click)="signOut()">
           <a> <pc-icon name="arrow-left-start-on-rectangle"></pc-icon> <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container> </a>
