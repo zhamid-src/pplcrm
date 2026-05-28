@@ -1,6 +1,6 @@
-<section class="border-r border-gray-200 flex flex-col h-full overflow-hidden w-48 bg-base-50">
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-48 bg-base-200">
   <!-- Toolbar -->
-  <div class="flex items-center justify-between border-t border-gray-200 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-50">
+  <div class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200">
     <span class="text-xs font-semibold text-neutral-content">Sort</span>
     <div class="dropdown dropdown-end">
       <label tabindex="0" class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer">
@@ -22,10 +22,10 @@
     @for (email of sortedEmails(); track email.id) {
     <li
       (click)="selectEmail(email)"
-      [class.bg-blue-50]="isSelected(email.id)"
-      class="border-b border-gray-100 cursor-pointer px-4 py-2 hover:bg-blue-50"
+      [class.bg-primary/10]="isSelected(email.id)"
+      class="border-b border-base-200 cursor-pointer px-4 py-2 hover:bg-primary/5"
     >
-      <div class="truncate text-xs text-gray-500 flex gap-1">
+      <div class="truncate text-xs text-base-content/60 flex gap-1">
         @if (email.from_email || email.to_email) {
         <span class="truncate flex-1">{{ email.from_email || email.to_email }}</span>
         } @else {
@@ -37,12 +37,12 @@
         @if (email?.subject) {
         <span class="truncate flex-1">{{ email.subject }}</span>
         } @else {
-        <span class="truncate flex-1 italic font-light text-gray-400">No Subject</span>
+        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
         } @if (email.has_attachment) {
         <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
-      <div class="truncate font-light text-xs text-gray-500">{{ email.preview }}</div>
+      <div class="truncate font-light text-xs text-base-content/60">{{ email.preview }}</div>
     </li>
     }
   </ul>

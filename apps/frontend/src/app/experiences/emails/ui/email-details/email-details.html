@@ -10,7 +10,7 @@
     @if (!commentsExpanded() || (email() && store.isBodyExpanded())) {
     <!-- Body visible when comments are collapsed -->
     <pc-email-body
-      class="flex-1 min-h-0 border-double border-b-2 border-gray-200 rounded-lg bg-white"
+      class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
       [email]="email()!"
     >
     </pc-email-body>
@@ -18,11 +18,11 @@
 
     <!-- Comments panel: either compact with status bar or expanded occupying remaining space -->
     @if (!store.isBodyExpanded()) {
-    <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
+    <div class="min-h-0 flex flex-col rounded-lg bg-base-100 border border-base-300 overflow-hidden">
       <!-- Status bar -->
       <button
         type="button"
-        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-gray-50 border-b border-gray-200 hover:bg-gray-100"
+        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-base-200 border-b border-base-300 hover:bg-base-300"
         (click)="toggleComments()"
         [attr.aria-expanded]="commentsExpanded()"
         aria-controls="comments-panel"

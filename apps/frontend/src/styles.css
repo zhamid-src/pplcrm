@@ -275,3 +275,64 @@ body {
     animation: flash 1s ease-in-out 1;
   }
 }
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme="dark"] .ql-toolbar.ql-snow,
+[data-theme="dark"] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme="dark"] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme="dark"] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme="dark"] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme="dark"] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme="dark"] .ql-snow.ql-toolbar button:hover,
+[data-theme="dark"] .ql-snow .ql-toolbar button:hover,
+[data-theme="dark"] .ql-snow.ql-toolbar button:focus,
+[data-theme="dark"] .ql-snow .ql-toolbar button:focus,
+[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active,
+[data-theme="dark"] .ql-snow .ql-toolbar button.ql-active,
+[data-theme="dark"] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme="dark"] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme="dark"] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme="dark"] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme="dark"] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme="dark"] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme="dark"] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme="dark"] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme="dark"] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme="dark"] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme="dark"] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme="dark"] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme="dark"] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme="dark"] .prose h1,
+[data-theme="dark"] .prose h2,
+[data-theme="dark"] .prose h3,
+[data-theme="dark"] .prose h4,
+[data-theme="dark"] .prose h5,
+[data-theme="dark"] .prose h6,
+[data-theme="dark"] .prose strong,
+[data-theme="dark"] .prose b,
+[data-theme="dark"] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
