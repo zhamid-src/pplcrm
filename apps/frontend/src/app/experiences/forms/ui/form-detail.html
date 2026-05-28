@@ -2,233 +2,250 @@
   <!-- Header -->
   <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
     <div class="flex items-center gap-3">
-      <a class="btn btn-ghost btn-sm" [routerLink]="isNew() ? '../' : '../../'">
+      <a class="btn btn-ghost btn-sm" routerLink="/forms">
         <pc-icon name="arrow-uturn-left" class="mr-1"></pc-icon>
         Back
       </a>
-      <h1 class="text-lg font-semibold">
-        {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
-      </h1>
+      <h1 class="text-lg font-semibold">{{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}</h1>
     </div>
   </header>
 
   <!-- Main Content -->
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
     @if (loading()) {
-      <div class="mx-auto max-w-4xl space-y-4">
-        <div class="skeleton h-8 w-1/3"></div>
-        <div class="skeleton h-12 w-full"></div>
-        <div class="skeleton h-12 w-full"></div>
-        <div class="skeleton h-24 w-full"></div>
-      </div>
+    <div class="mx-auto max-w-4xl space-y-4">
+      <div class="skeleton h-8 w-1/3"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+    </div>
     } @else {
-      <div class="mx-auto max-w-5xl">
-        @if (error()) {
-          <div class="alert alert-error mb-6 shadow-sm">
-            <pc-icon name="shield-exclamation" class="h-6 w-6"></pc-icon>
-            <span>{{ error() }}</span>
+    <div class="mx-auto max-w-5xl">
+      @if (error()) {
+      <div class="alert alert-error mb-6 shadow-sm">
+        <pc-icon name="shield-exclamation" class="h-6 w-6"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
+      }
+
+      <div class="grid gap-8 md:grid-cols-12">
+        <!-- Left Column: Form Configuration -->
+        <div class="space-y-6 md:col-span-7">
+          <form [formGroup]="formGroup" (submit)="save()" class="card bg-base-100 border border-base-200 shadow-sm">
+            <div class="card-body gap-5">
+              <h2 class="card-title text-base font-semibold uppercase tracking-wide text-base-content/60">
+                Form Settings
+              </h2>
+
+              <!-- Name -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Form Name *</label>
+                <input
+                  type="text"
+                  formControlName="name"
+                  class="input input-bordered w-full"
+                  placeholder="E.g., Newsletter Signup"
+                  [class.input-error]="formGroup.get('name')?.invalid && formGroup.get('name')?.touched"
+                />
+                @if (formGroup.get('name')?.invalid && formGroup.get('name')?.touched) {
+                <p class="mt-1 text-xs text-error">Form name is required (max 100 chars).</p>
+                }
+              </div>
+
+              <!-- Description -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Description</label>
+                <textarea
+                  formControlName="description"
+                  class="textarea textarea-bordered w-full"
+                  rows="2"
+                  placeholder="Internal note about where this form is deployed..."
+                ></textarea>
+              </div>
+
+              <!-- Redirect URL -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
+                  <span>Redirect URL (After Submit)</span>
+                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
+                </label>
+                <input
+                  type="url"
+                  formControlName="redirect_url"
+                  class="input input-bordered w-full"
+                  placeholder="https://mywebsite.com/thank-you"
+                  [class.input-error]="formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched"
+                />
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  If blank, users will see the PeopleCRM default success page.
+                </p>
+                @if (formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched) {
+                <p class="mt-1 text-xs text-error">Please enter a valid URL starting with http:// or https://</p>
+                }
+              </div>
+
+              <!-- Status -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Status</label>
+                <select formControlName="status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
+                Target Audience Actions
+              </h2>
+
+              <!-- Lists mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Add subscribers to Lists</label>
+                @if (!availableLists().length) {
+                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
+                } @else {
+                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
+                  <option value="">Select a list to target</option>
+                  @for (list of availableLists(); track list.id) {
+                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
+                  }
+                </select>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  @if (!selectedLists().length) {
+                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
+                  } @else { @for (listId of selectedLists(); track listId) {
+                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
+                  } }
+                </div>
+                }
+              </div>
+
+              <!-- Tags mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Apply Tags to subscribers</label>
+                <div class="rounded border border-base-200 bg-base-50 p-2">
+                  <pc-tags
+                    [tags]="selectedTags()"
+                    [enableAutoComplete]="true"
+                    placeholder="Add tag"
+                    (tagsChange)="handleTagsChange($event)"
+                  ></pc-tags>
+                </div>
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be
+                  applied automatically.
+                </p>
+              </div>
+
+              <!-- Submit actions -->
+              <div class="card-actions justify-end mt-4">
+                <button type="submit" class="btn btn-primary" [disabled]="saving()">
+                  @if (saving()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } Save Web Form
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Right Column: Code Generator / Preview -->
+        <div class="space-y-6 md:col-span-5">
+          @if (isNew()) {
+          <div class="card bg-base-200 border border-base-300 text-center">
+            <div class="card-body items-center py-12">
+              <pc-icon name="clipboard-document-list" class="h-12 w-12 text-base-content/40 mb-3"></pc-icon>
+              <h3 class="font-bold text-lg">Snippet Generator</h3>
+              <p class="text-sm text-base-content/60 max-w-sm mt-1">
+                Once you save the form definition, we will generate the copy-paste HTML snippet you can embed on your
+                website.
+              </p>
+            </div>
           </div>
-        }
+          } @else {
+          <div class="card bg-base-100 border border-base-200 shadow-sm">
+            <div class="card-body gap-4">
+              <div class="flex items-center justify-between border-b border-base-200 pb-3 mb-1">
+                <div>
+                  <h3 class="font-bold text-base">HTML Embed Snippet</h3>
+                  <p class="text-xs text-base-content/50">Deploy this form on your external website.</p>
+                </div>
+                <button class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+                  <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
+                  Copy
+                </button>
+              </div>
 
-        <div class="grid gap-8 md:grid-cols-12">
-          <!-- Left Column: Form Configuration -->
-          <div class="space-y-6 md:col-span-7">
-            <form [formGroup]="formGroup" (submit)="save()" class="card bg-base-100 border border-base-200 shadow-sm">
-              <div class="card-body gap-5">
-                <h2 class="card-title text-base font-semibold uppercase tracking-wide text-base-content/60">
-                  Form Settings
-                </h2>
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Public Form ID</label>
+                <code
+                  class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all"
+                >
+                  {{ formId() }}
+                </code>
+              </div>
 
-                <!-- Name -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1">Form Name *</label>
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">
+                  <span>Public Landing Page URL</span>
+                </label>
+                <div class="flex gap-2">
                   <input
                     type="text"
-                    formControlName="name"
-                    class="input input-bordered w-full"
-                    placeholder="E.g., Newsletter Signup"
-                    [class.input-error]="formGroup.get('name')?.invalid && formGroup.get('name')?.touched"
+                    [value]="formUrl()"
+                    readonly
+                    class="input input-bordered input-sm flex-1 font-mono text-xs"
                   />
-                  @if (formGroup.get('name')?.invalid && formGroup.get('name')?.touched) {
-                    <p class="mt-1 text-xs text-error">Form name is required (max 100 chars).</p>
-                  }
-                </div>
-
-                <!-- Description -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1">Description</label>
-                  <textarea
-                    formControlName="description"
-                    class="textarea textarea-bordered w-full"
-                    rows="2"
-                    placeholder="Internal note about where this form is deployed..."
-                  ></textarea>
-                </div>
-
-                <!-- Redirect URL -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1 flex items-center justify-between">
-                    <span>Redirect URL (After Submit)</span>
-                    <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
-                  </label>
-                  <input
-                    type="url"
-                    formControlName="redirect_url"
-                    class="input input-bordered w-full"
-                    placeholder="https://mywebsite.com/thank-you"
-                    [class.input-error]="formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched"
-                  />
-                  <p class="mt-1 text-[11px] text-base-content/50">
-                    If blank, users will see the PeopleCRM default success page.
-                  </p>
-                  @if (formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched) {
-                    <p class="mt-1 text-xs text-error">Please enter a valid URL starting with http:// or https://</p>
-                  }
-                </div>
-
-                <!-- Status -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1">Status</label>
-                  <select formControlName="status" class="select select-bordered w-full">
-                    <option value="active">Active</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                </div>
-
-                <div class="divider my-1"></div>
-
-                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
-                  Target Audience Actions
-                </h2>
-
-                <!-- Lists mapping -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1">Add subscribers to Lists</label>
-                  @if (!availableLists().length) {
-                    <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
-                  } @else {
-                    <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
-                      <option value="">Select a list to target</option>
-                      @for (list of availableLists(); track list.id) {
-                        <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">
-                          {{ list.name }}
-                        </option>
-                      }
-                    </select>
-                    <div class="mt-2 flex flex-wrap gap-1.5">
-                      @if (!selectedLists().length) {
-                        <span class="text-[11px] text-base-content/50">No lists selected.</span>
-                      } @else {
-                        @for (listId of selectedLists(); track listId) {
-                          <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
-                        }
-                      }
-                    </div>
-                  }
-                </div>
-
-                <!-- Tags mapping -->
-                <div class="form-control">
-                  <label class="label text-xs font-semibold py-1">Apply Tags to subscribers</label>
-                  <div class="rounded border border-base-200 bg-base-50 p-2">
-                    <pc-tags
-                      [tags]="selectedTags()"
-                      [enableAutoComplete]="true"
-                      placeholder="Add tag"
-                      (tagsChange)="handleTagsChange($event)"
-                    ></pc-tags>
-                  </div>
-                  <p class="mt-1 text-[11px] text-base-content/50">
-                    A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be applied automatically.
-                  </p>
-                </div>
-
-                <!-- Submit actions -->
-                <div class="card-actions justify-end mt-4">
-                  <button type="submit" class="btn btn-primary" [disabled]="saving()">
-                    @if (saving()) {
-                      <span class="loading loading-spinner loading-xs"></span>
-                    }
-                    Save Web Form
+                  <a
+                    [href]="formUrl()"
+                    target="_blank"
+                    class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+                    title="Open landing page"
+                  >
+                    <pc-icon name="arrow-top-right-on-square"></pc-icon>
+                  </a>
+                  <button
+                    class="btn btn-sm btn-outline btn-primary px-3"
+                    (click)="copyUrl()"
+                    title="Copy landing page URL"
+                  >
+                    <pc-icon name="document-duplicate"></pc-icon>
                   </button>
                 </div>
               </div>
-            </form>
-          </div>
 
-          <!-- Right Column: Code Generator / Preview -->
-          <div class="space-y-6 md:col-span-5">
-            @if (isNew()) {
-              <div class="card bg-base-200 border border-base-300 text-center">
-                <div class="card-body items-center py-12">
-                  <pc-icon name="clipboard-document-list" class="h-12 w-12 text-base-content/40 mb-3"></pc-icon>
-                  <h3 class="font-bold text-lg">Snippet Generator</h3>
-                  <p class="text-sm text-base-content/60 max-w-sm mt-1">
-                    Once you save the form definition, we will generate the copy-paste HTML snippet you can embed on your website.
-                  </p>
-                </div>
-              </div>
-            } @else {
-              <div class="card bg-base-100 border border-base-200 shadow-sm">
-                <div class="card-body gap-4">
-                  <div class="flex items-center justify-between border-b border-base-200 pb-3 mb-1">
-                    <div>
-                      <h3 class="font-bold text-base">HTML Embed Snippet</h3>
-                      <p class="text-xs text-base-content/50">Deploy this form on your external website.</p>
-                    </div>
-                    <button class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
-                      <pc-icon name="document-duplicate" class="h-4 w-4 mr-1"></pc-icon>
-                      Copy
-                    </button>
-                  </div>
-
-                  <div class="form-control">
-                    <label class="label text-xs font-semibold py-1">Public Form ID</label>
-                    <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
-                      {{ formId() }}
-                    </code>
-                  </div>
-
-                  <div class="form-control">
-                    <label class="label text-xs font-semibold py-1 flex items-center justify-between">
-                      <span>Public Landing Page URL</span>
-                      <a [href]="formUrl()" target="_blank" class="text-xs text-primary hover:underline flex items-center gap-0.5">
-                        Open <pc-icon name="arrow-top-right-on-square" class="h-3 w-3"></pc-icon>
-                      </a>
-                    </label>
-                    <div class="flex gap-2">
-                      <input type="text" [value]="formUrl()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
-                      <button class="btn btn-sm btn-outline btn-primary" (click)="copyUrl()">
-                        <pc-icon name="document-duplicate" class="h-4 w-4"></pc-icon>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="form-control">
-                    <label class="label text-xs font-semibold py-1">HTML Code</label>
-                    <pre class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal">
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">HTML Code</label>
+                <pre
+                  class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
+                >
 {{ embedSnippet() }}
-                    </pre>
-                  </div>
-
-                  <div class="divider my-1"></div>
-
-                  <div class="rounded-lg bg-base-50 p-4 border border-base-200">
-                    <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2">
-                      <pc-icon name="check-circle" class="h-4 w-4 text-success"></pc-icon>
-                      Spam & BOT Protection Included
-                    </h4>
-                    <p class="text-[11px] text-base-content/60 leading-normal">
-                      The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>). 
-                      Spam bots automatically fill in every input control, which triggers our silent rejection, protecting your CRM from contact pollution.
-                    </p>
-                  </div>
-                </div>
+                    </pre
+                >
               </div>
-            }
+
+              <div class="divider my-1"></div>
+
+              <div class="rounded-lg bg-base-50 p-4 border border-base-200">
+                <h4
+                  class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
+                >
+                  <pc-icon name="check-circle" class="text-success"></pc-icon>
+                  Spam & BOT Protection Included
+                </h4>
+                <p class="text-[11px] text-base-content/60 leading-normal">
+                  The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>).
+                  Spam bots automatically fill in every input control, which triggers our silent rejection, protecting
+                  your CRM from contact pollution.
+                </p>
+              </div>
+            </div>
           </div>
+          }
         </div>
       </div>
+    </div>
     }
   </main>
 </div>
