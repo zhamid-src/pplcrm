@@ -229,6 +229,10 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
   {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
     path: 'imports',
     loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
   },

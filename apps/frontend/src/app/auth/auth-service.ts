@@ -80,6 +80,30 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   /**
+   * Retrieves a user profile by ID (including stats and profile fields like last name).
+   */
+  public getProfileById(id: string) {
+    return this.api.auth.getById.query(id);
+  }
+
+  /**
+   * Updates an existing user's profile details.
+   */
+  public async updateUserProfile(id: string, data: { first_name?: string; last_name?: string | null; email?: string }) {
+    const updated = await this.api.auth.update.mutate({ id, data });
+    // If the updated user is the current user, update our local signal
+    const current = this.user();
+    if (current && current.id === id) {
+      this.user.set({
+        ...current,
+        first_name: updated.first_name ?? current.first_name,
+        ...(updated as any),
+      });
+    }
+    return updated;
+  }
+
+  /**
    * Resets the user's password using a verification code and new password.
    *
    * @param input - Object containing the reset `code` and new `password`.
