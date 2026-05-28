@@ -62,6 +62,7 @@ export interface Models {
   task_attachments: TaskAttachments;
   user_activity: UserActivity;
   ms_oauth_tokens: MsOauthTokens;
+  google_oauth_tokens: GoogleOauthTokens;
   data_imports: DataImports;
   companies: Companies;
   files: Files;
@@ -459,6 +460,20 @@ interface MsOauthTokens {
   refresh_token: string;
   expires_at: Timestamp;
   ms_email: string | null;
+  delta_link: string | null;
+  synced_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface GoogleOauthTokens {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: Timestamp;
+  google_email: string | null;
   delta_link: string | null;
   synced_at: Timestamp | null;
   created_at: Generated<Timestamp>;

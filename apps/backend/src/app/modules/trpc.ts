@@ -16,6 +16,7 @@ import { TeamsRouter } from './teams/trpc.router';
 import { SettingsRouter } from './settings/trpc.router';
 import { ImportsRouter } from './imports/trpc.router';
 import { MsSyncRouter } from './ms-sync/trpc.router';
+import { GoogleSyncRouter } from './google-sync/trpc.router';
 import { CompaniesRouter } from './companies/trpc.router';
 import { ActivityRouter } from './activity/trpc.router';
 import { FilesRouter } from './files/trpc.router';
@@ -56,6 +57,7 @@ export const trpcRouter = router({
   settings: SettingsRouter,
   imports: ImportsRouter,
   msSync: MsSyncRouter,
+  googleSync: GoogleSyncRouter,
   companies: CompaniesRouter,
   activity: ActivityRouter,
   files: FilesRouter,
@@ -92,6 +94,7 @@ export { SettingsRouter } from './settings/trpc.router';
 export { ImportsRouter } from './imports/trpc.router';
 
 export { MsSyncRouter } from './ms-sync/trpc.router';
+export { GoogleSyncRouter } from './google-sync/trpc.router';
 
 export { CompaniesRouter } from './companies/trpc.router';
 

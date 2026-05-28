@@ -8,6 +8,63 @@ import nodemailer from 'nodemailer';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
 import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+  
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+  
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
 
 const storageService = new StorageService();
 
@@ -307,12 +364,21 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       });
     }
 
-    // Check if user has a connected Microsoft account
-    const hasMsConnected = await db
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
       .selectFrom('ms_oauth_tokens')
-      .select(['user_id'])
+      .select(['user_id', 'ms_email'])
       .where('user_id', '=', userId)
       .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
 
     // Load SMTP settings from database for this tenant
     const smtpRows = await db
@@ -330,11 +396,11 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const hasSmtpConfigured = !!smtpSettings['communications.smtp_host'];
 
     // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasSmtpConfigured) {
+    if (!hasMsConnected && !hasGoogleConnected && !hasSmtpConfigured) {
       return reply.status(400).send({
         status: 'error',
         message:
-          'No email dispatch method configured. Please connect a Microsoft account or configure SMTP settings in Settings.',
+          'No email dispatch method configured. Please connect a Microsoft or Google account, or configure SMTP settings in Settings.',
       });
     }
 
@@ -359,10 +425,26 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       fallbackPreview,
     );
 
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' | 'smtp' = 'smtp';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    } else if (hasSmtpConfigured) {
+      sendMethod = 'smtp';
+    }
+
     // Dispatch the email synchronously
     try {
-      const oauthSvc = getOAuthService(db);
-      if (hasMsConnected) {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
         let msDraftId: string | null = null;
         try {
           const accessToken = await oauthSvc.getValidToken(userId);
@@ -451,6 +533,86 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('id', '=', String(emailRow.id))
             .execute();
           return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(err.message || 'Failed to send email via Google', 400);
         }
       } else {
         // SMTP Flow

@@ -6,6 +6,7 @@ import emailsApiRoute from './modules/emails/routes/emails-api.route';
 import householdsRoute from './modules/households/routes/households.route';
 import personsRoute from './modules/persons/routes/persons.route';
 import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
 import filesRoute from './modules/files/routes/files.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
@@ -47,6 +48,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
   fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
 
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
