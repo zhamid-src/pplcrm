@@ -23,7 +23,7 @@ export const CompaniesRouter = router({
   
   delete: authProcedure
     .input(idSchema)
-    .mutation(wrapTrpc(({ input, ctx }) => companies.delete(ctx.auth.tenant_id, input))),
+    .mutation(wrapTrpc(({ input, ctx }) => companies.delete(ctx.auth.tenant_id, input, ctx.auth.user_id))),
   
   deleteMany: authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))

@@ -12,6 +12,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 import { ColumnType } from 'kysely';
 
@@ -31,7 +32,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [DatePipe, FormField, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon],
+  imports: [DatePipe, FormField, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon, RecordActivities],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {

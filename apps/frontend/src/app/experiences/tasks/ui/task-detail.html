@@ -210,5 +210,9 @@
       </div>
       }
     </div>
+
+    @if (id()) {
+      <pc-record-activities [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
+    }
   </div>
 </div>

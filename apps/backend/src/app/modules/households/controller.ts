@@ -201,7 +201,13 @@ export class HouseholdsController extends BaseController<'households', Household
    * @param household_id - Household ID
    * @param tag_name - Name of the tag to remove
    */
-  public async detachTag(tenant_id: string, household_id: string, tag_name: string, type: 'tag' | 'issue' = 'tag') {
+  public async detachTag(
+    tenant_id: string,
+    household_id: string,
+    tag_name: string,
+    type: 'tag' | 'issue' = 'tag',
+    userId?: string
+  ) {
     const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
     if (placeholders.has(household_id)) {
       throw new TRPCError({
@@ -216,6 +222,22 @@ export class HouseholdsController extends BaseController<'households', Household
       if (mapId) {
         await this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
       }
+    }
+
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id,
+          user_id: userId,
+          activity: 'update',
+          entity: 'households',
+          entity_id: household_id,
+          quantity: 1,
+          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log detach tag activity', e);
     }
   }
 

@@ -188,6 +188,10 @@
         </div>
         }
 
+        @if (getId()) {
+        <pc-record-activities [entity]="'persons'" [entityId]="getId()!"></pc-record-activities>
+        }
+
         <pc-add-btn-row
           [isLoading]="isLoading()"
           [signalForm]="form"

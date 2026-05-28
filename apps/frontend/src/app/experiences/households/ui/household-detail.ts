@@ -11,6 +11,7 @@ import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { HouseholdsService } from '../services/households-service';
@@ -23,7 +24,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, PeopleInHousehold, Icon],
+  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, PeopleInHousehold, Icon, RecordActivities],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
