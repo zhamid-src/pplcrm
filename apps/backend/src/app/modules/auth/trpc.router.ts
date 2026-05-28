@@ -32,7 +32,7 @@ function count() {
  */
 function getUsers() {
   return authProcedure.query(
-    wrapTrpc(({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name'] })),
+    wrapTrpc(({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] })),
   );
 }
 

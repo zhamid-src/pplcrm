@@ -41,6 +41,11 @@ export interface IAuthUser {
   first_name: string;
 
   /**
+   * The last name of the user
+   */
+  last_name?: string;
+
+  /**
    * The unique ID that is also used as the primary key in the database.
    */
   id: string;
