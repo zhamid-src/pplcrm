@@ -6,7 +6,7 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
@@ -18,7 +18,7 @@ import { NotificationsService } from '../../services/api/notifications-service';
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective],
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',
@@ -87,6 +87,7 @@ export class Navbar {
     if (notif.link) {
       this.router.navigateByUrl(notif.link);
     }
+    this.closeDropdown();
   }
 
   protected async markAllAsRead(event: Event) {
@@ -202,6 +203,16 @@ export class Navbar {
    */
   protected signOut(): void {
     this.auth.signOut();
+  }
+
+  /**
+   * Closes any open dropdowns by blurring the active element.
+   */
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
   }
 
   protected toggleFullScreen(): void {
