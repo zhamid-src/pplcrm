@@ -15,12 +15,12 @@ import type { EmailType } from 'common/src/lib/models';
   selector: 'pc-email-activities',
   imports: [DatePipe, Icon],
   template: `
-    <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
+    <div class="min-h-0 flex flex-col rounded-lg bg-base-100 border border-base-300 overflow-hidden">
       <!-- Collapsed header / toggle -->
       <button
         type="button"
         id="email-activities-toggle"
-        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-gray-50 border-b border-gray-200 hover:bg-gray-100 transition-colors"
+        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-base-200 border-b border-base-300 hover:bg-base-300 transition-colors"
         (click)="toggle()"
         [attr.aria-expanded]="expanded()"
         aria-controls="activities-panel"
@@ -66,7 +66,7 @@ import type { EmailType } from 'common/src/lib/models';
             </div>
           } @else {
             <ol
-              class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3"
+              class="relative border-l border-base-300 ml-4 py-3 pr-3 space-y-3"
               i18n-aria-label="@@emailActivities.list.ariaLabel"
               aria-label="Email activity timeline"
             >
