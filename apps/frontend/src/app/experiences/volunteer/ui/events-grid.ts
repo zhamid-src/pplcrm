@@ -16,7 +16,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
       [disableExport]="true"
       [disableImport]="true"
       [addRoute]="'add'"
-      plusIcon="clock"
+      plusIcon="add-schedule"
     ></pc-datagrid>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: VolunteerEventsFrontendService }],

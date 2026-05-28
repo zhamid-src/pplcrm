@@ -7,7 +7,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Component({
   selector: 'pc-forms-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" [disableView]="false" addRoute="add" plusIcon="plus"></pc-datagrid>`,
+  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" [disableView]="false" addRoute="add" plusIcon="add-form"></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useExisting: FormsService }],
 })
 export class FormsGridComponent extends DataGrid<'web_forms', AddWebFormType> {

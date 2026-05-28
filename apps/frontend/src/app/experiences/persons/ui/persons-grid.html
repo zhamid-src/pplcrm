@@ -8,7 +8,7 @@
   [limitToTags]="limitTags"
   [disableImport]="false"
   (importCSV)="openImportDialog()"
-  plusIcon="user-plus"
+  [plusIcon]="getPlusIcon()"
 ></pc-datagrid>
 
 <dialog id="confirmAddressEdit" class="modal">

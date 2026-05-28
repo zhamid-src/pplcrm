@@ -8,6 +8,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
@@ -273,6 +274,10 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     super();
     const route = inject(ActivatedRoute);
     this.limitTags = route.snapshot.data['tags'] ?? [];
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return this.limitTags.includes('volunteer') ? 'add-volunteer' : 'user-plus';
   }
 
   // paging/preview managed by CsvImportComponent

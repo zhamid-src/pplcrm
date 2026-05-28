@@ -37,11 +37,18 @@ const _cache = new Map<PcIconNameType, Promise<string>>();
 
 export const icons = {
   none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
   'add-group': 'assets/icons/add-group.svg',
   'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
   'add-label': 'assets/icons/add-label.svg',
   'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
   'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
   'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
   'archive-box': 'assets/icons/archive-box.svg',
   'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',

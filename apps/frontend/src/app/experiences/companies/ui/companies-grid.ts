@@ -14,7 +14,7 @@ import { CompaniesService } from '../services/companies-service';
       [disableExport]="true"
       [disableImport]="true"
       [addRoute]="'add'"
-      plusIcon="plus"
+      plusIcon="add-company"
     ></pc-datagrid>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: CompaniesService }],
