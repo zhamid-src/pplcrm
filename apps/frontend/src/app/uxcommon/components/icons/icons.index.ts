@@ -135,6 +135,7 @@ export const icons = {
   'menu-open': 'assets/icons/menu-open.svg',
   merge: 'assets/icons/merge.svg',
   moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
   'paper-airplane': 'assets/icons/paper-airplane.svg',
   'paper-clip': 'assets/icons/paper-clip.svg',
   'pencil-square': 'assets/icons/pencil-square.svg',
