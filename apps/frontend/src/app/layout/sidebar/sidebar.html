@@ -3,16 +3,13 @@
 <!-- Reusable nav link template – avoids duplicating the <a> block in every branch -->
 <ng-template #navLink let-nav>
   <a
-    class="hover:bg-base-200 hover:text-primary flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+    class="hover:bg-base-200 hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg"
     (click)="this.closeMobile()"
     routerLink="{{ nav.route }}"
     [class.bg-base-200]="this.router.url === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span
-      class="pl-3 group-hover:md:visible text-sm"
-      [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-    >
+    <span class="pl-2 group-hover:md:visible text-sm" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
       {{ nav.name }}
     </span>
   </a>
@@ -43,8 +40,7 @@
 
   <!-- Sidebar Items -->
   @for (item of items; track item.name) {
-  <div class="flex-none px-2" [class.hidden]="!!item.hidden">
-
+  <div class="flex-none pl-2" [class.hidden]="!!item.hidden">
     @if (item['type'] === 'subheading') {
     <!-- Subheading with collapsible children -->
     <div
@@ -73,16 +69,13 @@
     @if (item.children && !isCollapsed(item.name)) {
     <div class="flex flex-col space-y-1">
       @for (child of item.children; track child.name) {
-        <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
       }
     </div>
-    }
-
-    } @else {
+    } } @else {
     <!-- Regular top-level item -->
     <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
     }
-
   </div>
   }
 
