@@ -1,11 +1,14 @@
 <div class="p-6 max-w-5xl mx-auto space-y-6">
   <!-- Loading State -->
-  <div *ngIf="loading()" class="flex flex-col items-center justify-center py-20">
+  @if (loading()) {
+  <div class="flex flex-col items-center justify-center py-20">
     <span class="loading loading-spinner loading-lg text-primary"></span>
     <p class="text-base-content/60 mt-4">Loading event details...</p>
   </div>
+  }
 
-  <div *ngIf="!loading()" class="space-y-6">
+  @if (!loading()) {
+  <div class="space-y-6">
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div class="flex items-center gap-3">
@@ -25,18 +28,22 @@
         </div>
       </div>
       <div class="flex gap-2">
-        <button *ngIf="!isNew()" class="btn btn-error btn-outline btn-sm gap-2" type="button" (click)="deleteEvent()" [disabled]="saving()">
+        @if (!isNew()) {
+        <button class="btn btn-error btn-outline btn-sm gap-2" type="button" (click)="deleteEvent()" [disabled]="saving()">
           <pc-icon name="trash" [size]="4"></pc-icon>
           Delete Event
         </button>
+        }
       </div>
     </div>
 
     <!-- Error alert -->
-    <div *ngIf="error()" class="alert alert-error shadow-sm py-3 text-sm">
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
       <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
       <span>{{ error() }}</span>
     </div>
+    }
 
     <!-- Event details form -->
     <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
@@ -49,7 +56,9 @@
             <div class="space-y-1">
               <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-name">Event Name *</label>
               <input id="event-name" type="text" class="input input-bordered w-full" [formField]="form.name" placeholder="E.g., Weekend Door Knocking Campaign" />
-              <p *ngIf="form.name().invalid() && (form.name().dirty() || form.name().touched())" class="text-xs text-error mt-0.5">Event name is required.</p>
+              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+              <p class="text-xs text-error mt-0.5">Event name is required.</p>
+              }
             </div>
 
             <div class="space-y-1">
@@ -65,7 +74,8 @@
         </div>
 
         <!-- Roster Management (Only for existing events) -->
-        <div *ngIf="!isNew()" class="card bg-base-100 border border-base-300 shadow-md">
+        @if (!isNew()) {
+        <div class="card bg-base-100 border border-base-300 shadow-md">
           <div class="card-body p-6 space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-base-300 pb-3">
               <div>
@@ -79,7 +89,9 @@
               </div>
               <div class="badge badge-primary gap-1">
                 {{ roster().length }} Signed Up
-                <span *ngIf="detail()?.capacity">/ {{ detail()?.capacity }} Max</span>
+                @if (detail()?.capacity) {
+                <span>/ {{ detail()?.capacity }} Max</span>
+                }
               </div>
             </div>
 
@@ -101,9 +113,10 @@
               </div>
 
               <!-- Search suggestions -->
-              <div *ngIf="volunteerSearchResults().length > 0" class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200">
+              @if (volunteerSearchResults().length > 0) {
+              <div class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200">
+                @for (p of volunteerSearchResults(); track p.id) {
                 <div 
-                  *ngFor="let p of volunteerSearchResults()" 
                   (click)="addVolunteer(p)" 
                   class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
                 >
@@ -116,7 +129,9 @@
                     Add
                   </button>
                 </div>
+                }
               </div>
+              }
             </div>
 
             <!-- Roster Table -->
@@ -221,6 +236,7 @@
             </div>
           </div>
         </div>
+        }
       </div>
 
       <!-- Right 1 col: Timing, Capacity, Actions -->
@@ -232,13 +248,17 @@
             <div class="space-y-1">
               <label class="label text-xs font-semibold text-base-content/65 uppercase" for="start-time">Start Date & Time *</label>
               <input id="start-time" type="datetime-local" class="input input-bordered w-full" [formField]="form.start_time" />
-              <p *ngIf="form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())" class="text-xs text-error mt-0.5">Start time is required.</p>
+              @if (form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())) {
+              <p class="text-xs text-error mt-0.5">Start time is required.</p>
+              }
             </div>
 
             <div class="space-y-1">
               <label class="label text-xs font-semibold text-base-content/65 uppercase" for="end-time">End Date & Time *</label>
               <input id="end-time" type="datetime-local" class="input input-bordered w-full" [formField]="form.end_time" />
-              <p *ngIf="form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())" class="text-xs text-error mt-0.5">End time is required.</p>
+              @if (form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())) {
+              <p class="text-xs text-error mt-0.5">End time is required.</p>
+              }
             </div>
 
             <div class="space-y-1">
@@ -250,7 +270,9 @@
 
             <div class="flex flex-col gap-2">
               <button type="submit" class="btn btn-primary w-full gap-2" [disabled]="form().invalid() || saving()">
-                <span *ngIf="saving()" class="loading loading-spinner loading-xs"></span>
+                @if (saving()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                }
                 <pc-icon name="check-circle" [size]="4.5"></pc-icon>
                 {{ isNew() ? 'Create Event' : 'Save Changes' }}
               </button>
@@ -260,7 +282,8 @@
         </div>
 
         <!-- Event Summary Panel -->
-        <div *ngIf="!isNew()" class="card bg-base-200/50 border border-base-300 shadow-md">
+        @if (!isNew()) {
+        <div class="card bg-base-200/50 border border-base-300 shadow-md">
           <div class="card-body p-5 space-y-3">
             <h4 class="font-bold text-sm text-base-content uppercase tracking-wider">Event Overview</h4>
             <div class="text-xs text-base-content/75 space-y-2">
@@ -283,7 +306,9 @@
             </div>
           </div>
         </div>
+        }
       </div>
     </form>
   </div>
+  }
 </div>

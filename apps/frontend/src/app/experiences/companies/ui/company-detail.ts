@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, input, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { form, FormField, required } from '@angular/forms/signals';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -11,16 +11,19 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [CommonModule, FormField, Icon, PeopleInCompany, RecordActivities],
+  imports: [DatePipe, FormField, Icon, PeopleInCompany, RecordActivities],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
-      <div *ngIf="isLoading()" class="flex flex-col items-center justify-center py-20">
+      @if (isLoading()) {
+      <div class="flex flex-col items-center justify-center py-20">
         <span class="loading loading-spinner loading-lg text-primary"></span>
         <p class="text-base-content/60 mt-4">Loading company details...</p>
       </div>
+      }
 
-      <div *ngIf="!isLoading()" class="space-y-6">
+      @if (!isLoading()) {
+      <div class="space-y-6">
         <!-- Header -->
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -153,7 +156,8 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
           <!-- Members & Info Panel -->
           <div class="space-y-6">
             <!-- Employee List (Only when edit mode) -->
-            <div *ngIf="mode() === 'edit' && id" class="card bg-base-100 border border-base-300 shadow-xl">
+            @if (mode() === 'edit' && id) {
+            <div class="card bg-base-100 border border-base-300 shadow-xl">
               <div class="card-body p-6">
                 <h3 class="font-bold text-lg text-base-content mb-4 flex items-center gap-2">
                   <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
@@ -162,12 +166,16 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                 <pc-people-in-company [companyId]="id"></pc-people-in-company>
               </div>
             </div>
+            }
 
             <!-- Activity history (Only when edit mode) -->
-            <pc-record-activities *ngIf="mode() === 'edit' && id" [entity]="'companies'" [entityId]="id"></pc-record-activities>
+            @if (mode() === 'edit' && id) {
+            <pc-record-activities [entity]="'companies'" [entityId]="id"></pc-record-activities>
+            }
 
             <!-- Metadata Card -->
-            <div *ngIf="mode() === 'edit'" class="card bg-base-200/50 border border-base-300 shadow-xl">
+            @if (mode() === 'edit') {
+            <div class="card bg-base-200/50 border border-base-300 shadow-xl">
               <div class="card-body p-5 space-y-3 text-xs text-base-content/60">
                 <div class="flex justify-between">
                   <span>Created:</span>
@@ -179,9 +187,11 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                 </div>
               </div>
             </div>
+            }
           </div>
         </div>
       </div>
+      }
     </div>
   `,
 })

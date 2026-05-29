@@ -1,5 +1,4 @@
 import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
@@ -15,7 +14,7 @@ import {
 
 @Component({
   selector: 'pc-visual-newsletter-editor',
-  imports: [CommonModule, FormsModule, Icon],
+  imports: [FormsModule, Icon],
   template: `
     <div class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner">
       <!-- LEFT: VISUAL CANVAS PREVIEW -->

@@ -11,19 +11,24 @@
       </p>
     </div>
     <button class="btn btn-outline btn-sm gap-2" (click)="loadStats()" [disabled]="isLoading()">
-      <span *ngIf="isLoading()" class="loading loading-spinner loading-xs"></span>
+      @if (isLoading()) {
+        <span class="loading loading-spinner loading-xs"></span>
+      }
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Reload Stats
     </button>
   </div>
 
   <!-- Loading Overlay -->
-  <div *ngIf="isLoading() && linePoints().length === 0" class="flex flex-col items-center justify-center py-32">
+  @if (isLoading() && linePoints().length === 0) {
+  <div class="flex flex-col items-center justify-center py-32">
     <span class="loading loading-bars loading-lg text-primary"></span>
     <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
   </div>
+  }
 
-  <div *ngIf="linePoints().length > 0" class="space-y-6">
+  @if (linePoints().length > 0) {
+  <div class="space-y-6">
     <!-- Metric Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- Card 1 -->
@@ -117,8 +122,8 @@
               <path [attr.d]="linePath()" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
 
               <!-- Interactive Points -->
+              @for (p of linePoints(); track p; let first = $first; let last = $last) {
               <circle 
-                *ngFor="let p of linePoints(); let first = first; let last = last" 
                 [attr.cx]="p.x" 
                 [attr.cy]="p.y" 
                 r="4.5" 
@@ -128,6 +133,7 @@
                 class="hover:scale-150 transition-all duration-150 cursor-pointer"
                 [attr.title]="p.date + ': ' + p.count + ' new contacts'"
               ></circle>
+              }
             </svg>
           </div>
         </div>
@@ -145,14 +151,17 @@
           </div>
 
           <div class="flex items-center justify-center py-4">
-            <div *ngIf="assignedRepSlices().length === 0" class="text-sm text-base-content/40 py-10 italic">
+            @if (assignedRepSlices().length === 0) {
+            <div class="text-sm text-base-content/40 py-10 italic">
               No open emails assigned.
             </div>
+            }
 
-            <svg *ngIf="assignedRepSlices().length > 0" width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90">
+            @if (assignedRepSlices().length > 0) {
+            <svg width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90">
               <circle cx="80" cy="80" r="60" fill="transparent" stroke="currentColor" class="text-base-300/30" stroke-width="14"></circle>
+              @for (slice of assignedRepSlices(); track slice.name) {
               <circle 
-                *ngFor="let slice of assignedRepSlices()" 
                 cx="80" 
                 cy="80" 
                 r="60" 
@@ -163,18 +172,22 @@
                 [attr.stroke-dashoffset]="slice.strokeOffset"
                 stroke-linecap="round"
               ></circle>
+              }
             </svg>
+            }
           </div>
 
           <!-- Legend -->
           <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
-            <div *ngFor="let slice of assignedRepSlices()" class="flex items-center justify-between text-xs">
+            @for (slice of assignedRepSlices(); track slice.name) {
+            <div class="flex items-center justify-between text-xs">
               <div class="flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
                 <span class="font-semibold text-base-content">{{ slice.name }}</span>
               </div>
               <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
             </div>
+            }
           </div>
         </div>
       </div>
@@ -192,13 +205,17 @@
             <span class="text-xs text-base-content/50">Performance metrics</span>
           </div>
 
-          <div *ngIf="closedRepBars().length === 0" class="text-sm text-base-content/40 py-16 italic text-center">
+          @if (closedRepBars().length === 0) {
+          <div class="text-sm text-base-content/40 py-16 italic text-center">
             No emails closed by representatives.
           </div>
+          }
 
-          <div *ngIf="closedRepBars().length > 0" class="relative w-full h-[180px]">
+          @if (closedRepBars().length > 0) {
+          <div class="relative w-full h-[180px]">
             <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
-              <g *ngFor="let bar of closedRepBars(); let idx = index">
+              @for (bar of closedRepBars(); track bar.name; let idx = $index) {
+              <g>
                 <!-- Label -->
                 <text x="10" [attr.y]="bar.y + 14" fill="currentColor" class="text-base-content text-xs font-semibold" text-anchor="start">
                   {{ bar.name }}
@@ -212,8 +229,10 @@
                   {{ bar.count }}
                 </text>
               </g>
+              }
             </svg>
           </div>
+          }
         </div>
       </div>
 
@@ -242,4 +261,5 @@
       </div>
     </div>
   </div>
+  }
 </div>

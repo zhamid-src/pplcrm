@@ -1,5 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -10,7 +10,7 @@ import { IAuthUser } from '@common';
 
 @Component({
   selector: 'pc-activity-feed',
-  imports: [CommonModule, RouterLink, Icon],
+  imports: [DatePipe, RouterLink, Icon],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Header -->
@@ -64,9 +64,11 @@ import { IAuthUser } from '@common';
               (change)="onUserChange($event)"
             >
               <option value="">All Users</option>
-              <option *ngFor="let u of users()" [value]="u.id">
+              @for (u of users(); track u.id) {
+              <option [value]="u.id">
                 {{ u.first_name }} {{ u.last_name || '' }}
               </option>
+              }
             </select>
           </div>
 
@@ -116,8 +118,8 @@ import { IAuthUser } from '@common';
           </div>
 
           <!-- Reset Button -->
+          @if (hasActiveFilters()) {
           <button
-            *ngIf="hasActiveFilters()"
             class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
             (click)="clearFilters()"
             title="Clear all filters"
@@ -125,11 +127,13 @@ import { IAuthUser } from '@common';
             <pc-icon name="x-mark" [size]="4"></pc-icon>
             Clear
           </button>
+          }
         </div>
       </div>
 
       <!-- Loading State -->
-      <div *ngIf="isLoading() && activities().length === 0" class="flex flex-col items-center justify-center py-20">
+      @if (isLoading() && activities().length === 0) {
+      <div class="flex flex-col items-center justify-center py-20">
         <span
           class="loading loading-spinner loading-lg text-primary"
           i18n-aria-label="@@activityFeed.loading.ariaLabel"
@@ -137,9 +141,11 @@ import { IAuthUser } from '@common';
         ></span>
         <p class="text-base-content/60 mt-4" i18n="Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message">Loading system logs...</p>
       </div>
+      }
 
       <!-- Empty State -->
-      <div *ngIf="!isLoading() && activities().length === 0" class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
+      @if (!isLoading() && activities().length === 0) {
+      <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
         <div class="card-body items-center text-center py-12">
           <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
           <h2 class="card-title text-base-content/70" i18n="Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading">No activity logged</h2>
@@ -148,15 +154,17 @@ import { IAuthUser } from '@common';
           </p>
         </div>
       </div>
+      }
 
       <!-- Feed Timeline -->
-      <div *ngIf="activities().length > 0" class="space-y-4">
+      @if (activities().length > 0) {
+      <div class="space-y-4">
         <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
-          <div *ngFor="let act of activities()" class="relative group">
+          @for (act of activities(); track act.id) {
+          <div class="relative group">
             <!-- Icon Indicator -->
             <div
-              class="absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200"
-              [ngClass]="getActivityClass(act.activity)"
+              [class]="'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' + getActivityClass(act.activity)"
             >
               <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
             </div>
@@ -196,20 +204,26 @@ import { IAuthUser } from '@common';
               </div>
             </div>
           </div>
+          }
         </div>
 
         <!-- Load More Button -->
-        <div *ngIf="hasMore()" class="flex justify-center pt-4">
+        @if (hasMore()) {
+        <div class="flex justify-center pt-4">
           <button
             class="btn btn-outline btn-primary gap-2"
             [disabled]="isLoading()"
             (click)="loadMore()"
           >
-            <span *ngIf="isLoading()" class="loading loading-spinner loading-xs"></span>
+            @if (isLoading()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            }
             <ng-container i18n="Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label">Load More Activity</ng-container>
           </button>
         </div>
+        }
       </div>
+      }
     </div>
   `,
   styles: [`

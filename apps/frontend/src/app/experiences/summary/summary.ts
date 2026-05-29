@@ -1,12 +1,11 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
-  imports: [CommonModule, Icon],
+  imports: [Icon],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })
