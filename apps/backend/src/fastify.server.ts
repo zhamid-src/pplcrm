@@ -40,6 +40,13 @@ export class FastifyServer {
       exposeHeadRoutes: false,
     });
 
+    // Globally serialize BigInt properties as strings in responses
+    this.server.setReplySerializer((payload) => {
+      return JSON.stringify(payload, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+    });
+
     // Register core Fastify plugins
     this.server.register(cors, { ...opts });
     this.server.register(sensible);
