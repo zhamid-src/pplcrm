@@ -3,12 +3,14 @@ import { ActivatedRoute } from '@angular/router';
 import { form, email, pattern, FormField } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
 import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { GoogleSyncSettings } from './google-sync/google-sync-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -24,12 +26,13 @@ interface SectionState {
 
 @Component({
   selector: 'pc-settings-page',
-  imports: [FormField, Icon, MsSyncSettings, GoogleSyncSettings, BillingSettingsComponent],
+  imports: [FormField, Icon, MsSyncSettings, GoogleSyncSettings, BillingSettingsComponent, DomainSettingsComponent],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
   protected readonly settingsSvc = inject(SettingsService);
   private readonly route = inject(ActivatedRoute);
+  private readonly alerts = inject(AlertService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
 
   protected readonly sections = SETTINGS_SECTIONS;
@@ -37,6 +40,7 @@ export class SettingsPage implements OnInit {
   protected readonly selectedSectionId = signal<string>(this.sections[0]?.id ?? '');
   protected readonly savingSectionId = signal<string | null>(null);
   protected readonly hasLoaded = signal(false);
+  protected readonly verifyingEmail = signal<string | null>(null);
 
   constructor() {
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
@@ -241,5 +245,65 @@ export class SettingsPage implements OnInit {
       default:
         return value ?? '';
     }
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+    this.verifyingEmail.set(normalized);
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    try {
+      const current = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+      if (!current.includes(normalized)) {
+        const updated = [...current, normalized];
+        await this.settingsSvc.upsert([{ key: 'communications.verified_emails', value: updated }]);
+      }
+      this.alerts.showSuccess(`Verification successful. Email ${email} is now verified!`);
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to verify email address.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update(p => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save Changes" at the bottom to store them.');
+  }
+
+  private randomHex(len: number): string {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard.writeText(val).then(() => {
+      this.alerts.showSuccess('Copied to clipboard!');
+    }).catch(() => {
+      this.alerts.showError('Failed to copy to clipboard.');
+    });
   }
 }

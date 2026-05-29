@@ -36,12 +36,20 @@
           [class.opacity-70]="!isSelected('email-sync')"
           (click)="selectSection('email-sync')"
         >
-          <pc-icon
-            name="envelope"
-            class="h-5 w-5 mr-2 opacity-80"
-            [class.text-primary]="isSelected('email-sync')"
-          />
+          <pc-icon name="envelope" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" />
           Email Sync
+        </button>
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('domains')"
+          [class.opacity-70]="!isSelected('domains')"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon name="globe-americas" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('domains')" />
+          Domain Verification
         </button>
         <!-- Billing custom section -->
         <button
@@ -52,11 +60,7 @@
           [class.opacity-70]="!isSelected('billing')"
           (click)="selectSection('billing')"
         >
-          <pc-icon
-            name="credit-card"
-            class="h-5 w-5 mr-2 opacity-80"
-            [class.text-primary]="isSelected('billing')"
-          />
+          <pc-icon name="credit-card" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('billing')" />
           Billing & Subscription
         </button>
       </nav>
@@ -76,81 +80,194 @@
           <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) {
             <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
-              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90"> {{ field.config.label }} </label>
+              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90">
+                {{ field.config.label }}
+              </label>
 
-              @switch (field.config.type) {
-                @case ('textarea') {
-                  <textarea
-                    [id]="field.controlName"
-                    class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                    [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formField]="section.form[field.controlName]"
-                    rows="4"
-                  ></textarea>
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-sm font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
                 }
-                @case ('toggle') {
-                  <label class="flex items-center gap-3 cursor-pointer py-1">
-                    <input
-                      [id]="field.controlName"
-                      type="checkbox"
-                      class="toggle toggle-primary toggle-md"
-                      [formField]="section.form[field.controlName]"
-                    />
-                    <span class="text-sm font-normal text-base-content/70">
-                      {{ field.config.placeholder ?? 'Enabled' }}
-                    </span>
-                  </label>
-                }
-                @case ('select') {
-                  <select
-                    [id]="field.controlName"
-                    class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                    [formField]="section.form[field.controlName]"
-                  >
-                    @for (option of field.config.options ?? []; track option.value ?? $index) {
-                      <option [value]="option.value">{{ option.label }}</option>
-                    }
-                  </select>
-                }
-                @case ('number') {
-                  <input
-                    [id]="field.controlName"
-                    type="number"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                    [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formField]="section.form[field.controlName]"
-                  />
-                }
-                @case ('date') {
-                  <input
-                    [id]="field.controlName"
-                    type="date"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                    [formField]="section.form[field.controlName]"
-                  />
-                }
-                @default {
-                  <input
-                    [id]="field.controlName"
-                    [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                    [attr.placeholder]="field.config.placeholder ?? ''"
-                    [formField]="section.form[field.controlName]"
-                  />
-                }
-              }
-
-              @if (field.config.helper) {
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline hover:btn-primary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
               <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
               } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
               <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                <pc-icon name="exclamation-circle"></pc-icon>
                 Please provide a valid value.
               </p>
               }
             </div>
             }
           </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-4">
+            <div class="space-y-1">
+              <h3 class="text-base font-semibold text-base-content/90">Sender Email Verification</h3>
+              <p class="text-xs text-base-content/50">
+                Verify your sender email addresses to enable newsletter delivery.
+              </p>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <!-- Default From Email Card -->
+              <div class="border border-base-200/80 p-4 rounded-xl bg-base-50/20 flex items-center justify-between">
+                <div class="space-y-1 min-w-0">
+                  <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/55">
+                    Default From Email
+                  </div>
+                  <div class="text-sm font-semibold truncate text-base-content/90">
+                    {{ section.form['communications_default_from_email']()?.value() || 'Not configured' }}
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-1">
+                    @if (isEmailVerified(section.form['communications_default_from_email']()?.value())) {
+                    <span class="badge badge-success text-[10px] gap-1 font-semibold py-1">
+                      <pc-icon name="check-circle"></pc-icon> Verified
+                    </span>
+                    } @else {
+                    <span class="badge badge-warning text-[10px] gap-1 font-semibold py-1"> Pending Verification </span>
+                    }
+                  </div>
+                </div>
+                @if (section.form['communications_default_from_email']()?.value() &&
+                !isEmailVerified(section.form['communications_default_from_email']()?.value())) {
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline btn-primary ml-2 shrink-0"
+                  (click)="verifySenderEmail(section.form['communications_default_from_email']()?.value())"
+                  [disabled]="verifyingEmail() !== null"
+                >
+                  @if (verifyingEmail() === section.form['communications_default_from_email']()?.value()) {
+                  <span class="loading loading-spinner loading-xs scale-75"></span>
+                  } @else { Verify }
+                </button>
+                }
+              </div>
+
+              <!-- Reply-to Email Card -->
+              <div class="border border-base-200/80 p-4 rounded-xl bg-base-50/20 flex items-center justify-between">
+                <div class="space-y-1 min-w-0">
+                  <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/55">Reply-to Email</div>
+                  <div class="text-sm font-semibold truncate text-base-content/90">
+                    {{ section.form['communications_reply_to']()?.value() || 'Not configured' }}
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-1">
+                    @if (isEmailVerified(section.form['communications_reply_to']()?.value())) {
+                    <span class="badge badge-success text-[10px] gap-1 font-semibold py-1">
+                      <pc-icon name="check-circle"></pc-icon> Verified
+                    </span>
+                    } @else {
+                    <span class="badge badge-warning text-[10px] gap-1 font-semibold py-1"> Pending Verification </span>
+                    }
+                  </div>
+                </div>
+                @if (section.form['communications_reply_to']()?.value() &&
+                !isEmailVerified(section.form['communications_reply_to']()?.value())) {
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline btn-primary ml-2 shrink-0"
+                  (click)="verifySenderEmail(section.form['communications_reply_to']()?.value())"
+                  [disabled]="verifyingEmail() !== null"
+                >
+                  @if (verifyingEmail() === section.form['communications_reply_to']()?.value()) {
+                  <span class="loading loading-spinner loading-xs scale-75"></span>
+                  } @else { Verify }
+                </button>
+                }
+              </div>
+            </div>
+          </div>
+          } @if (section.config.id === 'integrations') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
 
           <!-- Sticky Action Footer inside the card -->
           <div
@@ -194,7 +311,9 @@
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
-          <p class="mt-1 text-sm text-base-content/60">Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.</p>
+          <p class="mt-1 text-sm text-base-content/60">
+            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
+          </p>
         </header>
 
         <div class="grid gap-8 lg:grid-cols-2">
@@ -202,11 +321,11 @@
           <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
             <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z"/>
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9"/>
-                <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
               </svg>
               Microsoft Office 365
             </h3>
@@ -217,10 +336,22 @@
           <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
             <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
               <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
               </svg>
               Google Suite (Gmail)
             </h3>
@@ -230,12 +361,27 @@
       </section>
       }
 
+      <!-- Domains custom section -->
+      @if (isSelected('domains')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Domain Verification</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
+          </p>
+        </header>
+        <pc-domains-settings></pc-domains-settings>
+      </section>
+      }
+
       <!-- Billing custom section -->
       @if (isSelected('billing')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Billing & Subscription</h2>
-          <p class="mt-1 text-sm text-base-content/60">Manage your subscription plans, view invoice details, and update payment methods.</p>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your subscription plans, view invoice details, and update payment methods.
+          </p>
         </header>
         <pc-billing-settings></pc-billing-settings>
       </section>

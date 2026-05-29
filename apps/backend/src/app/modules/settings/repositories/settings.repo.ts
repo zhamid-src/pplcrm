@@ -45,7 +45,7 @@ export class SettingsRepo extends BaseRepository<'settings'> {
     const rows = input.entries.map((entry) => ({
       tenant_id: input.tenant_id,
       key: entry.key,
-      value: entry.value,
+      value: JSON.stringify(entry.value) as any,
       createdby_id: input.user_id,
       updatedby_id: input.user_id,
     }));
