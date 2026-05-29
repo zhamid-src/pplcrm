@@ -2,7 +2,7 @@
  * @file Component for creating or updating individual person records.
  */
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, resource, signal } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
@@ -51,7 +51,16 @@ export class PersonDetail implements OnInit {
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
 
-  protected readonly addressString = signal<string | null>(null);
+  protected readonly addressResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      const address = (await this.householdsSvc.getById(householdId)) as AddressType;
+      return this.getFormattedAddress(address);
+    },
+  });
+
+  protected readonly addressString = computed(() => this.addressResource.value() ?? null);
 
   // Drawer state for assigning household
   protected readonly assignDrawerOpen = signal(false);
@@ -142,15 +151,7 @@ export class PersonDetail implements OnInit {
       })
       .catch(() => void 0);
 
-    // React to householdId changes without writing back to person (avoid loop)
-    effect(async () => {
-      const householdId = this.householdId();
 
-      if (householdId) {
-        const address = (await this.householdsSvc.getById(householdId)) as AddressType;
-        this.addressString.set(this.getFormattedAddress(address));
-      }
-    });
   }
 
   /** Lifecycle hook to initialize the component and load person data */
@@ -317,7 +318,6 @@ export class PersonDetail implements OnInit {
     // New person: just clear the pending household — no API call needed yet
     if (!this.id) {
       this.pendingHouseholdId.set(null);
-      this.addressString.set(null);
       return;
     }
 
@@ -336,7 +336,6 @@ export class PersonDetail implements OnInit {
     try {
       await this.personsSvc.removeHousehold(this.id);
       this.person.update((p) => (p ? { ...p, household_id: null as any } : p));
-      this.addressString.set(null);
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
       this.alertSvc.showError(String(err));
@@ -461,7 +460,6 @@ export class PersonDetail implements OnInit {
         if (done) {
           done();
           this.pendingHouseholdId.set(null);
-          this.addressString.set(null);
           this.tags.set([]);
           this.issues.set([]);
           this.form().reset();
