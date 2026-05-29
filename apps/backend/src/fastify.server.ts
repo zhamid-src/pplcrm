@@ -57,8 +57,8 @@ export class FastifyServer {
       } else {
         try {
           done(null, JSON.parse(body as string));
-        } catch (err: any) {
-          done(err, null);
+        } catch (err) {
+          done(err as Error, null);
         }
       }
     });

@@ -29,14 +29,16 @@ async function jsendPlugin(app: FastifyInstance) {
       data?: unknown,
       meta?: Record<string, unknown>,
     ) {
-      const body: any = jsend.error(message, code);
-      if (data !== undefined) body.data = data;
-      if (meta) body.meta = meta;
+      const body = {
+        ...jsend.error(message, code),
+        ...(data !== undefined ? { data } : {}),
+        ...(meta ? { meta } : {}),
+      };
       return this.code(statusCode).send(body);
     },
   );
 
-  app.setErrorHandler((err: any, _req: FastifyRequest, reply: FastifyReply) => {
+  app.setErrorHandler((err: Error, _req: FastifyRequest, reply: FastifyReply) => {
     // Domain errors -> JSend
     if (err instanceof AppError) {
       if (err.status >= 500) {
