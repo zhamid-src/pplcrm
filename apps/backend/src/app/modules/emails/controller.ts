@@ -90,7 +90,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
               title: 'Email Assigned',
               message: `You have been assigned the email: "${subject}"`,
               type: 'email',
-              link: '/inbox',
+              link: `/inbox?email=${id}`,
             });
           }
         } catch (nErr) {
