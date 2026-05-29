@@ -28,13 +28,6 @@ import { Icon } from '@icons/icon';
     [style.color]="textColor()"
     [style.borderColor]="borderColor()"
   >
-    @if (isIssue()) {
-      <pc-icon
-        name="shield-exclamation"
-        [size]="3"
-        [style.color]="textColor()"
-      />
-    }
     <span
       (click)="emitClick()"
       class="tag-label cursor-pointer font-light pr-1"
@@ -61,7 +54,6 @@ export class TagItem {
   public invisible = input<Signal<boolean>>(signal(false));
   public name = input.required<string>();
   public color = input<string | null | undefined>(null);
-  public isIssue = input<boolean>(false);
 
   protected readonly background = computed(() => this.normalizeColor(this.color()));
   protected readonly textColor = computed(() => this.computeTextColor(this.background()));
