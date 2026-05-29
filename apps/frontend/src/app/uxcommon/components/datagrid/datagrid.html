@@ -208,7 +208,7 @@
             [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
             [class.overflow-visible]="isTagColumn(col) && isEditing"
             class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col)"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
             [style.width.px]="columnWidthPx(cell.column.id)"
