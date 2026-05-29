@@ -1,0 +1,28 @@
+import { createVerifier } from 'fast-jwt';
+import { env } from '../../env';
+import { IAuthKeyPayload } from '@common';
+import { UnauthorizedError } from '../errors/app-errors';
+
+const verifier = createVerifier({
+  algorithms: ['HS256'],
+  key: env.sharedSecret,
+  ignoreExpiration: false,
+});
+
+/**
+ * Validates a JWT string and returns its parsed payload.
+ * Throws UnauthorizedError on expiration or invalid signature.
+ */
+export async function verifyAuthToken(token: string): Promise<IAuthKeyPayload> {
+  try {
+    // fast-jwt verify returns the payload or throws
+    const verifierResult = await verifier(token);
+    // Explicitly check that we got a valid payload object with required fields
+    if (!verifierResult || typeof verifierResult !== 'object') {
+      throw new Error('Invalid token payload');
+    }
+    return verifierResult as IAuthKeyPayload;
+  } catch (err) {
+    throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });
+  }
+}

@@ -1,8 +1,7 @@
 import { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
-import { createVerifier } from 'fast-jwt';
-import { env } from '../../../../env';
+import { verifyAuthToken } from '../../../lib/auth-util';
 
 const storageService = new StorageService();
 
@@ -20,11 +19,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
 
     let payload: any = null;
     try {
-      const verifier = createVerifier({
-        algorithms: ['HS256'],
-        key: env.sharedSecret,
-      });
-      payload = await verifier(token);
+      payload = await verifyAuthToken(token);
     } catch (err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
     }

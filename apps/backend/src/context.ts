@@ -2,8 +2,7 @@ import { IAuthKeyPayload } from '@common';
 import { inferAsyncReturnType } from '@trpc/server';
 import { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
 
-import { createVerifier } from 'fast-jwt';
-import { env } from './env';
+import { verifyAuthToken } from './app/lib/auth-util';
 
 /**
  * The type of the context object passed to tRPC procedures.
@@ -33,19 +32,9 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
   }
 
   let payload: IAuthKeyPayload | null = null;
-  const key = env.sharedSecret;
 
   try {
-    // Create the verifier with the shared secret and expected algorithm
-    const verifier = createVerifier({
-      algorithms: ['HS256'],
-      key,
-      clockTimestamp: Date.now() / 1000,
-      ignoreExpiration: false,
-    });
-
-    // Verify the token and cast the result to your payload interface
-    payload = (await verifier(token)) as IAuthKeyPayload;
+    payload = await verifyAuthToken(token);
   } catch (e) {
     // Ignore verification failure; auth remains null
   }

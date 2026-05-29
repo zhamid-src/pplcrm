@@ -3,6 +3,7 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import type { Context } from './context';
+import { toTRPCError } from './app/errors/to-trpc-errors';
 
 const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
 
@@ -38,11 +39,19 @@ const trpc = initTRPC.context<Context>().create({
 
 export const middleware = trpc.middleware;
 
+const errorMappingMiddleware = middleware(async (opts) => {
+  try {
+    return await opts.next();
+  } catch (err) {
+    throw toTRPCError(err);
+  }
+});
+
 /**
  * Public procedure: does not require authentication.
  * Extend this with `.use(...)` to add middlewares as needed.
  */
-export const publicProcedure = trpc.procedure;
+export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
 
 /**
  * Main tRPC router constructor.

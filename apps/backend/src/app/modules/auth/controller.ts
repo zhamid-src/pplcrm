@@ -484,7 +484,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const signer = createSigner({
       algorithm: 'HS256',
       key,
-      clockTimestamp: Date.now() / 1000, // Convert to seconds
       expiresIn: '30m',
     });
     try {

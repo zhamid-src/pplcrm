@@ -1,7 +1,7 @@
 import { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
-import { createVerifier } from 'fast-jwt';
+import { verifyAuthToken } from '../../../lib/auth-util';
 import { env } from '../../../../env';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
@@ -275,13 +275,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
     let payload: any = null;
     try {
-      const verifier = createVerifier({
-        algorithms: ['HS256'],
-        key: env.sharedSecret,
-        clockTimestamp: Date.now() / 1000,
-        ignoreExpiration: false,
-      });
-      payload = await verifier(token);
+      payload = await verifyAuthToken(token);
     } catch (err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
     }
@@ -673,12 +667,31 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Download attachment by ID
   fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
     const { id, attachmentId } = req.params;
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
       .selectFrom('email_attachments')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('id', '=', attachmentId)
       .where('email_id', '=', id)
       .executeTakeFirst();
@@ -687,7 +700,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Attachment not found' });
     }
 
-    const file = await db.selectFrom('files').selectAll().where('id', '=', attachment.file_id).executeTakeFirst();
+    const file = await db.selectFrom('files').selectAll().where('tenant_id', '=', tenantId).where('id', '=', attachment.file_id).executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });
@@ -706,12 +719,31 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Serve inline attachment by CID
   fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
     const { id, cid } = req.params;
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
       .selectFrom('email_attachments')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('email_id', '=', id)
       .where('cid', '=', cid)
       .where('is_inline', '=', true)
@@ -721,7 +753,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Inline attachment not found' });
     }
 
-    const file = await db.selectFrom('files').selectAll().where('id', '=', attachment.file_id).executeTakeFirst();
+    const file = await db.selectFrom('files').selectAll().where('tenant_id', '=', tenantId).where('id', '=', attachment.file_id).executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });

@@ -269,4 +269,42 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });
+
+  it('should generate valid JWT tokens during sign-up that can be verified by verifyAuthToken', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const { verifyAuthToken } = await import('../../lib/auth-util');
+    const db = (BaseRepository as any)._db;
+
+    const email = `test-jwt-${Date.now()}@example.com`;
+    const orgName = `Org-JWT-${Date.now()}`;
+    const controller = new AuthController();
+
+    const tokens = await controller.signUp({
+      organization: orgName,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'JWTVerificationTest',
+    });
+
+    expect(tokens).toBeDefined();
+    expect(tokens.auth_token).toBeTypeOf('string');
+
+    const payload = await verifyAuthToken(tokens.auth_token);
+    expect(payload).toBeDefined();
+    expect(payload.name).toBe('JWTVerificationTest');
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
 });
