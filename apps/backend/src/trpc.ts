@@ -4,10 +4,12 @@ import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import type { Context } from './context';
 import { toTRPCError } from './app/errors/to-trpc-errors';
+import superjson from 'superjson';
 
 const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
 
 const trpc = initTRPC.context<Context>().create({
+  transformer: superjson,
   errorFormatter({ shape, error }) {
     console.error('tRPC Error:', error);
     if (error.cause) {

@@ -12,6 +12,7 @@ import {
   splitLink,
 } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
+import superjson from 'superjson';
 
 import { get, set } from 'idb-keyval';
 
@@ -222,6 +223,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
 function httpUnbatchedLink(tokenSvc: TokenService) {
   return trpcHttpLink({
     url: environment.apiUrl,
+    transformer: superjson,
     headers() {
       const authToken = tokenSvc.getAuthToken();
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -237,6 +239,7 @@ function httpUnbatchedLink(tokenSvc: TokenService) {
 function httpBatchedLink(tokenSvc: TokenService) {
   return httpBatchLink({
     url: environment.apiUrl,
+    transformer: superjson,
     headers() {
       const authToken = tokenSvc.getAuthToken();
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};

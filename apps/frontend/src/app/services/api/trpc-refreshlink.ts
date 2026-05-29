@@ -1,6 +1,7 @@
 import type { Router } from '@angular/router';
 import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import superjson from 'superjson';
 
 import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
@@ -146,5 +147,10 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
 /* Dedicated client for token refreshes only                          */
 /* ------------------------------------------------------------------ */
 const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [httpLink({ url: environment.apiUrl })],
+  links: [
+    httpLink({
+      url: environment.apiUrl,
+      transformer: superjson,
+    }),
+  ],
 });
