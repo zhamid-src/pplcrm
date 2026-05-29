@@ -1,5 +1,6 @@
 import { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
+import formBody from '@fastify/formbody';
 
 const webFormsController = new WebFormsController();
 
@@ -345,14 +346,7 @@ const errorHtml = (message: string) => `
 
 const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Register form URL-encoded parser
-  fastify.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, doneParsing) => {
-    try {
-      const parsed = Object.fromEntries(new URLSearchParams(body as string));
-      doneParsing(null, parsed);
-    } catch (err: any) {
-      doneParsing(err, undefined);
-    }
-  });
+  fastify.register(formBody);
 
   fastify.get('/success', async (_req, reply) => {
     reply.type('text/html');

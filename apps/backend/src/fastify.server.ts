@@ -93,13 +93,12 @@ export class FastifyServer {
    * @returns {Promise<void>}
    */
   public async serve(): Promise<void> {
-    await this.server.listen({ port: env.port, host: env.host }, (err) => {
-      if (err) {
-        this.server.log.error(err);
-        process.exit(1);
-      } else {
-        this.server.log.info(`[ ready ] http://${env.host}:${env.port}`);
-      }
-    });
+    try {
+      const address = await this.server.listen({ port: env.port, host: env.host });
+      this.server.log.info(`[ ready ] ${address}`);
+    } catch (err) {
+      this.server.log.error(err);
+      process.exit(1);
+    }
   }
 }
