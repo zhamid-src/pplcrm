@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -23,6 +24,7 @@ export interface BillingDetailsSnapshot {
 export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly loading = signal(true);
   protected readonly actionPending = signal(false);
@@ -36,7 +38,9 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     await this.loadBilling();
 
     // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams.subscribe(async (params) => {
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(async (params) => {
       if (params['mock_checkout_success'] && params['plan']) {
         const plan = params['plan'] as 'grassroots' | 'representative';
         await this.handleMockActivation(plan);
