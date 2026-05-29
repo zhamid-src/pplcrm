@@ -2,7 +2,7 @@
  * @file Component for creating or updating individual person records.
  */
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, input, resource, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType } from '@common';
@@ -76,7 +76,10 @@ export class PersonDetail implements OnInit {
   protected readonly isLoading = this._loading.visible;
 
   /** Inline error shown under the email field when a duplicate is detected */
-  protected readonly emailError = signal<string | null>(null);
+  protected readonly emailError = linkedSignal({
+    source: () => this.form.email().value(),
+    computation: () => null as string | null,
+  });
   protected readonly person = signal<Persons | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly companies = signal<any[]>([]);

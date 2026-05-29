@@ -65,13 +65,13 @@ export class EmailFoldersStore {
 
   /**
    * Select a folder and load its emails into EmailStateStore.
-   * Clears selected email to keep UI consistent.
+   * Clears selected email automatically via linkedSignal to keep UI consistent.
    */
   public selectFolder(folder: EmailFolderType | null): void {
     const id = folder ? String(folder.id) : null;
     this.currentSelectedFolderId.set(id);
+    this.state.activeFolderId.set(id);
     if (id) void this.loadEmailsForFolder(id);
-    this.state.selectEmail(null);
   }
 }
 

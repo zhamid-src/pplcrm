@@ -1,4 +1,4 @@
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
+import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -24,7 +24,16 @@ export class DomainSettingsComponent implements OnInit {
   protected readonly newDomain = signal('');
   protected readonly addingDomain = signal(false);
   protected readonly verifyingDomain = signal<string | null>(null);
-  protected readonly expandedDomain = signal<string | null>(null);
+  protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
+    source: () => this.domainsList(),
+    computation: (list, prev) => {
+      const prevVal = prev?.value;
+      if (prevVal && list.some((d) => d.domain === prevVal)) {
+        return prevVal;
+      }
+      return null;
+    },
+  });
 
   protected readonly domainsList = computed<VerifiedDomain[]>(() => {
     return this.settingsSvc.getValue<VerifiedDomain[]>('communications.verified_domains') || [];
@@ -129,10 +138,6 @@ export class DomainSettingsComponent implements OnInit {
       await this.settingsSvc.upsert([
         { key: 'communications.verified_domains', value: updatedList },
       ]);
-
-      if (this.expandedDomain() === domainName) {
-        this.expandedDomain.set(null);
-      }
 
       this.alerts.showSuccess(`Domain ${domainName} removed.`);
     } catch (err: any) {
