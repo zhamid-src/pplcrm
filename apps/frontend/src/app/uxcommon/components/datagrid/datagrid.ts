@@ -31,6 +31,8 @@ import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
 import { TagOptionsService } from './services/tag-options.service';
 import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
+import { GridTagFilterService } from './services/grid-tag-filter.service';
+import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
 // Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';
@@ -364,28 +366,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public showToolbar = input<boolean>(true);
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
-  public readonly allAvailableTags = signal<string[]>([]);
-  public readonly selectedTags = signal<string[]>([]);
-  public readonly tagSearchQuery = signal<string>('');
 
-  public readonly allAvailableIssues = signal<string[]>([]);
-  public readonly selectedIssues = signal<string[]>([]);
-  public readonly issueSearchQuery = signal<string>('');
+  // ── Tag / Issue filter — delegated to GridTagFilterService ───────────────
+  private readonly tagFilter = new GridTagFilterService();
 
-  public readonly filteredAvailableTags = computed(() => {
-    const query = this.tagSearchQuery().toLowerCase().trim();
-    const all = this.allAvailableTags();
-    if (!query) return all;
-    return all.filter((tag) => tag.toLowerCase().includes(query));
-  });
+  // Proxy aliases — same public names the toolbar template accesses via grid.*
+  public readonly allAvailableTags = this.tagFilter.allAvailableTags;
+  public readonly selectedTags = this.tagFilter.selectedTags;
+  public readonly tagSearchQuery = this.tagFilter.tagSearchQuery;
+  public readonly allAvailableIssues = this.tagFilter.allAvailableIssues;
+  public readonly selectedIssues = this.tagFilter.selectedIssues;
+  public readonly issueSearchQuery = this.tagFilter.issueSearchQuery;
+  public readonly filteredAvailableTags = this.tagFilter.filteredAvailableTags;
+  public readonly filteredAvailableIssues = this.tagFilter.filteredAvailableIssues;
 
-  public readonly filteredAvailableIssues = computed(() => {
-    const query = this.issueSearchQuery().toLowerCase().trim();
-    const all = this.allAvailableIssues();
-    if (!query) return all;
-    return all.filter((issue) => issue.toLowerCase().includes(query));
-  });
-
+  // showTagFilter / showIssueFilter must stay here — they depend on the colDefs input signal
   public readonly showTagFilter = computed(() => {
     const defs = this.colDefs();
     return defs.some(col => col.field === 'tags' || col.tagColumn === true);
@@ -396,132 +391,31 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return defs.some(col => col.field === 'issues' || col.field === 'issue');
   });
 
-  public toggleTagFilter(tag: string, checked: boolean) {
-    const current = this.selectedTags();
-    let next: string[];
-    if (checked) {
-      next = [...current, tag];
-    } else {
-      next = current.filter((t) => t !== tag);
-    }
-    this.selectedTags.set(next);
-    this.doRefresh();
-  }
+  public toggleTagFilter(tag: string, checked: boolean) { this.tagFilter.toggleTagFilter(tag, checked); }
+  public clearTagsFilter() { this.tagFilter.clearTagsFilter(); }
+  public selectAllTags() { this.tagFilter.selectAllTags(); }
+  public clearAllTagsVisible() { this.tagFilter.clearAllTagsVisible(); }
+  public toggleIssueFilter(issue: string, checked: boolean) { this.tagFilter.toggleIssueFilter(issue, checked); }
+  public clearIssuesFilter() { this.tagFilter.clearIssuesFilter(); }
+  public selectAllIssues() { this.tagFilter.selectAllIssues(); }
+  public clearAllIssuesVisible() { this.tagFilter.clearAllIssuesVisible(); }
 
-  public clearTagsFilter() {
-    this.selectedTags.set([]);
-    this.tagSearchQuery.set('');
-    this.doRefresh();
-  }
+  // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
+  private readonly advFilter = new GridAdvancedFilterService();
 
-  public selectAllTags() {
-    const visible = this.filteredAvailableTags();
-    const current = new Set(this.selectedTags());
-    for (const tag of visible) {
-      current.add(tag);
-    }
-    this.selectedTags.set(Array.from(current));
-    this.doRefresh();
-  }
+  // Proxy aliases — same public names used by the toolbar and datagrid.html
+  public readonly showAdvancedFilterBuilder = this.advFilter.showAdvancedFilterBuilder;
+  public readonly advConjunction = this.advFilter.advConjunction;
+  public readonly advRules = this.advFilter.advRules;
+  public readonly hasActiveAdvancedFilters = this.advFilter.hasActiveAdvancedFilters;
 
-  public clearAllTagsVisible() {
-    const visible = this.filteredAvailableTags();
-    const visibleSet = new Set(visible);
-    const next = this.selectedTags().filter((tag) => !visibleSet.has(tag));
-    this.selectedTags.set(next);
-    this.doRefresh();
-  }
-
-  public toggleIssueFilter(issue: string, checked: boolean) {
-    const current = this.selectedIssues();
-    let next: string[];
-    if (checked) {
-      next = [...current, issue];
-    } else {
-      next = current.filter((i) => i !== issue);
-    }
-    this.selectedIssues.set(next);
-    this.doRefresh();
-  }
-
-  public clearIssuesFilter() {
-    this.selectedIssues.set([]);
-    this.issueSearchQuery.set('');
-    this.doRefresh();
-  }
-
-  public selectAllIssues() {
-    const visible = this.filteredAvailableIssues();
-    const current = new Set(this.selectedIssues());
-    for (const issue of visible) {
-      current.add(issue);
-    }
-    this.selectedIssues.set(Array.from(current));
-    this.doRefresh();
-  }
-
-  public clearAllIssuesVisible() {
-    const visible = this.filteredAvailableIssues();
-    const visibleSet = new Set(visible);
-    const next = this.selectedIssues().filter((issue) => !visibleSet.has(issue));
-    this.selectedIssues.set(next);
-    this.doRefresh();
-  }
-
-  // Advanced Filter Builder State
-  public readonly showAdvancedFilterBuilder = signal<boolean>(false);
-  public readonly advConjunction = signal<'AND' | 'OR'>('AND');
-  public readonly advRules = signal<Array<{ id: string; field: string; op: string; value: string }>>([]);
-
-  public readonly hasActiveAdvancedFilters = computed(() => {
-    return this.advRules().some(r => r.field && r.value !== undefined && r.value !== null && String(r.value).trim() !== '');
-  });
-
-  public openAdvancedFilterBuilder() {
-    this.showAdvancedFilterBuilder.set(true);
-    if (this.advRules().length === 0) {
-      this.addAdvRule();
-    }
-  }
-
-  public switchToAdvancedFilter() {
-    this.showFilterPanel.set(false);
-    this.openAdvancedFilterBuilder();
-  }
-
-  public addAdvRule() {
-    const fields = this.getColDefsForToolbar().filter(c => c.field && c.field !== 'actions');
-    const defaultField = fields[0]?.field || '';
-    const newRule = {
-      id: Math.random().toString(36).substring(2),
-      field: defaultField,
-      op: 'contains',
-      value: '',
-    };
-    this.advRules.update((rules) => [...rules, newRule]);
-  }
-
-  public removeAdvRule(id: string) {
-    this.advRules.update((rules) => rules.filter((r) => r.id !== id));
-  }
-
-  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) {
-    this.advRules.update((rules) =>
-      rules.map((r) => (r.id === id ? { ...r, ...updates } : r))
-    );
-  }
-
-  public applyAdvancedFilter() {
-    this.showAdvancedFilterBuilder.set(false);
-    this.doRefresh();
-  }
-
-  public clearAdvancedFilter() {
-    this.advConjunction.set('AND');
-    this.advRules.set([]);
-    this.showAdvancedFilterBuilder.set(false);
-    this.doRefresh();
-  }
+  public openAdvancedFilterBuilder() { this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit); }
+  public switchToAdvancedFilter() { this.advFilter.switchToAdvancedFilter(() => this.showFilterPanel.set(false), () => this.colDefsWithEdit); }
+  public addAdvRule() { this.advFilter.addRule(() => this.colDefsWithEdit); }
+  public removeAdvRule(id: string) { this.advFilter.removeRule(id); }
+  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) { this.advFilter.updateRule(id, updates); }
+  public applyAdvancedFilter() { this.advFilter.apply(() => this.doRefresh()); }
+  public clearAdvancedFilter() { this.advFilter.clear(() => this.doRefresh()); }
 
   private _squelch = false;
   private _initialized = false;
@@ -606,8 +500,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       searchStr: this.searchSvc.getFilterText(),
       sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
       filterModel: this.buildFilterModel(),
-      tags: this.selectedTags(),
-      issues: this.selectedIssues(),
+      tags: this.tagFilter.selectedTags(),
+      issues: this.tagFilter.selectedIssues(),
     } as getAllOptionsType;
   }
 
@@ -635,20 +529,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public async ngOnInit() {
-    this.selectedTags.set([...this.limitToTags()]);
-    this.selectedIssues.set([...this.limitToIssues()]);
-    try {
-      const tags = await this.dgTagOptionsSvc.getTagNames('tag');
-      this.allAvailableTags.set(tags);
-    } catch {
-      this.allAvailableTags.set([]);
-    }
-    try {
-      const issues = await this.dgTagOptionsSvc.getTagNames('issue');
-      this.allAvailableIssues.set(issues);
-    } catch {
-      this.allAvailableIssues.set([]);
-    }
+    await this.tagFilter.init({
+      limitToTags: this.limitToTags(),
+      limitToIssues: this.limitToIssues(),
+      tagOptionsSvc: this.dgTagOptionsSvc,
+      doRefresh: () => this.doRefresh(),
+    });
     this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
