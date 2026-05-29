@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, signal, untracked } from '@angular/core';
+import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class GridStoreService {
@@ -8,11 +8,26 @@ export class GridStoreService {
   readonly colWidths = signal<Record<string, number>>({});
   readonly filterValues = signal<Record<string, any>>({});
   readonly panelFilters = signal<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
-  readonly selectedIdSet = signal<Set<string>>(new Set());
-  readonly allSelected = signal<boolean>(false);
-  readonly allSelectedIdSet = signal<Set<string>>(new Set());
-  readonly allSelectedIds = signal<string[]>([]);
-  readonly allSelectedCount = signal<number>(0);
+  readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelected = linkedSignal<Record<string, any>, boolean>({
+    source: () => this.filterValues(),
+    computation: () => false,
+  });
+  readonly allSelectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelectedIds = linkedSignal<Record<string, any>, string[]>({
+    source: () => this.filterValues(),
+    computation: () => [],
+  });
+  readonly allSelectedCount = linkedSignal<Record<string, any>, number>({
+    source: () => this.filterValues(),
+    computation: () => 0,
+  });
   readonly selectionStickyWidth = signal<number>(48);
   readonly pageIndex = signal<number>(0);
   readonly pageSize = signal<number>(25);

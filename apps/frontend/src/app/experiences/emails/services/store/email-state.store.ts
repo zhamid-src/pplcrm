@@ -1,12 +1,18 @@
-import { computed, signal, Service } from '@angular/core';
+import { computed, signal, Service, linkedSignal } from '@angular/core';
 
 import { ServerEmail } from 'common/src/lib/emails';
 import type { EmailType } from 'common/src/lib/models';
 
 @Service()
 export class EmailStateStore {
-  /** Currently selected email ID */
-  public readonly currentSelectedEmailId = signal<string | null>(null);
+  /** Active folder ID that this store's selection is bound to */
+  public readonly activeFolderId = signal<string | null>(null);
+
+  /** Currently selected email ID, resets when activeFolderId changes */
+  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
+    source: () => this.activeFolderId(),
+    computation: () => null,
+  });
 
   /** Normalized email data storage, keyed by email ID */
   public readonly emailsById = signal<Record<string, EmailType>>({});

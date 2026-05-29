@@ -74,7 +74,7 @@
         </div>
         <div class="flex flex-col md:flex-row gap-2">
           <label class="input validator basis-1/2" [class.input-error]="emailError()">
-            <input type="email" placeholder="Email" [formField]="form.email" (input)="emailError.set(null)" />
+            <input type="email" placeholder="Email" [formField]="form.email" />
           </label>
           <label class="input validator basis-1/2">
             <input type="email" placeholder="Email 2" [formField]="form.email2" />
