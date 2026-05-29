@@ -7,11 +7,10 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
-import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [CommonModule, ReactiveFormsModule, RouterModule, Tags, TagItem, Icon],
+  imports: [ReactiveFormsModule, RouterModule, Tags, TagItem, Icon],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {

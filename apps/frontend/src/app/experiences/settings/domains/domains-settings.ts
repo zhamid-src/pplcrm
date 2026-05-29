@@ -1,5 +1,4 @@
 import { Component, signal, computed, inject, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -15,7 +14,7 @@ export interface VerifiedDomain {
 
 @Component({
   selector: 'pc-domains-settings',
-  imports: [CommonModule, FormsModule, Icon],
+  imports: [FormsModule, Icon],
   templateUrl: './domains-settings.html',
 })
 export class DomainSettingsComponent implements OnInit {

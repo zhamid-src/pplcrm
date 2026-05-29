@@ -1,5 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { FilesService } from '../services/files.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TokenService } from '../../../services/api/token-service';
@@ -9,7 +9,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
 @Component({
   selector: 'pc-files-grid',
-  imports: [CommonModule, Icon],
+  imports: [DatePipe, Icon],
   template: `
     <div class="p-6 max-w-7xl mx-auto">
       <!-- Header -->
@@ -38,13 +38,16 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
       </div>
 
       <!-- Loading State -->
-      <div *ngIf="isLoading()" class="flex flex-col items-center justify-center py-20">
+      @if (isLoading()) {
+      <div class="flex flex-col items-center justify-center py-20">
         <span class="loading loading-spinner loading-lg text-primary"></span>
         <p class="text-base-content/60 mt-4">Loading files...</p>
       </div>
+      }
 
       <!-- Empty State -->
-      <div *ngIf="!isLoading() && filteredFiles().length === 0" class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
+      @if (!isLoading() && filteredFiles().length === 0) {
+      <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
         <div class="card-body items-center text-center py-12">
           <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
           <h2 class="card-title text-base-content/70">No files found</h2>
@@ -53,9 +56,11 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
           </p>
         </div>
       </div>
+      }
 
       <!-- Grid / Table View -->
-      <div *ngIf="!isLoading() && filteredFiles().length > 0" class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+      @if (!isLoading() && filteredFiles().length > 0) {
+      <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
         <table class="table w-full">
           <thead>
             <tr class="bg-base-200/50">
@@ -67,7 +72,8 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let file of filteredFiles()" class="hover:bg-base-200/30 transition-all duration-200">
+            @for (file of filteredFiles(); track file.id) {
+            <tr class="hover:bg-base-200/30 transition-all duration-200">
               <td>
                 <div class="flex items-center gap-3">
                   <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="5.5"></pc-icon>
@@ -102,9 +108,11 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
                 </div>
               </td>
             </tr>
+            }
           </tbody>
         </table>
       </div>
+      }
     </div>
   `,
   styles: [`

@@ -1,5 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe, LowerCasePipe } from '@angular/common';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { CompaniesService } from '../../companies/services/companies-service';
@@ -19,11 +19,12 @@ interface DuplicateGroup {
 
 @Component({
   selector: 'pc-duplicate-manager',
-  imports: [CommonModule, Icon],
+  imports: [DatePipe, LowerCasePipe, Icon],
   template: `
     <div class="p-6 max-w-7xl mx-auto">
       <!-- Selection Screen -->
-      <div *ngIf="selectedMode() === 'select'" class="max-w-4xl mx-auto">
+      @if (selectedMode() === 'select') {
+      <div class="max-w-4xl mx-auto">
         <div class="text-center mb-10 mt-6">
           <h1 class="text-3xl font-bold tracking-tight text-base-content mb-2 flex items-center justify-center gap-2">
             <pc-icon name="document-duplicate" class="text-primary" [size]="8"></pc-icon>
@@ -99,9 +100,11 @@ interface DuplicateGroup {
           </div>
         </div>
       </div>
+      }
 
       <!-- Duplicate Management Feed -->
-      <div *ngIf="selectedMode() !== 'select'">
+      @if (selectedMode() !== 'select') {
+      <div>
         <!-- Back to Option Selection -->
         <div class="mb-4">
           <button class="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content px-0" (click)="setMode('select')">
@@ -128,13 +131,16 @@ interface DuplicateGroup {
         </div>
 
         <!-- Loading State -->
-        <div *ngIf="isLoading()" class="flex flex-col items-center justify-center py-20">
+        @if (isLoading()) {
+        <div class="flex flex-col items-center justify-center py-20">
           <span class="loading loading-spinner loading-lg text-primary"></span>
           <p class="text-base-content/60 mt-4 font-light">Scanning database for potential duplicate {{ getModeTitle() | lowercase }}...</p>
         </div>
+        }
 
         <!-- Empty State -->
-        <div *ngIf="!isLoading() && groups().length === 0" class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
+        @if (!isLoading() && groups().length === 0) {
+        <div class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
           <div class="card-body items-center text-center py-16">
             <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
               <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
@@ -148,11 +154,13 @@ interface DuplicateGroup {
             </div>
           </div>
         </div>
+        }
 
         <!-- Duplicate Groups Feed -->
-        <div *ngIf="!isLoading() && groups().length > 0" class="grid gap-6">
+        @if (!isLoading() && groups().length > 0) {
+        <div class="grid gap-6">
+          @for (group of groups(); track group; let gIdx = $index) {
           <div 
-            *ngFor="let group of groups(); let gIdx = index" 
             class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
           >
             <!-- Group Title -->
@@ -168,15 +176,12 @@ interface DuplicateGroup {
             <div class="card-body p-6">
               <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Select Primary & Duplicate Cards (People Mode) -->
-                <ng-container *ngIf="selectedMode() === 'people'">
+                @if (selectedMode() === 'people') {
+                  @for (person of group.persons; track person.id) {
                   <div 
-                    *ngFor="let person of group.persons" 
-                    class="card bg-base-200/40 border transition-all duration-200"
-                    [ngClass]="{
-                      'border-success bg-success/5 shadow': group.selectedTargetId === person.id,
-                      'border-error bg-error/5 opacity-80': group.selectedSourceId === person.id,
-                      'border-base-300': group.selectedTargetId !== person.id && group.selectedSourceId !== person.id
-                    }"
+                    [class]="'card bg-base-200/40 border transition-all duration-200 ' + 
+                      (group.selectedTargetId === person.id ? 'border-success bg-success/5 shadow' : 
+                       group.selectedSourceId === person.id ? 'border-error bg-error/5 opacity-80' : 'border-base-300')"
                   >
                     <div class="card-body p-4 justify-between h-full">
                       <div>
@@ -206,15 +211,13 @@ interface DuplicateGroup {
 
                       <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline')"
                           (click)="selectRole(gIdx, person.id, 'target')"
                         >
                           Keep (Primary)
                         </button>
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline')"
                           (click)="selectRole(gIdx, person.id, 'source')"
                         >
                           Delete (Merge)
@@ -222,18 +225,16 @@ interface DuplicateGroup {
                       </div>
                     </div>
                   </div>
-                </ng-container>
+                  }
+                }
 
                 <!-- Select Primary & Duplicate Cards (Households Mode) -->
-                <ng-container *ngIf="selectedMode() === 'households'">
+                @if (selectedMode() === 'households') {
+                  @for (hh of group.households; track hh.id) {
                   <div 
-                    *ngFor="let hh of group.households" 
-                    class="card bg-base-200/40 border transition-all duration-200"
-                    [ngClass]="{
-                      'border-success bg-success/5 shadow': group.selectedTargetId === hh.id,
-                      'border-error bg-error/5 opacity-80': group.selectedSourceId === hh.id,
-                      'border-base-300': group.selectedTargetId !== hh.id && group.selectedSourceId !== hh.id
-                    }"
+                    [class]="'card bg-base-200/40 border transition-all duration-200 ' + 
+                      (group.selectedTargetId === hh.id ? 'border-success bg-success/5 shadow' : 
+                       group.selectedSourceId === hh.id ? 'border-error bg-error/5 opacity-80' : 'border-base-300')"
                   >
                     <div class="card-body p-4 justify-between h-full">
                       <div>
@@ -247,9 +248,11 @@ interface DuplicateGroup {
                             <pc-icon name="home" [size]="4" class="opacity-50"></pc-icon>
                             <span>{{ hh.home_phone || '—' }}</span>
                           </div>
-                          <div *ngIf="hh.notes" class="text-xs text-base-content/70 bg-base-300/30 p-1.5 rounded border border-base-300/40 italic">
+                          @if (hh.notes) {
+                          <div class="text-xs text-base-content/70 bg-base-300/30 p-1.5 rounded border border-base-300/40 italic">
                             "{{ hh.notes }}"
                           </div>
+                          }
                           <div class="text-[11px] text-base-content/40">
                             Created: {{ hh.created_at | date:'short' }}
                           </div>
@@ -257,12 +260,18 @@ interface DuplicateGroup {
                           <!-- Household Members list -->
                           <div class="mt-3 pt-3 border-t border-base-300/50">
                             <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-1">Members ({{ hh.persons?.length || 0 }}):</div>
-                            <div *ngIf="!hh.persons?.length" class="text-xs text-base-content/40 italic">No members in household</div>
+                            @if (!hh.persons?.length) {
+                            <div class="text-xs text-base-content/40 italic">No members in household</div>
+                            }
                             <ul class="list-disc pl-4 space-y-1">
-                              <li *ngFor="let member of hh.persons" class="text-xs text-base-content/85">
+                              @for (member of hh.persons; track member.id) {
+                              <li class="text-xs text-base-content/85">
                                 <span class="font-medium">{{ member.first_name }} {{ member.last_name }}</span>
-                                <span *ngIf="member.email" class="text-[10px] text-base-content/50 font-light truncate ml-1">({{ member.email }})</span>
+                                @if (member.email) {
+                                <span class="text-[10px] text-base-content/50 font-light truncate ml-1">({{ member.email }})</span>
+                                }
                               </li>
+                              }
                             </ul>
                           </div>
                         </div>
@@ -270,15 +279,13 @@ interface DuplicateGroup {
 
                       <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline')"
                           (click)="selectRole(gIdx, hh.id, 'target')"
                         >
                           Keep (Primary)
                         </button>
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline')"
                           (click)="selectRole(gIdx, hh.id, 'source')"
                         >
                           Delete (Merge)
@@ -286,18 +293,16 @@ interface DuplicateGroup {
                       </div>
                     </div>
                   </div>
-                </ng-container>
+                  }
+                }
 
                 <!-- Select Primary & Duplicate Cards (Companies Mode) -->
-                <ng-container *ngIf="selectedMode() === 'companies'">
+                @if (selectedMode() === 'companies') {
+                  @for (company of group.companies; track company.id) {
                   <div 
-                    *ngFor="let company of group.companies" 
-                    class="card bg-base-200/40 border transition-all duration-200"
-                    [ngClass]="{
-                      'border-success bg-success/5 shadow': group.selectedTargetId === company.id,
-                      'border-error bg-error/5 opacity-80': group.selectedSourceId === company.id,
-                      'border-base-300': group.selectedTargetId !== company.id && group.selectedSourceId !== company.id
-                    }"
+                    [class]="'card bg-base-200/40 border transition-all duration-200 ' + 
+                      (group.selectedTargetId === company.id ? 'border-success bg-success/5 shadow' : 
+                       group.selectedSourceId === company.id ? 'border-error bg-error/5 opacity-80' : 'border-base-300')"
                   >
                     <div class="card-body p-4 justify-between h-full">
                       <div>
@@ -307,10 +312,12 @@ interface DuplicateGroup {
                         </h4>
 
                         <div class="mt-3 space-y-2 text-sm">
-                          <div *ngIf="company.website" class="flex items-center gap-2 text-base-content/70">
+                          @if (company.website) {
+                          <div class="flex items-center gap-2 text-base-content/70">
                             <pc-icon name="globe-americas" [size]="4" class="opacity-50"></pc-icon>
                             <span class="truncate">{{ company.website }}</span>
                           </div>
+                          }
                           <div class="flex items-center gap-2 text-base-content/70">
                             <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
                             <span class="truncate">{{ company.email || '—' }}</span>
@@ -319,10 +326,12 @@ interface DuplicateGroup {
                             <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
                             <span>{{ company.phone || '—' }}</span>
                           </div>
-                          <div *ngIf="company.industry" class="flex items-center gap-2 text-base-content/70">
+                          @if (company.industry) {
+                          <div class="flex items-center gap-2 text-base-content/70">
                             <pc-icon name="briefcase" [size]="4" class="opacity-50"></pc-icon>
                             <span>{{ company.industry }}</span>
                           </div>
+                          }
                           <div class="text-[11px] text-base-content/40">
                             Created: {{ company.created_at | date:'short' }}
                           </div>
@@ -330,12 +339,18 @@ interface DuplicateGroup {
                           <!-- Company Contacts list -->
                           <div class="mt-3 pt-3 border-t border-base-300/50">
                             <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-1">Associated Contacts ({{ company.persons?.length || 0 }}):</div>
-                            <div *ngIf="!company.persons?.length" class="text-xs text-base-content/40 italic">No contacts at company</div>
+                            @if (!company.persons?.length) {
+                            <div class="text-xs text-base-content/40 italic">No contacts at company</div>
+                            }
                             <ul class="list-disc pl-4 space-y-1">
-                              <li *ngFor="let contact of company.persons" class="text-xs text-base-content/85">
+                              @for (contact of company.persons; track contact.id) {
+                              <li class="text-xs text-base-content/85">
                                 <span class="font-medium">{{ contact.first_name }} {{ contact.last_name }}</span>
-                                <span *ngIf="contact.email" class="text-[10px] text-base-content/50 font-light truncate ml-1">({{ contact.email }})</span>
+                                @if (contact.email) {
+                                <span class="text-[10px] text-base-content/50 font-light truncate ml-1">({{ contact.email }})</span>
+                                }
                               </li>
+                              }
                             </ul>
                           </div>
                         </div>
@@ -343,15 +358,13 @@ interface DuplicateGroup {
 
                       <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline')"
                           (click)="selectRole(gIdx, company.id, 'target')"
                         >
                           Keep (Primary)
                         </button>
                         <button 
-                          class="btn btn-xs flex-1" 
-                          [ngClass]="group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline'"
+                          [class]="'btn btn-xs flex-1 ' + (group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline')"
                           (click)="selectRole(gIdx, company.id, 'source')"
                         >
                           Delete (Merge)
@@ -359,7 +372,8 @@ interface DuplicateGroup {
                       </div>
                     </div>
                   </div>
-                </ng-container>
+                  }
+                }
 
                 <!-- Merge Actions / Summary Panel -->
                 <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between">
@@ -370,11 +384,14 @@ interface DuplicateGroup {
                     </h4>
                     
                     <div class="space-y-3 text-sm flex-1">
-                      <div *ngIf="!group.selectedTargetId || !group.selectedSourceId" class="text-base-content/50 py-4 italic text-center text-xs">
+                      @if (!group.selectedTargetId || !group.selectedSourceId) {
+                      <div class="text-base-content/50 py-4 italic text-center text-xs">
                         Select which record to Keep and which to Merge.
                       </div>
+                      }
                       
-                      <div *ngIf="group.selectedTargetId && group.selectedSourceId" class="space-y-3">
+                      @if (group.selectedTargetId && group.selectedSourceId) {
+                      <div class="space-y-3">
                         <div class="alert alert-info py-2 text-[11px] leading-relaxed">
                           <span>{{ getMergeDescription() }}</span>
                         </div>
@@ -392,6 +409,7 @@ interface DuplicateGroup {
                           </div>
                         </div>
                       </div>
+                      }
                     </div>
 
                     <div class="card-actions mt-4 pt-3 border-t border-base-300">
@@ -409,8 +427,11 @@ interface DuplicateGroup {
               </div>
             </div>
           </div>
+          }
         </div>
+        }
       </div>
+      }
     </div>
   `,
   styles: [`
@@ -563,6 +584,7 @@ export class DuplicateManager implements OnInit {
           ...g,
           selectedTargetId,
           selectedSourceId,
+          ...g,
         };
       });
       this.groups.set(mappedGroups);

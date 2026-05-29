@@ -1,10 +1,10 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { form, required, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddVolunteerEventType, UpdateVolunteerEventType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { PersonsService } from '../../persons/services/persons-service';
@@ -13,7 +13,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
-  imports: [CommonModule, FormsModule, FormField, RouterModule, Icon],
+  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
