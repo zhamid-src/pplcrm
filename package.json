@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "preinstall": "npx npm-force-resolutions",
     "lint": "eslint . --ext .ts",
     "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts",
     "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts"
@@ -30,7 +29,6 @@
     "@tanstack/virtual-core": "^3.14.0",
     "@triangular/password-checker": "^20.0.0",
     "@trpc/client": "^11.17.0",
-    "@trpc/react-query": "^11.16.0",
     "@trpc/server": "^11.17.0",
     "@types/dompurify": "^3.0.5",
     "@types/google.maps": "^3.64.0",
