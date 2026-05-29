@@ -8,7 +8,6 @@ import z from 'zod';
 
 import { authProcedure, publicProcedure, router } from '../../../trpc';
 import { AuthController } from './controller';
-import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
 
 /**
  * Get the currently authenticated user.
@@ -16,14 +15,14 @@ import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
  * @returns The current user profile based on the access token.
  */
 function currentUser() {
-  return authProcedure.query(wrapTrpc(({ ctx }) => controller.currentUser(ctx.auth)));
+  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
 }
 
 /**
  * Count total auth users for the current tenant.
  */
 function count() {
-  return authProcedure.query(wrapTrpc(({ ctx }) => controller.getCount(ctx.auth.tenant_id)));
+  return authProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
 }
 
 /**
@@ -32,7 +31,7 @@ function count() {
  */
 function getUsers() {
   return authProcedure.query(
-    wrapTrpc(({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] })),
+    ({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] }),
   );
 }
 
@@ -42,7 +41,7 @@ function getUsers() {
 function getAllWithCounts() {
   return authProcedure
     .input(getAllOptions)
-    .query(wrapTrpc(({ input, ctx }) => controller.getAllUsers(ctx.auth, input)));
+    .query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
 }
 
 /**
@@ -54,7 +53,7 @@ function getAllWithCounts() {
 function renewAuthToken() {
   return publicProcedure
     .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
-    .mutation(wrapTrpc(({ input }) => controller.renewAuthToken(input)));
+    .mutation(({ input }) => controller.renewAuthToken(input));
 }
 
 /**
@@ -66,14 +65,14 @@ function renewAuthToken() {
 function resetPassword() {
   return publicProcedure
     .input(z.object({ password: z.string(), code: z.string() }))
-    .mutation(wrapTrpc(({ input }) => controller.resetPassword(input.password, input.code)));
+    .mutation(({ input }) => controller.resetPassword(input.password, input.code));
 }
 
 /**
  * Retrieve a specific auth user by id.
  */
 function getById() {
-  return authProcedure.input(idSchema).query(wrapTrpc(({ input, ctx }) => controller.getUserById(ctx.auth, input)));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
 }
 
 /**
@@ -85,7 +84,7 @@ function getById() {
 function sendPasswordResetEmail() {
   return publicProcedure
     .input(z.object({ email: z.string().trim().email('Invalid email address') }))
-    .mutation(wrapTrpc(({ input }) => controller.sendPasswordResetEmail(input.email)));
+    .mutation(({ input }) => controller.sendPasswordResetEmail(input.email));
 }
 
 /**
@@ -95,7 +94,7 @@ function sendPasswordResetEmail() {
  * @returns Access and refresh tokens upon successful login.
  */
 function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(wrapTrpc(({ input }) => controller.signIn(input)));
+  return publicProcedure.input(signInInputObj).mutation(({ input }) => controller.signIn(input));
 }
 
 /**
@@ -104,7 +103,7 @@ function signIn() {
 function invite() {
   return authProcedure
     .input(InviteAuthUserObj)
-    .mutation(wrapTrpc(({ input, ctx }) => controller.inviteUser(ctx.auth, input)));
+    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
 }
 
 /**
@@ -113,7 +112,7 @@ function invite() {
  * @returns A success confirmation.
  */
 function signOut() {
-  return authProcedure.mutation(wrapTrpc(({ ctx }) => controller.signOut(ctx.auth)));
+  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
 }
 
 /**
@@ -122,7 +121,7 @@ function signOut() {
 function update() {
   return authProcedure
     .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(wrapTrpc(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data)));
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
 }
 
 /**
@@ -132,7 +131,7 @@ function update() {
  * @returns Access and refresh tokens upon successful registration.
  */
 function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(wrapTrpc(({ input }) => controller.signUp(input)));
+  return publicProcedure.input(signUpInputObj).mutation(({ input }) => controller.signUp(input));
 }
 
 const controller = new AuthController();

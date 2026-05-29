@@ -4,44 +4,43 @@ import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
 import { TeamsController } from './controller';
-import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
 
 const controller = new TeamsController();
 
 function getAll() {
   return authProcedure
     .input(getAllOptions.optional())
-    .query(wrapTrpc(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input)));
+    .query(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input));
 }
 
 function getById() {
   return authProcedure
     .input(idSchema)
-    .query(wrapTrpc(({ ctx, input }) => controller.getById(ctx.auth, input)));
+    .query(({ ctx, input }) => controller.getById(ctx.auth, input));
 }
 
 function add() {
   return authProcedure
     .input(AddTeamObj)
-    .mutation(wrapTrpc(({ ctx, input }) => controller.addTeam(ctx.auth, input)));
+    .mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
 }
 
 function update() {
   return authProcedure
     .input(z.object({ id: idSchema, data: UpdateTeamObj }))
-    .mutation(wrapTrpc(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data)));
+    .mutation(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data));
 }
 
 function remove() {
   return authProcedure
     .input(idSchema)
-    .mutation(wrapTrpc(({ ctx, input }) => controller.deleteTeam(ctx.auth, input)));
+    .mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
 }
 
 function getForVolunteer() {
   return authProcedure
     .input(idSchema)
-    .query(wrapTrpc(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input)));
+    .query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
 }
 
 export const TeamsRouter = router({
