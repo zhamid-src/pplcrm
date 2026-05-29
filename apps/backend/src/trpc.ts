@@ -13,20 +13,21 @@ const trpc = initTRPC.context<Context>().create({
       console.error('tRPC Error Cause:', error.cause);
     }
     // Path may be on error.path, or on shape.data.path (or absent)
-    const pathStr: string = (error as any).path ?? (shape.data?.path as string | undefined) ?? '';
+    const errorObj = error as unknown as Record<string, unknown>;
+    const pathStr: string = (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ?? (shape.data?.path as string | undefined) ?? '';
 
     const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
 
     // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
     const isZodOrBadRequest =
-      Boolean((shape.data as any)?.zodError) || error.cause instanceof ZodError || error.code === 'BAD_REQUEST';
+      Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']) || error.cause instanceof ZodError || error.code === 'BAD_REQUEST';
 
     // Collapse auth-ish cases
     const isCredsProblem =
       error.code === 'UNAUTHORIZED' ||
       error.code === 'NOT_FOUND' ||
       error.cause?.name === 'InvalidCredentialsError' ||
-      (error.cause as any)?.code === 'USER_NOT_FOUND';
+      (error.cause as unknown as Record<string, unknown> | undefined)?.['code'] === 'USER_NOT_FOUND';
 
     if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
       return { ...shape, message: GENERIC_LOGIN_MSG };
