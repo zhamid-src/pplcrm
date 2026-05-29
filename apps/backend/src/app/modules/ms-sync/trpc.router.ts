@@ -4,7 +4,6 @@
  * and triggering an on-demand email sync.
  */
 import { authProcedure, router } from '../../../trpc';
-import { wrapTrpc } from '../../lib/trpc/wrap-trpc';
 import { MsOAuthService } from './ms-oauth.service';
 import { MsSyncService } from './ms-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
@@ -35,13 +34,13 @@ function getServices() {
  */
 function getAuthUrl() {
   return authProcedure.query(
-    wrapTrpc(async ({ ctx }) => {
+    async ({ ctx }) => {
       const { oauthSvc } = getServices();
       // State encodes user + tenant so the callback can identify the user
       const state = Buffer.from(JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id })).toString('base64');
       const url = await oauthSvc.getAuthUrl(state);
       return { url };
-    }),
+    },
   );
 }
 
@@ -50,10 +49,10 @@ function getAuthUrl() {
  */
 function getConnectionStatus() {
   return authProcedure.query(
-    wrapTrpc(async ({ ctx }) => {
+    async ({ ctx }) => {
       const { oauthSvc } = getServices();
       return oauthSvc.getConnectionStatus(ctx.auth.user_id);
-    }),
+    },
   );
 }
 
@@ -63,10 +62,10 @@ function getConnectionStatus() {
  */
 function syncNow() {
   return authProcedure.mutation(
-    wrapTrpc(async ({ ctx }) => {
+    async ({ ctx }) => {
       const { syncSvc } = getServices();
       return syncSvc.syncUser(ctx.auth.user_id, ctx.auth.tenant_id, ctx.auth.user_id);
-    }),
+    },
   );
 }
 
@@ -81,7 +80,7 @@ function disconnect() {
       }),
     )
     .mutation(
-      wrapTrpc(async ({ ctx, input }) => {
+      async ({ ctx, input }) => {
         const { oauthSvc, syncSvc } = getServices();
 
         if (input.removeLocalEmails) {
@@ -90,7 +89,7 @@ function disconnect() {
 
         await oauthSvc.disconnect(ctx.auth.user_id);
         return { success: true };
-      }),
+      },
     );
 }
 
