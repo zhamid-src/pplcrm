@@ -97,24 +97,17 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     icon: 'envelope',
     fields: [
       {
-        key: 'communications.smtp_host',
-        label: 'SMTP Host',
-        type: 'text',
-        placeholder: 'smtp.example.com',
-        defaultValue: '',
-      },
-      {
-        key: 'communications.smtp_user',
-        label: 'SMTP Username',
-        type: 'text',
-        placeholder: 'api@example.com',
-        defaultValue: '',
-      },
-      {
         key: 'communications.default_from_name',
         label: 'Default From Name',
         type: 'text',
         placeholder: 'PeopleCRM Team',
+        defaultValue: '',
+      },
+      {
+        key: 'communications.default_from_email',
+        label: 'Default From Email',
+        type: 'email',
+        placeholder: 'sender@example.com',
         defaultValue: '',
       },
       {
@@ -130,6 +123,12 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         type: 'textarea',
         placeholder: 'Paid for by PeopleCRM Campaign…',
         defaultValue: '',
+      },
+      {
+        key: 'communications.auto_unsubscribe_footer',
+        label: 'Automatically add unsubscribe link to email footer',
+        type: 'toggle',
+        defaultValue: true,
       },
       {
         key: 'communications.inbox_routing',
@@ -148,7 +147,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       { key: 'notifications.email_enabled', label: 'Enable Email Alerts', type: 'toggle', defaultValue: true },
       { key: 'notifications.in_app_enabled', label: 'Enable In-app Alerts', type: 'toggle', defaultValue: true },
-      { key: 'notifications.sms_enabled', label: 'Enable SMS Alerts', type: 'toggle', defaultValue: false },
       {
         key: 'notifications.digest_cadence',
         label: 'Digest Cadence',
@@ -297,24 +295,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
           { label: '10/01/2025', value: 'dd/MM/yyyy' },
         ],
       },
-      {
-        key: 'appearance.nav_density',
-        label: 'Navigation Density',
-        type: 'select',
-        defaultValue: 'comfortable',
-        options: [
-          { label: 'Comfortable', value: 'comfortable' },
-          { label: 'Compact', value: 'compact' },
-        ],
-      },
-      {
-        key: 'appearance.default_datagrid_view',
-        label: 'Default Data Grid View',
-        type: 'text',
-        placeholder: 'people.default',
-        defaultValue: '',
-      },
-      { key: 'appearance.show_tips', label: 'Show Feature Tips', type: 'toggle', defaultValue: true },
     ],
   },
   {
@@ -338,12 +318,19 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         defaultValue: '',
       },
       {
-        key: 'integrations.fundraising_api_key',
-        label: 'Fundraising Platform API Key',
-        type: 'password',
+        key: 'integrations.webhook_api_key',
+        label: 'Webhook API Key',
+        type: 'text',
+        placeholder: 'Not generated yet',
         defaultValue: '',
       },
-      { key: 'integrations.dialer_api_key', label: 'Dialer API Key', type: 'password', defaultValue: '' },
+      {
+        key: 'integrations.webhook_api_secret',
+        label: 'Webhook API Secret',
+        type: 'password',
+        placeholder: 'Not generated yet',
+        defaultValue: '',
+      },
       {
         key: 'integrations.fb_pixel_id',
         label: 'Facebook Pixel ID',
@@ -359,22 +346,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         defaultValue: '',
       },
       { key: 'integrations.sandbox_mode', label: 'Use Sandbox Mode', type: 'toggle', defaultValue: false },
-    ],
-  },
-  {
-    id: 'advanced',
-    title: 'Advanced & Labs',
-    description: 'Experimental features and low-level configuration.',
-    icon: 'square-3-stack-3d',
-    fields: [
-      { key: 'advanced.enable_ai_assistant', label: 'Enable AI Assistant (Beta)', type: 'toggle', defaultValue: false },
-      {
-        key: 'advanced.enable_volunteer_portal',
-        label: 'Enable Volunteer Portal (Beta)',
-        type: 'toggle',
-        defaultValue: false,
-      },
-      { key: 'advanced.debug_logging', label: 'Verbose Debug Logging', type: 'toggle', defaultValue: false },
     ],
   },
 ];

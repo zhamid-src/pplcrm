@@ -4,11 +4,13 @@ import { ActivatedRoute } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 describe('SettingsPage', () => {
   let component: SettingsPage;
   let fixture: ComponentFixture<SettingsPage>;
   let mockSettingsSvc: any;
+  let mockAlertSvc: any;
   let snapshotSignalValue: any;
 
   beforeEach(async () => {
@@ -43,6 +45,12 @@ describe('SettingsPage', () => {
       pending: vi.fn(() => false),
     };
 
+    mockAlertSvc = {
+      showSuccess: vi.fn(),
+      showError: vi.fn(),
+      show: vi.fn()
+    };
+
     const mockActivatedRoute = {
       snapshot: {
         queryParamMap: {
@@ -55,7 +63,8 @@ describe('SettingsPage', () => {
       imports: [SettingsPage],
       providers: [
         { provide: SettingsService, useValue: mockSettingsSvc },
-        { provide: ActivatedRoute, useValue: mockActivatedRoute }
+        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: AlertService, useValue: mockAlertSvc }
       ]
     }).compileComponents();
 

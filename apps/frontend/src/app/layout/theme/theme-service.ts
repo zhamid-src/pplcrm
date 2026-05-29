@@ -2,61 +2,39 @@
  * @fileoverview Theme management service for application-wide light/dark mode support.
  * Provides reactive theme switching with system preference detection and persistent storage.
  */
-import { signal, Service } from '@angular/core';
+import { signal, Service, inject, effect } from '@angular/core';
+import { SettingsService } from '../../experiences/settings/services/settings-service';
 
 /**
  * Service for managing application theme with reactive state and persistent storage.
- *
- * This service provides comprehensive theme management functionality that respects
- * user preferences while maintaining consistency across the application. It integrates
- * with the system's color scheme preferences and provides smooth theme transitions.
- *
- * **Key Features:**
- * - **Reactive Theme State**: Uses Angular signals for efficient UI updates
- * - **Persistent Storage**: Saves user preference in localStorage
- * - **System Integration**: Detects and responds to OS theme changes
- * - **Automatic Sync**: Listens for system theme changes in real-time
- * - **Simple API**: Easy theme toggling and retrieval methods
- *
- * **Theme Resolution Priority:**
- * 1. Stored user preference (localStorage)
- * 2. System color scheme preference
- * 3. Default to light theme
- *
- * @example
- * ```typescript
- * constructor(private themeService: ThemeService) {
- *   // Get current theme
- *   const currentTheme = this.themeService.getTheme();
- *
- *   // Toggle theme
- *   this.themeService.toggleTheme();
- * }
- * ```
- *
- * @example
- * ```html
- * <!-- Apply theme in template -->
- * <div [attr.data-theme]="themeService.getTheme()">
- *   <!-- App content -->
- * </div>
- * ```
  */
 @Service()
 export class ThemeService {
   /**
    * Reactive signal representing the current theme ('light' or 'dark').
-   * Initialized based on stored preference or system setting.
    */
-  private readonly theme = signal<'light' | 'dark'>(this.getStoredTheme());
+  private readonly theme = signal<'light' | 'dark'>('light');
+  private readonly settingsSvc = inject(SettingsService, { optional: true });
+  private lastDefaultTheme: string | null = null;
 
   /**
-   * Sets up a listener for system theme changes (e.g., OS-level light/dark mode toggle).
+   * Sets up a listener for system theme changes and settings changes.
    */
   constructor() {
-    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', (e) => {
-      this.setTheme(e.matches ? 'dark' : 'light');
+    this.updateTheme();
+
+    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', () => {
+      this.updateTheme();
     });
+
+    const svc = this.settingsSvc;
+    if (svc) {
+      effect(() => {
+        // Access the snapshot signal to trigger reactive updates
+        svc.snapshotSignal();
+        this.updateTheme();
+      });
+    }
   }
 
   /**
@@ -73,28 +51,41 @@ export class ThemeService {
    * Updates the signal and persists the change in localStorage.
    */
   public toggleTheme() {
-    this.setTheme(this.theme() === 'light' ? 'dark' : 'light');
+    const next = this.theme() === 'light' ? 'dark' : 'light';
+    this.theme.set(next);
+    localStorage.setItem('pc-theme', next);
   }
 
   /**
-   * Determines the initial theme:
-   * - Returns `'dark'` if system prefers dark mode or stored preference is `'dark'`.
-   * - Otherwise returns `'light'`.
-   *
-   * @returns `'light'` or `'dark'` based on system and stored preferences.
+   * Updates the active theme based on priority:
+   * 1. Stored user preference (localStorage 'pc-theme')
+   * 2. Tenant default theme settings (from SettingsService)
+   * 3. System color scheme preference
    */
-  private getStoredTheme() {
+  private updateTheme() {
+    let defaultTheme: string | null = null;
+    if (this.settingsSvc) {
+      defaultTheme = this.settingsSvc.getValue<string>('appearance.theme') ?? null;
+      if (defaultTheme === 'light' || defaultTheme === 'dark') {
+        if (this.lastDefaultTheme !== null && this.lastDefaultTheme !== defaultTheme) {
+          localStorage.removeItem('pc-theme');
+        }
+        this.lastDefaultTheme = defaultTheme;
+      }
+    }
+
+    const stored = localStorage.getItem('pc-theme');
+    if (stored === 'light' || stored === 'dark') {
+      this.theme.set(stored);
+      return;
+    }
+
+    if (defaultTheme === 'light' || defaultTheme === 'dark') {
+      this.theme.set(defaultTheme);
+      return;
+    }
+
     const isSystemDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
-    return isSystemDark || localStorage.getItem('pc-theme') === 'dark' ? 'dark' : 'light';
-  }
-
-  /**
-   * Updates the internal theme signal and saves it to localStorage.
-   *
-   * @param value - The new theme value: `'light'` or `'dark'`.
-   */
-  private setTheme(value: 'light' | 'dark') {
-    this.theme.set(value);
-    localStorage.setItem('pc-theme', this.theme());
+    this.theme.set(isSystemDark ? 'dark' : 'light');
   }
 }
