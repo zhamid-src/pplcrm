@@ -125,7 +125,21 @@ export class HouseholdDetail implements OnInit {
         this.alertSvc.showError('Please select the correct address from the list or leave it blank');
         return;
       }
-      this.payload.update((prev) => ({ ...prev, ...address }));
+      this.payload.update((prev) => ({
+        ...prev,
+        formatted_address: address.formatted_address ?? '',
+        type: address.type ?? '',
+        lat: address.lat ?? 0,
+        lng: address.lng ?? 0,
+        street_num: address.street_num ?? '',
+        street1: address.street1 ?? '',
+        street2: address.street2 ?? '',
+        apt: address.apt ?? '',
+        city: address.city ?? '',
+        state: address.state ?? '',
+        country: address.country ?? '',
+        zip: address.zip ?? '',
+      }));
       this.form.street1().markAsDirty();
       this.addressVerified = true;
     } finally {

@@ -15,7 +15,7 @@ export const EmailDraftObj = z.object({
   bcc_list: z.array(z.string()),
   subject: z.string().optional(),
   body_html: z.string().optional(),
-  body_delta: z.any().optional(),
+  body_delta: z.unknown().optional(),
   updated_at: z.date(),
 });
 

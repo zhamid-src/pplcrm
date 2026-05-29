@@ -15,6 +15,8 @@ import type {
   Updateable,
 } from 'kysely';
 import type { EmailStatus } from './emails';
+import type { z } from 'zod';
+import { addressSchema } from './schema';
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
@@ -142,20 +144,7 @@ interface RecordType {
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
-export interface AddressType {
-  lat?: number;
-  lng?: number;
-  formatted_address?: string;
-  type?: string;
-  apt?: string;
-  street_num?: string;
-  street1?: string;
-  street2?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-  zip?: string;
-}
+export type AddressType = z.infer<typeof addressSchema>;
 
 interface AuthUsers extends RecordType {
   email: string;

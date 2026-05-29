@@ -4,10 +4,10 @@ import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.sch
 export const AddVolunteerEventObj = z.object({
   name: nameSchema('Event name', 200),
   description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullish(),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
   start_time: z.coerce.date(),
   end_time: z.coerce.date(),
-  capacity: z.number().int().positive().nullish(),
+  capacity: z.number().int().positive().nullable().optional(),
 });
 
 export const VolunteerEventsObj = z.object({
@@ -24,17 +24,17 @@ export const VolunteerEventsObj = z.object({
 export const UpdateVolunteerEventObj = z.object({
   name: nameSchema('Event name', 200).optional(),
   description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullish(),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
   start_time: z.coerce.date().optional(),
   end_time: z.coerce.date().optional(),
-  capacity: z.number().int().positive().nullish(),
+  capacity: z.number().int().positive().nullable().optional(),
 });
 
 export const AddVolunteerShiftObj = z.object({
   event_id: idSchema,
   person_id: idSchema,
   status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).default('signed_up').optional(),
-  hours_worked: z.number().min(0).max(24).nullish(),
+  hours_worked: z.number().min(0).max(24).nullable().optional(),
   notes: notesSchema,
 });
 
@@ -50,6 +50,6 @@ export const VolunteerShiftsObj = z.object({
 
 export const UpdateVolunteerShiftObj = z.object({
   status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).optional(),
-  hours_worked: z.number().min(0).max(24).nullish(),
+  hours_worked: z.number().min(0).max(24).nullable().optional(),
   notes: notesSchema,
 });
