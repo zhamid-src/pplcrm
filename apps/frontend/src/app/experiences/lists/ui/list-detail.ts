@@ -1,7 +1,7 @@
-import { Component, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AddListType, UpdateHouseholdsType, UpdatePersonsType, debounce } from '@common';
+import { AddListType, UpdateHouseholdsType, UpdatePersonsType } from '@common';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
@@ -103,7 +103,6 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
 })
 export class ListDetail {
   private readonly alertSvc = inject(AlertService);
-  private readonly countRowSelected = signal(0);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly listsSvc = inject(ListsService);
@@ -111,55 +110,98 @@ export class ListDetail {
   private readonly listsRefresh = inject(ListsRefreshService);
 
   private _loading = createLoadingGate();
-  private debouncedRecount = debounce(() => this.recount());
   private readonly householdGrid = viewChild(HouseholdFilterGrid);
   private readonly peopleGrid = viewChild(PeopleFilterGrid);
 
   protected readonly tagSvc = inject(TagsService);
 
-  protected btnLabel = signal('SAVE');
-  protected counting = signal<boolean>(false);
-  protected rulesRoot = signal<TagGroup>({ kind: 'group', bool: 'and', items: [] });
+  protected readonly form = this.fb.group({
+    name: ['', [Validators.required]],
+    description: [''],
+    object: ['people'],
+    is_dynamic: [false],
+  });
+
+  protected readonly listType = toSignal(this.form.get('object')!.valueChanges, {
+    initialValue: this.form.get('object')!.value,
+  });
+
+  protected readonly isDynamic = toSignal(
+    this.form.get('is_dynamic')!.valueChanges,
+    { initialValue: this.form.get('is_dynamic')!.value === true }
+  );
+
+  protected readonly countRowSelected = computed(() => {
+    const type = this.listType();
+    if (type === 'people') {
+      return this.peopleGrid()?.getCountRowSelected() ?? 0;
+    } else {
+      return this.householdGrid()?.getCountRowSelected() ?? 0;
+    }
+  });
+
+  protected readonly btnLabel = computed(() => {
+    const isDynamic = this.isDynamic();
+    const count = this.countRowSelected();
+    return (!isDynamic && count > 0) ? `SAVE (${count} selected)` : 'SAVE';
+  });
+
+  protected readonly rulesRoot = signal<TagGroup>({ kind: 'group', bool: 'and', items: [] });
 
   /** Full rule evaluation against a row's tags */
   protected externalRowFilter = (row: any) => {
     const tags: string[] = Array.isArray(row?.tags) ? row.tags.filter(Boolean) : [];
     return this.evalGroupWithRow(this.rulesRoot(), new Set(tags), row);
   };
-  protected form = this.fb.group({
-    name: ['', [Validators.required]],
-    description: [''],
-    object: ['people'],
-    is_dynamic: [false],
-  });
   protected isLoading = this._loading.visible;
-  protected listType = toSignal(this.form.get('object')!.valueChanges, {
-    initialValue: this.form.get('object')!.value,
+
+  protected readonly matchCountResource = resource({
+    params: () => ({
+      rules: this.rulesRoot(),
+      object: this.listType(),
+      hasRules: this.hasAnyRule(this.rulesRoot()),
+      tags: this.flattenPositiveTags(this.rulesRoot()),
+    }),
+    loader: async ({ params }) => {
+      const err = this.validateRules();
+      if (err) {
+        throw new Error(err);
+      }
+
+      const svc = params.object === 'people' ? this.personsSvc : this.householdsSvc;
+      if (!params.hasRules) {
+        return await svc.count();
+      } else if (params.tags.length > 0) {
+        const res = (await svc.getAll({ tags: params.tags, limit: 1 })) as { count: number };
+        return res?.count ?? 0;
+      } else {
+        throw new Error('Preview count requires at least one "tag is …" rule');
+      }
+    }
   });
-  protected matchCount = signal<number | null>(null);
-  protected rulesError = signal<string | null>(null);
+
+  protected readonly matchCount = computed(() => {
+    const val = this.matchCountResource.value();
+    return val !== undefined ? val : null;
+  });
+
+  protected readonly counting = this.matchCountResource.isLoading;
+
+  protected readonly rulesError = computed(() => {
+    const err = this.matchCountResource.error();
+    if (err instanceof Error) {
+      return err.message;
+    }
+    if (err) {
+      return String(err);
+    }
+    return null;
+  });
 
   // Wizard state
   protected step = signal<1 | 2 | 3 | 4>(1);
 
   constructor() {
-    effect(() => {
-      const type = this.listType();
-      const isDynamic = this.form.get('is_dynamic')!.value === true;
-      if (type === 'people') {
-        this.countRowSelected.set(this.peopleGrid()?.getCountRowSelected() ?? 0);
-      } else {
-        this.countRowSelected.set(this.householdGrid()?.getCountRowSelected() ?? 0);
-      }
-
-      // Update button label: only show selected count for static lists
-      if (!isDynamic && this.countRowSelected() > 0) {
-        this.btnLabel.set(`SAVE (${this.countRowSelected()} selected)`);
-      } else {
-        this.btnLabel.set('SAVE');
-      }
-    });
-
     // Keep preview grids in sync with tag rules (use only positive eq tags for quick preview)
     effect(() => {
       const tags = this.flattenPositiveTags(this.rulesRoot());
@@ -168,14 +210,6 @@ export class ListDetail {
       // Refresh external filter consumers
       this.peopleGrid()?.triggerFilterChanged();
       this.householdGrid()?.triggerFilterChanged();
-    });
-
-    // Recompute count whenever rules or object type change
-    effect(() => {
-      // touch signals
-      this.rulesRoot();
-      void this.form.get('object')?.value;
-      this.debouncedRecount();
     });
   }
 
@@ -300,40 +334,7 @@ export class ListDetail {
     return item.kind === 'rule';
   }
 
-  /** Recount matches using current rules (approximate: positive tags only) */
-  private async recount() {
-    const err = this.validateRules();
-    if (err) {
-      this.rulesError.set(err);
-      this.matchCount.set(null);
-      return;
-    }
 
-    const object = this.form.get('object')!.value as 'people' | 'households';
-    const svc = object === 'people' ? this.personsSvc : this.householdsSvc;
-    const hasRules = this.hasAnyRule(this.rulesRoot());
-    const tags = this.flattenPositiveTags(this.rulesRoot());
-
-    this.rulesError.set(null);
-    this.counting.set(true);
-    try {
-      if (!hasRules) {
-        const total = await svc.count();
-        this.matchCount.set(total);
-      } else if (tags.length > 0) {
-        const res = (await svc.getAll({ tags, limit: 1 })) as { count: number };
-        this.matchCount.set(res?.count ?? null);
-      } else {
-        this.matchCount.set(null);
-        this.rulesError.set('Preview count requires at least one "tag is …" rule');
-      }
-    } catch (e) {
-      this.matchCount.set(null);
-      this.rulesError.set('Failed to compute count');
-    } finally {
-      this.counting.set(false);
-    }
-  }
 
   /** Validate rules: every rule must have a value; at least one rule somewhere */
   private validateRules(): string | null {
