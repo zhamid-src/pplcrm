@@ -27,6 +27,8 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
   STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -57,4 +59,7 @@ export const env = {
   stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
   stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
   stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
 };
+

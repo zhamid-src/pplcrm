@@ -14,7 +14,7 @@ import {
 import { randomBytes } from 'crypto';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
-import nodemailer from 'nodemailer';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 
 import {
   AppError,
@@ -55,6 +55,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private emailsRepo: EmailRepo = new EmailRepo();
   private personsRepo: PersonsRepo = new PersonsRepo();
   private tagsRepo: TagsRepo = new TagsRepo();
+  private mailService = new TransactionalEmailService();
 
   constructor() {
     super(new AuthUsersRepo());
@@ -203,31 +204,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const code = await this.getRepo().addPasswordResetCode(user.id);
 
     // send the reset email
-    const transport = nodemailer.createTransport({
-      sendmail: true,
+    await this.mailService.sendMail({
+      to: email,
+      subject: 'Your password reset link',
+      text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
+      html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
     });
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        transport.sendMail(
-          {
-            from: '"CampaignRaven" <pplcrm@campaignraven.com>',
-            to: email,
-            subject: 'Your password reset link',
-            text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
-            html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
-          },
-          (err: Error | null) => {
-            if (err) return reject(new InternalError('Something went wrong, please try again'));
-            return resolve();
-          },
-        );
-      });
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
-    }
-    return Promise.resolve(false);
+    return false;
   }
 
   /**
