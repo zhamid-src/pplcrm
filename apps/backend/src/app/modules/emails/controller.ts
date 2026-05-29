@@ -11,6 +11,7 @@ import { TypeTenantId } from 'common/src/lib/kysely.models';
 import { EmailDraftType } from 'common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { processMentions } from '../../lib/mail/mentions-util';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -41,6 +42,16 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         },
       });
       if (!row) throw new InternalError('Failed to add comment');
+      
+      const commentLink = `http://localhost:4200/emails/${email_id}`;
+      processMentions(
+        this.commentsRepo.db,
+        tenant_id,
+        comment,
+        commentLink,
+        author_id
+      ).catch((err) => console.error('Failed to process email comment mentions', err));
+
       return row;
     } catch (err) {
       if (err instanceof AppError) throw err;

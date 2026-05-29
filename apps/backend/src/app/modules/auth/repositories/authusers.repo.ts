@@ -218,10 +218,26 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         password,
         password_reset_code: null,
         password_reset_code_created_at: null,
+        verified: true,
       })
       .where('password_reset_code', '=', code)
       .executeTakeFirst() as unknown as UpdateResult;
   }
+
+  /**
+   * Verifies a user's email address by code and clears the code.
+   */
+  public verifyEmailByCode(code: string, trx?: Transaction<Models>) {
+    return this.getUpdate(trx)
+      .set({
+        verified: true,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      })
+      .where('password_reset_code', '=', code)
+      .executeTakeFirst() as unknown as UpdateResult;
+  }
+
 }
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
