@@ -1,4 +1,4 @@
-import { DatePipe, CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, signal, effect } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -6,7 +6,7 @@ import { ActivityService } from '../../../experiences/activity/services/activity
 
 @Component({
   selector: 'pc-record-activities',
-  imports: [CommonModule, DatePipe, Icon],
+  imports: [DatePipe, Icon],
   template: `
     <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
       <!-- Collapsed header / toggle -->
