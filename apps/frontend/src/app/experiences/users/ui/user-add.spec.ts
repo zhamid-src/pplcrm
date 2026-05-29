@@ -15,7 +15,8 @@ describe('UserAddComponent', () => {
 
   beforeEach(async () => {
     mockUsersSvc = {
-      add: vi.fn()
+      add: vi.fn(),
+      triggerRefresh: vi.fn()
     };
 
     mockAlertSvc = {
@@ -124,6 +125,7 @@ describe('UserAddComponent', () => {
       last_name: 'Doe',
       role: 'admin'
     });
+    expect(mockUsersSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Invitation sent');
     expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
   });

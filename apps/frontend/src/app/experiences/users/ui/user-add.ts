@@ -130,6 +130,7 @@ export class UserAddComponent {
     try {
       const payload = this.toPayload();
       await this.users.add(payload);
+      this.users.triggerRefresh();
       this.alerts.showSuccess('Invitation sent');
       this.form().reset();
       await this.router.navigate(['../'], { relativeTo: this.route });
