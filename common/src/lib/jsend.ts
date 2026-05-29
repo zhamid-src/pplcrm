@@ -67,20 +67,38 @@ export const jsend = {
   },
 
   isSuccess<T = unknown>(x: unknown): x is JSendSuccessInterface<T> {
-    return typeof x === 'object' && x !== null && (x as any).status === 'success' && 'data' in (x as any);
+    return (
+      typeof x === 'object' &&
+      x !== null &&
+      'status' in x &&
+      (x as Record<string, unknown>)['status'] === 'success' &&
+      'data' in x
+    );
   },
   isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFailInterface<E> {
-    return typeof x === 'object' && x !== null && (x as any).status === 'fail' && 'data' in (x as any);
+    return (
+      typeof x === 'object' &&
+      x !== null &&
+      'status' in x &&
+      (x as Record<string, unknown>)['status'] === 'fail' &&
+      'data' in x
+    );
   },
   isError(x: unknown): x is JSendErrorInterface {
-    return typeof x === 'object' && x !== null && (x as any).status === 'error' && 'message' in (x as any);
+    return (
+      typeof x === 'object' &&
+      x !== null &&
+      'status' in x &&
+      (x as Record<string, unknown>)['status'] === 'error' &&
+      'message' in x
+    );
   },
 
   /** Unwraps success; throws typed errors for fail/error. */
   unwrap<T>(res: JSend<T>): T {
-    if (this.isSuccess<T>(res)) return res.data;
-    if (this.isFail(res)) throw new JSendFail(res.data as any, 400);
-    if (this.isError(res)) throw new JSendError(res.message, res.code, 500);
+    if (res.status === 'success') return res.data;
+    if (res.status === 'fail') throw new JSendFail(res.data, 400);
+    if (res.status === 'error') throw new JSendError(res.message, res.code, 500);
     throw new Error('Unknown JSend shape');
   },
 };
