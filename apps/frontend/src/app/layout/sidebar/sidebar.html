@@ -1,4 +1,23 @@
 <!-- Sidebar template containing navigation items and drawer controls -->
+
+<!-- Reusable nav link template – avoids duplicating the <a> block in every branch -->
+<ng-template #navLink let-nav>
+  <a
+    class="hover:bg-base-200 hover:text-primary flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
+    (click)="this.closeMobile()"
+    routerLink="{{ nav.route }}"
+    [class.bg-base-200]="this.router.url === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span
+      class="pl-3 group-hover:md:visible text-sm"
+      [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
+    >
+      {{ nav.name }}
+    </span>
+  </a>
+</ng-template>
+
 <div
   (mouseenter)="onSidebarHover(true)"
   (mouseleave)="onSidebarHover(false)"
@@ -25,6 +44,7 @@
   <!-- Sidebar Items -->
   @for (item of items; track item.name) {
   <div class="flex-none px-2" [class.hidden]="!!item.hidden">
+
     @if (item['type'] === 'subheading') {
     <!-- Subheading with collapsible children -->
     <div
@@ -32,7 +52,7 @@
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isDrawerHalf() && !hoveringSidebar()">
-        @if (isDrawerHalf() && !hoveringSidebar()) { {{ item.short_name || item.name}} } @else { {{ item.name }} }
+        @if (isDrawerHalf() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
@@ -47,46 +67,22 @@
         aria-label="Toggle section"
         i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
       ></pc-swap>
-
       }
     </div>
 
     @if (item.children && !isCollapsed(item.name)) {
     <div class="flex flex-col space-y-1">
       @for (child of item.children; track child.name) {
-      <a
-        class="hover:bg-base-200 hover:text-primary flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
-        (click)="this.closeMobile()"
-        routerLink="{{ child.route }}"
-        [class.bg-base-200]="this.router.url === child.route"
-      >
-        <pc-icon [size]="5" [name]="child.icon!"></pc-icon>
-        <span
-          class="pl-3 group-hover:md:visible text-sm"
-          [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-        >
-          {{ child.name }}
-        </span>
-      </a>
+        <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
       }
     </div>
-    } } @else {
-    <!-- Regular item without subheading -->
-    <a
-      class="hover:bg-base-200 hover:text-primary flex flex-auto items-center py-1 pl-2 tracking-widest hover:rounded-lg"
-      (click)="this.closeMobile()"
-      routerLink="{{ item.route }}"
-      [class.bg-base-200]="this.router.url === item.route"
-    >
-      <pc-icon [size]="5" [name]="item.icon!"></pc-icon>
-      <span
-        class="pl-3 group-hover:md:visible text-sm"
-        [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-      >
-        {{ item.name }}
-      </span>
-    </a>
     }
+
+    } @else {
+    <!-- Regular top-level item -->
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+
   </div>
   }
 

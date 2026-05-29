@@ -34,7 +34,6 @@ interface TagView {
             [name]="tag.name"
             [color]="tag.color"
             [canDelete]="canDelete()"
-            [isIssue]="type() === 'issue'"
             (click)="clicked(tag.name)"
             (close)="closed(tag.name)"
           ></pc-tagitem>

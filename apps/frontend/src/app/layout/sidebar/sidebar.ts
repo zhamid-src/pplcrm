@@ -2,6 +2,7 @@
  * Sidebar component rendering navigation links and managing drawer state.
  */
 import { Component, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -10,7 +11,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [Icon, RouterLink, Swap],
+  imports: [NgTemplateOutlet, Icon, RouterLink, Swap],
   templateUrl: './sidebar.html',
   styles: [
     `
