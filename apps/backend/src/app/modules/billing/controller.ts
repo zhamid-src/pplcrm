@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { env } from '../../../env';
 import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 
 const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
 const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
@@ -261,6 +262,63 @@ export class BillingController {
         }
         break;
       }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1' as any,
+          value: customerId,
+        }) as any;
+
+        if (dbTenant) {
+          const admin = await tenantsRepo.db.selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id as any)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            const mailService = new TransactionalEmailService();
+            const amountPaid = invoice.amount_paid / 100;
+            const pdfUrl = invoice.hosted_invoice_url || '';
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Receipt for your CampaignRaven Subscription`,
+              text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was successfully processed.\n\nView invoice: ${pdfUrl}`,
+              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was successfully processed.</p><p><a href="${pdfUrl}">View/Download Invoice Receipt</a></p>`,
+            });
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1' as any,
+          value: customerId,
+        }) as any;
+
+        if (dbTenant) {
+          const admin = await tenantsRepo.db.selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id as any)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            const mailService = new TransactionalEmailService();
+            const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Urgent: Action Required - Payment Failed for CampaignRaven`,
+              text: `Hi ${admin.first_name || 'Admin'},\n\nWe were unable to process the payment for your subscription. Please update your billing information to prevent account suspension.\n\nUpdate billing info here: ${billingPageUrl}`,
+              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>We were unable to process the payment for your subscription. Please update your billing information to prevent account suspension.</p><p><a href="${billingPageUrl}">Update Billing Information</a></p>`,
+            });
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -286,6 +344,30 @@ export class BillingController {
         subscription_ends_at: expiry.toISOString(),
       } as any,
     });
+
+    try {
+      const tenant = await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }) as any;
+      if (tenant) {
+        const admin = await tenantsRepo.db.selectFrom('authusers')
+          .select(['email', 'first_name'])
+          .where('id', '=', tenant.admin_id as any)
+          .executeTakeFirst();
+        if (admin && admin.email) {
+          const mailService = new TransactionalEmailService();
+          await mailService.sendMail({
+            to: admin.email,
+            subject: `[MOCK] Receipt for your CampaignRaven Subscription`,
+            text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a mock receipt confirming your subscription payment for plan: ${plan} was successfully processed.`,
+            html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a mock receipt confirming your subscription payment for plan: <strong>${plan}</strong> was successfully processed.</p>`,
+          });
+        }
+      }
+    } catch (mailErr) {
+      console.error('Failed to send mock receipt email', mailErr);
+    }
 
     return { success: true, plan };
   }

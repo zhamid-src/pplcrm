@@ -89,6 +89,11 @@ export class BaseRepository<T extends keyof Models> {
     return this.table;
   }
 
+  public get db() {
+    return BaseRepository._db;
+  }
+
+
   /**
    * Insert a single row.
    */

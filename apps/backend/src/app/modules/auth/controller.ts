@@ -113,7 +113,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const email = input.email.toLowerCase();
     await this.verifyUserDoesNotExist(email);
 
-    const password = await this.hashPassword(this.generateTempPassword());
+    const tempPassword = this.generateTempPassword();
+    const password = await this.hashPassword(tempPassword);
     const repo = this.getRepo();
 
     const created = await repo.transaction().execute(async (trx) => {
@@ -142,6 +143,19 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       return user;
     });
+
+    try {
+      const codeObj = await this.getRepo().addPasswordResetCode(created.id);
+      const code = codeObj?.password_reset_code;
+      await this.mailService.sendMail({
+        to: email,
+        subject: `Invitation to join campaign on CampaignRaven`,
+        text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nSet up your password and log in at: http://localhost:4200/new-password?code=${code}`,
+        html: `<p>Hi ${input.first_name},</p><p>You have been invited to join the campaign by <strong>${auth.name}</strong>.</p><p>Your temporary password is: <code>${tempPassword}</code></p><p><a href="http://localhost:4200/new-password?code=${code}">Click here to set up your password and activate your account</a></p>`,
+      });
+    } catch (mailErr) {
+      console.error('Failed to send team invitation email', mailErr);
+    }
 
     return this.sanitizeUser({ ...created, last_name: input.last_name });
   }
@@ -180,6 +194,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async resetPassword(plaintextPassword: string, code: string) {
     const password = await this.hashPassword(plaintextPassword);
 
+    const user = await this.getRepo().db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('password_reset_code', '=', code)
+      .executeTakeFirst();
+
+    if (!user) {
+      throw new BadRequestError('Invalid or expired password reset link.');
+    }
+
     // Check if the code is valid
     const msec = await this.getCodeAge(code);
     // 15 minutes in milliseconds
@@ -191,6 +214,54 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (result.numUpdatedRows === BigInt(0)) {
       throw new UnauthorizedError();
     }
+
+    try {
+      await this.mailService.sendMail({
+        to: user.email,
+        subject: 'Security Alert: Password Changed',
+        text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your CampaignRaven account was recently changed. If you did not make this change, please contact support immediately.`,
+        html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your CampaignRaven account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
+      });
+    } catch (mailErr) {
+      console.error('Failed to send password change security alert email', mailErr);
+    }
+  }
+
+  /**
+   * Verifies email address based on a verification code.
+   */
+  public async verifyEmail(code: string) {
+    const msec = await this.getCodeAge(code);
+    // 24 hours in milliseconds for verification links
+    if (msec > 24 * 60 * 60 * 1000) {
+      throw new BadRequestError('The verification link has expired. Please request a new one.');
+    }
+
+    const result = await this.getRepo().verifyEmailByCode(code);
+    if (result.numUpdatedRows === BigInt(0)) {
+      throw new BadRequestError('Invalid or expired verification link.');
+    }
+    return { success: true };
+  }
+
+  /**
+   * Resends a verification email.
+   */
+  public async resendVerificationEmail(email: string) {
+    const user = await this.getUserByEmail(email);
+    if (user.verified) {
+      throw new BadRequestError('Email is already verified.');
+    }
+    const codeObj = await this.getRepo().addPasswordResetCode(user.id);
+    const code = codeObj?.password_reset_code;
+
+    await this.mailService.sendMail({
+      to: email,
+      subject: 'Verify Your Email - CampaignRaven',
+      text: `Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${code}`,
+      html: `<h3>Verify Your Email</h3><p>Please click the link below to verify your email:</p><p><a href="http://localhost:4200/verify-email?code=${code}">http://localhost:4200/verify-email?code=${code}</a></p>`,
+    });
+    return { success: true };
   }
 
   /**
@@ -259,9 +330,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.verifyUserDoesNotExist(email);
       const password = await this.hashPassword(input.password);
 
+      let createdUser: any;
       await this.tenants.transaction().execute(async (trx) => {
         const tenant_id = await this.createTenant(trx, input.organization);
         const user = await this.createUser(trx, tenant_id, password, email, input);
+        createdUser = user;
         const userId = String(user.id);
         const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
@@ -330,6 +403,19 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         );
       });
 
+      try {
+        const codeObj = await this.getRepo().addPasswordResetCode(createdUser.id);
+        const verificationCode = codeObj?.password_reset_code;
+        await this.mailService.sendMail({
+          to: email,
+          subject: 'Welcome to CampaignRaven - Verify Your Email',
+          text: `Welcome to CampaignRaven! Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${verificationCode}`,
+          html: `<h3>Welcome to CampaignRaven!</h3><p>Please verify your email by clicking the link below:</p><p><a href="http://localhost:4200/verify-email?code=${verificationCode}">http://localhost:4200/verify-email?code=${verificationCode}</a></p>`,
+        });
+      } catch (mailErr) {
+        console.error('Failed to send verification email during signup', mailErr);
+      }
+
       return token;
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -374,6 +460,27 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
       if (!result) throw new InternalError('Update failed');
       updated = result as unknown as AuthUsersType;
+
+      if (row['email']) {
+        try {
+          const oldEmail = existingUser.email;
+          const nextEmail = row['email'];
+          await this.mailService.sendMail({
+            to: oldEmail,
+            subject: 'Security Alert: Email Address Updated',
+            text: `Hi ${existingUser.first_name},\n\nThe email address for your CampaignRaven account was updated to ${nextEmail}. If you did not make this change, please contact support.`,
+            html: `<p>Hi ${existingUser.first_name},</p><p>The email address for your CampaignRaven account was updated to <strong>${nextEmail}</strong>.</p><p>If you did not make this change, please contact support.</p>`,
+          });
+          await this.mailService.sendMail({
+            to: nextEmail,
+            subject: 'CampaignRaven - Email Address Linked',
+            text: `Hi ${existingUser.first_name},\n\nThis email address has been successfully linked to your CampaignRaven account.`,
+            html: `<p>Hi ${existingUser.first_name},</p><p>This email address has been successfully linked to your CampaignRaven account.</p>`,
+          });
+        } catch (mailErr) {
+          console.error('Failed to send email security alerts for email update', mailErr);
+        }
+      }
     }
 
     await this.syncProfile(auth, userId, data);

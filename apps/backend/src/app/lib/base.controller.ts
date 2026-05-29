@@ -10,6 +10,7 @@ import {
 import { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
 import { UserActivityRepo } from './user-activity.repo';
+import { TransactionalEmailService } from './mail/transactional-mail.service';
 
 /**
  * Abstract base controller for all domain entities (e.g. persons, households, tags).
@@ -267,9 +268,23 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
             file_name: response.fileName,
           },
         });
+
+        const user = await this.repo.db.selectFrom('authusers')
+          .select(['email'])
+          .where('id', '=', auth.user_id as any)
+          .executeTakeFirst();
+        if (user && user.email) {
+          const mailService = new TransactionalEmailService();
+          await mailService.sendMail({
+            to: user.email,
+            subject: `Your Export is Ready: ${response.fileName}`,
+            text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: http://localhost:4200/downloads/${response.fileName}`,
+            html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="http://localhost:4200/downloads/${response.fileName}">Download CSV</a></p>`,
+          });
+        }
       } catch (err) {
         // Logging failures should never break export flow; swallow silently
-        console.error('Failed to log export activity', err);
+        console.error('Failed to log export activity or send email alert', err);
       }
     }
 

@@ -134,6 +134,18 @@ function signUp() {
   return publicProcedure.input(signUpInputObj).mutation(({ input }) => controller.signUp(input));
 }
 
+function verifyEmail() {
+  return publicProcedure
+    .input(z.object({ code: z.string() }))
+    .mutation(({ input }) => controller.verifyEmail(input.code));
+}
+
+function resendVerificationEmail() {
+  return publicProcedure
+    .input(z.object({ email: z.string().trim().email() }))
+    .mutation(({ input }) => controller.resendVerificationEmail(input.email));
+}
+
 const controller = new AuthController();
 
 /**
@@ -143,7 +155,7 @@ const controller = new AuthController();
  * - signUp / signIn / signOut
  * - currentUser / getUsers / getAllWithCounts
  * - getById / invite / update / count
- * - resetPassword / renewAuthToken / sendPasswordResetEmail
+ * - resetPassword / renewAuthToken / sendPasswordResetEmail / verifyEmail / resendVerificationEmail
  */
 export const AuthRouter = router({
   signUp: signUp(),
@@ -159,4 +171,7 @@ export const AuthRouter = router({
   resetPassword: resetPassword(),
   renewAuthToken: renewAuthToken(),
   sendPasswordResetEmail: sendPasswordResetEmail(),
+  verifyEmail: verifyEmail(),
+  resendVerificationEmail: resendVerificationEmail(),
 });
+

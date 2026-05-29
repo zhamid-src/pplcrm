@@ -5,12 +5,16 @@ import { Models } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+
 // Sliding window memory for rate-limiting
 const ipSubmissionTimestamps = new Map<string, number[]>();
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 
 export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  private mailService = new TransactionalEmailService();
+
   constructor() {
     super(new WebFormsRepo());
   }
@@ -263,6 +267,32 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         })
         .execute();
     });
+
+    try {
+      await this.mailService.sendMail({
+        to: email,
+        subject: `Thank you for your submission to ${form.name}`,
+        text: `Hi ${firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+        html: `<p>Hi ${firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+      });
+
+      const admin = await this.getRepo().db.selectFrom('authusers')
+        .select(['email', 'first_name'])
+        .where('tenant_id', '=', tenantId as any)
+        .limit(1)
+        .executeTakeFirst();
+
+      if (admin && admin.email) {
+        await this.mailService.sendMail({
+          to: admin.email,
+          subject: `[ALERT] New Lead Submission on ${form.name}`,
+          text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${firstName || ''} ${lastName || ''} (${email}).\n\nNotes:\n${notes || 'None'}`,
+          html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${firstName || ''} ${lastName || ''}</strong> (${email}).</p><p><strong>Notes:</strong><br>${notes || 'None'}</p>`,
+        });
+      }
+    } catch (mailErr) {
+      console.error('Failed to send web form submission notification emails', mailErr);
+    }
 
     return { redirect_url: form.redirect_url || null };
   }
