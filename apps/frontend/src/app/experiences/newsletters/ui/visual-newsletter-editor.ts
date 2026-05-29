@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
@@ -1016,11 +1016,11 @@ import {
   ],
 })
 export class VisualNewsletterEditorComponent implements OnInit {
-  @Input() public htmlContent = '';
-  @Input() public plainTextContent = '';
+  public readonly htmlContent = input<string>('');
+  public readonly plainTextContent = input<string>('');
 
-  @Output() public readonly htmlContentChange = new EventEmitter<string>();
-  @Output() public readonly plainTextContentChange = new EventEmitter<string>();
+  public readonly htmlContentChange = output<string>();
+  public readonly plainTextContentChange = output<string>();
 
   protected readonly blocks = signal<EmailBlock[]>([]);
   protected readonly selectedBlockId = signal<string | null>(null);
@@ -1100,7 +1100,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
 
   public ngOnInit(): void {
     // Check if the incoming HTML has our saved JSON blocks comment
-    const matched = this.htmlContent.match(/<!-- PPLCRM_VISUAL_BLOCKS_DATA: ([\s\S]*?) -->/);
+    const matched = this.htmlContent().match(/<!-- PPLCRM_VISUAL_BLOCKS_DATA: ([\s\S]*?) -->/);
     if (matched && matched[1]) {
       try {
         const decoded = decodeURIComponent(matched[1].trim());
@@ -1119,7 +1119,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     }
 
     // Default: Check if we have standard HTML pasted. If not, load default welcome template
-    if (this.htmlContent && this.htmlContent.trim().length > 100) {
+    if (this.htmlContent() && this.htmlContent().trim().length > 100) {
       // Legacy custom HTML detected. Set editor to code mode
       this.editorMode.set('code');
     } else {
@@ -1275,7 +1275,6 @@ export class VisualNewsletterEditorComponent implements OnInit {
   }
 
   protected handleRawHtmlEdit(html: string): void {
-    this.htmlContent = html;
     this.htmlContentChange.emit(html);
     // Simple text version conversion from html tags
     const text = html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
