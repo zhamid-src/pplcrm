@@ -47,17 +47,20 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
     const result = await this.repo.add({ row }, trx);
     try {
-      const actor = (row as any).createdby_id;
-      const tenant = (row as any).tenant_id;
-      if (actor && tenant) {
+      const rowObj = row as Record<string, unknown>;
+      const actor = rowObj['createdby_id'];
+      const tenant = rowObj['tenant_id'];
+      if (typeof actor === 'string' && typeof tenant === 'string') {
+        const resultObj = result as Record<string, unknown> | undefined;
+        const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
         await this.userActivity.log({
           tenant_id: tenant,
           user_id: actor,
           activity: 'create',
           entity: String(this.repo.getTableName()),
-          entity_id: (result as any)?.id ? String((result as any).id) : null,
+          entity_id: resultId,
           quantity: 1,
-          metadata: { id: (result as any)?.id },
+          metadata: resultId ? { id: resultId } : {},
         }, trx);
       }
     } catch (e) {
@@ -78,9 +81,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     try {
       const firstRow = rows[0];
       if (firstRow) {
-        const actor = (firstRow as any).createdby_id;
-        const tenant = (firstRow as any).tenant_id;
-        if (actor && tenant) {
+        const rowObj = firstRow as Record<string, unknown>;
+        const actor = rowObj['createdby_id'];
+        const tenant = rowObj['tenant_id'];
+        if (typeof actor === 'string' && typeof tenant === 'string') {
           await this.userActivity.log({
             tenant_id: tenant,
             user_id: actor,
@@ -211,8 +215,9 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
     const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
     try {
-      const actor = (input.row as any).updatedby_id;
-      if (actor) {
+      const rowObj = input.row as Record<string, unknown>;
+      const actor = rowObj['updatedby_id'];
+      if (typeof actor === 'string') {
         await this.userActivity.log({
           tenant_id: input.tenant_id,
           user_id: actor,
