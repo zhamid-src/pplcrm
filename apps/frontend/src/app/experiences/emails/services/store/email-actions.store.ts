@@ -192,6 +192,24 @@ export class EmailActionsStore {
     });
   }
 
+  /** Move an email to a specific folder */
+  public async moveToFolder(emailId: EmailId, folderId: string): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.moveToFolder(key, folderId);
+      this.state.removeEmail(key);
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError((e as Error).message);
+      throw e;
+    }
+  }
+
   /**
    * Shared optimistic update with rollback and optional refresh of
    * current folder contents and counts.

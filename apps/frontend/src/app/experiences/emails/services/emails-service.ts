@@ -141,6 +141,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.restoreFromTrash.mutate(ids);
   }
 
+  public moveToFolder(id: string, folderId: string) {
+    return this.api.emails.moveToFolder.mutate({ id, folderId });
+  }
+
   public saveDraft(input: DraftPayload) {
     return this.api.emails.saveDraft.mutate(input);
   }

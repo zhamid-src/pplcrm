@@ -152,6 +152,35 @@ export class EmailHeader {
     return fid === ALL_FOLDERS.TRASH;
   }
 
+  protected isFolderSpam(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.SPAM;
+  }
+
+  /** Mark the email as Spam */
+  protected async markAsSpam() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to mark email as spam', e);
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+
+  /** Move the email back to Inbox */
+  protected async moveToInbox() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to move email to Inbox', e);
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
   protected markAsDoneText() {
     return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
   }

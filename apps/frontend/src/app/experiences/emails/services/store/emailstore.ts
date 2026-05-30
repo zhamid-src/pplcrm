@@ -193,6 +193,10 @@ export class EmailsStore {
     return this.actions.toggleEmailReadStatus(emailId, isRead);
   }
 
+  public moveToFolder(emailId: EmailId, folderId: string) {
+    return this.actions.moveToFolder(emailId, folderId);
+  }
+
   public loadNextPage() {
     return this.folders.loadNextPage();
   }

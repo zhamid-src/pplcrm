@@ -339,6 +339,45 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
   }
 
+  /** Move an email to a specific folder */
+  public async moveToFolder(
+    tenant_id: string,
+    id: string,
+    folder_id: string,
+    actor_id?: string,
+  ) {
+    try {
+      const isTrash = folder_id === ALL_FOLDERS.TRASH;
+      const deleted_at = isTrash ? new Date() : null;
+
+      const updated = await this.getRepo().getUpdate()
+        .set({ folder_id, deleted_at })
+        .where('tenant_id', '=', tenant_id)
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst();
+
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        this.activityRepo.log({
+          tenant_id,
+          user_id: actor_id,
+          activity: isTrash ? 'delete' : 'update',
+          entity: 'email',
+          entity_id: id,
+          metadata: { folder_id },
+        }).catch((e) => console.error('Failed to log email move activity', e));
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to move email to folder', undefined, { cause: err });
+    }
+  }
+
   public async saveDraft(
     tenant_id: string,
     user_id: string,
