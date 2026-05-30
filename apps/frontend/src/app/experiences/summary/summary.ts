@@ -18,6 +18,8 @@ export class Summary implements OnInit {
 
   // KPIs
   protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
   protected readonly avgFirstResponse = signal('—');
   protected readonly avgTimeToClose = signal('—');
   protected readonly activeContactsCount = signal(0);
@@ -29,6 +31,7 @@ export class Summary implements OnInit {
   protected readonly linePoints = signal<any[]>([]);
   protected readonly closedRepBars = signal<any[]>([]);
   protected readonly assignedRepSlices = signal<any[]>([]);
+  protected readonly userStats = signal<any[]>([]);
 
   public ngOnInit() {
     this.loadStats();
@@ -42,6 +45,8 @@ export class Summary implements OnInit {
       // Set KPIs
       const totalAssigned = (stats.emailsAssigned || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
       this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
 
       const respHours = stats.avgFirstResponseHours;
       this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
@@ -56,6 +61,14 @@ export class Summary implements OnInit {
       const totalEmails = totalAssigned + totalClosed;
       const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
       this.resolutionRate.set(Math.round(rate));
+
+      // Map representative stats
+      const formattedUserStats = (stats.userStats || []).map((u: any) => ({
+        ...u,
+        avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+        avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+      }));
+      this.userStats.set(formattedUserStats);
 
       // Line Chart: Contacts Growth (last 30 days)
       const growth = stats.contactsGrowth || [];
