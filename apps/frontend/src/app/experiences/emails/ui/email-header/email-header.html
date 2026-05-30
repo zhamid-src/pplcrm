@@ -98,47 +98,112 @@
             />
           </svg>
         </button>
-        <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-0 shadow">
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
           <li>
-            <a (click)="handleReply()"><pc-icon [size]="4" name="reply"></pc-icon> Reply</a>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
           </li>
           <li>
-            <a (click)="handleReplyAll()"><pc-icon [size]="4" name="reply-all"></pc-icon> Reply All</a>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+            </a>
           </li>
           <li>
-            <a (click)="handleForward()"><pc-icon [size]="4" name="forward" class="scale-x-[-1]"></pc-icon> Forward</a>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
           </li>
-          <div class="divider my-0 h-0"></div>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
           @if (!isFolderTrash()) { @if (!isFolderSpam()) {
           <li>
-            <a (click)="markAsSpam()"><pc-icon name="exclamation-triangle" [size]="4"></pc-icon> Mark as spam</a>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
           </li>
           } @else {
           <li>
-            <a (click)="moveToInbox()"><pc-icon name="inbox" [size]="4"></pc-icon> Not spam</a>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
           </li>
           } }
           <li>
-            <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
-          </li>
-          <div class="divider my-0 h-0"></div>
-          <li>
-            <a (click)="toggleFavourite()"
-              ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
             >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
           </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
           <li>
-            <a (click)="toggleClosed()"
-              ><pc-icon [class.text-primary]="isClosed()" name="check-circle" [size]="4"></pc-icon> {{ isClosed() ?
-              'Mark as Open' : 'Mark as Done' }}</a
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
             >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
           </li>
           <li>
-            <a (click)="deleteEmail()"><pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete</a>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+            </a>
           </li>
-          <div class="divider my-0 h-0"></div>
           <li>
-            <a><pc-icon [size]="4" name="print"></pc-icon>Print</a>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
           </li>
         </ul>
       </div>
