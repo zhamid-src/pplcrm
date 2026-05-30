@@ -6,6 +6,20 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmailsStore } from '../../services/store/emailstore';
 import { ALL_FOLDERS } from 'common/src/lib/emails';
 import type { EmailType } from 'common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
+
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
 
 @Component({
   selector: 'pc-email-list',
@@ -138,6 +152,80 @@ export class EmailList {
     this.showContextMenu.set(true);
   }
 
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
+
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore to Inbox',
+                  icon: 'restore-from-trash',
+                  action: () => this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [{ label: 'Print', icon: 'print', extraClass: '!py-1', action: () => {} }] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
   public closeContextMenu(): void {
     this.showContextMenu.set(false);
   }
