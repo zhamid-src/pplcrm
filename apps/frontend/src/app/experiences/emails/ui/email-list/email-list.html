@@ -76,119 +76,22 @@
     [style.left.px]="contextMenuPosition().x"
     [style.top.px]="contextMenuPosition().y"
   >
-    <!-- Section 1: Actions -->
-    @if (currentFolderId() !== ALL_FOLDERS.DRAFTS) {
+    @for (section of menuSections; track $index; let last = $last) {
     <div class="px-1.5 py-0.5">
+      @for (item of section.items; track item.label) {
       <button
-        (click)="handleReply()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+        (click)="item.action()"
+        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
       >
-        <pc-icon name="reply" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Reply</span>
-      </button>
-      <button
-        (click)="handleReplyAll()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="reply-all" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Reply All</span>
-      </button>
-      <button
-        (click)="handleForward()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="forward" [size]="5" class="text-base-content/60 scale-x-[-1]"></pc-icon>
-        <span>Forward</span>
-      </button>
-    </div>
-    <div class="border-t border-base-200/80 my-1"></div>
-    }
-
-    <!-- Section 2: Spam & Read Status -->
-    <div class="px-1.5 py-0.5">
-      @if (!isFolderTrash()) { @if (isFolderSpam()) {
-      <button
-        (click)="moveToInbox()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="inbox" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Not spam</span>
-      </button>
-      } @else {
-      <button
-        (click)="markAsSpam()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="exclamation-triangle" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Mark as spam</span>
-      </button>
-      } }
-      <button
-        (click)="toggleReadStatus()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="envelope" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Mark as {{ contextMenuEmail()!.is_read ? 'unread' : 'read' }}</span>
-      </button>
-    </div>
-    <div class="border-t border-base-200/80 my-1"></div>
-
-    <!-- Section 3: Favorite, Status & Delete -->
-    <div class="px-1.5 py-0.5">
-      <button
-        (click)="toggleFavourite()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon
-          [name]="contextMenuEmail()!.is_favourite ? 'star-filled' : 'star'"
-          [size]="5"
-          [class.text-amber-500]="contextMenuEmail()!.is_favourite"
-          [class.text-base-content/60]="!contextMenuEmail()!.is_favourite"
-        ></pc-icon>
-        <span>{{ contextMenuEmail()!.is_favourite ? 'Unstar' : 'Star' }}</span>
-      </button>
-      <button
-        (click)="toggleClosed()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon
-          name="check-circle"
-          [size]="5"
-          [class.text-success]="contextMenuEmail()!.status === 'closed'"
-          [class.text-base-content/60]="contextMenuEmail()!.status !== 'closed'"
-        ></pc-icon>
-        <span>{{ contextMenuEmail()!.status === 'closed' ? 'Mark as Open' : 'Mark as Done' }}</span>
-      </button>
-
-      @if (isFolderTrash()) {
-      <button
-        (click)="restoreFromTrash()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="restore-from-trash" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Restore to Inbox</span>
+        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
+        <span>{{ item.label }}</span>
       </button>
       }
-
-      <button
-        (click)="deleteEmail()"
-        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon [name]="isFolderTrash() ? 'trash-forever' : 'trash'" [size]="5" class="text-error"></pc-icon>
-        <span>{{ isFolderTrash() ? 'Delete Permanently' : 'Delete' }}</span>
-      </button>
     </div>
-    <div class="border-t border-base-200/80 my-1"></div>
 
-    <!-- Section 4: Print -->
-    <div class="px-1.5 py-0.5">
-      <button
-        class="w-full flex items-center gap-3 px-3 py-1 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-      >
-        <pc-icon name="print" [size]="5" class="text-base-content/60"></pc-icon>
-        <span>Print</span>
-      </button>
-    </div>
+    @if (!last) {
+    <div class="border-t border-base-300 my-1"></div>
+    } }
   </div>
   }
 </section>
