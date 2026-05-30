@@ -59,6 +59,7 @@ export interface Models {
   email_attachments: EmailAttachments;
   email_drafts: EmailDrafts;
   email_trash: EmailTrash;
+  email_read_states: EmailReadStates;
   task_comments: TaskComments;
   task_subtasks: TaskSubtasks;
   task_attachments: TaskAttachments;
@@ -416,6 +417,14 @@ interface EmailTrash extends RecordType {
   email_id: string;
   from_folder_id: string;
   trashed_at: Timestamp;
+}
+
+export interface EmailReadStates {
+  tenant_id: string;
+  user_id: string;
+  email_id: string;
+  is_read: boolean;
+  created_at: Generated<Timestamp>;
 }
 
 interface UserActivity extends RecordType {

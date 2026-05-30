@@ -153,6 +153,12 @@ export class EmailsStore {
   // ----------------- Read/selection helpers -----------------
   public selectEmail(email: EmailType | { id: EmailId } | null): void {
     this.state.selectEmail(email);
+    if (email) {
+      const emailObj = this.state.readEmail(String(email.id));
+      if (emailObj && !emailObj.is_read) {
+        void this.actions.toggleEmailReadStatus(email.id, true);
+      }
+    }
   }
 
   public selectFolder(folder: EmailFolderType | null): void {
@@ -165,6 +171,10 @@ export class EmailsStore {
 
   public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
     return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
+  }
+
+  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
+    return this.actions.toggleEmailReadStatus(emailId, isRead);
   }
 
   public updateEmailStatus(emailId: EmailId, status: EmailStatus) {

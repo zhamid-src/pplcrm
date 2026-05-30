@@ -68,6 +68,7 @@ export type ServerEmail = {
   attachment_count?: number | string | bigint | null;
   folder_id: string | number;
   from_email?: string | null;
+  is_read?: boolean;
 
   // any of these might be present depending on endpoint:
   has_attachment?: boolean | null;

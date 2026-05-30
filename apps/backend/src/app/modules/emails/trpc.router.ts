@@ -87,7 +87,7 @@ function getEmailBody() {
 function getEmailHeader() {
   return authProcedure
     .input(idSchema)
-    .query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input));
+    .query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input, ctx.auth.user_id));
 }
 
 /**
@@ -196,6 +196,14 @@ function getActivities() {
     .query(({ input, ctx }) => emails.getActivitiesForEmail(ctx.auth.tenant_id, input));
 }
 
+function setEmailReadStatus() {
+  return authProcedure
+    .input(z.object({ id: idSchema, isRead: z.boolean() }))
+    .mutation(({ input, ctx }) =>
+      emails.setEmailReadStatus(ctx.auth.tenant_id, ctx.auth.user_id, input.id, input.isRead),
+    );
+}
+
 const emails = new EmailsController();
 
 /** Router exposing email-related procedures. */
@@ -216,6 +224,7 @@ export const EmailsRouter = router({
   assign: assign(),
   setFavourite: setFavourite(),
   setStatus: setStatus(),
+  setEmailReadStatus: setEmailReadStatus(),
   saveDraft: saveDraft(),
   restoreFromTrash: restoreFromTrash(),
   hasAttachment: hasAttachment(),

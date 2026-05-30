@@ -133,8 +133,8 @@ export class EmailHeader {
 
   /** Handle mark as unread action */
   protected handleMarkAsUnread() {
-    console.log('Mark as unread:', this.email().id);
-    // TODO: Implement mark as unread functionality
+    void this.store.toggleEmailReadStatus(this.email().id, false);
+    this.store.selectEmail(null);
   }
 
   /** Handle reply action */

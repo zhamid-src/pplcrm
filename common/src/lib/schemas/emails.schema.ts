@@ -43,4 +43,5 @@ export const EmailObj = z.object({
   attachment_count: z.number(),
   has_attachment: z.boolean(),
   status: z.enum(['open', 'closed']).nullable().default('open'),
+  is_read: z.boolean().optional(),
 });

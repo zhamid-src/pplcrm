@@ -97,6 +97,7 @@ function normalizeServerEmailRow(r: any): ServerEmail {
 
     has_attachment: hasFlag ?? (countNum !== undefined ? countNum > 0 : undefined),
     attachment_count: typeof r.attachment_count === 'boolean' ? undefined : countNum,
+    is_read: toBool(r.is_read) ?? false,
   };
 }
 

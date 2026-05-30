@@ -34,4 +34,14 @@ describe('EmailsRouter', () => {
     
     await expect(caller.getEmailBody('e1')).rejects.toThrow();
   });
+
+  it('should call setEmailReadStatus on the controller', async () => {
+    const spy = vi.spyOn(EmailsController.prototype, 'setEmailReadStatus').mockResolvedValue({ success: true, email_id: '1', is_read: true } as any);
+    
+    const caller = EmailsRouter.createCaller({ auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any } as any);
+    const result = await caller.setEmailReadStatus({ id: '1', isRead: true });
+    
+    expect(spy).toHaveBeenCalledWith('1', '1', '1', true);
+    expect(result).toEqual({ success: true, email_id: '1', is_read: true });
+  });
 });

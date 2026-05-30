@@ -1,6 +1,6 @@
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
 
-import { OperandValueExpressionOrList, ReferenceExpression, Transaction } from 'kysely';
+import { ReferenceExpression, Transaction } from 'kysely';
 
 import {
   Models,
@@ -202,7 +202,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to the found row or `undefined`
    */
   public getOneById(input: { tenant_id: string; id: string }) {
-    return this.repo.getOneBy('id', { value: input.id as OperandValueExpressionOrList<Models, T, 'id'>, tenant_id: input.tenant_id });
+    return this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
   }
 
   /**

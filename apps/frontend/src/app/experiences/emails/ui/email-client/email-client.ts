@@ -72,6 +72,7 @@ export class EmailClient {
                   preview: res.email.preview ?? undefined,
                   assigned_to: res.email.assigned_to ?? undefined,
                   has_attachment: !!res.email.has_attachment,
+                  is_read: !!(res.email as any).is_read,
                 };
                 
                 // Add to store's normalized map so it is available immediately
