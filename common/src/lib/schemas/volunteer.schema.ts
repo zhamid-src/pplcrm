@@ -8,6 +8,9 @@ export const AddVolunteerEventObj = z.object({
   start_time: z.coerce.date(),
   end_time: z.coerce.date(),
   capacity: z.number().int().positive().nullable().optional(),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  is_private: z.boolean().default(false).optional(),
 });
 
 export const VolunteerEventsObj = z.object({
@@ -19,6 +22,9 @@ export const VolunteerEventsObj = z.object({
   start_time: z.coerce.date(),
   end_time: z.coerce.date(),
   capacity: z.number().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
+  contact_phone: z.string().nullable().optional(),
+  is_private: z.boolean(),
 });
 
 export const UpdateVolunteerEventObj = z.object({
@@ -28,6 +34,9 @@ export const UpdateVolunteerEventObj = z.object({
   start_time: z.coerce.date().optional(),
   end_time: z.coerce.date().optional(),
   capacity: z.number().int().positive().nullable().optional(),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  is_private: z.boolean().optional(),
 });
 
 export const AddVolunteerShiftObj = z.object({
