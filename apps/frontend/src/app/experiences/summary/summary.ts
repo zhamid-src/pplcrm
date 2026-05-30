@@ -29,9 +29,12 @@ export class Summary implements OnInit {
   protected readonly linePath = signal('');
   protected readonly areaPath = signal('');
   protected readonly linePoints = signal<any[]>([]);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
   protected readonly closedRepBars = signal<any[]>([]);
   protected readonly assignedRepSlices = signal<any[]>([]);
   protected readonly userStats = signal<any[]>([]);
+  protected readonly hoveredPoint = signal<any | null>(null);
 
   public ngOnInit() {
     this.loadStats();
@@ -95,6 +98,39 @@ export class Summary implements OnInit {
         this.areaPath.set('');
       }
 
+      // Calculate Y axis labels
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      // Calculate X axis labels (approx. 5 labels across the timeline)
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch (e) {}
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+
       // Bar Chart: Closed Emails by Rep
       const closed = stats.emailsClosed || [];
       const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
@@ -148,5 +184,14 @@ export class Summary implements OnInit {
       return `${days}d ${remainingHours}h`;
     }
     return `${hours.toFixed(1)}h`;
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch (e) {
+      return dateStr;
+    }
   }
 }
