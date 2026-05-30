@@ -50,20 +50,26 @@ interface DashboardStats {
           </div>
 
           <!-- Avg Open Rate -->
-          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-            <div class="stat p-4">
+          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4">
+            <div>
               <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Open Rate</div>
               <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">{{ stats().avgOpenRate.toFixed(1) }}%</div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
             </div>
+            <div class="radial-progress text-success font-bold text-[10px] flex-shrink-0" [style.--value]="stats().avgOpenRate" [style.--size]="'3rem'" [style.--thickness]="'4px'" role="progressbar">
+              {{ stats().avgOpenRate.toFixed(0) }}%
+            </div>
           </div>
 
           <!-- Avg Click Rate -->
-          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-            <div class="stat p-4">
+          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4">
+            <div>
               <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Click Rate</div>
               <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">{{ stats().avgClickRate.toFixed(1) }}%</div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
+            </div>
+            <div class="radial-progress text-accent font-bold text-[10px] flex-shrink-0" [style.--value]="stats().avgClickRate" [style.--size]="'3rem'" [style.--thickness]="'4px'" role="progressbar">
+              {{ stats().avgClickRate.toFixed(0) }}%
             </div>
           </div>
 

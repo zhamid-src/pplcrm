@@ -21,6 +21,7 @@ export class Summary implements OnInit {
   protected readonly avgFirstResponse = signal('—');
   protected readonly avgTimeToClose = signal('—');
   protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
 
   // SVG Chart data
   protected readonly linePath = signal('');
@@ -50,6 +51,11 @@ export class Summary implements OnInit {
 
       const totalNewContacts = (stats.contactsGrowth || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
       this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
 
       // Line Chart: Contacts Growth (last 30 days)
       const growth = stats.contactsGrowth || [];
