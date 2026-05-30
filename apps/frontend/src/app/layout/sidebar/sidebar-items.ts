@@ -108,6 +108,11 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/people/duplicates',
         icon: 'document-duplicate',
       },
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+      },
     ],
   },
   {
@@ -198,11 +203,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Issues',
         route: '/issues',
         icon: 'shield-exclamation',
-      },
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
       },
       {
         name: 'Users',

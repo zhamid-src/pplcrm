@@ -559,6 +559,9 @@ export interface VolunteerEvents extends RecordType {
   start_time: Timestamp;
   end_time: Timestamp;
   capacity: number | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  is_private: boolean;
 }
 
 export interface VolunteerShifts extends RecordType {

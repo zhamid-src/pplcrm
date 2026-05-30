@@ -70,6 +70,27 @@
               <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-location">Location Address</label>
               <input id="event-location" type="text" class="input input-bordered w-full" [formField]="form.location_address" placeholder="E.g., Central Park Pavilion, or street coordinates" />
             </div>
+
+            <div class="divider"></div>
+            
+            <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+              <pc-icon name="user-circle" class="text-primary" [size]="4.5"></pc-icon>
+              Organizer Contact Point
+            </h4>
+            <p class="text-xs text-base-content/60">
+              Provide contact info for constituents who have questions about this shift.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <label class="label text-xs font-semibold text-base-content/65 uppercase" for="contact-email">Contact Email</label>
+                <input id="contact-email" type="email" class="input input-bordered w-full" [formField]="form.contact_email" placeholder="organizer@example.com" />
+              </div>
+              <div class="space-y-1">
+                <label class="label text-xs font-semibold text-base-content/65 uppercase" for="contact-phone">Contact Phone</label>
+                <input id="contact-phone" type="text" class="input input-bordered w-full" [formField]="form.contact_phone" placeholder="E.g., 555-0199" />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -241,6 +262,50 @@
 
       <!-- Right 1 col: Timing, Capacity, Actions -->
       <div class="space-y-6">
+        @if (!isNew() && detail()?.public_url) {
+        <div class="card bg-base-100 border border-base-300 shadow-md">
+          <div class="card-body p-6 space-y-4">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="globe-americas" class="text-primary" [size]="5"></pc-icon>
+              Public Signup Link
+            </h3>
+            <p class="text-xs text-base-content/60">
+              Constituents can use this URL to view the event and sign up for this shift.
+            </p>
+            <div class="flex gap-2 items-center">
+              <input 
+                #publicUrlInput
+                readonly 
+                type="text" 
+                class="input input-bordered input-sm flex-1 font-mono text-xs" 
+                [value]="environment.apiUrl + detail()?.public_url" 
+              />
+              <button 
+                type="button" 
+                class="btn btn-primary btn-sm btn-square" 
+                title="Copy Link" 
+                (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+              >
+                <pc-icon name="document-duplicate" [size]="4.5"></pc-icon>
+              </button>
+            </div>
+            
+            @if (detail()?.is_private) {
+            <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
+              <pc-icon name="exclamation-circle" [size]="4.5"></pc-icon>
+              <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
+            </div>
+            } @else {
+            <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
+              <span>Public Dashboard Link:</span>
+              <a [href]="environment.apiUrl + detail()?.tenant_public_url" target="_blank" class="link link-primary font-mono text-[10px] break-all">
+                {{ environment.apiUrl + detail()?.tenant_public_url }}
+              </a>
+            </div>
+            }
+          </div>
+        </div>
+        }
         <div class="card bg-base-100 border border-base-300 shadow-md">
           <div class="card-body p-6 space-y-4">
             <h3 class="font-bold text-lg text-base-content">Scheduling</h3>
@@ -264,6 +329,20 @@
             <div class="space-y-1">
               <label class="label text-xs font-semibold text-base-content/65 uppercase" for="capacity">Volunteer Capacity</label>
               <input id="capacity" type="number" class="input input-bordered w-full" [formField]="form.capacity" placeholder="Unlimited" />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-control">
+              <label class="label cursor-pointer flex justify-between items-center gap-4">
+                <div>
+                  <span class="label-text font-bold text-sm">Private Event</span>
+                  <p class="text-[11px] text-base-content/60 font-normal mt-0.5">
+                    If enabled, this event will not be shown on the public upcoming list. Only constituents with the direct link can sign up.
+                  </p>
+                </div>
+                <input type="checkbox" class="toggle toggle-primary" [formField]="form.is_private" />
+              </label>
             </div>
 
             <div class="divider"></div>

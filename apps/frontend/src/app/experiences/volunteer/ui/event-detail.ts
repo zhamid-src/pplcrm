@@ -6,6 +6,7 @@ import { AddVolunteerEventType, UpdateVolunteerEventType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
@@ -38,6 +39,8 @@ export class EventDetailComponent implements OnInit {
   protected readonly allVolunteers = signal<any[]>([]);
   protected readonly volunteerSearch = signal('');
 
+  protected readonly environment = environment;
+
   protected readonly payload = signal({
     name: '',
     description: '',
@@ -45,6 +48,9 @@ export class EventDetailComponent implements OnInit {
     start_time: '',
     end_time: '',
     capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_private: false,
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -117,6 +123,9 @@ export class EventDetailComponent implements OnInit {
         start_time: this.toDatetimeLocalString(event.start_time),
         end_time: this.toDatetimeLocalString(event.end_time),
         capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_private: !!event.is_private,
       });
 
       await this.loadRoster();
@@ -154,6 +163,9 @@ export class EventDetailComponent implements OnInit {
       start_time: new Date(raw.start_time),
       end_time: new Date(raw.end_time),
       capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_private: !!raw.is_private,
     };
 
     try {
@@ -254,5 +266,11 @@ export class EventDetailComponent implements OnInit {
     } catch (err: any) {
       this.alerts.showError(err?.message || 'Failed to remove volunteer');
     }
+  }
+
+  protected copyToClipboard(url: string) {
+    navigator.clipboard.writeText(url)
+      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
+      .catch((err) => console.error('Failed to copy', err));
   }
 }

@@ -9,6 +9,7 @@ import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
 import filesRoute from './modules/files/routes/files.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import { verifyAuthToken } from './lib/auth-util';
@@ -28,6 +29,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   
   // Register public web forms submission REST routes
   fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
