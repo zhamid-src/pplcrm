@@ -2,7 +2,12 @@
   <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"> </pc-email-folder-list>
 
   @if (!isBodyExpanded() && emails().length) {
-  <pc-email-list (emailSelected)="onEmail($event!)"></pc-email-list>
+  <pc-email-list
+    (emailSelected)="onEmail($event!)"
+    (reply)="onReply($event)"
+    (replyAll)="onReplyAll($event)"
+    (forward)="onForward($event)"
+  ></pc-email-list>
   }
 
   <!-- Right pane: compose OR details -->
