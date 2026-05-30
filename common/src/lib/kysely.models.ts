@@ -378,6 +378,7 @@ interface WebForms extends RecordType {
   target_tags: Json | null;
   target_lists: Json | null;
   status: 'active' | 'archived';
+  fields: Json | null;
 }
 
 interface EmailComments extends RecordType {

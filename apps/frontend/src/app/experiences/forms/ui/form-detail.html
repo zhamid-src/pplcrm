@@ -95,6 +95,37 @@
 
               <div class="divider my-1"></div>
 
+              <!-- Form Fields Toggles -->
+              <div class="form-control">
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">
+                  Form Fields
+                </h2>
+                <div class="space-y-1 bg-base-200/30 rounded-xl p-4 border border-base-200">
+                  <label class="label cursor-pointer justify-start gap-3 py-1.5">
+                    <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
+                    <span class="label-text font-medium">Email Address (Required)</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-3 py-1.5">
+                    <input type="checkbox" [checked]="showFirstName()" (change)="toggleField('first_name')" class="checkbox checkbox-sm checkbox-primary" />
+                    <span class="label-text">First Name</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-3 py-1.5">
+                    <input type="checkbox" [checked]="showLastName()" (change)="toggleField('last_name')" class="checkbox checkbox-sm checkbox-primary" />
+                    <span class="label-text">Last Name</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-3 py-1.5">
+                    <input type="checkbox" [checked]="showMobile()" (change)="toggleField('mobile')" class="checkbox checkbox-sm checkbox-primary" />
+                    <span class="label-text">Mobile / Phone</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-3 py-1.5">
+                    <input type="checkbox" [checked]="showNotes()" (change)="toggleField('notes')" class="checkbox checkbox-sm checkbox-primary" />
+                    <span class="label-text">Notes / Message</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
               <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
                 Target Audience Actions
               </h2>
@@ -152,6 +183,72 @@
 
         <!-- Right Column: Code Generator / Preview -->
         <div class="space-y-6 md:col-span-5">
+          <!-- Live Form Preview Panel -->
+          <div class="card bg-base-100 border border-base-200 shadow-sm overflow-hidden relative">
+            <div class="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-primary to-transparent"></div>
+            
+            <div class="card-body gap-4 p-6">
+              <div>
+                <h3 class="font-bold text-base flex items-center gap-2">
+                  <pc-icon name="eye" class="h-5 w-5 text-primary"></pc-icon>
+                  Live Form Preview
+                </h3>
+                <p class="text-xs text-base-content/50">Real-time preview of the landing page form layout.</p>
+              </div>
+
+              <!-- Mimic Public Form Aesthetics (supporting theme inheritance) -->
+              <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
+                <!-- Inner Form Header -->
+                <div class="text-center mb-6">
+                  <h4 class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent">
+                    {{ formGroup.get('name')?.value || 'Untitled Web Form' }}
+                  </h4>
+                  <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
+                    {{ formGroup.get('description')?.value || 'Enter a description to see it here.' }}
+                  </p>
+                </div>
+
+                <!-- Form Fields -->
+                <div class="space-y-4">
+                  @if (showFirstName()) {
+                    <div class="form-control">
+                      <label class="label text-[11px] font-semibold py-0.5">First Name</label>
+                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                    </div>
+                  }
+
+                  @if (showLastName()) {
+                    <div class="form-control">
+                      <label class="label text-[11px] font-semibold py-0.5">Last Name</label>
+                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                    </div>
+                  }
+
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
+                    <input type="email" class="input input-bordered input-sm w-full" placeholder="john@example.com" disabled />
+                  </div>
+
+                  @if (showMobile()) {
+                    <div class="form-control">
+                      <label class="label text-[11px] font-semibold py-0.5">Mobile / Phone</label>
+                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. 555-0199" disabled />
+                    </div>
+                  }
+
+                  @if (showNotes()) {
+                    <div class="form-control">
+                      <label class="label text-[11px] font-semibold py-0.5">Notes / Message</label>
+                      <textarea class="textarea textarea-bordered textarea-sm w-full" rows="2" placeholder="How can we help you?" disabled></textarea>
+                    </div>
+                  }
+
+                  <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>Submit</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           @if (isNew()) {
           <div class="card bg-base-200 border border-base-300 text-center">
             <div class="card-body items-center py-12">

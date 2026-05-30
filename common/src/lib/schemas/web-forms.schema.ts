@@ -13,6 +13,7 @@ export const AddWebFormObj = z.object({
     .optional(),
   target_tags: z.array(z.string()).nullable().optional(),
   target_lists: z.array(z.string()).nullable().optional(),
+  fields: z.array(z.string()).nullable().optional(),
   status: z.enum(['active', 'archived']).default('active').optional(),
 });
 
@@ -28,6 +29,7 @@ export const UpdateWebFormObj = z.object({
     .optional(),
   target_tags: z.array(z.string()).nullable().optional(),
   target_lists: z.array(z.string()).nullable().optional(),
+  fields: z.array(z.string()).nullable().optional(),
   status: z.enum(['active', 'archived']).optional(),
 });
 
@@ -39,6 +41,7 @@ export const WebFormsObj = z.object({
   redirect_url: z.string().nullable(),
   target_tags: z.array(z.string()).nullable(),
   target_lists: z.array(z.string()).nullable(),
+  fields: z.array(z.string()).nullable().optional(),
   status: z.enum(['active', 'archived']),
   createdby_id: z.string(),
   updatedby_id: z.string(),

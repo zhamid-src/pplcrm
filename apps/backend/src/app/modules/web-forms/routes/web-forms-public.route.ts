@@ -434,8 +434,13 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       const formName = form.name;
       const formDescription = form.description || '';
       
+      // Extract fields configuration, default to all fields if null/empty
+      const fields: string[] = form.fields
+        ? (Array.isArray(form.fields) ? (form.fields as any) : JSON.parse(form.fields as any))
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+      
       reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription));
+      return reply.send(renderFormHtml(formId, formName, formDescription, fields));
     } catch (err: any) {
       reply.status(500).type('text/html');
       return reply.send(errorHtml(err.message || 'Failed to load form.'));
@@ -480,7 +485,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
 export default webFormsPublicRoute;
 
-const renderFormHtml = (formId: string, formName: string, formDescription: string) => `
+const renderFormHtml = (formId: string, formName: string, formDescription: string, fields: string[]) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -729,30 +734,34 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 
+      ${fields.includes('first_name') ? `
       <div class="form-group">
         <label for="first_name">First Name</label>
         <input type="text" id="first_name" name="first_name" placeholder="E.g. John" />
-      </div>
+      </div>` : ''}
 
+      ${fields.includes('last_name') ? `
       <div class="form-group">
         <label for="last_name">Last Name</label>
         <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" />
-      </div>
+      </div>` : ''}
 
       <div class="form-group">
         <label for="email">Email Address *</label>
         <input type="email" id="email" name="email" placeholder="john@example.com" required />
       </div>
 
+      ${fields.includes('mobile') ? `
       <div class="form-group">
         <label for="mobile">Mobile / Phone</label>
         <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" />
-      </div>
+      </div>` : ''}
 
+      ${fields.includes('notes') ? `
       <div class="form-group">
         <label for="notes">Notes / Message</label>
         <textarea id="notes" name="notes" placeholder="How can we help you?"></textarea>
-      </div>
+      </div>` : ''}
 
       <button type="submit">Submit</button>
     </form>
