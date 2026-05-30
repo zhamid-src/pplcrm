@@ -10,6 +10,7 @@ import googleSyncCallbackRoute from './modules/google-sync/google-callback.route
 import filesRoute from './modules/files/routes/files.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import { verifyAuthToken } from './lib/auth-util';
 
 /**
@@ -30,6 +31,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
 
   // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
   fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });

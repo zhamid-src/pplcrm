@@ -1,4 +1,5 @@
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '@common';
+import { sql } from 'kysely';
 
 import { BaseController } from '../../lib/base.controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
@@ -185,6 +186,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       text: newsletter.plain_text_content || undefined,
       sendgridApiKey,
       subuserUsername,
+      newsletterId: id,
+      tenantId: tenant_id,
     });
 
     const updated = await this.update({
@@ -211,5 +214,51 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     });
 
     return updated;
+  }
+
+  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
+    const db = this.getRepo().db;
+    
+    // 1. Fetch recent events (limit 100)
+    const activities = await db
+      .selectFrom('newsletter_events')
+      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
+      .where('newsletter_id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    // 2. Fetch timeline data grouped by date/hour
+    const timeline = await db
+      .selectFrom('newsletter_events')
+      .select([
+        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+      ])
+      .where('newsletter_id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .where('event_type', 'in', ['open', 'click'])
+      .groupBy('time_bucket')
+      .orderBy('time_bucket', 'asc')
+      .execute();
+
+    return {
+      activities: activities.map((a) => ({
+        email: a.email,
+        event_type: a.event_type,
+        timestamp: a.timestamp,
+        url: a.url,
+        ip: a.ip,
+        user_agent: a.user_agent,
+      })),
+      timeline: timeline.map((t) => ({
+        time: t.time_bucket,
+        opens: Number(t.opens),
+        clicks: Number(t.clicks),
+      })),
+    };
   }
 }

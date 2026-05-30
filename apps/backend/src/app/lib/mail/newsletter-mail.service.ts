@@ -10,6 +10,8 @@ export interface SendNewsletterOptions {
   text?: string;
   sendgridApiKey?: string;
   subuserUsername?: string;
+  newsletterId?: string;
+  tenantId?: string;
 }
 
 export class NewsletterEmailService {
@@ -72,6 +74,12 @@ export class NewsletterEmailService {
             value: options.text,
           }] : []),
         ],
+        ...(options.newsletterId && options.tenantId ? {
+          custom_args: {
+            newsletter_id: options.newsletterId,
+            tenant_id: options.tenantId,
+          }
+        } : {}),
       };
 
       try {

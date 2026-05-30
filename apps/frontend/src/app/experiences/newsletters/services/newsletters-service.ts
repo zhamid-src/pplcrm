@@ -59,6 +59,10 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.normalize(record);
   }
 
+  public getEngagementStats(id: string) {
+    return this.api.newsletters.getEngagementStats.query(id);
+  }
+
   public async getTags(_id: string) {
     return [];
   }

@@ -52,6 +52,7 @@ export interface Models {
   settings: Settings;
   emails: Emails;
   newsletters: Newsletters;
+  newsletter_events: NewsletterEvents;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
   email_headers: EmailHeaders;
@@ -353,6 +354,21 @@ interface Newsletters extends RecordType {
   plain_text_content: string | null;
   top_links: Json | null;
   attachments: Json | null;
+}
+
+export interface NewsletterEvents {
+  id: Generated<string>;
+  tenant_id: string;
+  newsletter_id: string;
+  email: string;
+  event_type: string;
+  sg_event_id: string;
+  sg_message_id: string | null;
+  url: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  timestamp: Timestamp;
+  created_at: Generated<Timestamp>;
 }
 
 interface WebForms extends RecordType {

@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { CommonModule } from '@angular/common';
 import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
 import { Icon } from '@icons/icon';
 
@@ -13,7 +14,7 @@ interface DetailMetric {
 
 @Component({
   selector: 'pc-newsletter-detail',
-  imports: [Icon],
+  imports: [Icon, CommonModule],
   templateUrl: './newsletter-detail.html',
 })
 export class NewsletterDetailComponent implements OnInit {
@@ -21,6 +22,21 @@ export class NewsletterDetailComponent implements OnInit {
   private readonly service = inject(NewslettersService);
 
   protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly stats = signal<{
+    activities: Array<{
+      email: string;
+      event_type: string;
+      timestamp: string | Date;
+      url: string | null;
+      ip: string | null;
+      user_agent: string | null;
+    }>;
+    timeline: Array<{
+      time: string;
+      opens: number;
+      clicks: number;
+    }>;
+  } | null>(null);
   protected readonly coreMetrics = computed<DetailMetric[]>(() => {
     const data = this.email();
     if (!data) return [];
@@ -86,6 +102,102 @@ export class NewsletterDetailComponent implements OnInit {
     return Array.isArray(data.top_links) ? data.top_links : [];
   });
 
+  protected readonly funnelMetrics = computed(() => {
+    const data = this.email();
+    if (!data) return null;
+    const sent = Number(data.total_recipients ?? 0);
+    const delivered = Number(data.delivered_count ?? 0);
+    const opened = Number(data.unique_opens ?? 0);
+    const clicked = Number(data.unique_clicks ?? 0);
+
+    const delPct = sent > 0 ? (delivered / sent) * 100 : 0;
+    const opPct = delivered > 0 ? (opened / delivered) * 100 : 0;
+    const clPct = opened > 0 ? (clicked / opened) * 100 : 0; // CTOR
+
+    return {
+      sent,
+      delivered,
+      opened,
+      clicked,
+      delPct,
+      opPct,
+      clPct,
+    };
+  });
+
+  protected readonly timelinePoints = computed(() => {
+    const data = this.stats();
+    if (!data || !data.timeline || data.timeline.length === 0) {
+      return { opensPath: '', clicksPath: '', opensArea: '', clicksArea: '', points: [], gridLines: [] };
+    }
+
+    const timeline = data.timeline;
+    const width = 600;
+    const height = 150;
+    const paddingLeft = 50;
+    const paddingRight = 20;
+    const paddingTop = 20;
+    const paddingBottom = 30;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+
+    // Find max value for Y scaling
+    let maxVal = 10;
+    for (const t of timeline) {
+      if (t.opens > maxVal) maxVal = t.opens;
+      if (t.clicks > maxVal) maxVal = t.clicks;
+    }
+    // Round maxVal to nice number
+    maxVal = Math.ceil(maxVal * 1.15);
+
+    const points = timeline.map((t, i) => {
+      const x = paddingLeft + (timeline.length > 1 ? (i / (timeline.length - 1)) * chartWidth : chartWidth / 2);
+      const yOpens = height - paddingBottom - (t.opens / maxVal) * chartHeight;
+      const yClicks = height - paddingBottom - (t.clicks / maxVal) * chartHeight;
+      return {
+        label: this.formatTimeBucket(t.time),
+        opens: t.opens,
+        clicks: t.clicks,
+        x,
+        yOpens,
+        yClicks,
+      };
+    });
+
+    // Generate path strings
+    let opensPath = '';
+    let clicksPath = '';
+    let opensArea = '';
+    let clicksArea = '';
+
+    if (timeline.length > 0) {
+      opensPath = `M ${points[0].x} ${points[0].yOpens} ` + points.slice(1).map(p => `L ${p.x} ${p.yOpens}`).join(' ');
+      clicksPath = `M ${points[0].x} ${points[0].yClicks} ` + points.slice(1).map(p => `L ${p.x} ${p.yClicks}`).join(' ');
+
+      const bottomY = height - paddingBottom;
+      opensArea = opensPath + ` L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
+      clicksArea = clicksPath + ` L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
+    }
+
+    const gridLines = [
+      { y: height - paddingBottom, label: '0' },
+      { y: height - paddingBottom - chartHeight * 0.25, label: Math.round(maxVal * 0.25).toString() },
+      { y: height - paddingBottom - chartHeight * 0.5, label: Math.round(maxVal * 0.5).toString() },
+      { y: height - paddingBottom - chartHeight * 0.75, label: Math.round(maxVal * 0.75).toString() },
+      { y: height - paddingBottom - chartHeight, label: maxVal.toString() },
+    ];
+
+    return {
+      opensPath,
+      clicksPath,
+      opensArea,
+      clicksArea,
+      points,
+      gridLines,
+    };
+  });
+
   public audienceLabel(): string {
     const data = this.email();
     if (!data) return '—';
@@ -123,9 +235,31 @@ export class NewsletterDetailComponent implements OnInit {
         return;
       }
       this.email.set(record);
+
+      const statsData = await this.service.getEngagementStats(id);
+      this.stats.set(statsData);
     } catch (err: unknown) {
       console.error(err);
       this.error.set('Unable to load newsletter.');
+    }
+  }
+
+  protected formatActivityDate(value: Date | string | null | undefined): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+  }
+
+  private formatTimeBucket(timeStr: string): string {
+    try {
+      const [datePart, hourPart] = timeStr.split(' ');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour] = hourPart.split(':').map(Number);
+      const date = new Date(year, month - 1, day, hour);
+      return new Intl.DateTimeFormat(undefined, { hour: 'numeric', hour12: true }).format(date);
+    } catch {
+      return timeStr;
     }
   }
 

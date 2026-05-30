@@ -14,6 +14,9 @@ export const NewslettersRouter = router({
   getById: authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => newsletters.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  getEngagementStats: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
   create: authProcedure
     .input(AddMarketingEmailObj)
     .mutation(async ({ input, ctx }) => {
