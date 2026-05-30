@@ -265,11 +265,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Return all emails for the given folder */
-  public async getEmails(user_id: string, tenant_id: string, folder_id: string) {
+  public async getEmails(user_id: string, tenant_id: string, folder_id: string, limit?: number, offset?: number) {
     try {
       if (folder_id === ALL_FOLDERS.DRAFTS) {
-        const drafts = await this.draftsRepo.listByUser(tenant_id, user_id);
+        const drafts = await this.draftsRepo.listByUser(tenant_id, user_id, limit, offset);
         return drafts.map((d: any) => ({
           id: d.id,
           folder_id,
@@ -286,7 +285,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           status: 'open',
         }));
       }
-      return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id);
+      return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id, limit, offset);
     } catch (err) {
       throw new InternalError('Failed to fetch emails', undefined, { cause: err });
     }

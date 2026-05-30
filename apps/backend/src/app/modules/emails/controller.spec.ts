@@ -137,4 +137,43 @@ describe('EmailsController Integration', () => {
     const emailsAfterUnread = await controller.getRepo().getByFolderWithAttachmentFlag(userId, tenantId, '11');
     expect(emailsAfterUnread[0].is_read).toBe(false);
   });
+
+  it('should support limit and offset parameters when fetching emails by folder', async () => {
+    // Insert 3 additional emails under this tenant
+    const emailIds = [rand(), rand(), rand()];
+    for (const eid of emailIds) {
+      await db.insertInto('emails').values({
+        id: eid,
+        tenant_id: tenantId,
+        folder_id: '11',
+        from_email: 'extra@example.com',
+        to_email: 'recipient@example.com',
+        subject: 'Extra Email',
+        preview: 'Preview',
+        is_favourite: false,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      }).execute();
+    }
+
+    // Total emails in inbox should be 4 (1 seeded in beforeEach + 3 extra)
+    const allEmails = await controller.getEmails(userId, tenantId, '11');
+    expect(allEmails.length).toBe(4);
+
+    // Test Limit: should return only 2 emails
+    const limitEmails = await controller.getEmails(userId, tenantId, '11', 2);
+    expect(limitEmails.length).toBe(2);
+
+    // Test Limit and Offset: should skip the first 2 and return the remaining 2
+    const pagedEmails = await controller.getEmails(userId, tenantId, '11', 2, 2);
+    expect(pagedEmails.length).toBe(2);
+
+    // The items returned by pagination should be disjoint from the first page
+    const firstPageIds = limitEmails.map((e: any) => e.id);
+    const secondPageIds = pagedEmails.map((e: any) => e.id);
+    for (const id of secondPageIds) {
+      expect(firstPageIds).not.toContain(id);
+    }
+  });
 });

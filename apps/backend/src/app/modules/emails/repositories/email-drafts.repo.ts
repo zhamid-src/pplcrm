@@ -15,13 +15,17 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
     return Number((res as any)?.count || 0);
   }
 
-  public listByUser(tenant_id: string, user_id: string) {
-    return this.getSelect()
+  public listByUser(tenant_id: string, user_id: string, limit?: number, offset?: number) {
+    let q = this.getSelect()
       .selectAll()
       .where('tenant_id', '=', tenant_id)
       .where('user_id', '=', user_id)
-      .orderBy('updated_at', 'desc')
-      .execute();
+      .orderBy('updated_at', 'desc');
+
+    if (typeof limit === 'number') q = q.limit(limit);
+    if (typeof offset === 'number') q = q.offset(offset);
+
+    return q.execute();
   }
 
   public async saveDraft(

@@ -1,4 +1,4 @@
-import { Component, effect, inject, output, signal, computed } from '@angular/core';
+import { Component, effect, inject, output, signal, computed, ViewChild, ElementRef } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
@@ -13,11 +13,22 @@ import type { EmailType } from 'common/src/lib/models';
 export class EmailList {
   private readonly store = inject(EmailsStore);
 
+  @ViewChild('scrollContainer') public scrollContainer?: ElementRef<HTMLUListElement>;
+
   /** Emit to parent so it can set selection in the store */
   public readonly emailSelected = output<EmailType>();
 
   /** Emails in the currently selected folder (reactive) */
   public readonly emails = this.store.emailsInSelectedFolder;
+
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+
+  protected onScroll(event: Event): void {
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
 
   /** Sort order for the email list */
   public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
@@ -42,20 +53,23 @@ export class EmailList {
       const emails = this.sortedEmails();
       const selectedId = this.store.currentSelectedEmailId();
 
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      if (folderChanged && this.scrollContainer) {
+        this.scrollContainer.nativeElement.scrollTop = 0;
+      }
+
       // If the list is empty, clear any existing selection and bail out.
       if (emails.length === 0) {
         if (selectedId) {
           // The selected email was removed; clear selection so parent can react.
           this.store.selectEmail(null);
         }
-        lastFolderId = folderId;
         return;
       }
 
       if (folderId) {
-        const folderChanged = folderId !== lastFolderId;
-        lastFolderId = folderId;
-
         // Auto-select the first email only if:
         // 1. The folder has changed, OR
         // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
@@ -64,8 +78,6 @@ export class EmailList {
         if (folderChanged || (selectedId && !currentSelectionStillExists)) {
           this.selectEmail(emails[0]);
         }
-      } else {
-        lastFolderId = null;
       }
     });
   }

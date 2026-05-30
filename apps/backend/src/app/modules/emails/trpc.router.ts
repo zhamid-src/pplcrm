@@ -115,8 +115,14 @@ function getEmailWithHeaders() {
  */
 function getEmails() {
   return authProcedure
-    .input(z.object({ folderId: idSchema }))
-    .query(({ input, ctx }) => emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId));
+    .input(z.object({
+      folderId: idSchema,
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }))
+    .query(({ input, ctx }) =>
+      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset)
+    );
 }
 
 /** Retrieve all email folders for the current tenant. */
