@@ -117,6 +117,15 @@
               ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
             >
           </li>
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a (click)="markAsSpam()"><pc-icon name="exclamation-triangle" [size]="4"></pc-icon> Mark as spam</a>
+          </li>
+          } @else {
+          <li>
+            <a (click)="moveToInbox()"><pc-icon name="inbox" [size]="4"></pc-icon> Not spam</a>
+          </li>
+          } }
           <li>
             <a (click)="toggleClosed()"
               ><pc-icon [class.text-primary]="isClosed()" name="check-circle" [size]="4"></pc-icon> {{ isClosed() ?

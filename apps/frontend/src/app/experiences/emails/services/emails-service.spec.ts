@@ -61,6 +61,7 @@ describe('EmailsService', () => {
         hasAttachment: { query: vi.fn() },
         hasAttachmentByEmailIds: { query: vi.fn() },
         restoreFromTrash: { mutate: vi.fn() },
+        moveToFolder: { mutate: vi.fn() },
         setEmailReadStatus: { mutate: vi.fn() },
       },
       msSync: {

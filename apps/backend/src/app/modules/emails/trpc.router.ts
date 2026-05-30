@@ -153,6 +153,14 @@ function restoreFromTrash() {
     .mutation(({ input, ctx }) => emails.restoreFromTrash(ctx.auth.tenant_id, input));
 }
 
+function moveToFolder() {
+  return authProcedure
+    .input(z.object({ id: idSchema, folderId: idSchema }))
+    .mutation(({ input, ctx }) =>
+      emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id)
+    );
+}
+
 function saveDraft() {
   return authProcedure
     .input(
@@ -233,6 +241,7 @@ export const EmailsRouter = router({
   setEmailReadStatus: setEmailReadStatus(),
   saveDraft: saveDraft(),
   restoreFromTrash: restoreFromTrash(),
+  moveToFolder: moveToFolder(),
   hasAttachment: hasAttachment(),
   getAllAttachments: getAllAttachments(),
   hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
