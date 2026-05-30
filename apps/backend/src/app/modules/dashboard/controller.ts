@@ -10,65 +10,136 @@ export class DashboardController {
   public async getStats(auth: IAuthKeyPayload) {
     const tenant_id = auth.tenant_id;
 
-    // 1. Emails Assigned (Assigned open inbox emails by rep)
-    const emailsAssigned = await this.db.selectFrom('emails')
-      .innerJoin('authusers', 'authusers.id', 'emails.assigned_to')
-      .select([
-        'emails.assigned_to as user_id',
-        'authusers.first_name',
-        'authusers.last_name',
-        sql<number>`count(emails.id)`.as('count')
-      ])
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('emails.folder_id', '=', '1') // Inbox
-      .where('emails.status', '=', 'open')
-      .groupBy(['emails.assigned_to', 'authusers.first_name', 'authusers.last_name'])
-      .execute();
-
-    // 2. Emails Closed by Rep (Closed inbox emails by rep)
-    const emailsClosed = await this.db.selectFrom('emails')
-      .innerJoin('authusers', 'authusers.id', 'emails.assigned_to')
-      .select([
-        'emails.assigned_to as user_id',
-        'authusers.first_name',
-        'authusers.last_name',
-        sql<number>`count(emails.id)`.as('count')
-      ])
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('emails.folder_id', '=', '1') // Inbox
-      .where('emails.status', '=', 'closed')
-      .groupBy(['emails.assigned_to', 'authusers.first_name', 'authusers.last_name'])
-      .execute();
-
-    // 3. Average 1st Response Time
-    const incomingEmails = await this.db.selectFrom('emails')
-      .select(['id', 'from_email', 'created_at'])
+    // 1. Fetch all users in the tenant
+    const users = await this.db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
       .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '1') // Inbox
       .execute();
 
-    let totalResponseTimeMs = 0;
-    let responseCount = 0;
+    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
+    const inboxEmails = await this.db.selectFrom('emails')
+      .select(['id', 'from_email', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .execute();
 
-    for (const email of incomingEmails) {
-      const earliestComment = await this.db.selectFrom('email_comments')
-        .select('created_at')
-        .where('email_id', '=', email.id)
-        .orderBy('created_at', 'asc')
-        .limit(1)
-        .executeTakeFirst();
+    // 3. Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db.selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c: any) => c.email_id && c.earliest_comment_at)
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()])
+    );
 
-      const earliestOutbound = email.from_email ? await this.db.selectFrom('emails')
-        .select('created_at')
-        .where('folder_id', '=', '3') // Sent
-        .where('to_email', 'like', `%${email.from_email}%`)
-        .where('created_at', '>', email.created_at)
-        .orderBy('created_at', 'asc')
-        .limit(1)
-        .executeTakeFirst() : null;
+    // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
+    const sentEmails = await this.db.selectFrom('emails')
+      .select(['to_email', 'created_at'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '3')
+      .orderBy('created_at', 'asc')
+      .execute();
 
-      const commentTime = earliestComment ? new Date(earliestComment.created_at).getTime() : null;
-      const outboundTime = earliestOutbound ? new Date(earliestOutbound.created_at).getTime() : null;
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentEmails) {
+      if (!sent.to_email) continue;
+      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+      for (const e of emails) {
+        let list = sentMap.get(e);
+        if (!list) {
+          list = [];
+          sentMap.set(e, list);
+        }
+        list.push(new Date(sent.created_at).getTime());
+      }
+    }
+
+    // Initialize user stats map
+    const userStatsMap: Record<string, {
+      user_id: string;
+      first_name: string;
+      last_name: string;
+      openCount: number;
+      closedCount: number;
+      totalResponseTimeMs: number;
+      responseCount: number;
+      totalTimeToCloseMs: number;
+      timeToCloseCount: number;
+      slaBreaches: number;
+    }> = {};
+
+    for (const u of users) {
+      userStatsMap[u.id] = {
+        user_id: u.id,
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        openCount: 0,
+        closedCount: 0,
+        totalResponseTimeMs: 0,
+        responseCount: 0,
+        totalTimeToCloseMs: 0,
+        timeToCloseCount: 0,
+        slaBreaches: 0,
+      };
+    }
+
+    let globalTotalResponseTimeMs = 0;
+    let globalResponseCount = 0;
+    let globalTotalTimeToCloseMs = 0;
+    let globalTimeToCloseCount = 0;
+    let unassignedCount = 0;
+    let unassignedSlaBreaches = 0;
+
+    const nowMs = Date.now();
+    const SLA_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    for (const email of inboxEmails) {
+      const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
+      const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
+
+      // Track open/closed counts
+      if (email.status === 'open') {
+        if (assignedUser) {
+          assignedUser.openCount++;
+        } else {
+          unassignedCount++;
+        }
+      } else if (email.status === 'closed') {
+        if (assignedUser) {
+          assignedUser.closedCount++;
+        }
+      }
+
+      // Time to close calculation
+      if (email.status === 'closed') {
+        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
+        if (closeDiff > 0) {
+          globalTotalTimeToCloseMs += closeDiff;
+          globalTimeToCloseCount++;
+          if (assignedUser) {
+            assignedUser.totalTimeToCloseMs += closeDiff;
+            assignedUser.timeToCloseCount++;
+          }
+        }
+      }
+
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find(t => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
 
       let firstResponseTime: number | null = null;
       if (commentTime && outboundTime) {
@@ -80,36 +151,32 @@ export class DashboardController {
       }
 
       if (firstResponseTime) {
-        const diff = firstResponseTime - new Date(email.created_at).getTime();
-        if (diff > 0) {
-          totalResponseTimeMs += diff;
-          responseCount++;
+        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
+        if (respDiff > 0) {
+          globalTotalResponseTimeMs += respDiff;
+          globalResponseCount++;
+          if (assignedUser) {
+            assignedUser.totalResponseTimeMs += respDiff;
+            assignedUser.responseCount++;
+          }
+        }
+      }
+
+      // SLA Breach calculation: Open inbox email older than 24h with no response yet
+      if (email.status === 'open') {
+        const ageMs = nowMs - new Date(email.created_at).getTime();
+        if (ageMs > SLA_THRESHOLD_MS && !firstResponseTime) {
+          if (assignedUser) {
+            assignedUser.slaBreaches++;
+          } else {
+            unassignedSlaBreaches++;
+          }
         }
       }
     }
 
-    const avgFirstResponseHours = responseCount > 0 ? (totalResponseTimeMs / responseCount) / (1000 * 60 * 60) : 0;
-
-    // 4. Average Time to Close
-    const closedEmails = await this.db.selectFrom('emails')
-      .select(['created_at', 'updated_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '1')
-      .where('status', '=', 'closed')
-      .execute();
-
-    let totalTimeToCloseMs = 0;
-    let closedCount = 0;
-
-    for (const email of closedEmails) {
-      const diff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
-      if (diff > 0) {
-        totalTimeToCloseMs += diff;
-        closedCount++;
-      }
-    }
-
-    const avgTimeToCloseHours = closedCount > 0 ? (totalTimeToCloseMs / closedCount) / (1000 * 60 * 60) : 0;
+    const avgFirstResponseHours = globalResponseCount > 0 ? (globalTotalResponseTimeMs / globalResponseCount) / (1000 * 60 * 60) : 0;
+    const avgTimeToCloseHours = globalTimeToCloseCount > 0 ? (globalTotalTimeToCloseMs / globalTimeToCloseCount) / (1000 * 60 * 60) : 0;
 
     // 5. Contacts Growth (Last 30 days)
     const growthRows = await this.db.selectFrom('persons')
@@ -128,12 +195,58 @@ export class DashboardController {
       count: Number(r.count || 0),
     }));
 
+    // Build backward-compatible emailsAssigned
+    const emailsAssigned = Object.values(userStatsMap)
+      .filter(u => u.openCount > 0)
+      .map(u => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.openCount
+      }));
+
+    // Build backward-compatible emailsClosed
+    const emailsClosed = Object.values(userStatsMap)
+      .filter(u => u.closedCount > 0)
+      .map(u => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.closedCount
+      }));
+
+    // Map user stats for representative stats table
+    const userStats = Object.values(userStatsMap).map(u => {
+      const totalHandled = u.openCount + u.closedCount;
+      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
+      const avgFirstResponse = u.responseCount > 0 ? (u.totalResponseTimeMs / u.responseCount) / (1000 * 60 * 60) : 0;
+      const avgTimeToClose = u.timeToCloseCount > 0 ? (u.totalTimeToCloseMs / u.timeToCloseCount) / (1000 * 60 * 60) : 0;
+
+      return {
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        openCount: u.openCount,
+        closedCount: u.closedCount,
+        resolutionRate,
+        avgFirstResponseHours: avgFirstResponse,
+        avgTimeToCloseHours: avgTimeToClose,
+        slaBreaches: u.slaBreaches,
+      };
+    });
+
+    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
+
     return {
       avgFirstResponseHours,
       avgTimeToCloseHours,
       emailsAssigned,
       emailsClosed,
       contactsGrowth,
+      unassignedCount,
+      totalOpenCount,
+      userStats,
+      unassignedSlaBreaches,
     };
   }
 }

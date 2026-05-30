@@ -30,14 +30,14 @@
   @if (linePoints().length > 0) {
   <div class="space-y-6">
     <!-- Metric Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       <!-- Card 1 -->
       <div class="card bg-base-100 border border-base-300 shadow-md">
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Inbox Assigned</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">{{ totalAssignedCount() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">Open email conversations</p>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Total Open Emails</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">{{ totalOpenCount() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">All open inbox conversations</p>
           </div>
           <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             <pc-icon name="envelope" [size]="6.5"></pc-icon>
@@ -46,6 +46,20 @@
       </div>
 
       <!-- Card 2 -->
+      <div class="card bg-base-100 border border-base-300 shadow-md">
+        <div class="card-body p-5 flex flex-row items-center justify-between">
+          <div>
+            <span class="text-xs text-base-content/50 uppercase font-semibold">Unassigned Open</span>
+            <h3 class="text-2xl font-bold text-base-content mt-1">{{ unassignedOpenCount() }}</h3>
+            <p class="text-xs text-base-content/40 mt-1">Awaiting user assignment</p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+            <pc-icon name="exclamation-circle" [size]="6.5"></pc-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
       <div class="card bg-base-100 border border-base-300 shadow-md">
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
@@ -59,7 +73,7 @@
         </div>
       </div>
 
-      <!-- Card 3 -->
+      <!-- Card 4 -->
       <div class="card bg-base-100 border border-base-300 shadow-md">
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
@@ -73,7 +87,7 @@
         </div>
       </div>
 
-      <!-- Card 4 -->
+      <!-- Card 5 -->
       <div class="card bg-base-100 border border-base-300 shadow-md">
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
@@ -81,7 +95,7 @@
             <h3 class="text-2xl font-bold text-base-content mt-1">+{{ activeContactsCount() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">New contacts (last 30 days)</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+          <div class="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
             <pc-icon name="user-plus" [size]="6.5"></pc-icon>
           </div>
         </div>
@@ -189,6 +203,71 @@
             </div>
             }
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Representative Performance Table -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+      <div class="card-body p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+            <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
+            Representative Performance & Response Stats
+          </h3>
+          <span class="text-xs text-base-content/55">Real-time stats</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full text-sm">
+            <thead>
+              <tr class="bg-base-200/50">
+                <th>Representative</th>
+                <th class="text-center">Open Emails</th>
+                <th class="text-center">Closed Emails</th>
+                <th class="text-center">Total Handled</th>
+                <th class="text-center">Resolution Rate</th>
+                <th class="text-center">Avg 1st Response</th>
+                <th class="text-center">Avg Time to Close</th>
+                <th class="text-center">SLA Breaches (>24h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (user of userStats(); track user.user_id) {
+                <tr class="hover">
+                  <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+                  <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
+                  <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
+                  <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
+                  <td class="text-center">
+                    <span class="badge font-semibold"
+                      [class.badge-success]="user.resolutionRate >= 75"
+                      [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                      [class.badge-error]="user.resolutionRate < 40">
+                      {{ user.resolutionRate }}%
+                    </span>
+                  </td>
+                  <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
+                  <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
+                  <td class="text-center">
+                    @if (user.slaBreaches > 0) {
+                      <div class="badge badge-error badge-sm gap-1 font-mono font-bold animate-pulse">
+                        {{ user.slaBreaches }}
+                      </div>
+                    } @else {
+                      <span class="text-base-content/30">—</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="8" class="text-center py-6 text-base-content/40 italic">
+                    No representative performance statistics available.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
