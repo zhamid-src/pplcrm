@@ -119,7 +119,7 @@ export class EmailStateStore {
    * Keeps normalized `emailsById` and the per-folder list in sync.
    * (Does not change hasAttachment flags — let orchestrator fill them.)
    */
-  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[]): void {
+  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
     const ids: string[] = [];
     const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
 
@@ -155,10 +155,16 @@ export class EmailStateStore {
       return next;
     });
 
-    this.emailIdsByFolderId.update((byFolder) => ({
-      ...byFolder,
-      [String(folderId)]: ids,
-    }));
+    this.emailIdsByFolderId.update((m) => {
+      const existing = append ? (m[folderId] ?? []) : [];
+      const combined = [...existing];
+      for (const id of ids) {
+        if (!combined.includes(id)) {
+          combined.push(id);
+        }
+      }
+      return { ...m, [folderId]: combined };
+    });
 
     // seed/refresh the per-id flags cache
     this.setManyHasAttachment(flagsMap);

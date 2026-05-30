@@ -66,44 +66,52 @@ export class EmailRepo extends BaseRepository<'emails'> {
    * Get emails by folder with attachment count and has_attachment flag.
    * LEFT JOIN subquery for counts + EXISTS for boolean.
    */
-  public async getByFolderWithAttachmentFlag(user_id: string, tenant_id: string, folder_id: string): Promise<any[]> {
+  public async getByFolderWithAttachmentFlag(
+    user_id: string,
+    tenant_id: string,
+    folder_id: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<any[]> {
     const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
 
     // Subquery: SELECT email_id, COUNT(*)::int AS att_count FROM email_attachments ... GROUP BY email_id
     const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // should be aliased as 'ea'
 
-    return (
-      this.getSelect()
-        .leftJoin(ea, 'ea.email_id', 'emails.id')
-        .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
-        .leftJoin('email_read_states as ers', (join) =>
-          join
-            .onRef('ers.email_id', '=', 'emails.id')
-            .on('ers.user_id', '=', user_id)
-            .on('ers.tenant_id', '=', tenant_id)
-        )
-        .selectAll('emails')
-        .select('eh.date_sent as date_sent')
-        // numeric count (coalesced to 0)
-        .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
-        // boolean has_attachment via EXISTS (fast)
-        .select((eb) =>
-          eb
-            .exists(
-              eb
-                .selectFrom('email_attachments as a')
-                .select('a.id')
-                .whereRef('a.tenant_id', '=', 'emails.tenant_id')
-                .whereRef('a.email_id', '=', 'emails.id'),
-            )
-            .as('has_attachment'),
-        )
-        .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
-        .where('emails.tenant_id', '=', tenant_id)
-        .where((eb) => whereForFolder(eb))
-        .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc')
-        .execute()
-    );
+    let q = this.getSelect()
+      .leftJoin(ea, 'ea.email_id', 'emails.id')
+      .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
+      .leftJoin('email_read_states as ers', (join) =>
+        join
+          .onRef('ers.email_id', '=', 'emails.id')
+          .on('ers.user_id', '=', user_id)
+          .on('ers.tenant_id', '=', tenant_id)
+      )
+      .selectAll('emails')
+      .select('eh.date_sent as date_sent')
+      // numeric count (coalesced to 0)
+      .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
+      // boolean has_attachment via EXISTS (fast)
+      .select((eb) =>
+        eb
+          .exists(
+            eb
+              .selectFrom('email_attachments as a')
+              .select('a.id')
+              .whereRef('a.tenant_id', '=', 'emails.tenant_id')
+              .whereRef('a.email_id', '=', 'emails.id'),
+          )
+          .as('has_attachment'),
+      )
+      .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
+      .where('emails.tenant_id', '=', tenant_id)
+      .where((eb) => whereForFolder(eb))
+      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
+
+    if (typeof limit === 'number') q = q.limit(limit);
+    if (typeof offset === 'number') q = q.offset(offset);
+
+    return q.execute();
   }
 
   public async getByIdsInFolder(tenant_id: string, emailIds: string[], folder_id: string) {

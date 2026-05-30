@@ -60,6 +60,9 @@ export class EmailsStore {
   /** Selected folder id */
   public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
 
+  public readonly hasMore = this.folders.hasMore;
+  public readonly isLoadingMore = this.folders.isLoadingMore;
+
   /** Emails in currently selected folder */
   public readonly emailsInSelectedFolder = computed(() => {
     const fid = this.folders.currentSelectedFolderId();
@@ -175,6 +178,10 @@ export class EmailsStore {
 
   public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
     return this.actions.toggleEmailReadStatus(emailId, isRead);
+  }
+
+  public loadNextPage() {
+    return this.folders.loadNextPage();
   }
 
   public updateEmailStatus(emailId: EmailId, status: EmailStatus) {

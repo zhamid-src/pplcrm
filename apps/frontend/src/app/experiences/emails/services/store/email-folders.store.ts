@@ -45,16 +45,53 @@ export class EmailFoldersStore {
     return folders;
   }
 
+  public hasMore = signal<boolean>(true);
+  public isLoadingMore = signal<boolean>(false);
+
   public async loadEmailsForFolder(folderId: string): Promise<void> {
     const end = this._loading.begin();
+    if (folderId === this.currentSelectedFolderId()) {
+      this.hasMore.set(true);
+    }
     try {
-      const raw = await this.svc.getEmails(folderId); // raw DB-ish rows
+      const raw = await this.svc.getEmails(folderId, 40, 0); // initial load is 40
 
       const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
 
-      this.state.setEmailsForFolder(folderId, emailsFromServer);
+      this.state.setEmailsForFolder(folderId, emailsFromServer, false);
+      if (folderId === this.currentSelectedFolderId()) {
+        if (emailsFromServer.length < 40) {
+          this.hasMore.set(false);
+        } else {
+          this.hasMore.set(true);
+        }
+      }
     } finally {
       end();
+    }
+  }
+
+  public async loadNextPage(): Promise<void> {
+    const folderId = this.currentSelectedFolderId();
+    if (!folderId || this.isLoadingMore() || !this.hasMore()) return;
+
+    this.isLoadingMore.set(true);
+    try {
+      const currentIds = this.state.emailIdsByFolderId()[folderId] ?? [];
+      const offset = currentIds.length;
+      const raw = await this.svc.getEmails(folderId, 20, offset); // load 20 more
+      const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
+
+      if (folderId === this.currentSelectedFolderId()) {
+        this.state.setEmailsForFolder(folderId, emailsFromServer, true);
+        if (emailsFromServer.length < 20) {
+          this.hasMore.set(false);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load next page of emails', e);
+    } finally {
+      this.isLoadingMore.set(false);
     }
   }
 

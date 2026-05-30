@@ -106,8 +106,8 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
    * @returns Promise resolving to the emails in the folder
    */
   // TODO: paging and infinite scrolling
-  public getEmails(folderId: string) {
-    return this.api.emails.getEmails.query({ folderId });
+  public getEmails(folderId: string, limit?: number, offset?: number) {
+    return this.api.emails.getEmails.query({ folderId, limit, offset });
   }
 
   /**

@@ -18,7 +18,7 @@
     </div>
   </div>
 
-  <ul class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
     @for (email of sortedEmails(); track email.id) {
     <li
       (click)="selectEmail(email)"
@@ -46,6 +46,12 @@
         }
       </div>
       <div class="truncate font-light text-xs text-base-content/60">{{ email.preview }}</div>
+    </li>
+    }
+
+    @if (isLoadingMore()) {
+    <li class="flex justify-center p-3 border-b border-base-200">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
     </li>
     }
   </ul>
