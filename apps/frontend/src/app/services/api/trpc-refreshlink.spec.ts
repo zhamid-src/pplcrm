@@ -40,8 +40,10 @@ describe('trpc-refreshlink', () => {
         json: async () => ({
           result: {
             data: {
-              auth_token: validToken,
-              refresh_token: 'new-refresh-token',
+              json: {
+                auth_token: validToken,
+                refresh_token: 'new-refresh-token',
+              },
             },
           },
         }),
