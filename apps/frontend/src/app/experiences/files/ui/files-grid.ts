@@ -76,7 +76,7 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
             <tr class="hover:bg-base-200/30 transition-all duration-200">
               <td>
                 <div class="flex items-center gap-3">
-                  <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="5.5"></pc-icon>
+                  <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="6"></pc-icon>
                   <span class="font-semibold text-base-content">{{ file.filename }}</span>
                 </div>
               </td>
@@ -96,14 +96,14 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
                     title="Download file"
                     (click)="downloadFile(file)"
                   >
-                    <pc-icon name="arrow-down-tray" [size]="4.5"></pc-icon>
+                    <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
                   </button>
                   <button 
                     class="btn btn-sm btn-circle btn-ghost text-error" 
                     title="Delete file"
                     (click)="deleteFile(file)"
                   >
-                    <pc-icon name="trash" [size]="4.5"></pc-icon>
+                    <pc-icon name="trash" [size]="4"></pc-icon>
                   </button>
                 </div>
               </td>

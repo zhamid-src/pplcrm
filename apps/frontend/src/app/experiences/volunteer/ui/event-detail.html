@@ -19,7 +19,7 @@
         <div class="divider divider-horizontal hidden sm:block"></div>
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-            <pc-icon name="clock" class="text-primary" [size]="6.5"></pc-icon>
+            <pc-icon name="clock" class="text-primary" [size]="6"></pc-icon>
             {{ isNew() ? 'Create Volunteer Event' : detail()?.name }}
           </h1>
           <p class="text-sm text-base-content/60 mt-1">
@@ -74,7 +74,7 @@
             <div class="divider"></div>
             
             <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-              <pc-icon name="user-circle" class="text-primary" [size]="4.5"></pc-icon>
+              <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
               Organizer Contact Point
             </h4>
             <p class="text-xs text-base-content/60">
@@ -129,7 +129,7 @@
                   [ngModelOptions]="{standalone: true}"
                 />
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                  <pc-icon name="magnifying-glass" [size]="4.5"></pc-icon>
+                  <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
                 </div>
               </div>
 
@@ -238,7 +238,7 @@
                           title="Save shift edits"
                           (click)="saveShiftDetails(shift)"
                         >
-                          <pc-icon name="check-circle" [size]="5.5"></pc-icon>
+                          <pc-icon name="check-circle" [size]="6"></pc-icon>
                         </button>
                         <button 
                           type="button" 
@@ -286,13 +286,13 @@
                 title="Copy Link" 
                 (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
               >
-                <pc-icon name="document-duplicate" [size]="4.5"></pc-icon>
+                <pc-icon name="document-duplicate" [size]="5"></pc-icon>
               </button>
             </div>
             
             @if (detail()?.is_private) {
             <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
-              <pc-icon name="exclamation-circle" [size]="4.5"></pc-icon>
+              <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
               <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
             </div>
             } @else {
@@ -352,7 +352,7 @@
                 @if (saving()) {
                 <span class="loading loading-spinner loading-xs"></span>
                 }
-                <pc-icon name="check-circle" [size]="4.5"></pc-icon>
+                <pc-icon name="check-circle" [size]="5"></pc-icon>
                 {{ isNew() ? 'Create Event' : 'Save Changes' }}
               </button>
               <button type="button" class="btn btn-outline w-full" (click)="goBack()">Cancel</button>

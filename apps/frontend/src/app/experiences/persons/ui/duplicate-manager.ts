@@ -379,7 +379,7 @@ interface DuplicateGroup {
                 <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between">
                   <div class="card-body p-5">
                     <h4 class="font-bold text-base-content mb-2 flex items-center gap-2">
-                      <pc-icon name="information-circle" class="text-warning" [size]="4.5"></pc-icon>
+                      <pc-icon name="information-circle" class="text-warning" [size]="5"></pc-icon>
                       Merge Summary
                     </h4>
                     
