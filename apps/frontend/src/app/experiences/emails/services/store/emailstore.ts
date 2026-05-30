@@ -154,12 +154,25 @@ export class EmailsStore {
   }
 
   // ----------------- Read/selection helpers -----------------
+  private readTimer?: any;
+
   public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    if (this.readTimer) {
+      clearTimeout(this.readTimer);
+      this.readTimer = undefined;
+    }
+
     this.state.selectEmail(email);
     if (email) {
       const emailObj = this.state.readEmail(String(email.id));
       if (emailObj && !emailObj.is_read) {
-        void this.actions.toggleEmailReadStatus(email.id, true);
+        const targetId = email.id;
+        this.readTimer = setTimeout(() => {
+          if (this.currentSelectedEmailId() === String(targetId)) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+          this.readTimer = undefined;
+        }, 1000);
       }
     }
   }
