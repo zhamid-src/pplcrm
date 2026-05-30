@@ -12,8 +12,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
-  public add(_row: AddMarketingEmailType) {
-    return Promise.reject(new Error('Newsletters are read-only.'));
+  public add(row: AddMarketingEmailType) {
+    return this.api.newsletters.create.mutate(row);
   }
 
   public addMany(_rows: AddMarketingEmailType[]) {
@@ -28,12 +28,15 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.api.newsletters.count.query();
   }
 
-  public async delete(_id: string): Promise<boolean> {
-    return false;
+  public async delete(id: string): Promise<boolean> {
+    return this.api.newsletters.delete.mutate(id);
   }
 
-  public async deleteMany(_ids: string[]): Promise<boolean> {
-    return false;
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    for (const id of ids) {
+      await this.delete(id);
+    }
+    return true;
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -60,8 +63,12 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return [];
   }
 
-  public update(_id: string, _data: UpdateMarketingEmailType) {
-    return Promise.reject(new Error('Newsletters are read-only.'));
+  public update(id: string, data: UpdateMarketingEmailType) {
+    return this.api.newsletters.update.mutate({ id, data });
+  }
+
+  public send(id: string): Promise<any> {
+    return this.api.newsletters.send.mutate(id);
   }
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {

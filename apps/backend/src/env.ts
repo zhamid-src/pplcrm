@@ -29,6 +29,7 @@ const envSchema = z.object({
   STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  SENDGRID_API_KEY: z.string().optional(),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -61,5 +62,6 @@ export const env = {
   stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
   postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
 };
 

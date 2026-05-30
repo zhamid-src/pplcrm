@@ -9,6 +9,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
 import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
+import { NewslettersService } from '../services/newsletters-service';
 
 @Component({
   selector: 'pc-newsletter-add',
@@ -22,6 +23,7 @@ export class NewsletterAddComponent implements OnInit {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
   private readonly fb = inject(FormBuilder);
   private readonly listsSvc = inject(ListsService);
+  private readonly newslettersSvc = inject(NewslettersService);
   private readonly requiresScheduleDate = computed(() => {
     const timing = this.regularForm.get('timingMode')?.value;
     if (timing !== 'schedule') return false;
@@ -227,7 +229,7 @@ export class NewsletterAddComponent implements OnInit {
     }
   }
 
-  protected sendRegular(): void {
+  protected async sendRegular(): Promise<void> {
     this.markSummaryTouched();
 
     if (this.requiresScheduleDate()) {
@@ -248,10 +250,56 @@ export class NewsletterAddComponent implements OnInit {
       rest.timingMode === 'schedule' && scheduledDate && scheduledTime
         ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
         : null;
-    const payload = { ...rest, scheduledDate, scheduledTime, scheduledAt };
-    console.debug('Newsletter payload', payload);
-    this.alertSvc.showSuccess('Newsletter draft saved. You can finalize it from the detail view.');
-    this.close();
+
+    // Compile audience description
+    const includeListsDesc = rest.includeLists?.map(id => this.listName(id)).join(', ');
+    const includeTagsDesc = rest.includeTags?.join(', ');
+    const excludeListsDesc = rest.excludeLists?.map(id => this.listName(id)).join(', ');
+    const excludeTagsDesc = rest.excludeTags?.join(', ');
+
+    let audienceDesc = '';
+    if (includeListsDesc || includeTagsDesc) {
+      audienceDesc += `Targeting lists: [${includeListsDesc || 'None'}], tags: [${includeTagsDesc || 'None'}]`;
+    }
+    if (excludeListsDesc || excludeTagsDesc) {
+      audienceDesc += ` (Excluding lists: [${excludeListsDesc || 'None'}], tags: [${excludeTagsDesc || 'None'}])`;
+    }
+    if (!audienceDesc) {
+      audienceDesc = 'No target audience configured.';
+    }
+
+    const payload = {
+      name: rest.subject || 'Unnamed Newsletter',
+      status: rest.timingMode === 'schedule' ? ('scheduled' as const) : ('draft' as const),
+      subject: rest.subject,
+      preview_text: rest.previewText,
+      audience_description: audienceDesc,
+      target_lists: JSON.stringify({ include: rest.includeLists || [], exclude: rest.excludeLists || [] }),
+      segments: JSON.stringify({ include: rest.includeTags || [], exclude: rest.excludeTags || [] }),
+      html_content: rest.htmlContent,
+      plain_text_content: rest.plainTextContent,
+      send_date: scheduledAt ? new Date(scheduledAt) : null,
+      total_recipients: this.estimatedAudienceCount(),
+    };
+
+    try {
+      const created = await this.newslettersSvc.add(payload);
+
+      if (rest.timingMode === 'now' && created?.id) {
+        await this.newslettersSvc.send(created.id);
+        this.alertSvc.showSuccess('Newsletter sent successfully!');
+      } else {
+        this.alertSvc.showSuccess(
+          rest.timingMode === 'schedule'
+            ? 'Newsletter scheduled successfully.'
+            : 'Newsletter draft saved.'
+        );
+      }
+      this.close();
+    } catch (err: any) {
+      console.error('Failed to save or send newsletter', err);
+      this.alertSvc.showError(err.message || 'Failed to save or send newsletter.');
+    }
   }
 
   protected switchToOptions(): void {

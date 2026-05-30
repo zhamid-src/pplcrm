@@ -217,5 +217,5 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
   }
 }
 
-export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'unassign' | 'merge' | 'close' | 'reopen';
+export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'unassign' | 'merge' | 'close' | 'reopen' | 'send';
 import { QueryParams } from './base.repo';
