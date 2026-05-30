@@ -1,0 +1,264 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: persons-grid.spec.ts >> Persons Grid >> Grid Display >> should display column headers
+- Location: apps/frontend-e2e/src/persons-grid.spec.ts:126:5
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: locator('th[role="columnheader"]:has-text("First Name")')
+Expected: visible
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for locator('th[role="columnheader"]:has-text("First Name")')
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e7]:
+  - img [ref=e9]
+  - generic [ref=e10]:
+    - generic [ref=e11]: Enter your email and password to sign in
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - img [ref=e18]
+        - textbox "Email" [ref=e20]:
+          - /placeholder: Enter your email
+      - generic [ref=e21]:
+        - img [ref=e25]
+        - textbox "Password" [ref=e27]:
+          - /placeholder: Enter your password
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - checkbox "Remember me" [ref=e30] [cursor=pointer]
+          - generic [ref=e31]: Remember me
+        - link "Forgot your password?" [ref=e33] [cursor=pointer]:
+          - /url: /resetpassword
+      - button "SIGN IN" [ref=e35] [cursor=pointer]
+    - link "SIGN UP" [ref=e37] [cursor=pointer]:
+      - /url: /signup
+    - generic [ref=e39]:
+      - text: Copyright © 2024
+      - link "CampaignRaven" [ref=e40] [cursor=pointer]:
+        - /url: ""
+```
+
+# Test source
+
+```ts
+  30  |       await route.fulfill({
+  31  |         status: 200,
+  32  |         contentType: 'application/json',
+  33  |         body: JSON.stringify([{
+  34  |           result: {
+  35  |             data: {
+  36  |               rows: [
+  37  |                 {
+  38  |                   id: 'person-1',
+  39  |                   first_name: 'Alice',
+  40  |                   last_name: 'Smith',
+  41  |                   email: 'alice@example.com',
+  42  |                   mobile: '123-456-7890',
+  43  |                   home_phone: '987-654-3210',
+  44  |                   tags: ['donor', 'volunteer'],
+  45  |                   street_num: '123',
+  46  |                   apt: '4B',
+  47  |                   street1: 'Main St',
+  48  |                   street2: '',
+  49  |                   city: 'Springfield',
+  50  |                   state: 'IL',
+  51  |                   zip: '62701',
+  52  |                   country: 'USA',
+  53  |                   notes: 'Some notes here',
+  54  |                   household_id: 'household-1'
+  55  |                 },
+  56  |                 {
+  57  |                   id: 'person-2',
+  58  |                   first_name: 'Bob',
+  59  |                   last_name: 'Jones',
+  60  |                   email: 'bob@example.com',
+  61  |                   mobile: '555-555-5555',
+  62  |                   home_phone: '',
+  63  |                   tags: ['volunteer'],
+  64  |                   street_num: '456',
+  65  |                   apt: '',
+  66  |                   street1: 'Oak Ave',
+  67  |                   street2: '',
+  68  |                   city: 'Springfield',
+  69  |                   state: 'IL',
+  70  |                   zip: '62702',
+  71  |                   country: 'USA',
+  72  |                   notes: '',
+  73  |                   household_id: 'household-2'
+  74  |                 }
+  75  |               ],
+  76  |               count: 2
+  77  |             }
+  78  |           }
+  79  |         }]),
+  80  |       });
+  81  |     });
+  82  | 
+  83  |     // 3. Mock tags.getAll
+  84  |     await page.route(/\/tags\.getAll/, async (route) => {
+  85  |       await route.fulfill({
+  86  |         status: 200,
+  87  |         contentType: 'application/json',
+  88  |         body: JSON.stringify([{
+  89  |           result: {
+  90  |             data: {
+  91  |               rows: [
+  92  |                 { id: 't1', name: 'volunteer' },
+  93  |                 { id: 't2', name: 'donor' }
+  94  |               ],
+  95  |               count: 2
+  96  |             }
+  97  |           }
+  98  |         }]),
+  99  |       });
+  100 |     });
+  101 | 
+  102 |     // 4. Mock persons.update to succeed
+  103 |     await page.route(/\/persons\.update/, async (route) => {
+  104 |       await route.fulfill({
+  105 |         status: 200,
+  106 |         contentType: 'application/json',
+  107 |         body: JSON.stringify([{
+  108 |           result: {
+  109 |             data: { success: true }
+  110 |           }
+  111 |         }]),
+  112 |       });
+  113 |     });
+  114 | 
+  115 |     // Navigate to persons page (actual route is /people)
+  116 |     await page.goto('/people');
+  117 |     await page.waitForLoadState('networkidle');
+  118 |   });
+  119 | 
+  120 |   test.describe('Grid Display', () => {
+  121 |     test('should display persons grid', async ({ page }) => {
+  122 |       // Check that the grid is visible
+  123 |       await expect(page.locator('pc-persons-grid pc-datagrid')).toBeVisible();
+  124 |     });
+  125 | 
+  126 |     test('should display column headers', async ({ page }) => {
+  127 |       // Check for common column headers
+  128 |       await expect(
+  129 |         page.locator('th[role="columnheader"]:has-text("First Name")')
+> 130 |       ).toBeVisible();
+      |         ^ Error: expect(locator).toBeVisible() failed
+  131 |       await expect(
+  132 |         page.locator('th[role="columnheader"]:has-text("Email")')
+  133 |       ).toBeVisible();
+  134 |       await expect(
+  135 |         page.locator('th[role="columnheader"]:has-text("Mobile")')
+  136 |       ).toBeVisible();
+  137 |     });
+  138 | 
+  139 |     test('should display person data in rows', async ({ page }) => {
+  140 |       // Wait for data to load
+  141 |       await page.waitForSelector('tbody tr', { timeout: 10000 });
+  142 | 
+  143 |       // Check that rows are present
+  144 |       const rows = page.locator('tbody tr');
+  145 |       await expect(rows.first()).toBeVisible();
+  146 |     });
+  147 | 
+  148 |     test('should show loading state initially', async ({ page }) => {
+  149 |       // Setup a slow response to ensure loading indicator shows
+  150 |       await page.route(/\/persons\.getAllWithAddress/, async (route) => {
+  151 |         await new Promise(resolve => setTimeout(resolve, 2000));
+  152 |         await route.fulfill({
+  153 |           status: 200,
+  154 |           contentType: 'application/json',
+  155 |           body: JSON.stringify([{
+  156 |             result: {
+  157 |               data: { rows: [], count: 0 }
+  158 |             }
+  159 |           }]),
+  160 |         });
+  161 |       });
+  162 | 
+  163 |       // Reload page to catch loading state
+  164 |       await page.reload();
+  165 | 
+  166 |       // Should show loading indicator
+  167 |       await expect(page.locator('pc-icon[name="loading"]').first()).toBeVisible();
+  168 |     });
+  169 |   });
+  170 | 
+  171 |   test.describe('Grid Interactions', () => {
+  172 |     test('should allow column sorting', async ({ page }) => {
+  173 |       // Wait for grid to load
+  174 |       await page.waitForSelector('th[role="columnheader"]', { timeout: 10000 });
+  175 | 
+  176 |       // Click on a sortable column header label
+  177 |       const nameHeader = page.locator('th[role="columnheader"]:has-text("First Name")').first();
+  178 |       await nameHeader.locator('[data-header-label]').click();
+  179 | 
+  180 |       // Check for sort indicator status on the element
+  181 |       await expect(nameHeader).toHaveAttribute('aria-sort', /ascending|descending/);
+  182 |     });
+  183 | 
+  184 |     test('should allow column filtering', async ({ page }) => {
+  185 |       // Wait for grid to load
+  186 |       await page.waitForSelector('th[role="columnheader"]', { timeout: 10000 });
+  187 | 
+  188 |       // Click on filter options button
+  189 |       const filterButton = page.locator('th[role="columnheader"]:has-text("First Name") label[title="Column options"]').first();
+  190 | 
+  191 |       if (await filterButton.isVisible()) {
+  192 |         await filterButton.click();
+  193 | 
+  194 |         // Check that filter dropdown menu appears
+  195 |         const dropdownMenu = page.locator('th[role="columnheader"]:has-text("First Name") .dropdown-content').first();
+  196 |         await expect(dropdownMenu).toBeVisible();
+  197 |       }
+  198 |     });
+  199 | 
+  200 |     test('should allow row selection', async ({ page }) => {
+  201 |       // Wait for rows to load
+  202 |       await page.waitForSelector('tbody tr', { timeout: 10000 });
+  203 | 
+  204 |       // Click first row's checkbox
+  205 |       const firstRowCheckbox = page.locator('tbody tr input[type="checkbox"]').first();
+  206 |       await firstRowCheckbox.click();
+  207 | 
+  208 |       // Check that it's selected (checked)
+  209 |       await expect(firstRowCheckbox).toBeChecked();
+  210 |     });
+  211 |   });
+  212 | 
+  213 |   test.describe('Inline Editing', () => {
+  214 |     test('should allow editing person name', async ({ page }) => {
+  215 |       // Wait for rows to load
+  216 |       await page.waitForSelector('tbody tr', { timeout: 10000 });
+  217 | 
+  218 |       // Click on name cell to edit (single click matches pcEditable behavior)
+  219 |       const nameCell = page.locator('tbody tr td[data-col-id="first_name"]').first();
+  220 |       await nameCell.click();
+  221 | 
+  222 |       // Check if edit mode is activated
+  223 |       const editInput = nameCell.locator('input');
+  224 |       await expect(editInput).toBeVisible();
+  225 |       await editInput.focus();
+  226 |       await expect(editInput).toBeFocused();
+  227 |     });
+  228 | 
+  229 |     test('should save changes on Enter key', async ({ page }) => {
+  230 |       // Wait for rows to load
+```

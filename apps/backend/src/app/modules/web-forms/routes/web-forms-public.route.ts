@@ -13,16 +13,36 @@ const SUCCESS_HTML = `
   <title>Submission Successful</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
-      --accent: #6366f1;
-      --accent-glow: rgba(99, 102, 241, 0.15);
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --success: #2dd4bf;
+      --success-glow: rgba(45, 212, 191, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --success: #22c55e;
+        --success-glow: rgba(34, 197, 94, 0.15);
+      }
     }
 
     * {
@@ -32,7 +52,8 @@ const SUCCESS_HTML = `
     }
 
     body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
       background: var(--bg-gradient);
       color: var(--text-primary);
       min-height: 100vh;
@@ -52,7 +73,7 @@ const SUCCESS_HTML = `
       border-radius: 50%;
       background: var(--accent);
       filter: blur(120px);
-      opacity: 0.15;
+      opacity: 0.08;
       z-index: 0;
     }
     body::before { top: 10%; left: 15%; }
@@ -62,21 +83,34 @@ const SUCCESS_HTML = `
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-radius: 24px;
       padding: 48px 32px;
       width: 100%;
       max-width: 440px;
       text-align: center;
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--card-shadow);
       z-index: 10;
       animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
     }
 
     .icon-container {
       width: 80px;
       height: 80px;
-      background: var(--accent-glow);
-      border: 2px solid var(--accent);
+      background: var(--success-glow);
+      border: 2px solid var(--success);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -89,7 +123,7 @@ const SUCCESS_HTML = `
     .icon-container svg {
       width: 38px;
       height: 38px;
-      stroke: var(--accent);
+      stroke: var(--success);
       stroke-dasharray: 100;
       stroke-dashoffset: 100;
       stroke-width: 3px;
@@ -99,9 +133,9 @@ const SUCCESS_HTML = `
 
     h1 {
       font-size: 24px;
-      font-weight: 700;
+      font-weight: 500;
       margin-bottom: 12px;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.01em;
     }
 
     p {
@@ -118,17 +152,17 @@ const SUCCESS_HTML = `
       background: var(--accent);
       color: #ffffff;
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 500;
       text-decoration: none;
       border-radius: 12px;
       transition: all 0.2s ease;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+      box-shadow: 0 4px 12px var(--accent-glow);
     }
 
     .btn:hover {
-      background: #4f46e5;
+      background: var(--accent-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 6px 20px var(--accent-glow);
     }
 
     .btn:active {
@@ -188,16 +222,36 @@ const errorHtml = (message: string) => `
   <title>Submission Error</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
-      --accent: #ef4444;
-      --accent-glow: rgba(239, 68, 68, 0.15);
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --error: #f37373;
+      --error-glow: rgba(243, 115, 115, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --error: #ef4444;
+        --error-glow: rgba(239, 68, 68, 0.15);
+      }
     }
 
     * {
@@ -207,7 +261,8 @@ const errorHtml = (message: string) => `
     }
 
     body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
       background: var(--bg-gradient);
       color: var(--text-primary);
       min-height: 100vh;
@@ -225,9 +280,9 @@ const errorHtml = (message: string) => `
       width: 300px;
       height: 300px;
       border-radius: 50%;
-      background: var(--accent);
+      background: var(--error);
       filter: blur(120px);
-      opacity: 0.15;
+      opacity: 0.08;
       z-index: 0;
     }
     body::before { top: 10%; left: 15%; }
@@ -237,21 +292,34 @@ const errorHtml = (message: string) => `
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-radius: 24px;
       padding: 48px 32px;
       width: 100%;
       max-width: 440px;
       text-align: center;
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--card-shadow);
       z-index: 10;
       animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
     }
 
     .icon-container {
       width: 80px;
       height: 80px;
-      background: var(--accent-glow);
-      border: 2px solid var(--accent);
+      background: var(--error-glow);
+      border: 2px solid var(--error);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -264,16 +332,16 @@ const errorHtml = (message: string) => `
     .icon-container svg {
       width: 38px;
       height: 38px;
-      stroke: var(--accent);
+      stroke: var(--error);
       stroke-width: 3px;
       fill: none;
     }
 
     h1 {
       font-size: 24px;
-      font-weight: 700;
+      font-weight: 500;
       margin-bottom: 12px;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.01em;
     }
 
     p {
@@ -287,19 +355,20 @@ const errorHtml = (message: string) => `
       display: inline-block;
       width: 100%;
       padding: 14px 28px;
-      background: #374151;
+      background: var(--accent);
       color: #ffffff;
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 500;
       text-decoration: none;
       border-radius: 12px;
       transition: all 0.2s ease;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 4px 12px var(--accent-glow);
     }
 
     .btn:hover {
-      background: #4b5563;
+      background: var(--accent-hover);
       transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
     }
 
     .btn:active {
@@ -333,7 +402,7 @@ const errorHtml = (message: string) => `
   <div class="card">
     <div class="icon-container">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--accent)"/>
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
       </svg>
     </div>
     <h1>Submission Failed</h1>
@@ -420,21 +489,44 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
   <title>${formName}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --accent-glow: rgba(99, 102, 241, 0.15);
-      --card-bg: rgba(30, 41, 59, 0.65);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --input-bg: rgba(15, 23, 42, 0.6);
-      --input-border: rgba(255, 255, 255, 0.1);
-      --input-focus-border: #6366f1;
-      --input-focus-ring: rgba(99, 102, 241, 0.25);
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-focus-border: #0ea5e9;
+      --input-focus-ring: rgba(14, 165, 233, 0.15);
+      --label-color: #374151;
+      --placeholder-color: #9ca3af;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --input-bg: #0b1220;
+        --input-border: #1a2b45;
+        --input-focus-border: #3ea6ff;
+        --input-focus-ring: rgba(62, 166, 255, 0.25);
+        --label-color: #cbd5e1;
+        --placeholder-color: #4b5563;
+      }
     }
 
     * {
@@ -444,7 +536,8 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
     }
 
     body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
       background: var(--bg-gradient);
       color: var(--text-primary);
       min-height: 100vh;
@@ -464,7 +557,7 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       border-radius: 50%;
       background: var(--accent);
       filter: blur(150px);
-      opacity: 0.12;
+      opacity: 0.08;
       z-index: 0;
       pointer-events: none;
     }
@@ -480,7 +573,7 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       padding: 40px;
       width: 100%;
       max-width: 480px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--card-shadow);
       z-index: 10;
       animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       position: relative;
@@ -504,10 +597,10 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
 
     h1 {
       font-size: 26px;
-      font-weight: 700;
-      letter-spacing: -0.025em;
+      font-weight: 500;
+      letter-spacing: -0.015em;
       margin-bottom: 8px;
-      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -526,10 +619,10 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
     label {
       display: block;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
       margin-bottom: 8px;
-      color: #e2e8f0;
-      letter-spacing: 0.025em;
+      color: var(--label-color);
+      letter-spacing: 0.01em;
     }
 
     input, textarea {
@@ -542,22 +635,22 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       font-size: 14px;
       font-family: inherit;
       transition: all 0.2s ease;
+      min-height: 46px;
     }
 
     input::placeholder, textarea::placeholder {
-      color: #64748b;
+      color: var(--placeholder-color);
     }
 
     input:hover, textarea:hover {
-      border-color: rgba(255, 255, 255, 0.15);
-      background: rgba(15, 23, 42, 0.7);
+      border-color: var(--accent);
+      opacity: 0.95;
     }
 
     input:focus, textarea:focus {
       outline: none;
       border-color: var(--input-focus-border);
       box-shadow: 0 0 0 4px var(--input-focus-ring);
-      background: rgba(15, 23, 42, 0.8);
     }
 
     textarea {
@@ -576,14 +669,15 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.2s ease;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+      box-shadow: 0 4px 12px var(--accent-glow);
       margin-top: 8px;
+      min-height: 48px;
     }
 
     button:hover {
       background: var(--accent-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 6px 20px var(--accent-glow);
     }
 
     button:active {
@@ -605,6 +699,7 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
     .footer-note a {
       color: var(--accent);
       text-decoration: none;
+      font-weight: 500;
     }
 
     .footer-note a:hover {
