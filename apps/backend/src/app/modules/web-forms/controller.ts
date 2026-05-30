@@ -31,6 +31,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       redirect_url: payload.redirect_url ?? null,
       target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
       target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
       status: payload.status ?? 'active',
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
@@ -48,6 +49,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
     if (payload.target_tags !== undefined) row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
     if (payload.target_lists !== undefined) row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
     if (payload.status !== undefined) row.status = payload.status;
 
     return this.update({

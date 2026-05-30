@@ -30,6 +30,21 @@ export class FormDetailComponent implements OnInit {
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly selectedLists = signal<string[]>([]);
   protected readonly selectedTags = signal<string[]>([]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+
+  protected readonly showFirstName = computed(() => this.selectedFields().includes('first_name'));
+  protected readonly showLastName = computed(() => this.selectedFields().includes('last_name'));
+  protected readonly showMobile = computed(() => this.selectedFields().includes('mobile'));
+  protected readonly showNotes = computed(() => this.selectedFields().includes('notes'));
+
+  protected toggleField(field: string): void {
+    const current = this.selectedFields();
+    if (current.includes(field)) {
+      this.selectedFields.set(current.filter((f) => f !== field));
+    } else {
+      this.selectedFields.set([...current, field]);
+    }
+  }
 
   protected readonly formGroup = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(100)]],
@@ -42,37 +57,38 @@ export class FormDetailComponent implements OnInit {
     const id = this.formId();
     if (!id) return '';
     const apiOrigin = window.location.origin.replace(':4200', ':5000'); // Auto-detect backend port
+    const fields = this.selectedFields();
     return `<!-- PeopleCRM Embeddable Form -->
 <form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <!-- Visually hidden honeypot field to prevent spam bots -->
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-
+${fields.includes('first_name') ? `
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name</label>
     <input type="text" name="first_name" placeholder="First Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
+  </div>` : ''}${fields.includes('last_name') ? `
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name</label>
     <input type="text" name="last_name" placeholder="Last Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
+  </div>` : ''}
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
     <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
+  </div>${fields.includes('mobile') ? `
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
     <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
+  </div>` : ''}${fields.includes('notes') ? `
 
   <div style="margin-bottom: 16px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
     <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>
+  </div>` : ''}
 
-  <button type="submit" style="background-color: #6366f1; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Subscribe</button>
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Subscribe</button>
 </form>`;
   });
 
@@ -153,6 +169,7 @@ export class FormDetailComponent implements OnInit {
       target_tags: this.selectedTags().length ? this.selectedTags() : null,
       target_lists: this.selectedLists().length ? this.selectedLists() : null,
       status: (values.status as 'active' | 'archived') ?? 'active',
+      fields: this.selectedFields(),
     };
 
     try {
@@ -212,6 +229,14 @@ export class FormDetailComponent implements OnInit {
         });
         this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);
         this.selectedLists.set(Array.isArray(form.target_lists) ? form.target_lists : []);
+        
+        // Load fields configuration
+        if (form.fields) {
+          const fields = Array.isArray(form.fields) ? form.fields : JSON.parse(form.fields);
+          this.selectedFields.set(fields);
+        } else {
+          this.selectedFields.set(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+        }
       }
     } catch (err) {
       console.error('Failed to load form details', err);
