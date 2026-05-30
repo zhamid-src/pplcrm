@@ -171,6 +171,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.setStatus.mutate({ id, status });
   }
 
+  public setEmailReadStatus(id: string, isRead: boolean) {
+    return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
+  }
+
   /** Trigger email sync for connected accounts (Microsoft and/or Google) */
   public async syncEmails(): Promise<{ inserted: number }> {
     let msResult = { inserted: 0 };

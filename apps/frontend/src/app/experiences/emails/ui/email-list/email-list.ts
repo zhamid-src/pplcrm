@@ -34,7 +34,9 @@ export class EmailList {
   });
 
   constructor() {
-    // Auto-select the first email when the current selection is removed.
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
     effect(() => {
       const folderId = this.store.currentSelectedFolderId();
       const emails = this.sortedEmails();
@@ -46,15 +48,24 @@ export class EmailList {
           // The selected email was removed; clear selection so parent can react.
           this.store.selectEmail(null);
         }
+        lastFolderId = folderId;
         return;
       }
 
       if (folderId) {
-        // If nothing is selected or the current selection no longer exists in the list,
-        // automatically select the first email.
-        if (!selectedId || !emails.some((e) => e.id === selectedId)) {
+        const folderChanged = folderId !== lastFolderId;
+        lastFolderId = folderId;
+
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
           this.selectEmail(emails[0]);
         }
+      } else {
+        lastFolderId = null;
       }
     });
   }

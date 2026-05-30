@@ -183,6 +183,15 @@ export class EmailActionsStore {
     });
   }
 
+  /** Toggle read/unread status with optimistic update */
+  public async toggleEmailReadStatus(emailId: EmailId, isRead: boolean): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { is_read: isRead }, () => this.svc.setEmailReadStatus(key, isRead), {
+      refreshFolder: false,
+      refreshCounts: true,
+    });
+  }
+
   /**
    * Shared optimistic update with rollback and optional refresh of
    * current folder contents and counts.

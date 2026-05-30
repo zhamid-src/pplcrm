@@ -61,6 +61,7 @@ describe('EmailsService', () => {
         hasAttachment: { query: vi.fn() },
         hasAttachmentByEmailIds: { query: vi.fn() },
         restoreFromTrash: { mutate: vi.fn() },
+        setEmailReadStatus: { mutate: vi.fn() },
       },
       msSync: {
         syncNow: { mutate: vi.fn() },
@@ -103,6 +104,17 @@ describe('EmailsService', () => {
       expect(mockApi.emails.setFavourite.mutate).toHaveBeenCalledWith({
         id: '1',
         favourite: true,
+      });
+    });
+
+    it('should set email read status', async () => {
+      mockApi.emails.setEmailReadStatus.mutate.mockResolvedValue(undefined);
+
+      await service.setEmailReadStatus('1', true);
+
+      expect(mockApi.emails.setEmailReadStatus.mutate).toHaveBeenCalledWith({
+        id: '1',
+        isRead: true,
       });
     });
 

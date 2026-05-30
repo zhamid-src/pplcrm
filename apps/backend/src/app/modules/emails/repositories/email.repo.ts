@@ -76,6 +76,12 @@ export class EmailRepo extends BaseRepository<'emails'> {
       this.getSelect()
         .leftJoin(ea, 'ea.email_id', 'emails.id')
         .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
+        .leftJoin('email_read_states as ers', (join) =>
+          join
+            .onRef('ers.email_id', '=', 'emails.id')
+            .on('ers.user_id', '=', user_id)
+            .on('ers.tenant_id', '=', tenant_id)
+        )
         .selectAll('emails')
         .select('eh.date_sent as date_sent')
         // numeric count (coalesced to 0)
@@ -92,6 +98,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
             )
             .as('has_attachment'),
         )
+        .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
         .where('emails.tenant_id', '=', tenant_id)
         .where((eb) => whereForFolder(eb))
         .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc')
@@ -122,8 +129,14 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .groupBy('folder_id')
       .execute();
 
-    // 2) Virtual counts (tenant-wide, not grouped)
+    // 2) Virtual counts (tenant-wide, not grouped) + Inbox unread count
     const virtual = await this.getSelect()
+      .leftJoin('email_read_states as ers', (join) =>
+        join
+          .onRef('ers.email_id', '=', 'emails.id')
+          .on('ers.user_id', '=', user_id)
+          .on('ers.tenant_id', '=', tenant_id)
+      )
       .select(() => [
         sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'all_open',
@@ -140,8 +153,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
         sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'favourites',
         ),
+        sql<number>`count(*) filter (where folder_id = ${ALL_FOLDERS.INBOX} and (ers.is_read is not true))`.as(
+          'inbox_unread',
+        ),
       ])
-      .where('tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
       .executeTakeFirst();
 
     const counts: Record<string, number> = {};
@@ -150,6 +166,9 @@ export class EmailRepo extends BaseRepository<'emails'> {
     for (const row of regular) {
       counts[row.folder_id as unknown as string] = Number((row as any).count ?? 0);
     }
+
+    // Override Inbox count with the unread count
+    counts[ALL_FOLDERS.INBOX] = Number((virtual as any)?.inbox_unread ?? 0);
 
     // Virtual folders (COALESCE to 0 if tenant has no emails)
     counts[SPECIAL_FOLDERS.ALL_OPEN] = Number((virtual as any)?.all_open ?? 0);
@@ -164,8 +183,24 @@ export class EmailRepo extends BaseRepository<'emails'> {
   /**
    * Get email with headers and recipients for detailed view.
    */
-  public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string) {
-    const email = await this.getOneBy('id', { tenant_id, value: email_id });
+  public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string, user_id?: string) {
+    let query = this.getSelect()
+      .selectAll('emails')
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('emails.id', '=', email_id);
+
+    if (user_id) {
+      query = query
+        .leftJoin('email_read_states as ers', (join) =>
+          join
+            .onRef('ers.email_id', '=', 'emails.id')
+            .on('ers.user_id', '=', user_id)
+            .on('ers.tenant_id', '=', tenant_id)
+        )
+        .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'));
+    }
+
+    const email = await query.executeTakeFirst();
     if (!email) return null;
 
     const emailHeaders = await this.emailHeadersRepo.getByEmailId(tenant_id, email_id);

@@ -233,10 +233,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Return a single email with headers, recipients, and comments */
-  public async getEmailHeader(tenant_id: string, id: string) {
+  public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
     try {
       const [emailWithHeaders, comments, attachments] = await Promise.all([
-        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id),
+        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
         this.commentsRepo.getForEmail(tenant_id, id),
         this.attachmentsRepo.getByEmailId(tenant_id, id),
       ]);
@@ -399,6 +399,34 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to set status', undefined, { cause: err });
+    }
+  }
+
+  /** Update email read status for a user */
+  public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
+    try {
+      const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
+      if (!email) throw new NotFoundError('Email not found');
+
+      await this.getRepo().db
+        .insertInto('email_read_states')
+        .values({
+          tenant_id,
+          user_id,
+          email_id,
+          is_read,
+        })
+        .onConflict((oc: any) =>
+          oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
+            is_read,
+          })
+        )
+        .execute();
+
+      return { success: true, email_id, is_read };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set email read status', undefined, { cause: err });
     }
   }
 }

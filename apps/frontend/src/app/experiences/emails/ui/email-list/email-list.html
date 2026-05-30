@@ -25,15 +25,18 @@
       [class.bg-primary/10]="isSelected(email.id)"
       class="border-b border-base-200 cursor-pointer px-4 py-2 hover:bg-primary/5"
     >
-      <div class="truncate text-xs text-base-content/60 flex gap-1">
+      <div class="truncate text-xs flex gap-1 items-center" [class.text-base-content/90]="!email.is_read" [class.text-base-content/60]="email.is_read">
+        @if (!email.is_read) {
+        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
+        }
         @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1">{{ email.from_email || email.to_email }}</span>
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">{{ email.from_email || email.to_email }}</span>
         } @else {
-        <span class="truncate flex-1">No recipient</span>
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
         }
         <span class="flex-none">{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
       </div>
-      <div class="truncate font-medium flex gap-1">
+      <div class="truncate flex gap-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
         @if (email?.subject) {
         <span class="truncate flex-1">{{ email.subject }}</span>
         } @else {
