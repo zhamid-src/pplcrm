@@ -243,6 +243,18 @@
             <pc-icon name="information-circle" class="text-primary" [size]="4.5"></pc-icon>
             Dashboard Insights
           </h4>
+
+          <!-- Radial Progress resolution rate -->
+          <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
+            <div class="radial-progress text-success font-bold text-xs" [style.--value]="resolutionRate()" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+              {{ resolutionRate() }}%
+            </div>
+            <div>
+              <div class="text-xs font-bold text-base-content">Email Resolution Rate</div>
+              <div class="text-[10px] text-base-content/50">Closed emails vs total assigned</div>
+            </div>
+          </div>
+
           <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
             <p>
               • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or comment on incoming inbox messages.

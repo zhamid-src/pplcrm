@@ -10,18 +10,18 @@
   </div>
 
   <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h1 class="text-2xl font-semibold">{{ email()?.name || 'Newsletter' }}</h1>
+    <h1 class="text-2xl font-semibold text-base-content">{{ email()?.name || 'Newsletter' }}</h1>
     @if (email()?.summary) {
-    <p class="mt-2 text-sm text-base-content/70">{{ email()?.summary }}</p>
+    <p class="mt-1 text-sm text-base-content/70">{{ email()?.summary }}</p>
     }
-    <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       @for (metric of coreMetrics(); track metric.label) {
-      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat">
-          <div class="stat-title text-sm text-base-content/60">{{ metric.label }}</div>
-          <div class="stat-value text-lg font-semibold sm:text-2xl">{{ metric.value }}</div>
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ metric.label }}</div>
+          <div class="stat-value text-lg font-extrabold text-base-content mt-1 sm:text-xl">{{ metric.value }}</div>
           @if (metric.help) {
-          <div class="stat-desc text-xs text-base-content/60">{{ metric.help }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">{{ metric.help }}</div>
           }
         </div>
       </div>
@@ -30,20 +30,20 @@
   </section>
 
   <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Audience</h2>
-    <div class="mt-3 grid gap-4 sm:grid-cols-2">
-      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat">
-          <div class="stat-title text-sm text-base-content/60">Target lists / segments</div>
-          <div class="stat-value text-base font-medium sm:text-lg">{{ audienceLabel() }}</div>
-          <div class="stat-desc text-xs text-base-content/50">Primary audience selection</div>
+    <h2 class="text-lg font-semibold text-base-content">Audience</h2>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Target lists / segments</div>
+          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ audienceLabel() }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Primary audience selection</div>
         </div>
       </div>
-      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat">
-          <div class="stat-title text-sm text-base-content/60">Audience summary</div>
-          <div class="stat-value text-base font-medium sm:text-lg">{{ email()?.audience_description || '—' }}</div>
-          <div class="stat-desc text-xs text-base-content/50">Short description of the send</div>
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Audience summary</div>
+          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ email()?.audience_description || '—' }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Short description of the send</div>
         </div>
       </div>
     </div>
@@ -55,18 +55,92 @@
     <!-- Stats Cards + Funnel Grid -->
     <div class="mt-4 grid gap-6 lg:grid-cols-3">
       <!-- Stats Cards (2 cols on lg) -->
-      <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-        @for (metric of engagementMetrics(); track metric.label) {
-        <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-          <div class="stat p-4">
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ metric.label }}</div>
-            <div class="stat-value text-xl font-bold mt-1">{{ metric.value }}</div>
-            @if (metric.help) {
-            <div class="stat-desc text-[10px] text-base-content/45 mt-1">{{ metric.help }}</div>
-            }
+      <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2">
+        <!-- Open Rate Radial Card -->
+        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
+            <div class="stat-value text-xl font-extrabold text-success mt-1">
+              {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(1) : '0.0' }}%
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.unique_opens) }} unique opens
+            </div>
+          </div>
+          <div class="radial-progress text-success font-bold text-xs flex-shrink-0" [style.--value]="email()?.open_rate || 0" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+            {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(0) : '0' }}%
           </div>
         </div>
-        }
+
+        <!-- Click Rate Radial Card -->
+        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
+            <div class="stat-value text-xl font-extrabold text-accent mt-1">
+              {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(1) : '0.0' }}%
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.unique_clicks) }} unique clicks
+            </div>
+          </div>
+          <div class="radial-progress text-accent font-bold text-xs flex-shrink-0" [style.--value]="email()?.click_rate || 0" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+            {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(0) : '0' }}%
+          </div>
+        </div>
+
+        <!-- Delivered Card -->
+        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
+            <div class="stat-value text-xl font-extrabold text-info mt-1">
+              {{ formatNumber(email()?.delivered_count) }}
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.total_recipients) }} total recipients
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info flex-shrink-0">
+            <pc-icon name="envelope" [size]="6"></pc-icon>
+          </div>
+        </div>
+
+        <!-- Bounces Card -->
+        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+            <div class="stat-value text-xl font-extrabold text-warning mt-1">
+              {{ formatNumber(email()?.bounce_count) }}
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              Undelivered / dropped
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+          </div>
+        </div>
+
+        <!-- Replies, Unsubscribes, Spam complaints counts -->
+        <div class="sm:col-span-2 grid gap-4 grid-cols-3">
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Replies</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5">{{ formatNumber(email()?.reply_count) }}</div>
+            </div>
+          </div>
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70">{{ formatNumber(email()?.unsubscribe_count) }}</div>
+            </div>
+          </div>
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-error">{{ formatNumber(email()?.spam_complaint_count) }}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Funnel Chart Card -->

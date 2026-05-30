@@ -47,15 +47,6 @@ export class NewsletterDetailComponent implements OnInit {
         help: data.last_engagement_at ? `Last engagement ${this.formatDate(data.last_engagement_at)}` : undefined,
       },
       {
-        label: 'Delivered',
-        value: this.formatNumber(data.delivered_count),
-        help: `${this.formatNumber(data.total_recipients)} total recipients`,
-      },
-      {
-        label: 'Bounces',
-        value: this.formatNumber(data.bounce_count),
-      },
-      {
         label: 'Created at',
         value: this.formatDate(data.created_at) ?? '—',
         help: `Created by user ${data.createdby_id}`,
