@@ -4,20 +4,25 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { NewslettersService } from '../services/newsletters-service';
+import { NewslettersDashboardComponent } from './newsletters-dashboard';
 
 @Component({
   selector: 'pc-newsletters-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, NewslettersDashboardComponent],
   template: `
-    <pc-datagrid
-      [colDefs]="col"
-      [disableDelete]="true"
-      [disableView]="false"
-      [disableImport]="true"
-      [disableExport]="false"
-      [addRoute]="'add'"
-      plusIcon="add-newsletter"
-    ></pc-datagrid>
+    <div class="flex flex-col gap-6">
+      <pc-newsletters-dashboard [rows]="rows()"></pc-newsletters-dashboard>
+
+      <pc-datagrid
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableImport]="true"
+        [disableExport]="false"
+        [addRoute]="'add'"
+        plusIcon="add-newsletter"
+      ></pc-datagrid>
+    </div>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: NewslettersService }],
 })
