@@ -100,23 +100,15 @@
         </button>
         <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
           <li>
-            <a (click)="handleForward()"><pc-icon [size]="4" name="reply" class="scale-x-[-1]"></pc-icon> Forward</a>
-          </li>
-          <li>
-            <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
-          </li>
-          <div class="divider my-0 h-0"></div>
-          <li>
             <a (click)="handleReply()"><pc-icon [size]="4" name="reply"></pc-icon> Reply</a>
           </li>
           <li>
             <a (click)="handleReplyAll()"><pc-icon [size]="4" name="reply-all"></pc-icon> Reply All</a>
           </li>
           <li>
-            <a (click)="toggleFavourite()"
-              ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
-            >
+            <a (click)="handleForward()"><pc-icon [size]="4" name="forward" class="scale-x-[-1]"></pc-icon> Forward</a>
           </li>
+          <div class="divider my-0 h-0"></div>
           @if (!isFolderTrash()) { @if (!isFolderSpam()) {
           <li>
             <a (click)="markAsSpam()"><pc-icon name="exclamation-triangle" [size]="4"></pc-icon> Mark as spam</a>
@@ -126,6 +118,14 @@
             <a (click)="moveToInbox()"><pc-icon name="inbox" [size]="4"></pc-icon> Not spam</a>
           </li>
           } }
+          <li>
+            <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
+          </li>
+          <li>
+            <a (click)="toggleFavourite()"
+              ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
+            >
+          </li>
           <li>
             <a (click)="toggleClosed()"
               ><pc-icon [class.text-primary]="isClosed()" name="check-circle" [size]="4"></pc-icon> {{ isClosed() ?
@@ -138,9 +138,6 @@
           <div class="divider my-0 h-0"></div>
           <li>
             <a><pc-icon [size]="4" name="print"></pc-icon>Print</a>
-          </li>
-          <li>
-            <a><pc-icon [size]="4" name="arrow-top-right-on-square"></pc-icon>Open in new</a>
           </li>
         </ul>
       </div>
