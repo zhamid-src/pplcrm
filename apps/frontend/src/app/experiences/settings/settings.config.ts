@@ -137,6 +137,22 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         placeholder: 'donations@example.com, press@example.com',
         defaultValue: '',
       },
+      {
+        key: 'communications.sendgrid_api_key',
+        label: 'SendGrid API Key',
+        type: 'password',
+        placeholder: 'SG.xxxxxxxxxxxxxxxxxxxxxx',
+        defaultValue: '',
+        helper: 'API key for this organization\'s SendGrid sub-user account.',
+      },
+      {
+        key: 'communications.sendgrid_subuser_username',
+        label: 'SendGrid Subuser Username',
+        type: 'text',
+        placeholder: 'subuser_username',
+        defaultValue: '',
+        helper: 'If using a master SendGrid key, specify the subuser username for this organization.',
+      },
     ],
   },
   {
