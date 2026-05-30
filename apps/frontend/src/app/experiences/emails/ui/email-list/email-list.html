@@ -1,13 +1,21 @@
 <section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-48 bg-base-200">
   <!-- Toolbar -->
-  <div class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200">
+  <div
+    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
+  >
     <span class="text-xs font-semibold text-neutral-content">Sort</span>
     <div class="dropdown dropdown-end">
-      <label tabindex="0" class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
+      >
         {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
         <pc-icon name="chevron-down" [size]="3"></pc-icon>
       </label>
-      <ul tabindex="0" class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200">
+      <ul
+        tabindex="0"
+        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
+      >
         <li>
           <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
         </li>
@@ -22,19 +30,27 @@
     @for (email of sortedEmails(); track email.id) {
     <li
       (click)="selectEmail(email)"
+      (contextmenu)="onContextMenu($event, email)"
       [class.bg-primary/10]="isSelected(email.id)"
       class="border-b border-base-200 cursor-pointer px-4 py-2 hover:bg-primary/5"
     >
-      <div class="truncate text-xs flex gap-1 items-center" [class.text-base-content/90]="!email.is_read" [class.text-base-content/60]="email.is_read">
+      <div
+        class="truncate text-xs flex gap-1 items-center"
+        [class.text-base-content/90]="!email.is_read"
+        [class.text-base-content/60]="email.is_read"
+      >
         @if (!email.is_read) {
         <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
-        }
-        @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">{{ email.from_email || email.to_email }}</span>
+        } @if (email.from_email || email.to_email) {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read"
+          >{{ email.from_email || email.to_email }}</span
+        >
         } @else {
         <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
         }
-        <span class="flex-none">{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span>
+        <span class="flex-none"
+          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
+        >
       </div>
       <div class="truncate flex gap-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
         @if (email?.subject) {
@@ -47,12 +63,132 @@
       </div>
       <div class="truncate font-light text-xs text-base-content/60">{{ email.preview }}</div>
     </li>
-    }
-
-    @if (isLoadingMore()) {
+    } @if (isLoadingMore()) {
     <li class="flex justify-center p-3 border-b border-base-200">
       <span class="loading loading-spinner loading-sm text-primary"></span>
     </li>
     }
   </ul>
+
+  @if (showContextMenu() && contextMenuEmail()) {
+  <div
+    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
+    [style.left.px]="contextMenuPosition().x"
+    [style.top.px]="contextMenuPosition().y"
+  >
+    <!-- Section 1: Actions -->
+    @if (currentFolderId() !== ALL_FOLDERS.DRAFTS) {
+    <div class="px-1.5 py-0.5">
+      <button
+        (click)="handleReply()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="reply" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Reply</span>
+      </button>
+      <button
+        (click)="handleReplyAll()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="reply-all" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Reply All</span>
+      </button>
+      <button
+        (click)="handleForward()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="forward" [size]="5" class="text-base-content/60 scale-x-[-1]"></pc-icon>
+        <span>Forward</span>
+      </button>
+    </div>
+    <div class="border-t border-base-200/80 my-1"></div>
+    }
+
+    <!-- Section 2: Spam & Read Status -->
+    <div class="px-1.5 py-0.5">
+      @if (!isFolderTrash()) { @if (isFolderSpam()) {
+      <button
+        (click)="moveToInbox()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="inbox" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Not spam</span>
+      </button>
+      } @else {
+      <button
+        (click)="markAsSpam()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="exclamation-triangle" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Mark as spam</span>
+      </button>
+      } }
+      <button
+        (click)="toggleReadStatus()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="envelope" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Mark as {{ contextMenuEmail()!.is_read ? 'unread' : 'read' }}</span>
+      </button>
+    </div>
+    <div class="border-t border-base-200/80 my-1"></div>
+
+    <!-- Section 3: Favorite, Status & Delete -->
+    <div class="px-1.5 py-0.5">
+      <button
+        (click)="toggleFavourite()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon
+          [name]="contextMenuEmail()!.is_favourite ? 'star-filled' : 'star'"
+          [size]="5"
+          [class.text-amber-500]="contextMenuEmail()!.is_favourite"
+          [class.text-base-content/60]="!contextMenuEmail()!.is_favourite"
+        ></pc-icon>
+        <span>{{ contextMenuEmail()!.is_favourite ? 'Unstar' : 'Star' }}</span>
+      </button>
+      <button
+        (click)="toggleClosed()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon
+          name="check-circle"
+          [size]="5"
+          [class.text-success]="contextMenuEmail()!.status === 'closed'"
+          [class.text-base-content/60]="contextMenuEmail()!.status !== 'closed'"
+        ></pc-icon>
+        <span>{{ contextMenuEmail()!.status === 'closed' ? 'Mark as Open' : 'Mark as Done' }}</span>
+      </button>
+
+      @if (isFolderTrash()) {
+      <button
+        (click)="restoreFromTrash()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="restore-from-trash" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Restore to Inbox</span>
+      </button>
+      }
+
+      <button
+        (click)="deleteEmail()"
+        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon [name]="isFolderTrash() ? 'trash-forever' : 'trash'" [size]="5" class="text-error"></pc-icon>
+        <span>{{ isFolderTrash() ? 'Delete Permanently' : 'Delete' }}</span>
+      </button>
+    </div>
+    <div class="border-t border-base-200/80 my-1"></div>
+
+    <!-- Section 4: Print -->
+    <div class="px-1.5 py-0.5">
+      <button
+        class="w-full flex items-center gap-3 px-3 py-1 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+      >
+        <pc-icon name="print" [size]="5" class="text-base-content/60"></pc-icon>
+        <span>Print</span>
+      </button>
+    </div>
+  </div>
+  }
 </section>

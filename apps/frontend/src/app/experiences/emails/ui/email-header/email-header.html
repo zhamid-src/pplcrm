@@ -98,7 +98,7 @@
             />
           </svg>
         </button>
-        <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
+        <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-[1] w-48 p-0 shadow">
           <li>
             <a (click)="handleReply()"><pc-icon [size]="4" name="reply"></pc-icon> Reply</a>
           </li>
@@ -121,6 +121,7 @@
           <li>
             <a (click)="handleMarkAsUnread()"><pc-icon name="envelope" [size]="4"></pc-icon> Mark as unread</a>
           </li>
+          <div class="divider my-0 h-0"></div>
           <li>
             <a (click)="toggleFavourite()"
               ><pc-icon [name]="getFavouriteIcon()" [size]="4"></pc-icon> {{ isFavourite() ? 'Unstar' : 'Star' }}</a
