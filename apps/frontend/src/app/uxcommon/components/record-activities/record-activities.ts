@@ -94,7 +94,7 @@ export class RecordActivities {
     }, { allowSignalWrites: true });
   }
 
-  protected async loadActivities(): Promise<void> {
+  public async loadActivities(): Promise<void> {
     const ent = this.entity();
     const id = this.entityId();
     if (!ent || !id) return;
@@ -153,7 +153,36 @@ export class RecordActivities {
 
     switch (act.activity) {
       case 'create':   return `created this ${ent} record`;
-      case 'update':   return `updated this ${ent} record`;
+      case 'update': {
+        if (meta['action'] === 'add_comment') {
+          return `added a comment to this ${ent}`;
+        }
+        if (meta['action'] === 'add_subtask') {
+          return `added subtask "${meta['subtask_name']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'toggle_subtask') {
+          return `${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on this ${ent}`;
+        }
+        if (meta['action'] === 'add_attachment') {
+          return `attached file "${meta['filename']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'change_due_date') {
+          if (meta['due_at']) {
+            const parts = String(meta['due_at']).split('-');
+            let formattedDate = String(meta['due_at']);
+            if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              const dateVal = new Date(year, month, day);
+              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            return `changed the due date to ${formattedDate} on this ${ent}`;
+          }
+          return `removed the due date on this ${ent}`;
+        }
+        return `updated this ${ent} record`;
+      }
       case 'delete':   return `deleted ${ent} record${qty}`;
       case 'merge':    return `merged duplicate ${ent} records`;
       case 'import':   return `imported this ${ent}${qty}`;

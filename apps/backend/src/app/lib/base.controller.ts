@@ -51,17 +51,21 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       const rowObj = row as Record<string, unknown>;
       const actor = rowObj['createdby_id'];
       const tenant = rowObj['tenant_id'];
-      if (typeof actor === 'string' && typeof tenant === 'string') {
+      if (actor != null && tenant != null) {
         const resultObj = result as Record<string, unknown> | undefined;
         const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
+        const metadata: Record<string, any> = resultId ? { id: resultId } : {};
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
         await this.userActivity.log({
-          tenant_id: tenant,
-          user_id: actor,
+          tenant_id: String(tenant),
+          user_id: String(actor),
           activity: 'create',
           entity: String(this.repo.getTableName()),
           entity_id: resultId,
           quantity: 1,
-          metadata: resultId ? { id: resultId } : {},
+          metadata,
         }, trx);
       }
     } catch (e) {
@@ -85,10 +89,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const rowObj = firstRow as Record<string, unknown>;
         const actor = rowObj['createdby_id'];
         const tenant = rowObj['tenant_id'];
-        if (typeof actor === 'string' && typeof tenant === 'string') {
+        if (actor != null && tenant != null) {
           await this.userActivity.log({
-            tenant_id: tenant,
-            user_id: actor,
+            tenant_id: String(tenant),
+            user_id: String(actor),
             activity: 'create',
             entity: String(this.repo.getTableName()),
             quantity: rows.length,
@@ -115,10 +119,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       id: idToDelete,
     });
     try {
-      if (userId) {
+      if (userId != null) {
         await this.userActivity.log({
-          tenant_id: tenant_id as string,
-          user_id: userId,
+          tenant_id: String(tenant_id),
+          user_id: String(userId),
           activity: 'delete',
           entity: String(this.repo.getTableName()),
           entity_id: idToDelete ? String(idToDelete) : null,
@@ -218,15 +222,44 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     try {
       const rowObj = input.row as Record<string, unknown>;
       const actor = rowObj['updatedby_id'];
-      if (typeof actor === 'string') {
+      if (actor != null) {
+        const metadata: Record<string, any> = { id: input.id };
+        const resultObj = result as Record<string, unknown> | undefined;
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
+        let activity = 'update';
+        if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
+          metadata['action'] = 'change_due_date';
+          metadata['due_at'] = rowObj['due_at'];
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && 'assigned_to' in rowObj) {
+          const assigneeId = rowObj['assigned_to'];
+          if (assigneeId == null || assigneeId === '') {
+            activity = 'unassign';
+          } else {
+            activity = 'assign';
+            try {
+              const assignee = await this.repo.db.selectFrom('authusers')
+                .select(['first_name', 'last_name'])
+                .where('id', '=', Number(assigneeId) as any)
+                .executeTakeFirst();
+              if (assignee) {
+                metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
+              }
+            } catch (err) {
+              console.error('Failed to look up assignee name', err);
+            }
+          }
+        }
         await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: actor,
-          activity: 'update',
+          tenant_id: String(input.tenant_id),
+          user_id: String(actor),
+          activity: activity as any,
           entity: String(this.repo.getTableName()),
           entity_id: input.id ? String(input.id) : null,
           quantity: 1,
-          metadata: { id: input.id },
+          metadata,
         });
       }
     } catch (e) {

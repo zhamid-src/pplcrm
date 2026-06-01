@@ -184,7 +184,15 @@ import { IAuthUser } from '@common';
                   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                     <p class="text-sm font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                      {{ getActivityDescription(act) }}
+                      @if (isTaskActivity(act)) {
+                        {{ getTaskActivityPrefix(act) }}
+                        <a [routerLink]="['/tasks', act.entity_id || act.metadata?.id]" class="text-primary hover:underline font-semibold">
+                          {{ act.metadata?.task_name || 'task #' + (act.entity_id || act.metadata?.id) }}
+                        </a>
+                        {{ getTaskActivitySuffix(act) }}
+                      } @else {
+                        {{ getActivityDescription(act) }}
+                      }
                       <!-- Entity link -->
                       @if (getEntityLink(act); as link) {
                         <a
@@ -344,21 +352,59 @@ export class ActivityFeed implements OnInit {
   protected getActivityDescription(act: any): string {
     const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
     const meta = act.metadata ?? {};
+    let ent = act.entity ?? 'record';
+    const entLower = ent.toLowerCase();
+    if (entLower === 'persons' || entLower === 'people') ent = 'person';
+    else if (entLower === 'households') ent = 'household';
+    else if (entLower === 'companies') ent = 'company';
+    else if (entLower === 'tasks' || entLower === 'tasks_archived') ent = 'task';
+    else if (entLower === 'emails') ent = 'email';
+    else if (entLower === 'newsletters') ent = 'newsletter';
+
     switch (act.activity) {
-      case 'create':   return `created a new ${act.entity} record${qty}`;
-      case 'update':   return `updated the ${act.entity} record`;
-      case 'delete':   return `deleted ${act.entity} record(s)${qty}`;
-      case 'merge':    return `merged duplicate ${act.entity} records`;
-      case 'import':   return `imported data into ${act.entity}${qty}`;
-      case 'export':   return `exported ${act.entity} data${qty}`;
+      case 'create':   return `created a new ${ent} record${qty}`;
+      case 'update': {
+        if (meta['action'] === 'add_comment') {
+          return `added a comment to this ${ent}`;
+        }
+        if (meta['action'] === 'add_subtask') {
+          return `added subtask "${meta['subtask_name']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'toggle_subtask') {
+          return `${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on this ${ent}`;
+        }
+        if (meta['action'] === 'add_attachment') {
+          return `attached file "${meta['filename']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'change_due_date') {
+          if (meta['due_at']) {
+            const parts = String(meta['due_at']).split('-');
+            let formattedDate = String(meta['due_at']);
+            if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              const dateVal = new Date(year, month, day);
+              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            return `changed the due date to ${formattedDate} on this ${ent}`;
+          }
+          return `removed the due date on this ${ent}`;
+        }
+        return `updated the ${ent} record`;
+      }
+      case 'delete':   return `deleted ${ent} record(s)${qty}`;
+      case 'merge':    return `merged duplicate ${ent} records`;
+      case 'import':   return `imported data into ${ent}${qty}`;
+      case 'export':   return `exported ${ent} data${qty}`;
       case 'assign': {
         const assignee = meta['assigned_to_name'] ?? 'someone';
-        return `assigned ${act.entity} to ${assignee}`;
+        return `assigned this ${ent} to ${assignee}`;
       }
-      case 'unassign': return `unassigned ${act.entity}`;
-      case 'close':    return `closed ${act.entity}`;
-      case 'reopen':   return `reopened ${act.entity}`;
-      default:         return `performed ${act.activity} action on ${act.entity}`;
+      case 'unassign': return `unassigned this ${ent}`;
+      case 'close':    return `closed this ${ent}`;
+      case 'reopen':   return `reopened this ${ent}`;
+      default:         return `performed ${act.activity} action on ${ent}`;
     }
   }
 
@@ -456,5 +502,65 @@ export class ActivityFeed implements OnInit {
     this.selectedActivity.set('');
     this.searchStr.set('');
     this.refreshFeed();
+  }
+
+  protected isTaskActivity(act: any): boolean {
+    const entLower = (act.entity ?? '').toLowerCase();
+    return entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived';
+  }
+
+  protected getTaskActivityPrefix(act: any): string {
+    const meta = act.metadata ?? {};
+    switch (act.activity) {
+      case 'create':   return ' created a new ';
+      case 'update': {
+        if (meta['action'] === 'add_comment') {
+          return ' added a comment to ';
+        }
+        if (meta['action'] === 'add_subtask') {
+          return ` added subtask "${meta['subtask_name']}" to `;
+        }
+        if (meta['action'] === 'toggle_subtask') {
+          return ` ${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on `;
+        }
+        if (meta['action'] === 'add_attachment') {
+          return ` attached file "${meta['filename']}" to `;
+        }
+        if (meta['action'] === 'change_due_date') {
+          if (meta['due_at']) {
+            const parts = String(meta['due_at']).split('-');
+            let formattedDate = String(meta['due_at']);
+            if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              const dateVal = new Date(year, month, day);
+              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            return ` changed the due date to ${formattedDate} on `;
+          }
+          return ' removed the due date on ';
+        }
+        return ' updated ';
+      }
+      case 'delete':   return ' deleted ';
+      case 'merge':    return ' merged duplicate ';
+      case 'import':   return ' imported ';
+      case 'export':   return ' exported ';
+      case 'assign':   return ' assigned ';
+      case 'unassign': return ' unassigned ';
+      case 'close':    return ' closed ';
+      case 'reopen':   return ' reopened ';
+      default:         return ` performed ${act.activity} on `;
+    }
+  }
+
+  protected getTaskActivitySuffix(act: any): string {
+    const meta = act.metadata ?? {};
+    if (act.activity === 'assign') {
+      const assignee = meta['assigned_to_name'] ?? 'someone';
+      return ` to ${assignee}`;
+    }
+    return '';
   }
 }
