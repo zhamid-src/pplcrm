@@ -75,6 +75,7 @@ export interface Models {
   volunteer_events: VolunteerEvents;
   volunteer_shifts: VolunteerShifts;
   web_forms: WebForms;
+  background_jobs: BackgroundJobs;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -478,6 +479,24 @@ interface DataImports extends RecordType {
   households_created: number;
   metadata: Json | null;
   processed_at: Timestamp;
+  status: Generated<string>;
+  error_message: string | null;
+}
+
+export interface BackgroundJobs {
+  id: Generated<string>;
+  tenant_id: string | null;
+  queue: Generated<string>;
+  status: Generated<string>;
+  payload: Json;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  error: string | null;
+  run_at: Generated<Timestamp>;
+  locked_at: Timestamp | null;
+  locked_by: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 interface MsOauthTokens {

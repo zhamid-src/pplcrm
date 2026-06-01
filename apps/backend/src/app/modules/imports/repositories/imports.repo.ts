@@ -26,6 +26,8 @@ export type DataImportWithStats = {
   household_count: number;
   tag_assignment_count: number;
   tag_exists: boolean;
+  status: string;
+  error_message: string | null;
 };
 
 export class ImportsRepo extends BaseRepository<'data_imports'> {
@@ -100,6 +102,8 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
         'data_imports.updated_at',
         'data_imports.createdby_id',
         'data_imports.updatedby_id',
+        'data_imports.status',
+        'data_imports.error_message',
         sql<string | null>`creator.email`.as('creator_email'),
         nameExpr.as('creator_name'),
         contactCountExpr.as('contact_count'),
@@ -147,6 +151,8 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
       household_count: toNumber(row['household_count']),
       tag_assignment_count: toNumber(row['tag_assignment_count']),
       tag_exists: toBool(row['tag_exists']),
+      status: cast(row['status']) ?? 'completed',
+      error_message: cast(row['error_message']),
     };
   }
 

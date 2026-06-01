@@ -349,26 +349,13 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         skippedReported,
         fileName || undefined,
       );
-      if (res?.errorMessages?.length) {
-        console.error('Import errors', res.errorMessages);
-      }
-      const inserted = res?.inserted ?? 0;
-      const errors = res?.errors ?? 0;
+      
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const diag: string[] = [];
-      if (typeof res?.persons_total_before === 'number' && typeof res?.persons_total_after === 'number') {
-        diag.push(`Total before/after: ${res.persons_total_before} → ${res.persons_total_after}`);
-      }
-      if (typeof res?.households_created === 'number') {
-        diag.push(`Households created: ${res.households_created}`);
-      }
-      if (res?.file_name) diag.push(`File: ${res.file_name}`);
-      if (res?.tenant_id) diag.push(`Tenant: ${res.tenant_id}`);
-      if (res?.campaign_id) diag.push(`Campaign: ${res.campaign_id}`);
-      const msg = diag.join(' • ');
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+      
       this.importSummary.set({
-        inserted,
-        errors,
+        inserted: 0,
+        errors: 0,
         skipped,
         tag: res?.tag,
         failed: false,

@@ -154,7 +154,10 @@ function importMany() {
     file_name: z.string().trim().min(1).max(255).optional(),
   });
 
-  return authProcedure.input(Input).mutation(({ input, ctx }) => personsService.importRows(input, ctx.auth));
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => {
+    ctx.res.status(202);
+    return personsService.importRows(input, ctx.auth);
+  });
 }
 
 function findPotentialDuplicates() {
