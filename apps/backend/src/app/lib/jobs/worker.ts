@@ -3,6 +3,11 @@ import { PersonsService } from '../../modules/persons/services/persons.service';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { ListsController } from '../../modules/lists/controller';
 import { ActivityController } from '../../modules/activity/controller';
+import { GoogleOAuthService } from '../../modules/google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../modules/google-sync/google-sync.service';
+import { MsOAuthService } from '../../modules/ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../modules/ms-sync/ms-sync.service';
+import { env } from '../../../env';
 import { sql } from 'kysely';
 
 export class BackgroundJobWorker {
@@ -19,7 +24,123 @@ export class BackgroundJobWorker {
     this.ensureCleanupJobScheduled().catch((err) =>
       console.error('Failed to ensure cleanup job scheduled:', err)
     );
+    this.ensureSyncSchedulerJobScheduled().catch((err) =>
+      console.error('Failed to ensure sync scheduler job scheduled:', err)
+    );
     this.poll();
+  }
+
+  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
+    try {
+      const existing = await this.db
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
+        .executeTakeFirst();
+      if (!existing) {
+        console.log('Scheduling sync scheduler background job…');
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    } catch (err) {
+      console.error('Failed to ensure sync scheduler job scheduled:', err);
+    }
+  }
+
+  private async queueUserSyncJobs(): Promise<void> {
+    try {
+      // Find all connected Google accounts
+      const googleTokens = await this.db
+        .selectFrom('google_oauth_tokens')
+        .select(['user_id', 'tenant_id'])
+        .execute();
+
+      for (const token of googleTokens) {
+        const userId = String(token.user_id);
+        const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+        
+        // Check if there is already a pending or processing sync job for this user
+        const existing = await this.db
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'google_sync')
+          .where(sql`payload->>'userId'`, '=', userId)
+          .executeTakeFirst();
+
+        if (!existing) {
+          console.log(`Auto-scheduling Google sync job for user ${userId}`);
+          await this.db
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: tenantId as any,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'google_sync',
+                userId,
+                tenantId,
+                requestedBy: 'system',
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      }
+
+      // Find all connected Microsoft accounts
+      const msTokens = await this.db
+        .selectFrom('ms_oauth_tokens')
+        .select(['user_id', 'tenant_id'])
+        .execute();
+
+      for (const token of msTokens) {
+        const userId = String(token.user_id);
+        const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+
+        // Check if there is already a pending or processing sync job for this user
+        const existing = await this.db
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'ms_sync')
+          .where(sql`payload->>'userId'`, '=', userId)
+          .executeTakeFirst();
+
+        if (!existing) {
+          console.log(`Auto-scheduling MS sync job for user ${userId}`);
+          await this.db
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: tenantId as any,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'ms_sync',
+                userId,
+                tenantId,
+                requestedBy: 'system',
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to queue user sync jobs:', err);
+    }
   }
 
   private async ensureCleanupJobScheduled(): Promise<void> {
@@ -131,6 +252,37 @@ export class BackgroundJobWorker {
             max_attempts: 3,
           })
           .execute();
+      } else if (payload.type === 'schedule_sync_jobs') {
+        await this.queueUserSyncJobs();
+
+        // Schedule next schedule_sync_jobs job 10 minutes later
+        await this.db.insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+            run_at: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes later
+            max_attempts: 3,
+          })
+          .execute();
+      } else if (payload.type === 'google_sync') {
+        const oauthSvc = new GoogleOAuthService(this.db as any, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+        const syncSvc = new GoogleSyncService(this.db as any, oauthSvc);
+        await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+      } else if (payload.type === 'ms_sync') {
+        const oauthSvc = new MsOAuthService(this.db as any, {
+          clientId: env.msClientId ?? '',
+          clientSecret: env.msClientSecret ?? '',
+          tenantId: env.msTenantId ?? 'common',
+          redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+        });
+        const syncSvc = new MsSyncService(this.db as any, oauthSvc);
+        await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
@@ -262,6 +414,21 @@ export class BackgroundJobWorker {
               .execute();
           } catch (schedErr) {
             console.error('Failed to reschedule failed cleanup job:', schedErr);
+          }
+        } else if (payload.type === 'schedule_sync_jobs') {
+          try {
+            await this.db.insertInto('background_jobs' as any)
+              .values({
+                tenant_id: null,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+                run_at: new Date(Date.now() + 10 * 60 * 1000),
+                max_attempts: 3,
+              })
+              .execute();
+          } catch (schedErr) {
+            console.error('Failed to reschedule failed sync scheduler job:', schedErr);
           }
         }
       }

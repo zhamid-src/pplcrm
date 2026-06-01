@@ -13,6 +13,36 @@ import { EmailIngesterService, IngestableEmail } from '../emails/services/email-
 const MAX_MESSAGES_PER_SYNC = 50;
 
 /**
+ * Helper to call Microsoft Graph API and automatically retry if rate limited (429).
+ */
+async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await callFn();
+    } catch (err: any) {
+      if (err?.statusCode === 429 && attempt <= maxRetries) {
+        let delayMs = 5000;
+        const retryAfter = err?.headers?.get?.('Retry-After') || err?.headers?.['retry-after'];
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed)) {
+            delayMs = parsed * 1000;
+          }
+        } else {
+          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+        }
+        console.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
  * Service that pulls emails from Microsoft Graph API and stores them
  * in the existing pplcrm email tables using EmailIngesterService.
  */
@@ -75,8 +105,9 @@ export class MsSyncService {
       let hasMore = true;
 
       while (pageUrl && hasMore) {
+        const url = pageUrl;
         try {
-          const response: any = await client.api(pageUrl).get();
+          const response: any = await graphCallWithRetry(() => client.api(url).get());
           const messages = response.value ?? [];
           allMessages.push(...messages);
 
@@ -182,7 +213,7 @@ export class MsSyncService {
     const hasCid = bodyHtml && bodyHtml.includes('cid:');
     if (msg.hasAttachments || hasCid) {
       try {
-        const attRes = await client.api(`/me/messages/${msId}/attachments`).get();
+        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
         graphAttachments = attRes.value ?? [];
       } catch (err) {
         console.error(`Failed to fetch attachments for message ${msId}:`, err);

@@ -12,6 +12,38 @@ import { ALL_FOLDERS } from 'common/src/lib/emails';
 const MAX_MESSAGES_PER_SYNC = 50;
 
 /**
+ * Helper to fetch a URL and automatically retry if rate limited (429).
+ */
+async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    const res = await fetch(url, init);
+    if (res.status === 429 && attempt <= maxRetries) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      let delayMs = 5000;
+      if (retryAfterHeader) {
+        const parsed = parseInt(retryAfterHeader, 10);
+        if (!isNaN(parsed)) {
+          delayMs = parsed * 1000;
+        } else {
+          const parsedDate = Date.parse(retryAfterHeader);
+          if (!isNaN(parsedDate)) {
+            delayMs = Math.max(0, parsedDate - Date.now());
+          }
+        }
+      } else {
+        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+      }
+      console.warn(`Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    return res;
+  }
+}
+
+/**
  * Service that pulls emails from Gmail API and stores them in the database
  * using the shared EmailIngesterService.
  */
@@ -84,7 +116,7 @@ export class GoogleSyncService {
         });
         if (pageToken) urlParams.set('pageToken', pageToken);
 
-        const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`, {
+        const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
 
@@ -100,11 +132,6 @@ export class GoogleSyncService {
         if (data.nextPageToken) {
           pageToken = data.nextPageToken;
         } else {
-          hasMore = false;
-        }
-
-        // Hard cap at 150 messages fetched per folder during a sync run to prevent timeout/rate limit issues
-        if (allMessageIds.length >= 150) {
           hasMore = false;
         }
       }
@@ -165,7 +192,7 @@ export class GoogleSyncService {
     requestedBy: string,
     folderId: string,
   ): Promise<boolean> {
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
+    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -214,7 +241,7 @@ export class GoogleSyncService {
       contentId: att.cid,
       isInline: att.isInline,
       fetchContent: async () => {
-        const attRes = await fetch(
+        const attRes = await fetchWithRetry(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
           { headers: { Authorization: `Bearer ${accessToken}` } },
         );
