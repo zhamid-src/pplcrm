@@ -166,15 +166,25 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'tasks',
-    loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+        data: { shouldReuse: true, key: 'tasksgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
   },
   {
     path: 'board',
     loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-  },
-  {
-    path: 'tasks/:id',
-    loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
   },
 
   {
