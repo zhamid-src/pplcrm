@@ -31,12 +31,12 @@
           <!-- Elegant Contact Card -->
           <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
             <!-- Decorative Card Header Gradient -->
-            <div class="h-24 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+            <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
             
             <div class="px-6 pb-6 relative flex flex-col items-center">
               <!-- Avatar Chip -->
               <div class="avatar placeholder -mt-12 mb-3">
-                <div class="bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg">
+                <div class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg">
                   {{ initials() }}
                 </div>
               </div>
@@ -268,76 +268,94 @@
         <div class="lg:col-span-2 flex flex-col gap-6">
 
           <!-- Dashboard Stats Grid -->
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- Stats: Emails Sent -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-indigo-500/10 text-indigo-500">
-                <pc-icon name="paper-airplane" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Emails Sent</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">{{ activityData().emails.length }}</span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Emails Sent</span>
+                  <h3 class="text-2xl font-bold text-indigo-500 mt-1">{{ activityData().emails.length }}</h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">Total emails sent</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-indigo-500">
+                  <pc-icon name="paper-airplane" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
 
             <!-- Stats: Emails Opened -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-success/10 text-success">
-                <pc-icon name="eye" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Opened</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">
-                  {{ activityData().newsletters.filter(n => n.event_type === 'open' || n.event_type === 'click').length }}
-                </span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Opened</span>
+                  <h3 class="text-2xl font-bold text-emerald-500 mt-1">
+                    {{ activityData().newsletters.filter(n => n.event_type === 'open' || n.event_type === 'click').length }}
+                  </h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">Opens & clicks</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-emerald-500">
+                  <pc-icon name="eye" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
 
             <!-- Stats: Active Lists -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-warning/10 text-warning">
-                <pc-icon name="queue-list" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Active Lists</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">0</span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Active Lists</span>
+                  <h3 class="text-2xl font-bold text-amber-500 mt-1">0</h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">List subscriptions</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-500">
+                  <pc-icon name="queue-list" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
 
             <!-- Stats: Volunteer Shifts -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-purple-500/10 text-purple-500">
-                <pc-icon name="volunteer" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Volunteered</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">
-                  {{ volunteerStats()?.shifts_count || 0 }} <span class="text-xs font-light text-base-content/50">shifts</span>
-                </span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Volunteered</span>
+                  <h3 class="text-2xl font-bold text-purple-500 mt-1">
+                    {{ volunteerStats()?.shifts_count || 0 }}
+                  </h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">Shifts completed</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-purple-500">
+                  <pc-icon name="volunteer" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
 
             <!-- Stats: Volunteer Hours -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-pink-500/10 text-pink-500">
-                <pc-icon name="clock" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Total Hours</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">
-                  {{ volunteerStats()?.total_hours || 0.0 }} <span class="text-xs font-light text-base-content/50">hrs</span>
-                </span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Total Hours</span>
+                  <h3 class="text-2xl font-bold text-pink-500 mt-1">
+                    {{ volunteerStats()?.total_hours || 0.0 }}
+                  </h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">Hours logged</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-pink-500">
+                  <pc-icon name="clock" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
 
             <!-- Stats: Donations -->
-            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
-              <div class="p-3 rounded-2xl bg-error/10 text-error">
-                <pc-icon name="currency-dollar" [size]="6"></pc-icon>
-              </div>
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Donations</span>
-                <span class="text-2xl font-bold text-base-content leading-none mt-1">$0</span>
+            <div class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="card-body p-5 flex flex-row items-center justify-between">
+                <div>
+                  <span class="text-xs text-base-content/50 uppercase font-semibold">Donations</span>
+                  <h3 class="text-2xl font-bold text-emerald-500 mt-1">$0</h3>
+                  <p class="text-[10px] text-base-content/40 mt-0.5">Financial support</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-emerald-500">
+                  <pc-icon name="currency-dollar" [size]="6"></pc-icon>
+                </div>
               </div>
             </div>
           </div>
