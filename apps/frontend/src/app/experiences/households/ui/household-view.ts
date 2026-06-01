@@ -2,7 +2,7 @@
  * @file Component for viewing individual household records (read-only mode).
  */
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 import { type IAuthUser } from '@common';
@@ -67,6 +67,15 @@ export class HouseholdView implements OnInit {
 
   private mapInitialized = false;
 
+  @ViewChild('mapContainer')
+  set mapContainer(elRef: ElementRef | undefined) {
+    if (elRef) {
+      void this.initMap(elRef.nativeElement);
+    } else {
+      this.mapInitialized = false;
+    }
+  }
+
   // Active tab state
   protected activeTab = signal<'members' | 'activity' | 'details'>('members');
 
@@ -104,11 +113,6 @@ export class HouseholdView implements OnInit {
       // 3. Load people in household count
       const count = await this.householdsSvc.getPeopleCount(this.id);
       this.peopleCount.set(count);
-
-      // 4. Initialize Google Map if lat/lng are present
-      if (this.hasMap()) {
-        setTimeout(() => void this.initMap(), 0);
-      }
     } catch (err) {
       this.alertSvc.showError('Failed to load household details: ' + String(err));
     } finally {
@@ -116,31 +120,28 @@ export class HouseholdView implements OnInit {
     }
   }
 
-  private async initMap() {
+  private async initMap(mapEl: HTMLElement) {
     const h = this.household();
     if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
 
     try {
       await this.loader.importLibrary('maps');
-      const mapEl = document.getElementById('household-map');
-      if (mapEl) {
-        const center = { lat: Number(h.lat), lng: Number(h.lng) };
-        const map = new google.maps.Map(mapEl, {
-          center,
-          zoom: 15,
-          disableDefaultUI: false,
-          zoomControl: true,
-          streetViewControl: false,
-          mapTypeControl: false,
-        });
+      const center = { lat: Number(h.lat), lng: Number(h.lng) };
+      const map = new google.maps.Map(mapEl, {
+        center,
+        zoom: 15,
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+      });
 
-        new google.maps.Marker({
-          position: center,
-          map,
-          title: this.addressString(),
-        });
-        this.mapInitialized = true;
-      }
+      new google.maps.Marker({
+        position: center,
+        map,
+        title: this.addressString(),
+      });
+      this.mapInitialized = true;
     } catch (err) {
       console.error('Failed to load Google Map:', err);
     }
