@@ -32,8 +32,8 @@ export class NotificationsRepo extends BaseRepository<'notifications'> {
     return query.execute();
   }
 
-  public async markAllRead(tenant_id: string, user_id: string, trx?: Transaction<Models>) {
-    return this.getUpdate(trx)
+  public async markAllRead(tenant_id: string, user_id: string, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
       .set({ read: true })
       .where('tenant_id', '=', tenant_id)
       .where('user_id', '=', user_id)

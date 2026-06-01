@@ -9,7 +9,7 @@ export const AddTaskObj = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: idSchema.optional(),
+  assigned_to: idSchema.nullable().optional(),
 });
 
 export const TasksObj = z.object({
@@ -21,7 +21,7 @@ export const TasksObj = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: z.string().optional(),
+  assigned_to: z.string().nullable().optional(),
 });
 
 export const UpdateTaskObj = z.object({
@@ -32,5 +32,5 @@ export const UpdateTaskObj = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
-  assigned_to: idSchema.optional(),
+  assigned_to: idSchema.nullable().optional(),
 });
