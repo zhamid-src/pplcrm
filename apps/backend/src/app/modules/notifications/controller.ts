@@ -7,8 +7,8 @@ export class NotificationsController extends BaseController<'notifications', Not
     super(new NotificationsRepo());
   }
 
-  public async getLatest(auth: IAuthKeyPayload) {
-    return this.getRepo().getLatestForUser(auth.tenant_id, auth.user_id);
+  public async getLatest(auth: IAuthKeyPayload, limit?: number, offset?: number) {
+    return this.getRepo().getLatestForUser(auth.tenant_id, auth.user_id, limit, offset);
   }
 
   public async getUnreadCount(auth: IAuthKeyPayload) {

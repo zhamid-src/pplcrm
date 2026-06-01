@@ -3,8 +3,8 @@ import { TRPCService } from './trpc-service';
 
 @Service()
 export class NotificationsService extends TRPCService<'notifications'> {
-  public getLatest() {
-    return this.api.notifications.getLatest.query();
+  public getLatest(options?: { limit?: number; offset?: number }) {
+    return this.api.notifications.getLatest.query(options);
   }
 
   public getUnreadCount() {

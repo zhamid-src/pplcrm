@@ -19,8 +19,11 @@ describe('Navbar Component', () => {
   let mockSearchSvc: any;
   let mockSidebarSvc: any;
   let mockThemeSvc: any;
+  let mockNotificationsSvc: any;
+  let initNotificationsSpy: any;
 
   beforeEach(async () => {
+    initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockImplementation(async () => {});
     
     mockAuthSvc = {
       signOut: vi.fn(),
@@ -49,7 +52,7 @@ describe('Navbar Component', () => {
       toggleTheme: vi.fn()
     };
 
-    const mockNotificationsSvc = {
+    mockNotificationsSvc = {
       getLatest: vi.fn().mockResolvedValue([]),
       getUnreadCount: vi.fn().mockResolvedValue(0),
       markRead: vi.fn().mockResolvedValue(undefined),
@@ -76,6 +79,8 @@ describe('Navbar Component', () => {
 
     fixture = TestBed.createComponent(Navbar);
     component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
   });
 
   it('should create the component', () => {
@@ -188,5 +193,115 @@ describe('Navbar Component', () => {
     
     expect(component['searchBarVisible']()).toBe(false);
     expect(component['searchStr']()).toBe('');
+  });
+
+  it('should fetch initial notifications and count on creation', async () => {
+    initNotificationsSpy.mockRestore();
+
+    mockNotificationsSvc.getUnreadCount.mockResolvedValue(3);
+    mockNotificationsSvc.getLatest.mockResolvedValue([{ id: '1', title: 'N1' }]);
+
+    await component['initNotifications']();
+
+    expect(component.unreadCount()).toBe(3);
+    expect(component.notifications()).toEqual([{ id: '1', title: 'N1' }]);
+    expect(component.hasMore()).toBe(false);
+  });
+
+  it('should fetch new notifications if unread count increases during polling', async () => {
+    component.unreadCount.set(2);
+    component.notifications.set([{ id: 'old', title: 'Old' }]);
+
+    mockNotificationsSvc.getUnreadCount.mockResolvedValue(4);
+    mockNotificationsSvc.getLatest.mockResolvedValue([
+      { id: '1', title: 'New 1' },
+      { id: '2', title: 'New 2' }
+    ]);
+
+    await component['refreshCount']();
+
+    expect(component.unreadCount()).toBe(4);
+    expect(component.notifications()).toEqual([
+      { id: '1', title: 'New 1' },
+      { id: '2', title: 'New 2' }
+    ]);
+  });
+
+  it('should load more notifications and append non-duplicate items', async () => {
+    mockNotificationsSvc.getLatest.mockClear();
+    component.notifications.set([{ id: '1', title: 'Notif 1' }]);
+    component.hasMore.set(true);
+
+    mockNotificationsSvc.getLatest.mockResolvedValue([
+      { id: '1', title: 'Notif 1' },
+      { id: '2', title: 'Notif 2' }
+    ]);
+
+    await component['loadMore']();
+
+    expect(mockNotificationsSvc.getLatest).toHaveBeenCalledWith({ limit: 5, offset: 1 });
+    expect(component.notifications()).toEqual([
+      { id: '1', title: 'Notif 1' },
+      { id: '2', title: 'Notif 2' }
+    ]);
+    expect(component.hasMore()).toBe(false);
+  });
+
+  it('should update local state when clickNotification is called and mark notification read', async () => {
+    const notif = { id: 'notif-1', read: false, link: '/tasks' };
+    component.notifications.set([notif]);
+    component.unreadCount.set(1);
+
+    vi.spyOn(component as any, 'closeDropdown').mockImplementation(() => {});
+
+    await component['clickNotification'](notif);
+
+    expect(mockNotificationsSvc.markRead).toHaveBeenCalledWith('notif-1');
+    expect(component.notifications()[0]?.read).toBe(true);
+    expect(component.unreadCount()).toBe(0);
+  });
+
+  it('should update local state and mark all as read when markAllAsRead is called', async () => {
+    component.notifications.set([
+      { id: '1', read: false },
+      { id: '2', read: false }
+    ]);
+    component.unreadCount.set(2);
+
+    const event = new Event('click');
+    await component['markAllAsRead'](event);
+
+    expect(mockNotificationsSvc.markAllRead).toHaveBeenCalled();
+    expect(component.notifications().every(n => n.read)).toBe(true);
+    expect(component.unreadCount()).toBe(0);
+  });
+
+  it('should set isPulsing to true on initNotifications if count > 0', async () => {
+    initNotificationsSpy.mockRestore();
+    mockNotificationsSvc.getUnreadCount.mockResolvedValue(3);
+    mockNotificationsSvc.getLatest.mockResolvedValue([]);
+
+    await component['initNotifications']();
+
+    expect(component.unreadCount()).toBe(3);
+    expect(component.isPulsing()).toBe(true);
+  });
+
+  it('should set isPulsing to true on refreshCount if count increases', async () => {
+    component.unreadCount.set(2);
+    component.isPulsing.set(false);
+    mockNotificationsSvc.getUnreadCount.mockResolvedValue(3);
+    mockNotificationsSvc.getLatest.mockResolvedValue([]);
+
+    await component['refreshCount']();
+
+    expect(component.unreadCount()).toBe(3);
+    expect(component.isPulsing()).toBe(true);
+  });
+
+  it('should clear isPulsing on onNotificationOpen', () => {
+    component.isPulsing.set(true);
+    component['onNotificationOpen']();
+    expect(component.isPulsing()).toBe(false);
   });
 });
