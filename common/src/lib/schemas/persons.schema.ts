@@ -13,6 +13,10 @@ export const PersonsObj = z.object({
   mobile: z.string(),
   notes: z.string(),
   json: z.string(),
+  linkedin: z.string().nullable().optional(),
+  twitter: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
+  instagram: z.string().nullable().optional(),
 });
 
 export const UpdateHouseholdsObj = addressSchema.extend({
@@ -34,4 +38,8 @@ export const UpdatePersonsObj = z.object({
   mobile: phoneSchema('Mobile phone'),
   notes: notesSchema,
   json: jsonSchema,
+  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
+  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
+  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
+  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
 });

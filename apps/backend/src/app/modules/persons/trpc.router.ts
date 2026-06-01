@@ -87,6 +87,12 @@ function getById() {
     .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
+function getActivity() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
 // Distinct tags
 function getDistinctTags() {
   return authProcedure
@@ -170,6 +176,7 @@ export const PersonsRouter = router({
   import: importMany(),
   getTags: getTags(),
   getById: getById(),
+  getActivity: getActivity(),
   attachTag: attachTag(),
   detachTag: detachTag(),
   delete: deleteOne(),

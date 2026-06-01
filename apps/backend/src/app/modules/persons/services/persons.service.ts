@@ -122,6 +122,94 @@ export class PersonsService {
     return result;
   }
 
+  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
+    if (!html) return '';
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  }
+
+  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as any;
+    if (!person) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Person not found',
+      });
+    }
+
+    const emails: string[] = [];
+    if (person.email) emails.push(person.email.trim().toLowerCase());
+    if (person.email2) emails.push(person.email2.trim().toLowerCase());
+
+    if (emails.length === 0) {
+      return {
+        emails: [],
+        newsletters: [],
+      };
+    }
+
+    const db = this.personsRepo.db;
+
+    // 1. Fetch email conversations (sent and received)
+    const conversations = await db
+      .selectFrom('emails')
+      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
+      .selectAll('emails')
+      .select('email_bodies.body_html as body_html')
+      .where('emails.tenant_id', '=', auth.tenant_id)
+      .where((eb) =>
+        eb.or([
+          eb('emails.from_email', 'in', emails),
+          eb('emails.to_email', 'in', emails),
+        ])
+      )
+      .orderBy('emails.created_at', 'desc')
+      .limit(50)
+      .execute();
+
+    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
+    const newsletterEvents = await db
+      .selectFrom('newsletter_events')
+      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
+      .select([
+        'newsletter_events.id',
+        'newsletter_events.event_type',
+        'newsletter_events.timestamp',
+        'newsletter_events.url',
+        'newsletters.subject as newsletter_subject',
+        'newsletters.name as newsletter_name',
+      ])
+      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
+      .where('newsletter_events.email', 'in', emails)
+      .orderBy('newsletter_events.timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    return {
+      emails: conversations.map((mail) => {
+        let snippet = '';
+        if (mail.body_html) {
+          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
+        }
+        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
+          snippet = mail.preview;
+        }
+        return {
+          ...mail,
+          preview: snippet,
+        };
+      }),
+      newsletters: newsletterEvents,
+    };
+  }
+
   public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
     const row = {
       name,

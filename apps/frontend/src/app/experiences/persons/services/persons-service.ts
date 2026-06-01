@@ -229,6 +229,13 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
+   * Get transactional emails and newsletter activities for a person.
+   */
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  /**
    * Get tags for a person.
    *
    * @param id - Person ID
