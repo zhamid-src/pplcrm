@@ -24,6 +24,7 @@ import { Icon } from '@icons/icon';
   styleUrl: './tagitem.css',
   template: `<div
     class="badge rounded-lg px-0 gap-1 pl-2 bordered animate-flash"
+    [class.badge-compact]="compact()"
     [style.background]="background() || null"
     [style.color]="textColor()"
     [style.borderColor]="borderColor()"
@@ -50,6 +51,7 @@ export class TagItem {
   public readonly click = output<string>();
   public readonly close = output<string>();
 
+  public compact = input<boolean>(false);
   public canDelete = input<boolean>(true);
   public invisible = input<Signal<boolean>>(signal(false));
   public name = input.required<string>();

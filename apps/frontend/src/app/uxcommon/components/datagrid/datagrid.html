@@ -305,6 +305,7 @@
               [type]="col.cellRendererParams?.tagType || 'tag'"
               [readonly]="true"
               [canDelete]="false"
+              [compact]="true"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
             } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else {
