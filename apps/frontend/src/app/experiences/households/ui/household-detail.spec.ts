@@ -144,6 +144,10 @@ describe('HouseholdDetail', () => {
         zip: '',
         country: '',
         notes: '',
+        formatted_address: null,
+        type: null,
+        lat: null,
+        lng: null,
       });
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Household added');
       expect(mockHouseholdsSvc.triggerRefresh).toHaveBeenCalled();
@@ -155,7 +159,7 @@ describe('HouseholdDetail', () => {
       await setupTestBed('edit');
     });
 
-    it('should load household details, tags, and people count on init', async () => {
+    it('should load household details and tags on init', async () => {
       await component.ngOnInit();
       fixture.detectChanges();
 
@@ -163,14 +167,12 @@ describe('HouseholdDetail', () => {
       expect(component['id']).toBe('123');
       expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
       expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123', 'tag');
-      expect(mockHouseholdsSvc.getPeopleCount).toHaveBeenCalledWith('123');
 
       const payload = component['payload']();
       expect(payload.city).toBe('Mountain View');
       expect(payload.street1).toBe('Amphitheatre Pkwy');
       expect(payload.notes).toBe('Google HQ');
       expect(component['tags']).toEqual(expect.arrayContaining(['donor', 'volunteer']));
-      expect(component['peopleInHouseholdCount']()).toBe(3);
       expect(component['addressString']()).toBe('1600 Amphitheatre Pkwy, Mountain View, CA');
     });
 
@@ -257,6 +259,10 @@ describe('HouseholdDetail', () => {
         zip: '94043',
         country: 'US',
         notes: 'Updated Google HQ Note',
+        formatted_address: '1600 Amphitheatre Pkwy, Mountain View, CA',
+        type: 'street_address',
+        lat: 37.422,
+        lng: -122.084,
       });
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Household updated successfully.');
       expect(mockHouseholdsSvc.triggerRefresh).toHaveBeenCalled();

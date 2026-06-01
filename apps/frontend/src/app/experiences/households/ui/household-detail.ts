@@ -3,7 +3,7 @@
  */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -11,9 +11,7 @@ import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from 'common/src/lib/kysely.models';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
@@ -24,7 +22,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, PeopleInHousehold, Icon, RecordActivities],
+  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, Icon, RouterModule],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
@@ -108,9 +106,6 @@ export class HouseholdDetail implements OnInit {
   protected id: string | null = null;
   protected isLoading = this._loading.visible;
 
-  /** Count of people linked to the household */
-  protected peopleInHouseholdCount = signal(0);
-
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
 
@@ -178,13 +173,8 @@ export class HouseholdDetail implements OnInit {
     return this.household()?.updated_at;
   }
 
-  /**
-   * Save the household, calling either update or add depending on mode
-   */
   protected save(done?: () => void) {
     const raw = this.payload();
-    // Explicitly pick only schema-valid fields — extra form fields
-    // (formatted_address, type, lat, lng, tags, metadata) would cause Zod errors.
     const data: UpdateHouseholdsType = {
       home_phone: raw.home_phone,
       street_num: raw.street_num,
@@ -196,6 +186,10 @@ export class HouseholdDetail implements OnInit {
       zip: raw.zip,
       country: raw.country,
       notes: raw.notes,
+      formatted_address: raw.formatted_address || null,
+      type: raw.type || null,
+      lat: raw.lat || null,
+      lng: raw.lng || null,
     };
     return this.id ? this.update(data, done) : this.add(data, done);
   }
@@ -297,9 +291,6 @@ export class HouseholdDetail implements OnInit {
     try {
       this.household.set((await this.householdsSvc.getById(this.id)) as Households);
       await this.getTags();
-
-      const peopleCount = await this.householdsSvc.getPeopleCount(this.id);
-      this.peopleInHouseholdCount.set(peopleCount);
       this.refreshForm();
     } finally {
       end();

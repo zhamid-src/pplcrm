@@ -49,6 +49,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/households/ui/household-detail').then((m) => m.HouseholdDetail),
       },
     ],
