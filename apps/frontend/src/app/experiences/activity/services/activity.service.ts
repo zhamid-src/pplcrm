@@ -10,4 +10,8 @@ export class ActivityService extends TRPCService<any> {
   public getActivities(entity: string, entityId: string) {
     return this.api.activity.getActivities.query({ entity, entityId });
   }
+
+  public exportCsv(input: any) {
+    return this.api.activity.exportCsv.mutate(input);
+  }
 }
