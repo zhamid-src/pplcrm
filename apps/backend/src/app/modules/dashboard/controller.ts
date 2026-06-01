@@ -23,6 +23,22 @@ export class DashboardController {
       .where('folder_id', '=', '11')
       .execute();
 
+    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
+    const closeActivities = await this.db.selectFrom('user_activity')
+      .select(['entity_id', 'user_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('activity', '=', 'close')
+      .where('entity', 'in', ['email', 'emails'])
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const closerMap = new Map<string, string>();
+    for (const act of closeActivities) {
+      if (act.entity_id) {
+        closerMap.set(String(act.entity_id), String(act.user_id));
+      }
+    }
+
     // 3. Fetch earliest comment times grouped by email_id
     const earliestComments = await this.db.selectFrom('email_comments')
       .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
@@ -100,6 +116,12 @@ export class DashboardController {
       const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
       const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
 
+      // Determine who closed the email (with fallback to assignee)
+      const closerId = email.status === 'closed'
+        ? (closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null))
+        : null;
+      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
+
       // Track open/closed counts
       if (email.status === 'open') {
         if (assignedUser) {
@@ -108,8 +130,8 @@ export class DashboardController {
           unassignedCount++;
         }
       } else if (email.status === 'closed') {
-        if (assignedUser) {
-          assignedUser.closedCount++;
+        if (closerUser) {
+          closerUser.closedCount++;
         }
       }
 
@@ -119,9 +141,9 @@ export class DashboardController {
         if (closeDiff > 0) {
           globalTotalTimeToCloseMs += closeDiff;
           globalTimeToCloseCount++;
-          if (assignedUser) {
-            assignedUser.totalTimeToCloseMs += closeDiff;
-            assignedUser.timeToCloseCount++;
+          if (closerUser) {
+            closerUser.totalTimeToCloseMs += closeDiff;
+            closerUser.timeToCloseCount++;
           }
         }
       }
