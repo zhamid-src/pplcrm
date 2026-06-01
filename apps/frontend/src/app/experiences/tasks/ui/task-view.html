@@ -406,6 +406,21 @@
               </div>
             </div>
 
+            <!-- Associated Team Selector -->
+            <div class="form-control w-full">
+              <label class="label"><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label>
+              <select
+                class="select select-bordered select-sm w-full font-medium"
+                [ngModel]="teamId()"
+                (change)="onTeamChange($event)"
+              >
+                <option value="">No Team</option>
+                @for (team of teamsList(); track team.id) {
+                <option [value]="'' + team.id">{{ team.name }}</option>
+                }
+              </select>
+            </div>
+
             <!-- Divider -->
             <div class="divider my-1"></div>
 

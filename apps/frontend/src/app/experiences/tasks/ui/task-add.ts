@@ -8,6 +8,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthService } from '../../../auth/auth-service';
 import { TasksService } from '../services/tasks-service';
+import { TeamsService } from '../../teams/services/teams-service';
 
 @Component({
   selector: 'pc-task-add',
@@ -131,6 +132,25 @@ import { TasksService } from '../services/tasks-service';
           </div>
         </div>
 
+        <div class="grid grid-cols-1 gap-6">
+          <!-- Associated Team -->
+          <div class="form-control w-full">
+            <label class="label font-semibold text-sm" for="team_id">
+              <span class="label-text">Associated Team</span>
+            </label>
+            <select
+              id="team_id"
+              class="select select-bordered w-full focus:select-primary transition-all duration-200"
+              [formField]="form.team_id"
+            >
+              <option value="">No Team</option>
+              @for (t of teamsList(); track t.id) {
+                <option [value]="t.id">{{ t.name }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
         @if (error()) {
           <div class="alert alert-error py-3 text-sm text-error-content rounded-xl flex items-center gap-2">
             <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
@@ -170,6 +190,7 @@ export class TaskAddComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly tasks = inject(TasksService);
   private readonly auth = inject(AuthService);
+  private readonly teams = inject(TeamsService);
 
   private _loading = createLoadingGate();
 
@@ -178,6 +199,7 @@ export class TaskAddComponent implements OnInit {
   protected readonly isLoading = this._loading.visible;
 
   protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly teamsList = signal<any[]>([]);
 
   // Autocomplete lists for status and priority
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
@@ -190,6 +212,7 @@ export class TaskAddComponent implements OnInit {
     priority: 'medium',
     due_at: '',
     assigned_to: '',
+    team_id: '',
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -199,10 +222,19 @@ export class TaskAddComponent implements OnInit {
   public async ngOnInit() {
     const end = this._loading.begin();
     try {
-      const us = await this.auth.getUsers();
-      this.users.set(us);
+      const [us, ts] = await Promise.all([this.auth.getUsers(), this.teams.getAll({ limit: 1000 })]);
+      this.users.set(us || []);
+      this.teamsList.set(ts?.rows ?? []);
+
+      const queryTeamId = this.route.snapshot.queryParamMap.get('team_id');
+      if (queryTeamId) {
+        this.payload.update((p) => ({
+          ...p,
+          team_id: queryTeamId,
+        }));
+      }
     } catch (err) {
-      this.alertSvc.showError('Failed to load teammates list: ' + String(err));
+      this.alertSvc.showError('Failed to load teammates or teams list: ' + String(err));
     } finally {
       end();
     }
@@ -251,6 +283,7 @@ export class TaskAddComponent implements OnInit {
       priority: raw.priority as any,
       due_at: raw.due_at ? new Date(raw.due_at) : undefined,
       assigned_to: raw.assigned_to ? String(raw.assigned_to) : null,
+      team_id: raw.team_id ? String(raw.team_id) : null,
     };
   }
 

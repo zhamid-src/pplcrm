@@ -10,6 +10,7 @@ export const AddTaskObj = z.object({
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
   assigned_to: idSchema.nullable().optional(),
+  team_id: idSchema.nullable().optional(),
 });
 
 export const TasksObj = z.object({
@@ -22,6 +23,7 @@ export const TasksObj = z.object({
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
   assigned_to: z.string().nullable().optional(),
+  team_id: z.string().nullable().optional(),
 });
 
 export const UpdateTaskObj = z.object({
@@ -33,4 +35,5 @@ export const UpdateTaskObj = z.object({
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
   assigned_to: idSchema.nullable().optional(),
+  team_id: idSchema.nullable().optional(),
 });

@@ -41,6 +41,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         )
         .leftJoin('tags as volunteer_tag', 'volunteer_tag.id', 'mtp.tag_id')
         .leftJoin('persons as captain', 'captain.id', 'teams.team_captain_id')
+        .leftJoin('authusers as lead_user', 'lead_user.id', 'teams.team_lead_user_id')
         .where('teams.tenant_id', '=', tenantId)
         .$if(!!searchStr, (builder) => {
           const text = `%${searchStr}%`;
@@ -48,7 +49,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
             sql`(
               LOWER(teams.name) LIKE ${text} OR
               LOWER(COALESCE(teams.description, '')) LIKE ${text} OR
-              LOWER(COALESCE(captain.first_name || ' ' || captain.last_name, '')) LIKE ${text}
+              LOWER(COALESCE(captain.first_name || ' ' || captain.last_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')) LIKE ${text}
             )` as any,
           );
         })
@@ -57,6 +59,9 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         )
         .$if(!!filterModel['team_captain_id']?.value, (builder) =>
           builder.where('teams.team_captain_id', '=', filterModel['team_captain_id'].value as any),
+        )
+        .$if(!!filterModel['team_lead_user_id']?.value, (builder) =>
+          builder.where('teams.team_lead_user_id', '=', filterModel['team_lead_user_id'].value as any),
         );
 
     const countRow = await applyFilters(this.getSelect(trx))
@@ -70,8 +75,10 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'teams.name',
         'teams.description',
         'teams.team_captain_id',
+        'teams.team_lead_user_id',
         'teams.updated_at',
         sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`.as('captain_name'),
+        sql`COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')`.as('lead_user_name'),
         sql<number>`COUNT(DISTINCT CASE WHEN LOWER(volunteer_tag.name) = ${this.volunteerTag} THEN map_teams_persons.person_id END)`.
           as('volunteer_count'),
       ])
@@ -80,9 +87,12 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'teams.name',
         'teams.description',
         'teams.team_captain_id',
+        'teams.team_lead_user_id',
         'teams.updated_at',
         'captain.first_name',
         'captain.last_name',
+        'lead_user.first_name',
+        'lead_user.last_name',
       ])
       .$if(Array.isArray(options.sortModel) && options.sortModel.length > 0, (builder) => {
         return options.sortModel!.reduce((acc: any, sort: any) => {
@@ -91,6 +101,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
               return acc.orderBy(sql`COUNT(DISTINCT map_teams_persons.person_id)`, sort.sort);
             case 'team_captain_name':
               return acc.orderBy(sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`, sort.sort);
+            case 'team_lead_user_name':
+              return acc.orderBy(sql`COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')`, sort.sort);
             default:
               return acc.orderBy(sort.colId as any, sort.sort);
           }
@@ -106,6 +118,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       description: row.description,
       team_captain_id: row.team_captain_id != null ? String(row.team_captain_id) : null,
       team_captain_name: row.captain_name ? String(row.captain_name) : null,
+      team_lead_user_id: row.team_lead_user_id != null ? String(row.team_lead_user_id) : null,
+      team_lead_user_name: row.lead_user_name ? String(row.lead_user_name) : null,
       volunteer_count: Number(row.volunteer_count ?? 0),
       updated_at: row.updated_at,
     }));
@@ -116,6 +130,14 @@ export class TeamsRepo extends BaseRepository<'teams'> {
   public async clearCaptain(input: { tenant_id: string; team_id: string }, trx?: Transaction<Models>) {
     await this.getUpdate(trx)
       .set({ team_captain_id: null })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.team_id)
+      .executeTakeFirst();
+  }
+
+  public async clearLeadUser(input: { tenant_id: string; team_id: string }, trx?: Transaction<Models>) {
+    await this.getUpdate(trx)
+      .set({ team_lead_user_id: null })
       .where('tenant_id', '=', input.tenant_id)
       .where('id', '=', input.team_id)
       .executeTakeFirst();

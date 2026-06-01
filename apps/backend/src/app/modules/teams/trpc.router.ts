@@ -43,6 +43,12 @@ function getForVolunteer() {
     .query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
 }
 
+function getAssignedLists() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
+}
+
 export const TeamsRouter = router({
   getAll: getAll(),
   getById: getById(),
@@ -50,4 +56,5 @@ export const TeamsRouter = router({
   update: update(),
   delete: remove(),
   getForVolunteer: getForVolunteer(),
+  getAssignedLists: getAssignedLists(),
 });

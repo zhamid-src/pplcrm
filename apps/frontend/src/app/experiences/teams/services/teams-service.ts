@@ -15,6 +15,8 @@ export interface TeamListItem {
   description: string | null;
   team_captain_id: string | null;
   team_captain_name: string | null;
+  team_lead_user_id?: string | null;
+  team_lead_user_name?: string | null;
   volunteer_count: number;
   updated_at?: Date | string | null;
 }
@@ -28,6 +30,8 @@ export interface TeamVolunteer {
 
 export interface TeamDetail extends Omit<TeamListItem, 'volunteer_count'> {
   volunteers: TeamVolunteer[];
+  list_ids?: string[];
+  lists?: any[];
 }
 
 export interface TeamAssignmentInfo {

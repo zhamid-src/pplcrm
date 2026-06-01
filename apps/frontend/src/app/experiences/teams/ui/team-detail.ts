@@ -1,12 +1,15 @@
 import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { form, required, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddTeamType, UpdateTeamType } from '@common';
+import { AddTeamType, UpdateTeamType, IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { AuthService } from '../../../auth/auth-service';
+import { TasksService } from '../../tasks/services/tasks-service';
 
 interface PersonOption {
   email: string | null;
@@ -14,9 +17,11 @@ interface PersonOption {
   label: string;
 }
 
+import { DatePipe } from '@angular/common';
+
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon],
+  imports: [FormField, RouterModule, Icon, DatePipe],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {
@@ -25,8 +30,11 @@ export class TeamDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly teams = inject(TeamsService);
+  private readonly lists = inject(ListsService);
+  private readonly auth = inject(AuthService);
+  private readonly tasksSvc = inject(TasksService);
 
-  private id: string | null = null;
+  protected id: string | null = null;
 
   protected readonly detail = signal<TeamDetail | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -35,7 +43,9 @@ export class TeamDetailComponent implements OnInit {
     name: '',
     description: '',
     team_captain_id: '',
+    team_lead_user_id: '',
     volunteer_ids: [] as string[],
+    list_ids: [] as string[],
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -46,6 +56,10 @@ export class TeamDetailComponent implements OnInit {
   protected readonly loading = signal(true);
   protected signalPeople = signal<PersonOption[]>([]);
   protected readonly people = computed(() => this.signalPeople());
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly availableLists = signal<any[]>([]);
+  protected readonly assignedLists = signal<any[]>([]);
+  protected readonly teamTasks = signal<any[]>([]);
   protected readonly saving = signal(false);
   protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
 
@@ -86,6 +100,8 @@ export class TeamDetailComponent implements OnInit {
       this.id = this.route.snapshot.paramMap.get('id');
     }
     this.loadPeople();
+    this.loadUsers();
+    this.loadLists();
     this.loadTeam();
   }
 
@@ -108,6 +124,24 @@ export class TeamDetailComponent implements OnInit {
       volunteer_ids: selectedOptions,
     }));
     this.form.volunteer_ids().markAsDirty();
+  }
+
+  protected isListSelected(id: string): boolean {
+    return this.payload().list_ids?.includes(id) ?? false;
+  }
+
+  protected onListsChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      list_ids: selectedOptions,
+    }));
+    this.form.list_ids().markAsDirty();
+
+    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
+    this.assignedLists.set(matching);
   }
 
   protected async deleteTeam() {
@@ -155,7 +189,9 @@ export class TeamDetailComponent implements OnInit {
           name: raw.name?.trim() ?? '',
           description: raw.description?.trim()?.length ? raw.description.trim() : null,
           team_captain_id: raw.team_captain_id || undefined,
+          team_lead_user_id: raw.team_lead_user_id || undefined,
           volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
         };
         result = await this.teams.add(payload);
         this.teams.triggerRefresh();
@@ -165,7 +201,9 @@ export class TeamDetailComponent implements OnInit {
           name: raw.name?.trim() ?? null,
           description: raw.description?.trim()?.length ? raw.description.trim() : null,
           team_captain_id: raw.team_captain_id || null,
+          team_lead_user_id: raw.team_lead_user_id || null,
           volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
         };
         result = await this.teams.update(this.id, payload);
         this.teams.triggerRefresh();
@@ -205,6 +243,26 @@ export class TeamDetailComponent implements OnInit {
     }
   }
 
+  private async loadUsers() {
+    try {
+      const us = await this.auth.getUsers();
+      this.users.set(us || []);
+    } catch (err) {
+      console.error('Failed to load teammates list', err);
+      this.users.set([]);
+    }
+  }
+
+  private async loadLists() {
+    try {
+      const res = await this.lists.getAll({ limit: 1000 });
+      this.availableLists.set(res?.rows ?? []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+      this.availableLists.set([]);
+    }
+  }
+
   private async loadTeam() {
     if (this.isNew()) {
       this.detail.set(null);
@@ -222,6 +280,10 @@ export class TeamDetailComponent implements OnInit {
       const team = await this.teams.getById(this.id);
       this.detail.set(team);
       this.setForm(team);
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: this.id } }
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Failed to load team';
       this.error.set(message);
@@ -236,7 +298,31 @@ export class TeamDetailComponent implements OnInit {
       name: team?.name ?? '',
       description: team?.description ?? '',
       team_captain_id: team?.team_captain_id ?? '',
+      team_lead_user_id: team?.team_lead_user_id ?? '',
       volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
+      list_ids: team?.list_ids ?? [],
     });
+    this.assignedLists.set(team?.lists ?? []);
+  }
+
+  protected getPriorityClass(priority: string | null | undefined): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent': return 'badge-error text-error-content';
+      case 'high': return 'badge-warning text-warning-content';
+      case 'medium': return 'badge-info text-info-content';
+      default: return 'badge-ghost';
+    }
+  }
+
+  protected getStatusClass(status: string | null | undefined): string {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done': return 'badge-success text-success-content';
+      case 'in_progress': return 'badge-info text-info-content';
+      case 'blocked': return 'badge-error text-error-content';
+      case 'canceled': return 'badge-neutral text-neutral-content';
+      default: return 'badge-ghost';
+    }
   }
 }

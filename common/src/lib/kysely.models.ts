@@ -42,6 +42,7 @@ export interface Models {
   map_lists_households: MapListsHouseholds;
   teams: Teams;
   map_teams_persons: MapTeamsPersons;
+  map_teams_lists: MapTeamsLists;
   tasks: Tasks;
   persons: Persons;
   profiles: Profiles;
@@ -207,11 +208,17 @@ interface Teams extends RecordType {
   name: string;
   description: string | null;
   team_captain_id: string | null;
+  team_lead_user_id: string | null;
 }
 
 interface MapTeamsPersons extends RecordType {
   team_id: string;
   person_id: string;
+}
+
+interface MapTeamsLists extends RecordType {
+  team_id: string;
+  list_id: string;
 }
 
 export interface MapListsPersons extends RecordType {
@@ -303,6 +310,7 @@ export interface Tasks extends RecordType {
   completed_at: Timestamp | null;
   position: number | null;
   assigned_to: string | null;
+  team_id: string | null;
 }
 
 interface Tenants extends RecordType, AddressType {
