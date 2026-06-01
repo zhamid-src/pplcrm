@@ -1,0 +1,265 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { form, required, FormField } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { IAuthUser } from '@common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../../auth/auth-service';
+import { TasksService } from '../services/tasks-service';
+
+@Component({
+  selector: 'pc-task-add',
+  imports: [FormField, Icon],
+  template: `
+    <section class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl">
+      <header class="border-b border-base-200/60 pb-5">
+        <h1 class="text-2xl font-bold text-primary flex items-center gap-3">
+          <span class="p-2 bg-primary/10 rounded-xl">
+            <pc-icon name="plus" class="text-primary"></pc-icon>
+          </span>
+          Create New Task
+        </h1>
+        <p class="text-sm text-neutral-400 mt-2">Add a new task to assign, track priority, status, and deadlines.</p>
+      </header>
+
+      <form class="space-y-6" (submit)="submit($event)" novalidate>
+        <!-- Task Name -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="name">
+            <span class="label-text">Task Name <span class="text-error">*</span></span>
+          </label>
+          <input
+            id="name"
+            type="text"
+            placeholder="Enter task name..."
+            class="input input-bordered w-full focus:input-primary transition-all duration-200"
+            [formField]="form.name"
+            autofocus
+          />
+          @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+            <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+              Task name is required and must be under 200 characters.
+            </p>
+          }
+        </div>
+
+        <!-- Details / Description -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="details">
+            <span class="label-text">Description / Details</span>
+          </label>
+          <textarea
+            id="details"
+            placeholder="Describe the task details, requirements, or instructions..."
+            class="textarea textarea-bordered h-32 w-full focus:textarea-primary transition-all duration-200 resize-y"
+            [formField]="form.details"
+          ></textarea>
+          @if (form.details().invalid() && (form.details().dirty() || form.details().touched())) {
+            <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+              Details are too long (maximum 10,000 characters).
+            </p>
+          }
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Status -->
+          <div class="form-control w-full">
+            <label class="label font-semibold text-sm" for="status">
+              <span class="label-text">Status</span>
+            </label>
+            <select
+              id="status"
+              class="select select-bordered w-full focus:select-primary transition-all duration-200"
+              [formField]="form.status"
+            >
+              @for (s of statuses; track s) {
+                <option [value]="s">{{ toTitleCase(s) }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Priority -->
+          <div class="form-control w-full">
+            <label class="label font-semibold text-sm" for="priority">
+              <span class="label-text">Priority</span>
+            </label>
+            <select
+              id="priority"
+              class="select select-bordered w-full focus:select-primary transition-all duration-200"
+              [formField]="form.priority"
+            >
+              @for (p of priorities; track p) {
+                <option [value]="p">{{ toTitleCase(p) }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Due Date -->
+          <div class="form-control w-full">
+            <label class="label font-semibold text-sm" for="due_at">
+              <span class="label-text">Due Date</span>
+            </label>
+            <input
+              id="due_at"
+              type="date"
+              class="input input-bordered w-full focus:input-primary transition-all duration-200"
+              [formField]="form.due_at"
+            />
+          </div>
+
+          <!-- Assigned To -->
+          <div class="form-control w-full">
+            <label class="label font-semibold text-sm" for="assigned_to">
+              <span class="label-text">Assignee</span>
+            </label>
+            <select
+              id="assigned_to"
+              class="select select-bordered w-full focus:select-primary transition-all duration-200"
+              [formField]="form.assigned_to"
+            >
+              <option value="">Unassigned</option>
+              @for (u of users(); track u.id) {
+                <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        @if (error()) {
+          <div class="alert alert-error py-3 text-sm text-error-content rounded-xl flex items-center gap-2">
+            <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+            <span>{{ error() }}</span>
+          </div>
+        }
+
+        <!-- Form Footer Actions -->
+        <div class="flex justify-end gap-3 pt-6 border-t border-base-200/60">
+          <button
+            type="button"
+            class="btn btn-ghost hover:bg-base-200 transition-all duration-200"
+            (click)="cancel()"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary px-6 hover:scale-102 active:scale-98 transition-all duration-200"
+            [disabled]="form().invalid() || submitting()"
+          >
+            @if (submitting()) {
+              <span class="loading loading-spinner loading-xs mr-1"></span>
+              Creating...
+            } @else {
+              Create Task
+            }
+          </button>
+        </div>
+      </form>
+    </section>
+  `,
+})
+export class TaskAddComponent implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly tasks = inject(TasksService);
+  private readonly auth = inject(AuthService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly error = signal<string | null>(null);
+  protected readonly submitting = signal(false);
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly users = signal<IAuthUser[]>([]);
+
+  // Autocomplete lists for status and priority
+  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
+  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  protected readonly payload = signal({
+    name: '',
+    details: '',
+    status: 'todo',
+    priority: 'medium',
+    due_at: '',
+    assigned_to: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.name);
+  });
+
+  public async ngOnInit() {
+    const end = this._loading.begin();
+    try {
+      const us = await this.auth.getUsers();
+      this.users.set(us);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load teammates list: ' + String(err));
+    } finally {
+      end();
+    }
+  }
+
+  protected cancel() {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected async submit(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    this.submitting.set(true);
+    this.error.set(null);
+    const end = this._loading.begin();
+
+    try {
+      const taskData = this.toPayload();
+      await this.tasks.add(taskData);
+      this.tasks.triggerRefresh();
+      this.alertSvc.showSuccess('Task created successfully');
+      await this.router.navigate(['../'], { relativeTo: this.route });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to create task';
+      this.error.set(msg);
+      this.alertSvc.showError(msg);
+    } finally {
+      this.submitting.set(false);
+      end();
+    }
+  }
+
+  private toPayload() {
+    const raw = this.payload();
+    return {
+      name: raw.name.trim(),
+      details: raw.details.trim() || undefined,
+      status: raw.status as any,
+      priority: raw.priority as any,
+      due_at: raw.due_at ? new Date(raw.due_at) : undefined,
+      assigned_to: raw.assigned_to ? String(raw.assigned_to) : null,
+    };
+  }
+
+  protected toTitleCase(s: string): string {
+    if (!s) return '';
+    return s
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+}

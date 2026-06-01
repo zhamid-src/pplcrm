@@ -20,6 +20,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       [showArchiveIcon]="true"
       (importCSV)="openImportDialog()"
       plusIcon="add-task"
+      addRoute="add"
     ></pc-datagrid>
 
     <pc-csv-importer
