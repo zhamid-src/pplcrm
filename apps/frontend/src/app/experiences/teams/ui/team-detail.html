@@ -33,7 +33,7 @@
 
   <form class="grid gap-6" (submit)="save($event)" novalidate>
     <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-      <div class="grid gap-4 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-3">
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="team-name">Team Name</label>
           <input id="team-name" type="text" class="input input-bordered w-full" [formField]="form.name" placeholder="Community Outreach" />
@@ -42,11 +42,20 @@
           }
         </div>
         <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="team-captain">Team Captain</label>
+          <label class="text-sm font-medium text-base-content/80" for="team-captain">Team Captain (Volunteer)</label>
           <select id="team-captain" class="select select-bordered w-full" [formField]="form.team_captain_id">
             <option value="">No captain</option>
             @for (person of people(); track person.id) {
               <option [value]="person.id">{{ person.label }}</option>
+            }
+          </select>
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="team-lead">Team Lead (Organizer)</label>
+          <select id="team-lead" class="select select-bordered w-full" [formField]="form.team_lead_user_id">
+            <option value="">No lead</option>
+            @for (user of users(); track user.id) {
+              <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
             }
           </select>
         </div>
@@ -64,6 +73,7 @@
       </div>
     </section>
 
+    <!-- Volunteers Section -->
     <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -108,6 +118,111 @@
         </div>
       </div>
     </section>
+
+    <!-- Assigned target constituent lists section -->
+    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div>
+        <h2 class="text-lg font-semibold">Target Constituent Lists</h2>
+        <p class="text-sm text-base-content/70">Assign lists of people or households this team is responsible for contacting.</p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
+          <select id="lists-select" class="select select-bordered h-40 w-full" (change)="onListsChange($event)" multiple>
+            @for (list of availableLists(); track list.id) {
+              <option [value]="list.id" [selected]="isListSelected(list.id)">
+                {{ list.name }} ({{ list.object }})
+              </option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (assignedLists().length === 0) {
+              <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            } @else {
+              <ul class="divide-y divide-base-200">
+                @for (list of assignedLists(); track list.id) {
+                  <li class="flex items-center justify-between p-3 text-sm">
+                    <div>
+                      <p class="font-medium text-base-content">{{ list.name }}</p>
+                      <p class="text-xs text-base-content/60">
+                        {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                      </p>
+                    </div>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Tasks Section -->
+    @if (!isNew()) {
+    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">Team Tasks</h2>
+          <p class="text-sm text-base-content/70">Track the tasks and campaign progress assigned to this team.</p>
+        </div>
+        <div>
+          <a class="btn btn-xs btn-primary gap-1" [routerLink]="['/tasks/add']" [queryParams]="{ team_id: id }">
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+          </a>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded border border-base-200">
+        @if (teamTasks().length === 0) {
+          <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        } @else {
+          <table class="table table-zebra w-full text-sm">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Due Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (task of teamTasks(); track task.id) {
+                <tr>
+                  <td class="font-medium">
+                    <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary">
+                      {{ task.name }}
+                    </a>
+                  </td>
+                  <td>
+                    <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                      {{ task.priority || 'medium' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                      {{ task.status || 'todo' }}
+                    </span>
+                  </td>
+                  <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+                  <td>
+                    <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary">
+                      View details
+                    </a>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+    </section>
+    }
 
     <div class="flex justify-end gap-3">
       <button type="button" class="btn" (click)="goBack()">Cancel</button>

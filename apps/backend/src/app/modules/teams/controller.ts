@@ -9,11 +9,13 @@ import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { getCanonicalSystemTagName } from '../tags/system-tags';
 import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
+import { MapTeamsListsRepo } from './repositories/map-teams-lists.repo';
 import { TeamsRepo } from './repositories/teams.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 
 export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly mapRepo = new MapTeamsPersonsRepo();
+  private readonly mapListsRepo = new MapTeamsListsRepo();
   private readonly personsRepo = new PersonsRepo();
   private readonly personsTagRepo = new MapPersonsTagRepo();
   private readonly tagsRepo = new TagsRepo();
@@ -44,6 +46,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         name: input.name,
         description: input.description ?? null,
         team_captain_id: captainId,
+        team_lead_user_id: input.team_lead_user_id ? String(input.team_lead_user_id) : null,
         createdby_id: auth.user_id,
         updatedby_id: auth.user_id,
       } as OperationDataType<'teams', 'insert'>;
@@ -63,22 +66,58 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         );
       }
 
+      if (input.list_ids) {
+        await this.mapListsRepo.replaceLists(
+          {
+            tenant_id: auth.tenant_id,
+            team_id: String((created as any).id),
+            list_ids: input.list_ids,
+            user_id: auth.user_id,
+          },
+          trx,
+        );
+      }
+
       const captainName = captainId ? this.resolveCaptainName(created, volunteers) : undefined;
+      const leadUserName = input.team_lead_user_id
+        ? await this.resolveLeadUserName(auth.tenant_id, String(input.team_lead_user_id), trx)
+        : undefined;
+
+      const finalListIds = input.list_ids ?? [];
+      let lists: any[] = [];
+      if (finalListIds.length > 0) {
+        lists = await trx
+          .selectFrom('lists')
+          .select(['id', 'name', 'description', 'object', 'is_dynamic'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', finalListIds)
+          .execute();
+        lists = lists.map((l) => ({
+          id: String(l.id),
+          name: l.name,
+          description: l.description,
+          object: l.object,
+          is_dynamic: l.is_dynamic,
+        }));
+      }
 
       return {
-        ...this.sanitizeTeam(created, captainName ?? undefined),
+        ...this.sanitizeTeam(created, captainName ?? undefined, leadUserName ?? undefined),
         volunteers: volunteers.map((person) => ({
           id: person.id,
           first_name: person.first_name,
           last_name: person.last_name,
           email: person.email,
         })),
+        list_ids: finalListIds,
+        lists,
       };
     });
   }
 
   public async deleteTeam(auth: IAuthKeyPayload, id: string) {
     await this.mapRepo.deleteByTeam({ tenant_id: auth.tenant_id, team_id: id });
+    await this.mapListsRepo.deleteByTeam({ tenant_id: auth.tenant_id, team_id: id });
     return this.delete(auth.tenant_id as any, id);
   }
 
@@ -97,6 +136,24 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
       }));
   }
 
+  public async getAssignedLists(auth: IAuthKeyPayload, teamId: string) {
+    const listIds = await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: teamId });
+    if (!listIds.length) return [];
+    const lists = await this.getRepo().db
+      .selectFrom('lists')
+      .select(['id', 'name', 'description', 'object', 'is_dynamic'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', 'in', listIds)
+      .execute();
+    return lists.map((l) => ({
+      id: String(l.id),
+      name: l.name,
+      description: l.description,
+      object: l.object,
+      is_dynamic: l.is_dynamic,
+    }));
+  }
+
   public async getById(auth: IAuthKeyPayload, id: string) {
     const team = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
     if (!team) throw new NotFoundError('Team not found');
@@ -104,7 +161,26 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const volunteerIds = await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id });
     const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds);
     const captainName = this.resolveCaptainName(team, volunteers);
-    const sanitized = this.sanitizeTeam(team, captainName ?? undefined);
+    const leadUserName = await this.resolveLeadUserName(auth.tenant_id, (team as any).team_lead_user_id ? String((team as any).team_lead_user_id) : null);
+    const sanitized = this.sanitizeTeam(team, captainName ?? undefined, leadUserName ?? undefined);
+
+    const listIds = await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id });
+    let lists: any[] = [];
+    if (listIds.length > 0) {
+      lists = await this.getRepo().db
+        .selectFrom('lists')
+        .select(['id', 'name', 'description', 'object', 'is_dynamic'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', listIds)
+        .execute();
+      lists = lists.map((l) => ({
+        id: String(l.id),
+        name: l.name,
+        description: l.description,
+        object: l.object,
+        is_dynamic: l.is_dynamic,
+      }));
+    }
 
     const captainStillVolunteer = sanitized.team_captain_id
       ? volunteers.some((v) => v.id === sanitized.team_captain_id)
@@ -120,6 +196,8 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         last_name: person.last_name,
         email: person.email,
       })),
+      list_ids: listIds,
+      lists,
     };
   }
 
@@ -131,6 +209,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     if (input.name !== undefined) row['name'] = input.name;
     if (input.description !== undefined) row['description'] = input.description ?? null;
     if (input.team_captain_id !== undefined) row['team_captain_id'] = input.team_captain_id ?? null;
+    if (input.team_lead_user_id !== undefined) row['team_lead_user_id'] = input.team_lead_user_id ?? null;
     row['updated_at'] = new Date();
     row['updatedby_id'] = auth.user_id;
 
@@ -183,16 +262,55 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         );
       }
 
+      if (input.list_ids !== undefined) {
+        await this.mapListsRepo.replaceLists(
+          {
+            tenant_id: auth.tenant_id,
+            team_id: id,
+            list_ids: input.list_ids,
+            user_id: auth.user_id,
+          },
+          trx,
+        );
+      }
+
       const captainName = this.resolveCaptainName(result, volunteers, targetCaptainId);
+      const targetLeadUserId = input.team_lead_user_id !== undefined
+        ? (input.team_lead_user_id ? String(input.team_lead_user_id) : null)
+        : (result as any).team_lead_user_id ? String((result as any).team_lead_user_id) : null;
+      const leadUserName = await this.resolveLeadUserName(auth.tenant_id, targetLeadUserId, trx);
+
+      const finalListIds = input.list_ids !== undefined
+        ? input.list_ids
+        : await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
+
+      let lists: any[] = [];
+      if (finalListIds.length > 0) {
+        lists = await trx
+          .selectFrom('lists')
+          .select(['id', 'name', 'description', 'object', 'is_dynamic'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', finalListIds)
+          .execute();
+        lists = lists.map((l) => ({
+          id: String(l.id),
+          name: l.name,
+          description: l.description,
+          object: l.object,
+          is_dynamic: l.is_dynamic,
+        }));
+      }
 
       return {
-        ...this.sanitizeTeam(result, captainName ?? undefined),
+        ...this.sanitizeTeam(result, captainName ?? undefined, leadUserName ?? undefined),
         volunteers: volunteers.map((person) => ({
           id: person.id,
           first_name: person.first_name,
           last_name: person.last_name,
           email: person.email,
         })),
+        list_ids: finalListIds,
+        lists,
       };
     });
   }
@@ -258,6 +376,19 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     }
   }
 
+  private async resolveLeadUserName(tenantId: string, leadUserId: string | null, trx?: Transaction<Models>) {
+    if (!leadUserId) return null;
+    const db = trx || this.getRepo().db;
+    const user = await db
+      .selectFrom('authusers')
+      .select(['first_name', 'last_name'])
+      .where('id', '=', leadUserId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    if (!user) return null;
+    return `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || null;
+  }
+
   private resolveCaptainName(
     record: any,
     volunteers: Array<{ id: string; first_name: string; last_name: string }>,
@@ -277,15 +408,17 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     return full || null;
   }
 
-  private sanitizeTeam(record: any, captainName?: string | null) {
+  private sanitizeTeam(record: any, captainName?: string | null, leadUserName?: string | null) {
     return {
       id: record.id != null ? String(record.id) : '',
       name: record.name ?? '',
       description: record.description ?? null,
       team_captain_id: record.team_captain_id != null ? String(record.team_captain_id) : null,
+      team_lead_user_id: record.team_lead_user_id != null ? String(record.team_lead_user_id) : null,
       created_at: record.created_at ?? null,
       updated_at: record.updated_at ?? null,
       team_captain_name: captainName ?? null,
+      team_lead_user_name: leadUserName ?? null,
     };
   }
 }

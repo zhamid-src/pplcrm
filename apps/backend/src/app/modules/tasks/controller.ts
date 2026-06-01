@@ -24,6 +24,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       completed_at: payload.completed_at ?? null,
       position: payload.position ?? 0,
       assigned_to: payload.assigned_to ?? null,
+      team_id: payload.team_id ?? null,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,

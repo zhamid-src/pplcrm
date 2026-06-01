@@ -101,11 +101,14 @@ export class TasksRepo extends BaseRepository<'tasks'> {
           if (!parts.length) return q;
           const orExpr2 = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
           return q.where(sql`(${orExpr2})` as any);
-        });
+        })
+        .$if(!!filterModel?.['team_id']?.value, (q) => q.where('tasks.team_id', '=', filterModel['team_id'].value as any));
 
     return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
       .$if(joinCreator, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
+      .leftJoin('teams', 'teams.id', 'tasks.team_id')
+      .select('teams.name as team_name')
       .where('tasks.tenant_id', '=', tenant_id as any)
       .where('tasks.status', isArchived ? '=' : '!=', 'archived' as any)
       .$if(!!text, (qb) =>
@@ -115,6 +118,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
             LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
             LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
             LOWER(COALESCE(tasks.priority, '')) LIKE ${text} OR
+            LOWER(COALESCE(teams.name, '')) LIKE ${text} OR
             LOWER(COALESCE(au_assign.first_name, '')) LIKE ${text} OR
             LOWER(COALESCE(au_assign.last_name, '')) LIKE ${text} OR
             LOWER(COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')) LIKE ${text} OR

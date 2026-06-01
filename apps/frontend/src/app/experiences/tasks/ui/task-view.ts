@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUser } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { TeamsService } from '../../teams/services/teams-service';
 import { QuillModule } from 'ngx-quill';
 
 import { AuthService } from '../../../auth/auth-service';
@@ -41,6 +42,7 @@ export class TaskView implements OnInit {
   private readonly tasks = inject(TasksService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
+  private readonly teams = inject(TeamsService);
 
   protected id = signal<string>('');
   protected readonly task = signal<any | null>(null);
@@ -50,6 +52,8 @@ export class TaskView implements OnInit {
   protected readonly isLoading = signal(false);
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly assignedTo = signal<string>('');
+  protected readonly teamsList = signal<any[]>([]);
+  protected readonly teamId = signal<string>('');
 
   // Form Fields & Inline Editing State
   protected isEditingName = signal(false);
@@ -95,15 +99,22 @@ export class TaskView implements OnInit {
   private async load() {
     this.isLoading.set(true);
     try {
-      const [t, us] = await Promise.all([this.tasks.getById(this.id()), this.auth.getUsers()]);
+      const [t, us, ts] = await Promise.all([
+        this.tasks.getById(this.id()),
+        this.auth.getUsers(),
+        this.teams.getAll({ limit: 1000 }),
+      ]);
       if (!t) {
         this.alertSvc.showError('Task not found.');
         return;
       }
       this.task.set(t as any);
-      this.users.set(us);
+      this.users.set(us || []);
+      this.teamsList.set(ts?.rows ?? []);
       const assigned = (t as any)?.assigned_to;
       this.assignedTo.set(assigned == null ? '' : String(assigned));
+      const team = (t as any)?.team_id;
+      this.teamId.set(team == null ? '' : String(team));
 
       // Load subtasks, comments, attachments
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
@@ -149,11 +160,20 @@ export class TaskView implements OnInit {
         const v = patch.assigned_to;
         this.assignedTo.set(v == null || v === '' ? '' : String(v));
       }
+      if (Object.prototype.hasOwnProperty.call(patch, 'team_id')) {
+        const v = patch.team_id;
+        this.teamId.set(v == null || v === '' ? '' : String(v));
+      }
       this.alertSvc.showSuccess('Task updated successfully');
       this.refreshActivities();
     } catch (err) {
       this.alertSvc.showError('Failed to update task: ' + String(err));
     }
+  }
+
+  protected onTeamChange(event: any) {
+    const val = event.target.value;
+    void this.update({ team_id: val || null });
   }
 
   // Inline name editing trigger & save
