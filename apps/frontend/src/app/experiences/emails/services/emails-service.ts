@@ -225,4 +225,22 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
   public getConnectionStatus() {
     return this.api.msSync.getConnectionStatus.query();
   }
+
+  /** Check if either Google or Microsoft sync is currently running in background */
+  public async isAnySyncing(): Promise<boolean> {
+    let isSyncing = false;
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.syncing) isSyncing = true;
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.syncing) isSyncing = true;
+    } catch (e) {
+      // ignore
+    }
+    return isSyncing;
+  }
 }

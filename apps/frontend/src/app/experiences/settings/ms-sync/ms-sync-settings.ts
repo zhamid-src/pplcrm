@@ -3,7 +3,7 @@
  * Allows users to connect their Microsoft account, trigger a manual sync,
  * and disconnect their account.
  */
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -105,16 +105,17 @@ import { TRPCService } from '../../../services/api/trpc-service';
     </div>
   `,
 })
-export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
+export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDestroy {
   private readonly alertSvc = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly status = signal<{ connected: boolean; msEmail: string | null; syncedAt: string | null } | null>(null);
+  protected readonly status = signal<{ connected: boolean; msEmail: string | null; syncedAt: string | null; syncing?: boolean } | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly isConnecting = signal(false);
   protected readonly isSyncing = signal(false);
   protected readonly connectError = signal<string | null>(null);
   protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
+  private pollingTimer: any = null;
 
   public async ngOnInit() {
     // Handle OAuth redirect result (ms_connected or ms_error query params)
@@ -126,6 +127,10 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
     }
 
     await this.loadStatus();
+  }
+
+  public ngOnDestroy() {
+    this.stopPollingStatus();
   }
 
   protected async connect() {
@@ -144,12 +149,10 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
     this.isSyncing.set(true);
     this.lastSyncResult.set(null);
     try {
-      const result = await this.api.msSync.syncNow.mutate();
-      this.lastSyncResult.set(result);
+      await this.api.msSync.syncNow.mutate();
       await this.loadStatus();
     } catch {
       this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
-    } finally {
       this.isSyncing.set(false);
     }
   }
@@ -173,12 +176,45 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   }
 
   private async loadStatus() {
-    this.isLoading.set(true);
     try {
       const s = await this.api.msSync.getConnectionStatus.query();
       this.status.set(s);
+      if (s?.syncing) {
+        this.isSyncing.set(true);
+        this.startPollingStatus();
+      } else {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+      }
+    } catch (err) {
+      console.error('Failed to load connection status:', err);
     } finally {
       this.isLoading.set(false);
+    }
+  }
+
+  private startPollingStatus() {
+    if (this.pollingTimer) return;
+    this.pollingTimer = setInterval(async () => {
+      try {
+        const s = await this.api.msSync.getConnectionStatus.query();
+        this.status.set(s);
+        if (!s?.syncing) {
+          this.isSyncing.set(false);
+          this.stopPollingStatus();
+          this.alertSvc.showSuccess('Office 365 mailbox sync completed.');
+        }
+      } catch (err) {
+        console.error('Error polling sync status:', err);
+        this.stopPollingStatus();
+      }
+    }, 4000);
+  }
+
+  private stopPollingStatus() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
     }
   }
 }

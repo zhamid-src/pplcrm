@@ -210,6 +210,18 @@ export class EmailsStore {
     this._isSyncing.set(true);
     try {
       const result = await this.emailSvc.syncEmails();
+      
+      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
+      let attempts = 0;
+      while (attempts < 100) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const active = await this.emailSvc.isAnySyncing();
+        if (!active) {
+          break;
+        }
+        attempts++;
+      }
+
       // Reload current folder emails and counts
       const currentFolderId = this.currentSelectedFolderId();
       if (currentFolderId) {

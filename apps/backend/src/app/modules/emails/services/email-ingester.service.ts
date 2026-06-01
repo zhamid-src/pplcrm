@@ -157,38 +157,34 @@ export class EmailIngesterService {
     }
 
     // Upload attachment files to storage outside database transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
 
-    for (const att of email.attachments) {
-      try {
-        const buffer = await att.fetchContent();
-        const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
-        const fileUUID = crypto.randomUUID();
-        const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
+    const uploadResults = await Promise.all(
+      email.attachments.map(async (att) => {
+        try {
+          const buffer = await att.fetchContent();
+          const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
+          const fileUUID = crypto.randomUUID();
+          const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
 
-        await this.storageService.upload(storage_key, buffer, att.contentType);
+          await this.storageService.upload(storage_key, buffer, att.contentType);
 
-        uploadedFiles.push({
-          filename: att.name,
-          content_type: att.contentType,
-          size_bytes: att.size,
-          storage_key,
-          sha256_hex,
-          cid: att.contentId,
-          is_inline: att.isInline,
-        });
-      } catch (err) {
-        console.error(`Failed to upload attachment ${att.name} for message ${email.id} to storage:`, err);
-      }
-    }
+          return {
+            filename: att.name,
+            content_type: att.contentType,
+            size_bytes: att.size,
+            storage_key,
+            sha256_hex,
+            cid: att.contentId,
+            is_inline: att.isInline,
+          };
+        } catch (err) {
+          console.error(`Failed to upload attachment ${att.name} for message ${email.id} to storage:`, err);
+          return null;
+        }
+      })
+    );
+
+    const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
 
     return this.db.transaction().execute(async (trx) => {
       // 1. Insert into emails

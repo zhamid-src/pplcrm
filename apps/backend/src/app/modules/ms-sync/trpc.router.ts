@@ -9,6 +9,7 @@ import { MsSyncService } from './ms-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { env } from '../../../env';
 import { z } from 'zod';
+import { sql } from 'kysely';
 
 /** Lazily-initialized services (created once on first call) */
 let _oauthSvc: MsOAuthService | null = null;
@@ -51,7 +52,22 @@ function getConnectionStatus() {
   return authProcedure.query(
     async ({ ctx }) => {
       const { oauthSvc } = getServices();
-      return oauthSvc.getConnectionStatus(ctx.auth.user_id);
+      const db = (BaseRepository as any)['_db'];
+      const status = await oauthSvc.getConnectionStatus(ctx.auth.user_id);
+      
+      const activeJob = await db
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where('tenant_id', '=', ctx.auth.tenant_id)
+        .where(sql`payload->>'type'`, '=', 'ms_sync')
+        .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
+        .executeTakeFirst();
+
+      return {
+        ...status,
+        syncing: !!activeJob,
+      };
     },
   );
 }
@@ -63,8 +79,37 @@ function getConnectionStatus() {
 function syncNow() {
   return authProcedure.mutation(
     async ({ ctx }) => {
-      const { syncSvc } = getServices();
-      return syncSvc.syncUser(ctx.auth.user_id, ctx.auth.tenant_id, ctx.auth.user_id);
+      const db = (BaseRepository as any)['_db'];
+      
+      const existing = await db
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where('tenant_id', '=', ctx.auth.tenant_id)
+        .where(sql`payload->>'type'`, '=', 'ms_sync')
+        .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
+        .executeTakeFirst();
+
+      if (!existing) {
+        await db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: ctx.auth.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'ms_sync',
+              userId: ctx.auth.user_id,
+              tenantId: ctx.auth.tenant_id,
+              requestedBy: ctx.auth.user_id,
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+
+      return { inserted: 0, queued: true };
     },
   );
 }
