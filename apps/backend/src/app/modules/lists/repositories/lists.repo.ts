@@ -99,6 +99,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'lists.object',
         'lists.is_dynamic',
         'lists.updated_at',
+        'lists.last_refreshed_at',
         sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
         sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
         sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
@@ -110,6 +111,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'lists.object',
         'lists.is_dynamic',
         'lists.updated_at',
+        'lists.last_refreshed_at',
         'authusers.first_name',
         'authusers.last_name',
       ])
@@ -154,6 +156,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
       object: r.object,
       is_dynamic: r.is_dynamic,
       updated_at: r.updated_at,
+      last_refreshed_at: r.last_refreshed_at,
       list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
       used_in: 0,
       created_by: r.created_by,

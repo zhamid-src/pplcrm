@@ -65,6 +65,14 @@ function exportCsv() {
     .mutation(({ input, ctx }) => lists.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
 }
 
+function refresh() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input));
+}
+
+function getListStats() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input));
+}
+
 const lists = new ListsController();
 
 export const ListsRouter = router({
@@ -79,4 +87,6 @@ export const ListsRouter = router({
   delete: deleteList(),
   deleteMany: deleteLists(),
   exportCsv: exportCsv(),
+  refresh: refresh(),
+  getListStats: getListStats(),
 });

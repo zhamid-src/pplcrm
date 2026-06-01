@@ -75,6 +75,14 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.update.mutate({ id, data });
   }
 
+  public refreshList(id: string) {
+    return this.api.lists.refresh.mutate(id);
+  }
+
+  public getListStats(id: string) {
+    return this.api.lists.getListStats.query(id);
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.lists.exportCsv.mutate(input);
   }

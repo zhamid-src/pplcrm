@@ -283,6 +283,7 @@ export interface Lists extends RecordType {
   object: 'people' | 'households';
   is_dynamic: boolean;
   definition: Json | null;
+  last_refreshed_at: Timestamp | null;
 }
 
 export interface Tags extends RecordType {
