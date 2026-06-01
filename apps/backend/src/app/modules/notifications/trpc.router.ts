@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { idSchema } from '@common';
 import { authProcedure, router } from '../../../trpc';
 import { NotificationsController } from './controller';
@@ -6,7 +7,13 @@ const notifications = new NotificationsController();
 
 export const NotificationsRouter = router({
   getLatest: authProcedure
-    .query(({ ctx }) => notifications.getLatest(ctx.auth)),
+    .input(
+      z.object({
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional()
+    )
+    .query(({ input, ctx }) => notifications.getLatest(ctx.auth, input?.limit, input?.offset)),
   
   getUnreadCount: authProcedure
     .query(({ ctx }) => notifications.getUnreadCount(ctx.auth)),

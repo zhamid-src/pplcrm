@@ -17,14 +17,19 @@ export class NotificationsRepo extends BaseRepository<'notifications'> {
     return Number((res as any)?.count || 0);
   }
 
-  public async getLatestForUser(tenant_id: string, user_id: string, limit = 20, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
+  public async getLatestForUser(tenant_id: string, user_id: string, limit = 20, offset = 0, trx?: Transaction<Models>) {
+    let query = this.getSelect(trx)
       .selectAll()
       .where('tenant_id', '=', tenant_id)
       .where('user_id', '=', user_id)
       .orderBy('created_at', 'desc')
-      .limit(limit)
-      .execute();
+      .limit(limit);
+
+    if (offset > 0) {
+      query = query.offset(offset);
+    }
+
+    return query.execute();
   }
 
   public async markAllRead(tenant_id: string, user_id: string, trx?: Transaction<Models>) {

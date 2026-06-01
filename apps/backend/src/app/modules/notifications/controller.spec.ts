@@ -18,7 +18,18 @@ describe('NotificationsController', () => {
 
     const result = await controller.getLatest(auth);
 
-    expect(spy).toHaveBeenCalledWith('tenant-1', 'user-1');
+    expect(spy).toHaveBeenCalledWith('tenant-1', 'user-1', undefined, undefined);
+    expect(result).toEqual(mockNotifs);
+  });
+
+  it('should forward limit and offset to getLatestForUser when provided', async () => {
+    const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
+    const mockNotifs = [{ id: '1', title: 'Test' }];
+    const spy = vi.spyOn((controller as any).repo, 'getLatestForUser').mockResolvedValue(mockNotifs as any);
+
+    const result = await controller.getLatest(auth, 10, 5);
+
+    expect(spy).toHaveBeenCalledWith('tenant-1', 'user-1', 10, 5);
     expect(result).toEqual(mockNotifs);
   });
 

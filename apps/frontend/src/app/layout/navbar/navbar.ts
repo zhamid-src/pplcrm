@@ -40,6 +40,9 @@ export class Navbar implements OnDestroy {
 
   public readonly notifications = signal<any[]>([]);
   public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
+  public readonly isPulsing = signal<boolean>(false);
 
   protected isMobileOpen() {
     return this.sideBarSvc.isMobileOpen();
@@ -61,7 +64,7 @@ export class Navbar implements OnDestroy {
         });
     });
 
-    void this.refreshCount();
+    void this.initNotifications();
     this.pollInterval = setInterval(() => {
       void this.refreshCount();
     }, 60000);
@@ -73,35 +76,86 @@ export class Navbar implements OnDestroy {
     }
   }
 
-  protected async refreshCount() {
+  private async initNotifications() {
     try {
       const count = await this.notificationsSvc.getUnreadCount();
       this.unreadCount.set(count || 0);
+      if (count && count > 0) {
+        this.isPulsing.set(true);
+      }
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        this.isPulsing.set(true);
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
     } catch (err) {
       console.error('Failed to poll notification count', err);
     }
   }
 
-  private lastNotificationFetch = 0;
-
   /** Triggered by (focusin) on the dropdown container – fires when the panel opens. */
   protected onNotificationOpen() {
-    const now = Date.now();
-    if (now - this.lastNotificationFetch < 30_000) return; // debounce: once per 30s
-    this.lastNotificationFetch = now;
-    void this.refresh();
+    this.isPulsing.set(false);
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
   }
 
-  protected async refresh() {
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
     try {
-      const [list, count] = await Promise.all([
-        this.notificationsSvc.getLatest(),
-        this.notificationsSvc.getUnreadCount(),
-      ]);
-      this.notifications.set((list || []).slice(0, 5));
-      this.unreadCount.set(count || 0);
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map(n => n.id));
+        const uniqueNext = nextBatch.filter((n: any) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
     } catch (err) {
-      console.error('Failed to load notifications', err);
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
     }
   }
 
@@ -109,7 +163,10 @@ export class Navbar implements OnDestroy {
     if (!notif.read) {
       try {
         await this.notificationsSvc.markRead(notif.id);
-        void this.refresh();
+        this.notifications.update(list =>
+          list.map(n => n.id === notif.id ? { ...n, read: true } : n)
+        );
+        this.unreadCount.update(c => Math.max(0, c - 1));
       } catch (err) {
         console.error('Failed to mark notification read', err);
       }
@@ -124,6 +181,10 @@ export class Navbar implements OnDestroy {
     event.stopPropagation();
     try {
       await this.notificationsSvc.markAllRead();
+      this.notifications.update(list =>
+        list.map(n => ({ ...n, read: true }))
+      );
+      this.unreadCount.set(0);
     } catch (err) {
       console.error('Failed to mark all read', err);
     }

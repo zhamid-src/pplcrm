@@ -76,7 +76,10 @@
       >
         <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
         @if (unreadCount() > 0) {
-        <span class="badge badge-primary badge-xs absolute top-1.5 right-1.5 animate-pulse"> {{ unreadCount() }} </span>
+        <span
+          class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full"
+          [class.animate-pulse]="isPulsing()"
+        ></span>
         }
       </div>
 
@@ -104,7 +107,7 @@
             }
           </div>
 
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30">
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
             @if (notifications().length === 0) {
             <div class="flex flex-col items-center justify-center py-8 text-base-400">
               <pc-icon name="bell" class="opacity-20 mb-2 w-6 h-6"></pc-icon>
@@ -160,6 +163,11 @@
               }
             </div>
             } }
+            @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
           </div>
         </div>
       </div>
