@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -32,9 +32,64 @@ export class Summary implements OnInit {
   protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
   protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
   protected readonly closedRepBars = signal<any[]>([]);
-  protected readonly assignedRepSlices = signal<any[]>([]);
+  private readonly rawEmailsAssigned = signal<any[]>([]);
+  private readonly rawUnassignedCount = signal<number>(0);
+  protected readonly showAllOpen = signal<boolean>(true);
+
+  protected readonly donutTotalCount = computed(() => {
+    return this.showAllOpen() ? this.totalOpenCount() : this.totalAssignedCount();
+  });
+
+  protected readonly assignedRepSlices = computed(() => {
+    const assigned = this.rawEmailsAssigned();
+    const unassignedCount = this.rawUnassignedCount();
+    const showAll = this.showAllOpen();
+
+    const slicesData: { name: string; count: number; isUnassigned: boolean }[] = [
+      ...assigned.map((a: any) => ({
+        name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
+        count: Number(a.count || 0),
+        isUnassigned: false,
+      })),
+    ];
+
+    if (showAll && unassignedCount > 0) {
+      slicesData.push({
+        name: 'Unassigned',
+        count: unassignedCount,
+        isUnassigned: true,
+      });
+    }
+
+    const total = slicesData.reduce((acc, cur) => acc + cur.count, 0);
+
+    const radius = 60;
+    const circ = 2 * Math.PI * radius;
+    let cumulativeCount = 0;
+    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
+    const unassignedColor = '#64748b'; // Slate gray for Unassigned
+
+    return slicesData.map((s: any, i: number) => {
+      const countVal = s.count;
+      const pct = total > 0 ? (countVal / total) : 0;
+      const sliceCirc = pct * circ;
+      const strokeDash = `${sliceCirc} ${circ}`;
+      const strokeOffset = - (cumulativeCount / total) * circ;
+      cumulativeCount += countVal;
+      return {
+        name: s.name,
+        count: countVal,
+        percentage: Math.round(pct * 100),
+        strokeDash,
+        strokeOffset,
+        color: s.isUnassigned ? unassignedColor : colors[i % colors.length],
+      };
+    });
+  });
+
   protected readonly userStats = signal<any[]>([]);
   protected readonly hoveredPoint = signal<any | null>(null);
+  protected readonly hoveredSlice = signal<any | null>(null);
 
   public ngOnInit() {
     this.loadStats();
@@ -142,29 +197,9 @@ export class Summary implements OnInit {
         y: i * 40 + 10,
       })));
 
-      // Donut Chart: Assigned Emails by Rep
-      const assigned = stats.emailsAssigned || [];
-      const radius = 60;
-      const circ = 2 * Math.PI * radius;
-      let cumulativeCount = 0;
-      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
-
-      this.assignedRepSlices.set(assigned.map((a: any, i: number) => {
-        const countVal = Number(a.count || 0);
-        const pct = totalAssigned > 0 ? (countVal / totalAssigned) : 0;
-        const sliceCirc = pct * circ;
-        const strokeDash = `${sliceCirc} ${circ}`;
-        const strokeOffset = circ - (cumulativeCount / totalAssigned) * circ;
-        cumulativeCount += countVal;
-        return {
-          name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
-          count: countVal,
-          percentage: Math.round(pct * 100),
-          strokeDash,
-          strokeOffset,
-          color: colors[i % colors.length],
-        };
-      }));
+      // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
+      this.rawEmailsAssigned.set(stats.emailsAssigned || []);
+      this.rawUnassignedCount.set(stats.unassignedCount || 0);
 
     } catch (err: any) {
       this.alertSvc.showError('Failed to load dashboard metrics');
