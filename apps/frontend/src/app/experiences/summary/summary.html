@@ -187,12 +187,35 @@
       <!-- Right: Donut Chart - Emails Assigned -->
       <div class="card bg-base-100 border border-base-300 shadow-xl">
         <div class="card-body p-6 flex flex-col justify-between">
-          <div class="mb-2">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-              Open Conversations
-            </h3>
-            <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
+          <div class="mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+                <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+                Open Conversations
+              </h3>
+              <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
+            </div>
+            <!-- Filter Radios -->
+            <div class="join join-horizontal self-start sm:self-auto border border-base-300">
+              <button 
+                class="btn btn-xs join-item" 
+                [class.btn-active]="showAllOpen()" 
+                [class.btn-neutral]="showAllOpen()"
+                [class.btn-ghost]="!showAllOpen()"
+                (click)="showAllOpen.set(true)"
+              >
+                All Open
+              </button>
+              <button 
+                class="btn btn-xs join-item" 
+                [class.btn-active]="!showAllOpen()" 
+                [class.btn-neutral]="!showAllOpen()"
+                [class.btn-ghost]="showAllOpen()"
+                (click)="showAllOpen.set(false)"
+              >
+                Assigned
+              </button>
+            </div>
           </div>
 
           <div class="flex items-center justify-center py-4">
@@ -203,29 +226,54 @@
             }
 
             @if (assignedRepSlices().length > 0) {
-            <svg width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90">
-              <circle cx="80" cy="80" r="60" fill="transparent" stroke="currentColor" class="text-base-300/30" stroke-width="14"></circle>
-              @for (slice of assignedRepSlices(); track slice.name) {
-              <circle 
-                cx="80" 
-                cy="80" 
-                r="60" 
-                fill="transparent" 
-                [attr.stroke]="slice.color" 
-                stroke-width="14"
-                [attr.stroke-dasharray]="slice.strokeDash"
-                [attr.stroke-dashoffset]="slice.strokeOffset"
-                stroke-linecap="round"
-              ></circle>
-              }
-            </svg>
+            <div class="relative w-[160px] h-[160px]">
+              <svg width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90 w-full h-full overflow-visible">
+                <circle cx="80" cy="80" r="60" fill="transparent" stroke="currentColor" class="text-base-300/30" stroke-width="14"></circle>
+                @for (slice of assignedRepSlices(); track slice.name) {
+                <circle 
+                  cx="80" 
+                  cy="80" 
+                  r="60" 
+                  fill="transparent" 
+                  [attr.stroke]="slice.color" 
+                  [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
+                  [attr.stroke-dasharray]="slice.strokeDash"
+                  [attr.stroke-dashoffset]="slice.strokeOffset"
+                  class="cursor-pointer transition-all duration-200 origin-center"
+                  [style.opacity]="hoveredSlice() && hoveredSlice()?.name !== slice.name ? 0.45 : 1"
+                  (mouseenter)="hoveredSlice.set(slice)"
+                  (mouseleave)="hoveredSlice.set(null)"
+                ></circle>
+                }
+              </svg>
+
+              <!-- Center Text Overlay -->
+              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2">
+                @if (hoveredSlice(); as hs) {
+                  <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]">{{ hs.name }}</span>
+                  <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
+                  <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
+                } @else {
+                  <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
+                    {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
+                  </span>
+                  <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
+                  <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
+                }
+              </div>
+            </div>
             }
           </div>
 
           <!-- Legend -->
           <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
             @for (slice of assignedRepSlices(); track slice.name) {
-            <div class="flex items-center justify-between text-xs">
+            <div 
+              class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
+              [class.bg-base-200]="hoveredSlice()?.name === slice.name"
+              (mouseenter)="hoveredSlice.set(slice)"
+              (mouseleave)="hoveredSlice.set(null)"
+            >
               <div class="flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
                 <span class="font-semibold text-base-content">{{ slice.name }}</span>

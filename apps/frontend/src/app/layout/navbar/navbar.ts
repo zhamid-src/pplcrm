@@ -1,7 +1,7 @@
 /**
  * Navigation bar component providing search, theme switching, and user actions.
  */
-import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -27,7 +27,7 @@ import { NotificationsService } from '../../services/api/notifications-service';
 /**
  * Top-level navigation bar displayed across the application.
  */
-export class Navbar {
+export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
   private readonly auth = inject(AuthService);
   private readonly fullscreen = inject(FullScreenService);
@@ -35,6 +35,8 @@ export class Navbar {
   private readonly sideBarSvc = inject(SidebarService);
   private readonly notificationsSvc = inject(NotificationsService);
   private readonly router = inject(Router);
+
+  private pollInterval?: ReturnType<typeof setInterval>;
 
   public readonly notifications = signal<any[]>([]);
   public readonly unreadCount = signal<number>(0);
@@ -59,7 +61,35 @@ export class Navbar {
         });
     });
 
-    this.refresh();
+    void this.refreshCount();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  private lastNotificationFetch = 0;
+
+  /** Triggered by (focusin) on the dropdown container – fires when the panel opens. */
+  protected onNotificationOpen() {
+    const now = Date.now();
+    if (now - this.lastNotificationFetch < 30_000) return; // debounce: once per 30s
+    this.lastNotificationFetch = now;
+    void this.refresh();
   }
 
   protected async refresh() {
@@ -68,7 +98,7 @@ export class Navbar {
         this.notificationsSvc.getLatest(),
         this.notificationsSvc.getUnreadCount(),
       ]);
-      this.notifications.set(list || []);
+      this.notifications.set((list || []).slice(0, 5));
       this.unreadCount.set(count || 0);
     } catch (err) {
       console.error('Failed to load notifications', err);
@@ -79,7 +109,7 @@ export class Navbar {
     if (!notif.read) {
       try {
         await this.notificationsSvc.markRead(notif.id);
-        this.refresh();
+        void this.refresh();
       } catch (err) {
         console.error('Failed to mark notification read', err);
       }
@@ -94,7 +124,6 @@ export class Navbar {
     event.stopPropagation();
     try {
       await this.notificationsSvc.markAllRead();
-      this.refresh();
     } catch (err) {
       console.error('Failed to mark all read', err);
     }
