@@ -268,12 +268,11 @@
             <select
               class="select select-bordered w-full"
               [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
+              (ngModelChange)="!editorCfg.multiple ? onSelectChange(r.original, col, $event) : editingValue.set($event)"
               [multiple]="editorCfg.multiple"
               [attr.size]="editorCfg.size ?? null"
               [style.height]="multiSelectHeight(editorCfg)"
               [class.select-xs]="!editorCfg.multiple"
-              (change)="!editorCfg.multiple && onSelectChange(r.original, col, $any($event.target).value)"
               autofocus
             >
               @for (opt of editorCfg.choices; track opt.value) {

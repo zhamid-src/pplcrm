@@ -62,7 +62,10 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       valueGetter: (p: any) => this.assignedToValueGetter(p),
       valueFormatter: (p: any) => this.assignedToValueFormatter(p),
       cellRenderer: (p: any) => this.renderAssignedCell(p.value),
-      cellEditorParams: () => ({ values: [this.unassignedLabel, ...this.userLabels] }),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
       valueSetter: (p: any) => this.assignToValueSetter(p),
     },
     { field: 'name', headerName: 'Task', editable: true },
@@ -157,35 +160,24 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   }
 
   private assignToValueSetter(p: any) {
-    {
-      const label: string = p.newValue ?? '';
-      if (label === this.unassignedLabel) {
-        if ((p.data as Record<string, any>)['assigned_to'] !== null) {
-          (p.data as Record<string, any>)['assigned_to'] = null;
-          return true;
-        }
-        return false;
-      }
-      const idx = this.userLabels.indexOf(label);
-      const id = idx >= 0 ? this.userIds[idx] : String(p.newValue ?? '');
-      if ((p.data as Record<string, any>)['assigned_to'] !== id) {
-        (p.data as Record<string, any>)['assigned_to'] = id;
-        return true;
-      }
-      return false;
+    const val = p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel ? null : String(p.newValue);
+    if ((p.data as Record<string, any>)['assigned_to'] !== val) {
+      (p.data as Record<string, any>)['assigned_to'] = val;
+      return true;
     }
+    return false;
   }
 
   private assignedToValueFormatter(p: any) {
     const v = p.value;
-    if (v === null || v === undefined || v === '') return this.unassignedLabel;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
     return this.usersById.get(String(v)) ?? String(v ?? '');
   }
 
   private assignedToValueGetter(p: any) {
     const id = p.data?.assigned_to ?? p.value;
-    if (id === null || id === undefined || id === '') return this.unassignedLabel;
-    return this.usersById.get(String(id)) ?? String(id);
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
   }
 
   private dueAtValueSetter(p: any) {

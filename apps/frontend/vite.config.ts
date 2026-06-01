@@ -13,6 +13,9 @@ export default defineConfig(() => ({
     }
   },
   server: {
+    watch: {
+      ignored: ['**/node_modules/**', '**/.angular/**'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
