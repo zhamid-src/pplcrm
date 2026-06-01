@@ -76,6 +76,7 @@ export interface Models {
   volunteer_shifts: VolunteerShifts;
   web_forms: WebForms;
   background_jobs: BackgroundJobs;
+  webhook_events: WebhookEvents;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -498,6 +499,24 @@ export interface BackgroundJobs {
   locked_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface WebhookEvents {
+  id: Generated<string>;
+  tenant_id: string | null;
+  stripe_event_id: string;
+  type: string;
+  payload: Json;
+  status: Generated<string>;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  error: string | null;
+  run_at: Generated<Timestamp>;
+  locked_at: Timestamp | null;
+  locked_by: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  processed_at: Timestamp | null;
 }
 
 interface MsOauthTokens {

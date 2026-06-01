@@ -2,10 +2,12 @@ import Stripe from 'stripe';
 import { env } from '../../../env';
 import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { WebhookEventsRepo } from './repositories/webhook-events.repo';
 
 const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
 const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
 const tenantsRepo = new TenantsRepo();
+const webhookEventsRepo = new WebhookEventsRepo();
 
 export class BillingController {
   constructor() {
@@ -157,7 +159,8 @@ export class BillingController {
   }
 
   /**
-   * Process a Stripe Webhook call
+   * Process a Stripe Webhook call: immediately verifies signature,
+   * writes the raw JSON payload to the database, and returns.
    */
   public async handleWebhook(payload: string, signature: string) {
     if (isMockMode || !stripe || !env.stripeWebhookSecret) {
@@ -174,7 +177,28 @@ export class BillingController {
       throw new Error(`Webhook Error: ${err.message}`);
     }
 
-    console.log(`💳 Received webhook event: ${event.type}`);
+    console.log(`💳 Persisting webhook event: ${event.id} (${event.type})`);
+
+    // Persist event for background worker processing.
+    // Handles idempotency: duplicate events will trigger unique constraint
+    // violation on `stripe_event_id` and be ignored, returning 200 OK.
+    await webhookEventsRepo.db.insertInto('webhook_events' as any)
+      .values({
+        stripe_event_id: event.id,
+        type: event.type,
+        payload: event as any,
+        status: 'pending',
+      })
+      .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+      .execute();
+  }
+
+  /**
+   * Performs the actual business logic updates for a webhook event.
+   * This is processed asynchronously by the background worker.
+   */
+  public async processWebhookEvent(event: Stripe.Event) {
+    console.log(`💳 Processing webhook event: ${event.id} (${event.type})`);
 
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -184,7 +208,7 @@ export class BillingController {
         const customerId = session.customer as string;
 
         if (tenantId && subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId) as any;
+          const subscription = await stripe!.subscriptions.retrieve(subscriptionId) as any;
           const priceId = subscription.items.data[0]?.price.id;
           
           let planName = 'free';
