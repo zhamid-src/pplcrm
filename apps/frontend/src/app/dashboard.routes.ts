@@ -174,8 +174,9 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'tasks/:id',
-    loadComponent: () => import('./experiences/tasks/ui/task-detail').then((m) => m.TaskDetail),
+    loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
   },
+
   {
     path: 'teams',
     children: [
