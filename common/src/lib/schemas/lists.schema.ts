@@ -24,6 +24,7 @@ export const ListsObj = z.object({
     .nullable()
     .optional(),
   last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
 });
 
 export const UpdateListObj = z.object({
@@ -36,6 +37,7 @@ export const UpdateListObj = z.object({
     .nullable()
     .optional(),
   last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
 });
 
 export const ImportListItemObj = z.object({
