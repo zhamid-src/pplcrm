@@ -12,7 +12,7 @@
     </div>
     <button class="btn btn-outline btn-sm gap-2" (click)="loadStats()" [disabled]="isLoading()">
       @if (isLoading()) {
-        <span class="loading loading-spinner loading-xs"></span>
+      <span class="loading loading-spinner loading-xs"></span>
       }
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Reload Stats
@@ -25,9 +25,7 @@
     <span class="loading loading-bars loading-lg text-primary"></span>
     <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
   </div>
-  }
-
-  @if (linePoints().length > 0) {
+  } @if (linePoints().length > 0) {
   <div class="space-y-6">
     <!-- Metric Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -36,10 +34,10 @@
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
             <span class="text-xs text-base-content/50 uppercase font-semibold">Total Open Emails</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">{{ totalOpenCount() }}</h3>
+            <h3 class="text-2xl font-bold text-primary mt-1">{{ totalOpenCount() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">All open inbox conversations</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-primary">
             <pc-icon name="envelope" [size]="6"></pc-icon>
           </div>
         </div>
@@ -50,10 +48,10 @@
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
             <span class="text-xs text-base-content/50 uppercase font-semibold">Unassigned Open</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">{{ unassignedOpenCount() }}</h3>
+            <h3 class="text-2xl font-bold text-warning mt-1">{{ unassignedOpenCount() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">Awaiting user assignment</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-warning">
             <pc-icon name="exclamation-circle" [size]="6"></pc-icon>
           </div>
         </div>
@@ -64,10 +62,10 @@
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
             <span class="text-xs text-base-content/50 uppercase font-semibold">Avg 1st Response</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">{{ avgFirstResponse() }}</h3>
+            <h3 class="text-2xl font-bold text-info mt-1">{{ avgFirstResponse() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">Time to reply or comment</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-info">
             <pc-icon name="clock" [size]="6"></pc-icon>
           </div>
         </div>
@@ -78,10 +76,10 @@
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
             <span class="text-xs text-base-content/50 uppercase font-semibold">Avg Time to Close</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">{{ avgTimeToClose() }}</h3>
+            <h3 class="text-2xl font-bold text-success mt-1">{{ avgTimeToClose() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">From arrival to closed status</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center text-success">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-success">
             <pc-icon name="check-circle" [size]="6"></pc-icon>
           </div>
         </div>
@@ -92,10 +90,10 @@
         <div class="card-body p-5 flex flex-row items-center justify-between">
           <div>
             <span class="text-xs text-base-content/50 uppercase font-semibold">Contacts Growth</span>
-            <h3 class="text-2xl font-bold text-base-content mt-1">+{{ activeContactsCount() }}</h3>
+            <h3 class="text-2xl font-bold text-secondary mt-1">+{{ activeContactsCount() }}</h3>
             <p class="text-xs text-base-content/40 mt-1">New contacts (last 30 days)</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-secondary">
             <pc-icon name="user-plus" [size]="6"></pc-icon>
           </div>
         </div>
@@ -125,34 +123,78 @@
               </defs>
 
               <!-- Grid Lines -->
-              <line x1="20" y1="20" x2="580" y2="20" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
-              <line x1="20" y1="60" x2="580" y2="60" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
-              <line x1="20" y1="100" x2="580" y2="100" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
-              <line x1="20" y1="140" x2="580" y2="140" stroke="currentColor" class="text-base-content/5" stroke-dasharray="4"></line>
+              <line
+                x1="20"
+                y1="20"
+                x2="580"
+                y2="20"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="60"
+                x2="580"
+                y2="60"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="100"
+                x2="580"
+                y2="100"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="140"
+                x2="580"
+                y2="140"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
               <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
 
               <!-- Y Axis Labels -->
               @for (label of yAxisLabels(); track label.y) {
-              <text [attr.x]="12" [attr.y]="label.y + 3" text-anchor="end" class="fill-current text-base-content/40 text-[9px] font-mono">
+              <text
+                [attr.x]="12"
+                [attr.y]="label.y + 3"
+                text-anchor="end"
+                class="fill-current text-base-content/40 text-[9px] font-mono"
+              >
                 {{ label.value }}
               </text>
               }
 
               <!-- Line paths -->
               <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
-              <path [attr.d]="linePath()" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path
+                [attr.d]="linePath()"
+                fill="none"
+                stroke="#3b82f6"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
 
               <!-- Interactive Points -->
               @for (p of linePoints(); track p; let first = $first; let last = $last) {
-              <circle 
-                [attr.cx]="p.x" 
-                [attr.cy]="p.y" 
-                r="4.5" 
-                fill="#ffffff" 
-                stroke="#3b82f6" 
+              <circle
+                [attr.cx]="p.x"
+                [attr.cy]="p.y"
+                r="4.5"
+                fill="#ffffff"
+                stroke="#3b82f6"
                 stroke-width="2"
                 class="hover:scale-150 transition-all duration-150 cursor-pointer"
-                style="transform-origin: center; transform-box: fill-box;"
+                style="transform-origin: center; transform-box: fill-box"
                 (mouseenter)="hoveredPoint.set(p)"
                 (mouseleave)="hoveredPoint.set(null)"
               ></circle>
@@ -160,7 +202,12 @@
 
               <!-- X Axis Labels -->
               @for (label of xAxisLabels(); track label.x) {
-              <text [attr.x]="label.x" [attr.y]="195" text-anchor="middle" class="fill-current text-base-content/40 text-[9px] font-mono">
+              <text
+                [attr.x]="label.x"
+                [attr.y]="195"
+                text-anchor="middle"
+                class="fill-current text-base-content/40 text-[9px] font-mono"
+              >
                 {{ label.label }}
               </text>
               }
@@ -168,12 +215,14 @@
 
             <!-- Tooltip -->
             @if (hoveredPoint(); as p) {
-            <div 
+            <div
               class="absolute z-10 bg-base-100 border border-base-300 px-3 py-2 rounded-lg shadow-xl font-sans pointer-events-none transform -translate-x-1/2 -translate-y-full mt-[-8px] transition-all duration-100"
               [style.left.%]="(p.x / 600) * 100"
               [style.top.%]="(p.y / 200) * 100"
             >
-              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">{{ formatDate(p.date) }}</div>
+              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">
+                {{ formatDate(p.date) }}
+              </div>
               <div class="text-sm font-bold text-base-content mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
                 <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
                 +{{ p.count }} Contacts
@@ -197,18 +246,18 @@
             </div>
             <!-- Filter Radios -->
             <div class="join join-horizontal self-start sm:self-auto border border-base-300">
-              <button 
-                class="btn btn-xs join-item" 
-                [class.btn-active]="showAllOpen()" 
+              <button
+                class="btn btn-xs join-item"
+                [class.btn-active]="showAllOpen()"
                 [class.btn-neutral]="showAllOpen()"
                 [class.btn-ghost]="!showAllOpen()"
                 (click)="showAllOpen.set(true)"
               >
                 All Open
               </button>
-              <button 
-                class="btn btn-xs join-item" 
-                [class.btn-active]="!showAllOpen()" 
+              <button
+                class="btn btn-xs join-item"
+                [class.btn-active]="!showAllOpen()"
                 [class.btn-neutral]="!showAllOpen()"
                 [class.btn-ghost]="showAllOpen()"
                 (click)="showAllOpen.set(false)"
@@ -220,22 +269,31 @@
 
           <div class="flex items-center justify-center py-4">
             @if (assignedRepSlices().length === 0) {
-            <div class="text-sm text-base-content/40 py-10 italic">
-              No open emails assigned.
-            </div>
-            }
-
-            @if (assignedRepSlices().length > 0) {
+            <div class="text-sm text-base-content/40 py-10 italic">No open emails assigned.</div>
+            } @if (assignedRepSlices().length > 0) {
             <div class="relative w-[160px] h-[160px]">
-              <svg width="160" height="160" viewBox="0 0 160 160" class="transform -rotate-90 w-full h-full overflow-visible">
-                <circle cx="80" cy="80" r="60" fill="transparent" stroke="currentColor" class="text-base-300/30" stroke-width="14"></circle>
+              <svg
+                width="160"
+                height="160"
+                viewBox="0 0 160 160"
+                class="transform -rotate-90 w-full h-full overflow-visible"
+              >
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="60"
+                  fill="transparent"
+                  stroke="currentColor"
+                  class="text-base-300/30"
+                  stroke-width="14"
+                ></circle>
                 @for (slice of assignedRepSlices(); track slice.name) {
-                <circle 
-                  cx="80" 
-                  cy="80" 
-                  r="60" 
-                  fill="transparent" 
-                  [attr.stroke]="slice.color" 
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="60"
+                  fill="transparent"
+                  [attr.stroke]="slice.color"
                   [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
                   [attr.stroke-dasharray]="slice.strokeDash"
                   [attr.stroke-dashoffset]="slice.strokeOffset"
@@ -248,17 +306,21 @@
               </svg>
 
               <!-- Center Text Overlay -->
-              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2">
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2"
+              >
                 @if (hoveredSlice(); as hs) {
-                  <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]">{{ hs.name }}</span>
-                  <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
-                  <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
+                <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]"
+                  >{{ hs.name }}</span
+                >
+                <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
+                <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
                 } @else {
-                  <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
-                    {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
-                  </span>
-                  <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
-                  <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
+                <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
+                  {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
+                </span>
+                <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
+                <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
                 }
               </div>
             </div>
@@ -268,7 +330,7 @@
           <!-- Legend -->
           <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
             @for (slice of assignedRepSlices(); track slice.name) {
-            <div 
+            <div
               class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
               [class.bg-base-200]="hoveredSlice()?.name === slice.name"
               (mouseenter)="hoveredSlice.set(slice)"
@@ -313,37 +375,39 @@
             </thead>
             <tbody>
               @for (user of userStats(); track user.user_id) {
-                <tr class="hover">
-                  <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-                  <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
-                  <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
-                  <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
-                  <td class="text-center">
-                    <span class="badge font-semibold"
-                      [class.badge-success]="user.resolutionRate >= 75"
-                      [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                      [class.badge-error]="user.resolutionRate < 40">
-                      {{ user.resolutionRate }}%
-                    </span>
-                  </td>
-                  <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
-                  <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
-                  <td class="text-center">
-                    @if (user.slaBreaches > 0) {
-                      <div class="badge badge-error badge-sm gap-1 font-mono font-bold animate-pulse">
-                        {{ user.slaBreaches }}
-                      </div>
-                    } @else {
-                      <span class="text-base-content/30">—</span>
-                    }
-                  </td>
-                </tr>
+              <tr class="hover">
+                <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+                <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
+                <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
+                <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
+                <td class="text-center">
+                  <span
+                    class="badge font-semibold"
+                    [class.badge-success]="user.resolutionRate >= 75"
+                    [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                    [class.badge-error]="user.resolutionRate < 40"
+                  >
+                    {{ user.resolutionRate }}%
+                  </span>
+                </td>
+                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
+                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
+                <td class="text-center">
+                  @if (user.slaBreaches > 0) {
+                  <div class="badge badge-error badge-sm gap-1 font-mono font-bold animate-pulse">
+                    {{ user.slaBreaches }}
+                  </div>
+                  } @else {
+                  <span class="text-base-content/30">—</span>
+                  }
+                </td>
+              </tr>
               } @empty {
-                <tr>
-                  <td colspan="8" class="text-center py-6 text-base-content/40 italic">
-                    No representative performance statistics available.
-                  </td>
-                </tr>
+              <tr>
+                <td colspan="8" class="text-center py-6 text-base-content/40 italic">
+                  No representative performance statistics available.
+                </td>
+              </tr>
               }
             </tbody>
           </table>
@@ -364,26 +428,49 @@
           </div>
 
           @if (closedRepBars().length === 0) {
-          <div class="text-sm text-base-content/40 py-16 italic text-center">
-            No emails closed by representatives.
-          </div>
-          }
-
-          @if (closedRepBars().length > 0) {
+          <div class="text-sm text-base-content/40 py-16 italic text-center">No emails closed by representatives.</div>
+          } @if (closedRepBars().length > 0) {
           <div class="relative w-full h-[180px]">
             <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
               @for (bar of closedRepBars(); track bar.name; let idx = $index) {
               <g>
                 <!-- Label -->
-                <text x="10" [attr.y]="bar.y + 14" fill="currentColor" class="text-base-content text-xs font-semibold" text-anchor="start">
+                <text
+                  x="10"
+                  [attr.y]="bar.y + 14"
+                  fill="currentColor"
+                  class="text-base-content text-xs font-semibold"
+                  text-anchor="start"
+                >
                   {{ bar.name }}
                 </text>
                 <!-- Bar Background -->
-                <rect x="130" [attr.y]="bar.y" width="360" height="18" rx="4" fill="currentColor" class="text-base-200/50"></rect>
+                <rect
+                  x="130"
+                  [attr.y]="bar.y"
+                  width="360"
+                  height="18"
+                  rx="4"
+                  fill="currentColor"
+                  class="text-base-200/50"
+                ></rect>
                 <!-- Bar Foreground -->
-                <rect x="130" [attr.y]="bar.y" [attr.width]="bar.width" height="18" rx="4" fill="#10b981" class="transition-all duration-500 ease-out"></rect>
+                <rect
+                  x="130"
+                  [attr.y]="bar.y"
+                  [attr.width]="bar.width"
+                  height="18"
+                  rx="4"
+                  fill="#10b981"
+                  class="transition-all duration-500 ease-out"
+                ></rect>
                 <!-- Value -->
-                <text [attr.x]="135 + bar.width" [attr.y]="bar.y + 13" fill="currentColor" class="text-base-content text-[11px] font-mono font-bold">
+                <text
+                  [attr.x]="135 + bar.width"
+                  [attr.y]="bar.y + 13"
+                  fill="currentColor"
+                  class="text-base-content text-[11px] font-mono font-bold"
+                >
                   {{ bar.count }}
                 </text>
               </g>
@@ -404,7 +491,13 @@
 
           <!-- Radial Progress resolution rate -->
           <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
-            <div class="radial-progress text-success font-bold text-xs" [style.--value]="resolutionRate()" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+            <div
+              class="radial-progress text-success font-bold text-xs"
+              [style.--value]="resolutionRate()"
+              [style.--size]="'3.5rem'"
+              [style.--thickness]="'4px'"
+              role="progressbar"
+            >
               {{ resolutionRate() }}%
             </div>
             <div>
@@ -415,13 +508,16 @@
 
           <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
             <p>
-              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or comment on incoming inbox messages.
+              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or
+              comment on incoming inbox messages.
             </p>
             <p>
-              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands in the inbox until it is marked closed.
+              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands
+              in the inbox until it is marked closed.
             </p>
             <p>
-              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach campaigns and imports.
+              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach
+              campaigns and imports.
             </p>
           </div>
           <div class="alert alert-info py-2 text-[10px] mt-4">
