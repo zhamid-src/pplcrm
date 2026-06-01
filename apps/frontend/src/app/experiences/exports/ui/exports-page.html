@@ -16,6 +16,7 @@
           <th>Name</th>
           <th>Status</th>
           <th>Details</th>
+          <th class="text-right">Download</th>
         </tr>
       </thead>
       <tbody>
@@ -33,6 +34,22 @@
             }
           </td>
           <td>{{ j.details || '' }}</td>
+          <td class="text-right">
+            @if (j.status === 'completed') {
+              @if (isExpired(j)) {
+                <span class="text-xs text-base-content/40 italic">Expired (30d)</span>
+              } @else {
+                <button
+                  class="btn btn-xs btn-ghost text-primary gap-1"
+                  title="Download CSV"
+                  (click)="downloadJob(j)"
+                >
+                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                  Download
+                </button>
+              }
+            }
+          </td>
         </tr>
         }
       </tbody>
