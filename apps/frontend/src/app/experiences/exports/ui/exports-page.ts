@@ -1,7 +1,7 @@
 import { Component, DestroyRef, effect, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-
-import { get } from 'idb-keyval';
+import { get, del } from 'idb-keyval';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 @Component({
   selector: 'pc-exports-page',
@@ -10,6 +10,7 @@ import { get } from 'idb-keyval';
 })
 export class ExportsPage {
   private readonly destroyRef = inject(DestroyRef);
+  private readonly alertSvc = inject(AlertService);
 
   protected jobs = signal<ExportJob[]>([]);
   protected loading = signal(true);
@@ -52,10 +53,55 @@ export class ExportsPage {
     }
   }
 
+  protected isExpired(job: ExportJob): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - job.created_at > EXPIRE_MS;
+  }
+
+  protected async downloadJob(job: ExportJob) {
+    if (this.isExpired(job)) {
+      this.alertSvc.showError('This export file has expired.');
+      return;
+    }
+
+    try {
+      const csvContent = await get(`pc_export_file_${job.id}`);
+      if (!csvContent) {
+        this.alertSvc.showError('Export file content not found or expired.');
+        return;
+      }
+
+      const blob = new Blob([csvContent as string], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = job.filename || 'export.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to download export file', e);
+      this.alertSvc.showError('Failed to download export file.');
+    }
+  }
+
   private async load() {
     this.loading.set(true);
     try {
       const list = ((await get('pc_export_jobs')) as ExportJob[]) || [];
+
+      // Clean up/check expired files
+      const now = Date.now();
+      const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+      for (const job of list) {
+        if (now - job.created_at > EXPIRE_MS && job.status === 'completed') {
+          try {
+            await del(`pc_export_file_${job.id}`);
+          } catch {}
+        }
+      }
+
       // newest first
       list.sort((a, b) => b.created_at - a.created_at);
       this.jobs.set(list);
@@ -71,4 +117,5 @@ type ExportJob = {
   id: string;
   name: string;
   status: 'in_progress' | 'completed' | 'failed';
+  filename?: string;
 };

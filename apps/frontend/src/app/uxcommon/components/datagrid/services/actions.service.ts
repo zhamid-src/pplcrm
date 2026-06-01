@@ -13,6 +13,7 @@ type ExportJob = {
   status: 'in_progress' | 'completed' | 'failed';
   created_at: number;
   details?: string;
+  filename?: string;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -167,11 +168,16 @@ export class DataGridActionsService {
         return;
       }
 
+      const finalFileName = fileName || 'grid-export.csv';
+
+      // Save CSV content to IndexedDB
+      await set(`pc_export_file_${job.id}`, csv);
+
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName || 'grid-export.csv';
+      a.download = finalFileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -180,7 +186,7 @@ export class DataGridActionsService {
       const detail = exportAllData
         ? rowCount ? `All rows (${rowCount})` : 'All rows'
         : `Displayed rows (${rowCount})`;
-      await this.markJobCompleted(job.id, 'completed', detail);
+      await this.markJobCompleted(job.id, 'completed', detail, finalFileName);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
@@ -200,12 +206,17 @@ export class DataGridActionsService {
     }
   }
 
-  private async markJobCompleted(id: string, status: ExportJob['status'], details?: string): Promise<void> {
+  private async markJobCompleted(
+    id: string,
+    status: ExportJob['status'],
+    details?: string,
+    filename?: string
+  ): Promise<void> {
     try {
       const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
       const idx = jobs.findIndex((j) => j.id === id);
       if (idx >= 0) {
-        jobs[idx] = { ...jobs[idx], status, details };
+        jobs[idx] = { ...jobs[idx], status, details, filename };
         await set('pc_export_jobs', jobs);
       }
     } catch {}
