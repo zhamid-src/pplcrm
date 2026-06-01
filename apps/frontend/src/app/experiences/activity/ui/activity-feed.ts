@@ -184,27 +184,19 @@ import { IAuthUser } from '@common';
                   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                     <p class="text-sm font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                      @if (isTaskActivity(act)) {
-                        {{ getTaskActivityPrefix(act) }}
-                        <a [routerLink]="['/tasks', act.entity_id || act.metadata?.id]" class="text-primary hover:underline font-semibold">
-                          {{ act.metadata?.task_name || 'task #' + (act.entity_id || act.metadata?.id) }}
-                        </a>
-                        {{ getTaskActivitySuffix(act) }}
-                      } @else {
-                        {{ getActivityDescription(act) }}
-                      }
-                      <!-- Entity link -->
+                      {{ getActivityPrefix(act) }}
                       @if (getEntityLink(act); as link) {
                         <a
                           [routerLink]="link.path"
                           [queryParams]="link.params"
-                          class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5 hover:badge-primary cursor-pointer"
-                          i18n-title="@@activityFeed.entityLink.title"
-                          title="Go to record"
-                        >{{ act.entity }}{{ link.label ? ': ' + link.label : '' }}</a>
+                          class="text-primary hover:underline font-semibold"
+                        >
+                          {{ getEntityLabelText(act) }}
+                        </a>
                       } @else {
-                        <span class="badge badge-outline badge-sm text-[10px] capitalize ml-1.5">{{ act.entity }}</span>
+                        <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
                       }
+                      {{ getActivitySuffix(act) }}
                     </p>
                     <span class="text-[11px] text-base-content/40 whitespace-nowrap">{{ act.created_at | date:'short' }}</span>
                   </div>
@@ -349,32 +341,48 @@ export class ActivityFeed implements OnInit {
     }
   }
 
-  protected getActivityDescription(act: any): string {
-    const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
+  private formatValue(val: any): string {
+    if (val === null || val === undefined || val === '') return 'none';
+    if (typeof val === 'boolean') return val ? 'yes' : 'no';
+    if (typeof val === 'object') return JSON.stringify(val);
+    const str = String(val);
+    if (str.length > 40) {
+      return `"${str.substring(0, 40)}..."`;
+    }
+    return `"${str}"`;
+  }
+
+  protected getActivityPrefix(act: any): string {
     const meta = act.metadata ?? {};
-    let ent = act.entity ?? 'record';
-    const entLower = ent.toLowerCase();
-    if (entLower === 'persons' || entLower === 'people') ent = 'person';
-    else if (entLower === 'households') ent = 'household';
-    else if (entLower === 'companies') ent = 'company';
-    else if (entLower === 'tasks' || entLower === 'tasks_archived') ent = 'task';
-    else if (entLower === 'emails') ent = 'email';
-    else if (entLower === 'newsletters') ent = 'newsletter';
+    const ent = act.entity ?? 'record';
 
     switch (act.activity) {
-      case 'create':   return `created a new ${ent} record${qty}`;
+      case 'create':
+        if (act.activity === 'submission') return ' submitted ';
+        return ' created a new ';
+      case 'delete':   return ' deleted ';
+      case 'merge':    return ' merged duplicate ';
+      case 'import':   return ' imported ';
+      case 'export':   return ' exported ';
+      case 'assign':   return ' assigned ';
+      case 'unassign': return ' unassigned ';
+      case 'close':    return ' closed ';
+      case 'reopen':   return ' reopened ';
+      case 'submission': return ' submitted ';
+      case 'signup':   return ' signed up for ';
+      case 'send':     return ' sent ';
       case 'update': {
         if (meta['action'] === 'add_comment') {
-          return `added a comment to this ${ent}`;
+          return ' added a comment to ';
         }
         if (meta['action'] === 'add_subtask') {
-          return `added subtask "${meta['subtask_name']}" to this ${ent}`;
+          return ` added subtask "${meta['subtask_name']}" to `;
         }
         if (meta['action'] === 'toggle_subtask') {
-          return `${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on this ${ent}`;
+          return ` ${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on `;
         }
         if (meta['action'] === 'add_attachment') {
-          return `attached file "${meta['filename']}" to this ${ent}`;
+          return ` attached file "${meta['filename']}" to `;
         }
         if (meta['action'] === 'change_due_date') {
           if (meta['due_at']) {
@@ -387,25 +395,108 @@ export class ActivityFeed implements OnInit {
               const dateVal = new Date(year, month, day);
               formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
             }
-            return `changed the due date to ${formattedDate} on this ${ent}`;
+            return ` changed the due date to ${formattedDate} on `;
           }
-          return `removed the due date on this ${ent}`;
+          return ' removed the due date on ';
         }
-        return `updated the ${ent} record`;
+        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
+          return ` attached tag "${meta['name']}" to `;
+        }
+        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
+          return ` detached tag "${meta['name']}" from `;
+        }
+        if (meta['action'] === 'status_update') {
+          return ' updated the status of ';
+        }
+        
+        // Household address check
+        const entLower = ent.toLowerCase();
+        if (entLower === 'households' || entLower === 'household') {
+          const addressFields = ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'formatted_address'];
+          if (meta.changes && Object.keys(meta.changes).some(k => addressFields.includes(k))) {
+            return ' updated the address of ';
+          }
+        }
+        return ' updated ';
       }
-      case 'delete':   return `deleted ${ent} record(s)${qty}`;
-      case 'merge':    return `merged duplicate ${ent} records`;
-      case 'import':   return `imported data into ${ent}${qty}`;
-      case 'export':   return `exported ${ent} data${qty}`;
-      case 'assign': {
-        const assignee = meta['assigned_to_name'] ?? 'someone';
-        return `assigned this ${ent} to ${assignee}`;
-      }
-      case 'unassign': return `unassigned this ${ent}`;
-      case 'close':    return `closed this ${ent}`;
-      case 'reopen':   return `reopened this ${ent}`;
-      default:         return `performed ${act.activity} action on ${ent}`;
+      default:         return ` performed ${act.activity} on `;
     }
+  }
+
+  protected getEntityLabelText(act: any): string {
+    const entLower = (act.entity ?? '').toLowerCase();
+    const meta = act.metadata ?? {};
+    if (entLower === 'email' || entLower === 'emails') {
+      return 'email';
+    }
+
+    let typePrefix = '';
+    if (entLower === 'persons' || entLower === 'person' || entLower === 'people') typePrefix = 'person ';
+    else if (entLower === 'households' || entLower === 'household') typePrefix = 'household ';
+    else if (entLower === 'companies' || entLower === 'company') typePrefix = 'company ';
+    else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') typePrefix = 'task ';
+    else if (entLower === 'teams' || entLower === 'team') typePrefix = 'team ';
+    else if (entLower === 'tags' || entLower === 'tag') typePrefix = 'tag ';
+    else if (entLower === 'web_forms' || entLower === 'web_form' || entLower === 'forms' || entLower === 'form') typePrefix = 'form ';
+    else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') typePrefix = 'volunteer event ';
+    else if (entLower === 'volunteer_shifts' || entLower === 'volunteer_shift') typePrefix = 'volunteer shift ';
+    else if (entLower === 'newsletters' || entLower === 'newsletter') typePrefix = 'newsletter ';
+
+    let label = '';
+    if (meta.entity_label) {
+      label = meta.entity_label;
+    } else if (entLower === 'persons' || entLower === 'person' || entLower === 'people') {
+      const name = meta.person_name || meta.name || (act.first_name && act.last_name ? `${act.first_name} ${act.last_name}` : null);
+      label = name || 'person #' + (act.entity_id || meta.id);
+    } else if (entLower === 'households' || entLower === 'household') {
+      label = meta.household_name || meta.address || 'household #' + (act.entity_id || meta.id);
+    } else if (entLower === 'companies' || entLower === 'company') {
+      label = meta.company_name || meta.name || 'company #' + (act.entity_id || meta.id);
+    } else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') {
+      label = meta.task_name || meta.name || 'task #' + (act.entity_id || meta.id);
+    } else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') {
+      label = meta.event_name || meta.name || 'event #' + (act.entity_id || meta.id);
+    } else if (entLower === 'teams' || entLower === 'team') {
+      label = meta.team_name || meta.name || 'team #' + (act.entity_id || meta.id);
+    } else if (entLower === 'tags' || entLower === 'tag') {
+      label = meta.tag_name || meta.name || 'tag #' + (act.entity_id || meta.id);
+    } else {
+      label = meta.name || meta.subject || meta.title || meta.task_name || ('#' + (act.entity_id || meta.id));
+    }
+
+    const normLabel = label.trim().toLowerCase();
+    const normPrefix = typePrefix.trim().toLowerCase();
+
+    if (normPrefix && normLabel.startsWith(normPrefix)) {
+      return label;
+    }
+    if (normPrefix === 'volunteer event' && normLabel.startsWith('event')) {
+      return 'volunteer ' + label;
+    }
+    return `${typePrefix}${label}`;
+  }
+
+  protected getActivitySuffix(act: any): string {
+    const meta = act.metadata ?? {};
+    if (act.activity === 'assign') {
+      const assignee = meta['assigned_to_name'] ?? meta['person_name'] ?? 'someone';
+      return ` to ${assignee}`;
+    }
+    if (act.activity === 'update' && meta.changes) {
+      const parts: string[] = [];
+      const keys = Object.keys(meta.changes);
+      if (keys.length > 0) {
+        for (const key of keys) {
+          const change = meta.changes[key];
+          const fieldName = key.replace(/_/g, ' ');
+          const fromVal = this.formatValue(change.from);
+          const toVal = this.formatValue(change.to);
+          parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
+        }
+        return ` (changed ${parts.join(', ')})`;
+      }
+    }
+    return '';
   }
 
   /**
@@ -502,65 +593,5 @@ export class ActivityFeed implements OnInit {
     this.selectedActivity.set('');
     this.searchStr.set('');
     this.refreshFeed();
-  }
-
-  protected isTaskActivity(act: any): boolean {
-    const entLower = (act.entity ?? '').toLowerCase();
-    return entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived';
-  }
-
-  protected getTaskActivityPrefix(act: any): string {
-    const meta = act.metadata ?? {};
-    switch (act.activity) {
-      case 'create':   return ' created a new ';
-      case 'update': {
-        if (meta['action'] === 'add_comment') {
-          return ' added a comment to ';
-        }
-        if (meta['action'] === 'add_subtask') {
-          return ` added subtask "${meta['subtask_name']}" to `;
-        }
-        if (meta['action'] === 'toggle_subtask') {
-          return ` ${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on `;
-        }
-        if (meta['action'] === 'add_attachment') {
-          return ` attached file "${meta['filename']}" to `;
-        }
-        if (meta['action'] === 'change_due_date') {
-          if (meta['due_at']) {
-            const parts = String(meta['due_at']).split('-');
-            let formattedDate = String(meta['due_at']);
-            if (parts.length === 3) {
-              const year = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10) - 1;
-              const day = parseInt(parts[2], 10);
-              const dateVal = new Date(year, month, day);
-              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-            }
-            return ` changed the due date to ${formattedDate} on `;
-          }
-          return ' removed the due date on ';
-        }
-        return ' updated ';
-      }
-      case 'delete':   return ' deleted ';
-      case 'merge':    return ' merged duplicate ';
-      case 'import':   return ' imported ';
-      case 'export':   return ' exported ';
-      case 'assign':   return ' assigned ';
-      case 'unassign': return ' unassigned ';
-      case 'close':    return ' closed ';
-      case 'reopen':   return ' reopened ';
-      default:         return ` performed ${act.activity} on `;
-    }
-  }
-
-  protected getTaskActivitySuffix(act: any): string {
-    const meta = act.metadata ?? {};
-    if (act.activity === 'assign') {
-      const assignee = meta['assigned_to_name'] ?? 'someone';
-      return ` to ${assignee}`;
-    }
-    return '';
   }
 }

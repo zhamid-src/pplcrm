@@ -38,6 +38,30 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
 
   constructor(private repo: R) {}
 
+  private getEntityLabel(tableName: string, rowObj: any): string {
+    if (!rowObj) return '';
+    if (tableName === 'tasks') {
+      return String(rowObj['name'] || '');
+    }
+    if (tableName === 'persons') {
+      return `${rowObj['first_name'] || ''} ${rowObj['last_name'] || ''}`.trim();
+    }
+    if (tableName === 'households') {
+      const streetParts = [
+        rowObj['apt'] ? `Apt ${rowObj['apt']}` : null,
+        rowObj['street_num'],
+        rowObj['street1'],
+        rowObj['street2'],
+      ].filter(Boolean);
+      const locationParts = [rowObj['city'], rowObj['state'], rowObj['zip']].filter(Boolean);
+      return [streetParts.join(' '), locationParts.join(', ')].filter(Boolean).join(', ').trim() || 'Household';
+    }
+    if (tableName === 'emails') {
+      return String(rowObj['subject'] || '');
+    }
+    return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
+  }
+
   /**
    * Inserts a single row into the table.
    *
@@ -55,6 +79,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const resultObj = result as Record<string, unknown> | undefined;
         const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
         const metadata: Record<string, any> = resultId ? { id: resultId } : {};
+        if (resultObj) {
+          const tableName = String(this.repo.getTableName());
+          metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
+        }
         if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
           metadata['task_name'] = String(resultObj['name']);
         }
@@ -218,6 +246,12 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
    * @returns A Promise resolving to the updated row
    */
   public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+    let original: any = null;
+    try {
+      original = await this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
+    } catch (err) {
+      console.error('Failed to fetch original record for activity log', err);
+    }
     const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
     try {
       const rowObj = input.row as Record<string, unknown>;
@@ -225,6 +259,32 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       if (actor != null) {
         const metadata: Record<string, any> = { id: input.id };
         const resultObj = result as Record<string, unknown> | undefined;
+        if (original && resultObj) {
+          const skipKeys = [
+            'id',
+            'tenant_id',
+            'createdby_id',
+            'updatedby_id',
+            'created_at',
+            'updated_at',
+            'address_fp_street',
+            'address_fp_full',
+            'password',
+            'password_reset_code',
+            'password_reset_code_created_at',
+          ];
+          const changes: Record<string, any> = {};
+          for (const key of Object.keys(rowObj)) {
+            if (skipKeys.includes(key)) continue;
+            const oldVal = (original as any)[key];
+            const newVal = resultObj[key];
+            if (oldVal !== newVal) {
+              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+            }
+          }
+          metadata['changes'] = changes;
+          metadata['entity_label'] = this.getEntityLabel(String(this.repo.getTableName()), resultObj);
+        }
         if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
           metadata['task_name'] = String(resultObj['name']);
         }

@@ -77,7 +77,10 @@ export class PersonsService {
         entity: 'persons',
         entity_id: result?.id ? String(result.id) : null,
         quantity: 1,
-        metadata: { id: result?.id },
+        metadata: {
+          id: result?.id,
+          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+        },
       });
     } catch (e) {
       console.error('Failed to log create person activity', e);
@@ -98,6 +101,12 @@ export class PersonsService {
       }
     }
 
+    let original: any = null;
+    try {
+      original = await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id });
+    } catch (err) {
+      console.error('Failed to fetch original person record for activity log', err);
+    }
     const result = await this.personsRepo.update({
       tenant_id: auth.tenant_id,
       id,
@@ -107,6 +116,26 @@ export class PersonsService {
       } as OperationDataType<'persons', 'update'>,
     });
     try {
+      const changes: Record<string, any> = {};
+      const resultObj = result && typeof result === 'object' ? (result as any) : null;
+      if (original && resultObj) {
+        const skipKeys = [
+          'id',
+          'tenant_id',
+          'createdby_id',
+          'updatedby_id',
+          'created_at',
+          'updated_at',
+        ];
+        for (const key of Object.keys(data)) {
+          if (skipKeys.includes(key)) continue;
+          const oldVal = (original as any)[key];
+          const newVal = resultObj[key];
+          if (oldVal !== newVal) {
+            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+          }
+        }
+      }
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
@@ -114,7 +143,11 @@ export class PersonsService {
         entity: 'persons',
         entity_id: id ? String(id) : null,
         quantity: 1,
-        metadata: { id },
+        metadata: {
+          id,
+          entity_label: resultObj ? `${resultObj.first_name || ''} ${resultObj.last_name || ''}`.trim() || 'Person' : 'Person',
+          changes,
+        },
       });
     } catch (e) {
       console.error('Failed to log update person activity', e);
