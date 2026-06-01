@@ -141,6 +141,34 @@ export class RecordActivities {
     }
   }
 
+  private formatValue(val: any): string {
+    if (val === null || val === undefined || val === '') return 'none';
+    if (typeof val === 'boolean') return val ? 'yes' : 'no';
+    if (typeof val === 'object') return JSON.stringify(val);
+    const str = String(val);
+    if (str.length > 40) {
+      return `"${str.substring(0, 40)}..."`;
+    }
+    return `"${str}"`;
+  }
+
+  private getChangesSuffix(changes: any): string {
+    if (!changes) return '';
+    const parts: string[] = [];
+    const keys = Object.keys(changes);
+    if (keys.length > 0) {
+      for (const key of keys) {
+        const change = changes[key];
+        const fieldName = key.replace(/_/g, ' ');
+        const fromVal = this.formatValue(change.from);
+        const toVal = this.formatValue(change.to);
+        parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
+      }
+      return ` (changed ${parts.join(', ')})`;
+    }
+    return '';
+  }
+
   protected getActivityLabel(act: any): string {
     const meta = act.metadata ?? {};
     const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
@@ -181,7 +209,24 @@ export class RecordActivities {
           }
           return `removed the due date on this ${ent}`;
         }
-        return `updated this ${ent} record`;
+        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
+          return `attached tag "${meta['name']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
+          return `detached tag "${meta['name']}" from this ${ent}`;
+        }
+        if (meta['action'] === 'status_update') {
+          return `updated the status of this ${ent}`;
+        }
+        
+        // Household address check
+        if (entLower === 'households' || entLower === 'household') {
+          const addressFields = ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'formatted_address'];
+          if (meta.changes && Object.keys(meta.changes).some(k => addressFields.includes(k))) {
+            return `updated the address of this household` + this.getChangesSuffix(meta.changes);
+          }
+        }
+        return `updated this ${ent} record` + this.getChangesSuffix(meta.changes);
       }
       case 'delete':   return `deleted ${ent} record${qty}`;
       case 'merge':    return `merged duplicate ${ent} records`;
