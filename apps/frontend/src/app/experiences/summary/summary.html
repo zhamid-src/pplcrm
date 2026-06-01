@@ -27,6 +27,51 @@
   </div>
   } @if (linePoints().length > 0) {
   <div class="space-y-6">
+    <!-- SLA Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Email SLA Card -->
+      <div class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
+           [class.bg-success]="totalEmailSlaBreaches() === 0"
+           [class.text-success-content]="totalEmailSlaBreaches() === 0"
+           [class.bg-warning]="totalEmailSlaBreaches() > 0 && totalEmailSlaBreaches() <= 3"
+           [class.text-warning-content]="totalEmailSlaBreaches() > 0 && totalEmailSlaBreaches() <= 3"
+           [class.bg-error]="totalEmailSlaBreaches() > 3"
+           [class.text-error-content]="totalEmailSlaBreaches() > 3">
+        <div class="card-body p-5">
+          <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
+          <div class="flex items-baseline gap-2 mt-1">
+            <h3 class="text-2xl font-black">
+              {{ totalEmailSlaBreaches() === 0 ? 'Healthy' : totalEmailSlaBreaches() + ' Breached' }}
+            </h3>
+            <span class="text-xs opacity-85">
+              ({{ unassignedEmailSlaBreaches() }} unassigned breaches)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task SLA Card -->
+      <div class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
+           [class.bg-success]="totalTaskSlaBreaches() === 0"
+           [class.text-success-content]="totalTaskSlaBreaches() === 0"
+           [class.bg-warning]="totalTaskSlaBreaches() > 0 && totalTaskSlaBreaches() <= 3"
+           [class.text-warning-content]="totalTaskSlaBreaches() > 0 && totalTaskSlaBreaches() <= 3"
+           [class.bg-error]="totalTaskSlaBreaches() > 3"
+           [class.text-error-content]="totalTaskSlaBreaches() > 3">
+        <div class="card-body p-5">
+          <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
+          <div class="flex items-baseline gap-2 mt-1">
+            <h3 class="text-2xl font-black">
+              {{ totalTaskSlaBreaches() === 0 ? 'Healthy' : totalTaskSlaBreaches() + ' Breached' }}
+            </h3>
+            <span class="text-xs opacity-85">
+              ({{ unassignedTaskSlaBreaches() }} unassigned breaches)
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Metric Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       <!-- Card 1 -->
@@ -370,7 +415,8 @@
                 <th class="text-center">Resolution Rate</th>
                 <th class="text-center">Avg 1st Response</th>
                 <th class="text-center">Avg Time to Close</th>
-                <th class="text-center">SLA Breaches (>24h)</th>
+                <th class="text-center">Email SLA Breaches</th>
+                <th class="text-center">Task SLA Breaches</th>
               </tr>
             </thead>
             <tbody>
@@ -393,12 +439,25 @@
                 <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
                 <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
                 <td class="text-center">
-                  @if (user.slaBreaches > 0) {
-                  <div class="badge badge-error badge-sm gap-1 font-mono font-bold animate-pulse">
-                    {{ user.slaBreaches }}
+                  @if (user.emailSlaBreaches > 0) {
+                  <div class="badge badge-error badge-sm font-mono font-bold animate-pulse">
+                    {{ user.emailSlaBreaches }}
                   </div>
                   } @else {
-                  <span class="text-base-content/30">—</span>
+                  <div class="badge badge-success badge-sm font-mono font-bold text-white">
+                    0
+                  </div>
+                  }
+                </td>
+                <td class="text-center">
+                  @if (user.taskSlaBreaches > 0) {
+                  <div class="badge badge-warning badge-sm font-mono font-bold">
+                    {{ user.taskSlaBreaches }}
+                  </div>
+                  } @else {
+                  <div class="badge badge-success badge-sm font-mono font-bold text-white">
+                    0
+                  </div>
                   }
                 </td>
               </tr>

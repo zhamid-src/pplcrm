@@ -102,6 +102,7 @@ export {
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';
+export { calculateWorkingTimeMs } from './lib/sla';
 
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 
