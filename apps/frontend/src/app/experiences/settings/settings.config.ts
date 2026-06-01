@@ -284,6 +284,44 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     ],
   },
   {
+    id: 'sla',
+    title: 'SLA Configuration',
+    description: 'Configure Service Level Agreements (SLAs) for tasks and emails, including working days and hours.',
+    icon: 'clock',
+    fields: [
+      {
+        key: 'sla.tasks_hours',
+        label: 'Task SLA Target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+      },
+      {
+        key: 'sla.emails_hours',
+        label: 'Email SLA Target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+      },
+      {
+        key: 'sla.working_days',
+        label: 'Working Days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
+        type: 'text',
+        defaultValue: '1,2,3,4,5',
+      },
+      {
+        key: 'sla.working_hours_start',
+        label: 'Working Hours Start (HH:MM)',
+        type: 'text',
+        defaultValue: '09:00',
+      },
+      {
+        key: 'sla.working_hours_end',
+        label: 'Working Hours End (HH:MM)',
+        type: 'text',
+        defaultValue: '17:00',
+      },
+    ],
+  },
+  {
     id: 'appearance',
     title: 'Appearance',
     description: 'Global UI defaults that users can override locally.',

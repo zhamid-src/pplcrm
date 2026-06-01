@@ -1,6 +1,8 @@
 import { BaseRepository } from '../../lib/base.repo';
 import type { IAuthKeyPayload } from 'common/src/lib/auth';
 import { sql } from 'kysely';
+import { calculateWorkingTimeMs } from '@common';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {
   private get db() {
@@ -9,6 +11,24 @@ export class DashboardController {
 
   public async getStats(auth: IAuthKeyPayload) {
     const tenant_id = auth.tenant_id;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
 
     // 1. Fetch all users in the tenant
     const users = await this.db.selectFrom('authusers')
@@ -21,6 +41,12 @@ export class DashboardController {
       .select(['id', 'from_email', 'created_at', 'updated_at', 'status', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
       .where('folder_id', '=', '11')
+      .execute();
+
+    // 2.3 Fetch all tasks for this tenant
+    const tasks = await this.db.selectFrom('tasks')
+      .select(['id', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
       .execute();
 
     // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
@@ -85,6 +111,8 @@ export class DashboardController {
       totalTimeToCloseMs: number;
       timeToCloseCount: number;
       slaBreaches: number;
+      emailSlaBreaches: number;
+      taskSlaBreaches: number;
     }> = {};
 
     for (const u of users) {
@@ -99,6 +127,8 @@ export class DashboardController {
         totalTimeToCloseMs: 0,
         timeToCloseCount: 0,
         slaBreaches: 0,
+        emailSlaBreaches: 0,
+        taskSlaBreaches: 0,
       };
     }
 
@@ -108,9 +138,10 @@ export class DashboardController {
     let globalTimeToCloseCount = 0;
     let unassignedCount = 0;
     let unassignedSlaBreaches = 0;
+    let unassignedEmailSlaBreaches = 0;
+    let unassignedTaskSlaBreaches = 0;
 
     const nowMs = Date.now();
-    const SLA_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
     for (const email of inboxEmails) {
       const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
@@ -184,14 +215,45 @@ export class DashboardController {
         }
       }
 
-      // SLA Breach calculation: Open inbox email older than 24h with no response yet
+      // SLA Breach calculation: Open inbox email older than target in working hours
       if (email.status === 'open') {
-        const ageMs = nowMs - new Date(email.created_at).getTime();
-        if (ageMs > SLA_THRESHOLD_MS && !firstResponseTime) {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(email.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd
+        );
+        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
           if (assignedUser) {
-            assignedUser.slaBreaches++;
+            assignedUser.emailSlaBreaches++;
+            assignedUser.slaBreaches++; // for backward compatibility
           } else {
-            unassignedSlaBreaches++;
+            unassignedEmailSlaBreaches++;
+            unassignedSlaBreaches++; // for backward compatibility
+          }
+        }
+      }
+    }
+
+    // Calculate Task SLA Breaches
+    for (const task of tasks) {
+      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
+      if (isOpenTask) {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd
+        );
+        if (workingTimeMs > taskSlaMs) {
+          const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
+          const assignedUser = isAssigned ? userStatsMap[task.assigned_to!] : null;
+          if (assignedUser) {
+            assignedUser.taskSlaBreaches++;
+          } else {
+            unassignedTaskSlaBreaches++;
           }
         }
       }
@@ -254,6 +316,8 @@ export class DashboardController {
         avgFirstResponseHours: avgFirstResponse,
         avgTimeToCloseHours: avgTimeToClose,
         slaBreaches: u.slaBreaches,
+        emailSlaBreaches: u.emailSlaBreaches,
+        taskSlaBreaches: u.taskSlaBreaches,
       };
     });
 
@@ -269,6 +333,8 @@ export class DashboardController {
       totalOpenCount,
       userStats,
       unassignedSlaBreaches,
+      unassignedEmailSlaBreaches,
+      unassignedTaskSlaBreaches,
     };
   }
 }

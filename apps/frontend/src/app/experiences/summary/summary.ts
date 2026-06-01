@@ -25,6 +25,12 @@ export class Summary implements OnInit {
   protected readonly activeContactsCount = signal(0);
   protected readonly resolutionRate = signal(0);
 
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
   // SVG Chart data
   protected readonly linePath = signal('');
   protected readonly areaPath = signal('');
@@ -120,11 +126,25 @@ export class Summary implements OnInit {
       const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
       this.resolutionRate.set(Math.round(rate));
 
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce((acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0), 0);
+      const assignedTaskSla = (stats.userStats || []).reduce((acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0), 0);
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
       // Map representative stats
       const formattedUserStats = (stats.userStats || []).map((u: any) => ({
         ...u,
         avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
         avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+        emailSlaBreaches: u.emailSlaBreaches || 0,
+        taskSlaBreaches: u.taskSlaBreaches || 0,
       }));
       this.userStats.set(formattedUserStats);
 
