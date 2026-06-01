@@ -24,15 +24,30 @@ import { IAuthUser } from '@common';
             Real-time audit log of changes made to contacts, emails, tasks, and system settings.
           </p>
         </div>
-        <button
-          class="btn btn-outline btn-sm gap-2"
-          (click)="refreshFeed()"
-          i18n-title="@@activityFeed.refreshButton.title"
-          title="Refresh the activity feed"
-        >
-          <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          <ng-container i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label">Refresh Feed</ng-container>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="btn btn-outline btn-sm gap-2 text-primary hover:bg-primary/10"
+            (click)="exportFeed()"
+            [disabled]="isLoadingExport() || activities().length === 0"
+            title="Export activity feed as CSV"
+          >
+            @if (isLoadingExport()) {
+              <span class="loading loading-spinner loading-xs"></span>
+            } @else {
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            }
+            <span>Export Feed</span>
+          </button>
+          <button
+            class="btn btn-outline btn-sm gap-2"
+            (click)="refreshFeed()"
+            i18n-title="@@activityFeed.refreshButton.title"
+            title="Refresh the activity feed"
+          >
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            <ng-container i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label">Refresh Feed</ng-container>
+          </button>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -240,6 +255,7 @@ export class ActivityFeed implements OnInit {
 
   protected readonly activities = signal<any[]>([]);
   protected readonly isLoading = signal(false);
+  protected readonly isLoadingExport = signal(false);
   protected readonly hasMore = signal(false);
 
   protected readonly selectedUser = signal<string>('');
@@ -274,6 +290,41 @@ export class ActivityFeed implements OnInit {
 
   protected async loadMore() {
     await this.fetchPage(false);
+  }
+
+  protected async exportFeed() {
+    this.isLoadingExport.set(true);
+    try {
+      const res = await this.activitySvc.exportCsv({
+        options: {
+          userId: this.selectedUser() || undefined,
+          entity: this.selectedEntity() || undefined,
+          activity: this.selectedActivity() || undefined,
+          searchStr: this.searchStr() || undefined,
+        },
+        fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
+      });
+
+      if (res && res.csv) {
+        const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.fileName || 'activity-feed-export.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.alertSvc.showSuccess('Activity feed exported successfully');
+      } else {
+        this.alertSvc.showError('No activity data to export');
+      }
+    } catch (err: any) {
+      console.error('Failed to export activity feed', err);
+      this.alertSvc.showError('Failed to export activity feed');
+    } finally {
+      this.isLoadingExport.set(false);
+    }
   }
 
   private async fetchPage(replace: boolean) {

@@ -2,6 +2,8 @@ import { StorageService } from '../storage.service';
 import { PersonsService } from '../../modules/persons/services/persons.service';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { ListsController } from '../../modules/lists/controller';
+import { ActivityController } from '../../modules/activity/controller';
+import { sql } from 'kysely';
 
 export class BackgroundJobWorker {
   private isRunning = false;
@@ -14,7 +16,37 @@ export class BackgroundJobWorker {
     if (this.isRunning) return;
     this.isRunning = true;
     console.log('Background Job Worker started.');
+    this.ensureCleanupJobScheduled().catch((err) =>
+      console.error('Failed to ensure cleanup job scheduled:', err)
+    );
     this.poll();
+  }
+
+  private async ensureCleanupJobScheduled(): Promise<void> {
+    try {
+      const existing = await this.db
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'cleanup_activities')
+        .executeTakeFirst();
+      if (!existing) {
+        console.log('Scheduling daily activity feed cleanup background job…');
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'cleanup_activities' }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    } catch (err) {
+      console.error('Failed to ensure cleanup job scheduled:', err);
+    }
   }
 
   public stop() {
@@ -84,6 +116,21 @@ export class BackgroundJobWorker {
       if (payload.type === 'refresh_list') {
         const listsController = new ListsController();
         await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+      } else if (payload.type === 'cleanup_activities') {
+        const activityController = new ActivityController();
+        await activityController.deleteOldActivities();
+
+        // Schedule next cleanup_activities job 24 hours later
+        await this.db.insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'cleanup_activities' }),
+            run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
+            max_attempts: 3,
+          })
+          .execute();
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
@@ -199,6 +246,24 @@ export class BackgroundJobWorker {
           })
           .where('id', '=', job.id)
           .execute();
+
+        // If the cleanup activities job failed permanently, schedule the next one for the next day
+        if (payload.type === 'cleanup_activities') {
+          try {
+            await this.db.insertInto('background_jobs' as any)
+              .values({
+                tenant_id: null,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({ type: 'cleanup_activities' }),
+                run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                max_attempts: 3,
+              })
+              .execute();
+          } catch (schedErr) {
+            console.error('Failed to reschedule failed cleanup job:', schedErr);
+          }
+        }
       }
     }
   }
