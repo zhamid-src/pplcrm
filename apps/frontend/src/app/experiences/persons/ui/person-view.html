@@ -1,0 +1,552 @@
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+
+    <!-- Top Navigation Bar & Action Button -->
+    <div class="flex items-center justify-between border-b border-base-300 pb-4">
+      <div class="flex items-center gap-3">
+        <a routerLink="/people" class="btn btn-sm btn-ghost gap-1">
+          <pc-icon name="arrow-left" [size]="4"></pc-icon>
+          Back to People
+        </a>
+      </div>
+      <div class="flex items-center gap-2">
+        <a [routerLink]="['edit']" class="btn btn-primary btn-sm gap-2">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          EDIT PROFILE
+        </a>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div class="flex justify-center items-center py-20">
+        <progress class="progress w-56"></progress>
+      </div>
+    } @else if (person()) {
+      <!-- Main Content Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left Column: Contact Card & Bio -->
+        <div class="lg:col-span-1 flex flex-col gap-6">
+
+          <!-- Elegant Contact Card -->
+          <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
+            <!-- Decorative Card Header Gradient -->
+            <div class="h-24 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+            
+            <div class="px-6 pb-6 relative flex flex-col items-center">
+              <!-- Avatar Chip -->
+              <div class="avatar placeholder -mt-12 mb-3">
+                <div class="bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg">
+                  {{ initials() }}
+                </div>
+              </div>
+
+              <!-- Name & Company -->
+              <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
+              @if (person().company_name) {
+                <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+                  <pc-icon name="briefcase" [size]="4"></pc-icon>
+                  {{ person().company_name }}
+                </div>
+              } @else {
+                <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
+              }
+
+              <!-- Social Media Buttons -->
+              <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+                <!-- LinkedIn -->
+                @if (person().linkedin) {
+                  <a [href]="person().linkedin" target="_blank" class="btn btn-circle btn-sm shadow-md hover:scale-110 transition-transform bg-[#0a66c2] text-white border-none tooltip" data-tip="LinkedIn profile">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.779-1.75-1.75s.784-1.75 1.75-1.75 1.75.779 1.75 1.75-.784 1.75-1.75 1.75zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                    </svg>
+                  </a>
+                } @else {
+                  <button class="btn btn-circle btn-sm bg-base-200 text-base-content/30 border-base-300 tooltip cursor-not-allowed" data-tip="LinkedIn URL not set">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.779-1.75-1.75s.784-1.75 1.75-1.75 1.75.779 1.75 1.75-.784 1.75-1.75 1.75zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                    </svg>
+                  </button>
+                }
+
+                <!-- Twitter / X -->
+                @if (person().twitter) {
+                  <a [href]="person().twitter" target="_blank" class="btn btn-circle btn-sm shadow-md hover:scale-110 transition-transform bg-black text-white border-none tooltip" data-tip="Twitter/X profile">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </a>
+                } @else {
+                  <button class="btn btn-circle btn-sm bg-base-200 text-base-content/30 border-base-300 tooltip cursor-not-allowed" data-tip="Twitter/X URL not set">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </button>
+                }
+
+                <!-- Facebook -->
+                @if (person().facebook) {
+                  <a [href]="person().facebook" target="_blank" class="btn btn-circle btn-sm shadow-md hover:scale-110 transition-transform bg-[#1877f2] text-white border-none tooltip" data-tip="Facebook profile">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1V12h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
+                    </svg>
+                  </a>
+                } @else {
+                  <button class="btn btn-circle btn-sm bg-base-200 text-base-content/30 border-base-300 tooltip cursor-not-allowed" data-tip="Facebook URL not set">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1V12h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
+                    </svg>
+                  </button>
+                }
+
+                <!-- Instagram -->
+                @if (person().instagram) {
+                  <a [href]="person().instagram" target="_blank" class="btn btn-circle btn-sm shadow-md hover:scale-110 transition-transform bg-[#e1306c] text-white border-none tooltip" data-tip="Instagram profile">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
+                    </svg>
+                  </a>
+                } @else {
+                  <button class="btn btn-circle btn-sm bg-base-200 text-base-content/30 border-base-300 tooltip cursor-not-allowed" data-tip="Instagram URL not set">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
+                    </svg>
+                  </button>
+                }
+              </div>
+
+              <!-- Contact & Address Details List -->
+              <div class="w-full flex flex-col gap-3 text-sm">
+                <!-- Primary Email -->
+                @if (person().email) {
+                  <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors">
+                    <div class="flex items-center gap-2 overflow-hidden">
+                      <pc-icon name="envelope" [size]="4" class="text-indigo-500 flex-shrink-0"></pc-icon>
+                      <span class="truncate font-medium text-base-content">{{ person().email }}</span>
+                    </div>
+                    <button class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-indigo-500 tooltip" data-tip="Copy Email" (click)="copyToClipboard(person().email, 'Email')">
+                      <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                    </button>
+                  </div>
+                }
+
+                <!-- Secondary Email -->
+                @if (person().email2) {
+                  <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors">
+                    <div class="flex items-center gap-2 overflow-hidden">
+                      <pc-icon name="envelope" [size]="4" class="text-indigo-500 flex-shrink-0"></pc-icon>
+                      <span class="truncate font-light text-base-content/80">{{ person().email2 }} (Secondary)</span>
+                    </div>
+                    <button class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-indigo-500 tooltip" data-tip="Copy Email 2" (click)="copyToClipboard(person().email2, 'Secondary Email')">
+                      <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                    </button>
+                  </div>
+                }
+
+                <!-- Mobile Phone -->
+                @if (person().mobile) {
+                  <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <pc-icon name="bell" [size]="4" class="text-purple-500"></pc-icon>
+                      <span class="font-medium text-base-content">{{ person().mobile }}</span>
+                    </div>
+                    <button class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-purple-500 tooltip" data-tip="Copy Mobile" (click)="copyToClipboard(person().mobile, 'Mobile Phone')">
+                      <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                    </button>
+                  </div>
+                }
+
+                <!-- Home Phone -->
+                @if (person().home_phone) {
+                  <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <pc-icon name="home" [size]="4" class="text-purple-500"></pc-icon>
+                      <span class="font-light text-base-content/80">{{ person().home_phone }} (Home)</span>
+                    </div>
+                    <button class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-purple-500 tooltip" data-tip="Copy Home Phone" (click)="copyToClipboard(person().home_phone, 'Home Phone')">
+                      <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                    </button>
+                  </div>
+                }
+
+                <!-- Address -->
+                <div class="flex items-start justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors">
+                  <div class="flex items-start gap-2 overflow-hidden">
+                    <pc-icon name="map-pin" [size]="4" class="text-pink-500 mt-0.5 flex-shrink-0"></pc-icon>
+                    <div class="flex flex-col">
+                      <span class="font-medium text-base-content break-words leading-tight">{{ addressString() }}</span>
+                    </div>
+                  </div>
+                  @if (householdId()) {
+                    <button class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-pink-500 tooltip mt-0.5" data-tip="View Household" (click)="navigateToHousehold()">
+                      <pc-icon name="arrow-top-right-on-square" [size]="3.5"></pc-icon>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Notes Section -->
+              @if (person().notes) {
+                <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">Internal Notes</span>
+                  <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
+                </div>
+              }
+
+              <!-- System Metadata -->
+              <div class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal">
+                <span>Created by {{ getUserName(person().createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}</span>
+                <span>Updated {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(person().updatedby_id) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags & Issues Card -->
+          <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col gap-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70">Segmentation</h3>
+            
+            <div class="flex flex-col gap-3">
+              <div>
+                <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+                @if (tags().length > 0) {
+                  <div class="flex flex-wrap gap-1.5">
+                    @for (t of tags(); track t) {
+                      <span class="badge badge-sm badge-outline badge-primary font-medium px-2 py-2">{{ t }}</span>
+                    }
+                  </div>
+                } @else {
+                  <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+                }
+              </div>
+
+              <div>
+                <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+                @if (issues().length > 0) {
+                  <div class="flex flex-wrap gap-1.5">
+                    @for (i of issues(); track i) {
+                      <span class="badge badge-sm badge-outline badge-secondary font-medium px-2 py-2">{{ i }}</span>
+                    }
+                  </div>
+                } @else {
+                  <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
+          <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
+            <div class="p-6 flex flex-col items-center gap-3">
+              <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
+              
+              <!-- Placeholder Graphic -->
+              <div class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2">
+                <span class="text-4xl text-base-content/20">😐</span>
+                <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
+              </div>
+              <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
+                Aggregates communication email history and tags to automatically gauge contact affinity.
+              </div>
+            </div>
+
+            <!-- Premium Overlay for "Coming Soon" -->
+            <div class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none">
+              <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
+                <pc-icon name="chart-pie" [size]="8"></pc-icon>
+              </div>
+              <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
+              <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
+              <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
+                AI-driven sentiment analysis of email conversations is currently in beta.
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+
+          <!-- Dashboard Stats Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <!-- Stats: Emails Sent -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-indigo-500/10 text-indigo-500">
+                <pc-icon name="paper-airplane" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Emails Sent</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">{{ activityData().emails.length }}</span>
+              </div>
+            </div>
+
+            <!-- Stats: Emails Opened -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-success/10 text-success">
+                <pc-icon name="eye" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Opened</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">
+                  {{ activityData().newsletters.filter(n => n.event_type === 'open' || n.event_type === 'click').length }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Stats: Active Lists -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-warning/10 text-warning">
+                <pc-icon name="queue-list" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Active Lists</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">0</span>
+              </div>
+            </div>
+
+            <!-- Stats: Volunteer Shifts -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-purple-500/10 text-purple-500">
+                <pc-icon name="volunteer" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Volunteered</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">
+                  {{ volunteerStats()?.shifts_count || 0 }} <span class="text-xs font-light text-base-content/50">shifts</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Stats: Volunteer Hours -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-pink-500/10 text-pink-500">
+                <pc-icon name="clock" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Total Hours</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">
+                  {{ volunteerStats()?.total_hours || 0.0 }} <span class="text-xs font-light text-base-content/50">hrs</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Stats: Donations -->
+            <div class="card bg-base-100 shadow-lg border border-base-300/60 p-4 flex flex-row items-center gap-4 hover:-translate-y-0.5 transition-transform duration-200">
+              <div class="p-3 rounded-2xl bg-error/10 text-error">
+                <pc-icon name="currency-dollar" [size]="6"></pc-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Donations</span>
+                <span class="text-2xl font-bold text-base-content leading-none mt-1">$0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activities, Interactions & History Tabs -->
+          <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
+            <!-- Tabs Header -->
+            <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
+              <a role="tab" class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5" [class.tab-active]="activeTab() === 'activity'" (click)="activeTab.set('activity')">
+                <pc-icon name="adjustments-horizontal" [size]="4" class="flex-shrink-0"></pc-icon>
+                <span>Activity Feed</span>
+              </a>
+              <a role="tab" class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5" [class.tab-active]="activeTab() === 'emails'" (click)="activeTab.set('emails')">
+                <pc-icon name="envelope" [size]="4" class="flex-shrink-0"></pc-icon>
+                <span>Conversations ({{ activityData().emails.length }})</span>
+              </a>
+              <a role="tab" class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5" [class.tab-active]="activeTab() === 'newsletters'" (click)="activeTab.set('newsletters')">
+                <pc-icon name="megaphone" [size]="4" class="flex-shrink-0"></pc-icon>
+                <span>Newsletters ({{ activityData().newsletters.length }})</span>
+              </a>
+              <a role="tab" class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5" [class.tab-active]="activeTab() === 'volunteer'" (click)="activeTab.set('volunteer')">
+                <pc-icon name="volunteer" [size]="4" class="flex-shrink-0"></pc-icon>
+                <span>Shift Logs ({{ volunteerHistory().length }})</span>
+              </a>
+              <a role="tab" class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5" [class.tab-active]="activeTab() === 'household'" (click)="activeTab.set('household')">
+                <pc-icon name="home" [size]="4" class="flex-shrink-0"></pc-icon>
+                <span>Household</span>
+              </a>
+            </div>
+
+            <!-- Tab Panels -->
+            <div class="p-6">
+              <!-- Panel: General Activity Feed -->
+              @if (activeTab() === 'activity') {
+                <div class="flex flex-col gap-4">
+                  <pc-record-activities [entity]="'persons'" [entityId]="id!"></pc-record-activities>
+                </div>
+              }
+
+              <!-- Panel: Email Conversations -->
+              @if (activeTab() === 'emails') {
+                <div class="flex flex-col gap-4">
+                  @if (activityData().emails.length === 0) {
+                    <div class="text-center py-10 text-base-content/40 italic">
+                      No direct email correspondence recorded
+                    </div>
+                  } @else {
+                    <div class="flex flex-col gap-3">
+                      @for (mail of activityData().emails; track mail.id) {
+                        <a [routerLink]="['/inbox']" [queryParams]="{ email: mail.id }" class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm">
+                          <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                            <span class="font-mono text-base-content/60">
+                              From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To: <strong>{{ mail.to_email }}</strong>
+                            </span>
+                            <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                          </div>
+                          <div class="flex items-center justify-between gap-2">
+                            <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">{{ mail.subject || '(No Subject)' }}</h4>
+                            <pc-icon name="arrow-top-right-on-square" [size]="3.5" class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"></pc-icon>
+                          </div>
+                          @if (mail.preview) {
+                            <p class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50">
+                              {{ mail.preview }}
+                            </p>
+                          }
+                          <div class="flex justify-end mt-1">
+                            <span class="badge badge-sm" 
+                              [class.badge-success]="mail.status === 'sent' || mail.status === 'delivered'"
+                              [class.badge-info]="mail.status === 'opened'"
+                              [class.badge-neutral]="mail.status === 'read'"
+                            >
+                              {{ mail.status || 'received' }}
+                            </span>
+                          </div>
+                        </a>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Panel: Newsletter events -->
+              @if (activeTab() === 'newsletters') {
+                <div class="flex flex-col gap-4">
+                  @if (activityData().newsletters.length === 0) {
+                    <div class="text-center py-10 text-base-content/40 italic">
+                      No newsletter logs found
+                    </div>
+                  } @else {
+                    <div class="flex flex-col gap-2">
+                      @for (ev of activityData().newsletters; track ev.id) {
+                        <div class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors">
+                          <div class="flex items-center gap-3 overflow-hidden">
+                            <!-- Icon mappings for event types -->
+                            <div class="p-2 rounded-lg flex-shrink-0"
+                              [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                              [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                              [class.bg-success/10]="ev.event_type === 'open'"
+                              [class.text-success]="ev.event_type === 'open'"
+                              [class.bg-warning/10]="ev.event_type === 'click'"
+                              [class.text-warning]="ev.event_type === 'click'"
+                              [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                              [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                            >
+                              @if (ev.event_type === 'open') {
+                                <pc-icon name="eye" [size]="4"></pc-icon>
+                              } @else if (ev.event_type === 'click') {
+                                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                              } @else if (ev.event_type === 'delivered') {
+                                <pc-icon name="check-circle" [size]="4"></pc-icon>
+                              } @else {
+                                <pc-icon name="information-circle" [size]="4"></pc-icon>
+                              }
+                            </div>
+                            <div class="flex flex-col overflow-hidden">
+                              <span class="font-medium text-base-content truncate">{{ ev.newsletter_subject || ev.newsletter_name }}</span>
+                              @if (ev.url) {
+                                <span class="text-[10px] text-primary truncate hover:underline cursor-pointer">Clicked URL: {{ ev.url }}</span>
+                              }
+                            </div>
+                          </div>
+                          
+                          <div class="flex items-center gap-3 flex-shrink-0">
+                            <span class="badge badge-sm font-semibold uppercase tracking-wider text-[9px]"
+                              [class.badge-success]="ev.event_type === 'open'"
+                              [class.badge-warning]="ev.event_type === 'click'"
+                              [class.badge-info]="ev.event_type === 'delivered' || ev.event_type === 'processed'"
+                              [class.badge-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                            >
+                              {{ ev.event_type }}
+                            </span>
+                            <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Panel: Volunteer History -->
+              @if (activeTab() === 'volunteer') {
+                <div class="flex flex-col gap-4">
+                  @if (volunteerHistory().length === 0) {
+                    <div class="text-center py-10 text-base-content/40 italic">
+                      No shift records found for this person
+                    </div>
+                  } @else {
+                    <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+                      <table class="table table-sm w-full text-xs">
+                        <thead>
+                          <tr class="bg-base-200">
+                            <th>Event Name</th>
+                            <th>Date & Time</th>
+                            <th>Status</th>
+                            <th>Hours</th>
+                            <th>Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (shift of volunteerHistory(); track shift.id) {
+                            <tr class="hover:bg-base-200/50">
+                              <td class="font-semibold">{{ shift.event_name }}</td>
+                              <td>{{ shift.start_time | date:'medium' }}</td>
+                              <td>
+                                <span class="badge badge-sm font-medium" 
+                                  [class.badge-success]="shift.status === 'attended'" 
+                                  [class.badge-warning]="shift.status === 'signed_up'" 
+                                  [class.badge-error]="shift.status === 'no_show'"
+                                >
+                                  {{ shift.status }}
+                                </span>
+                              </td>
+                              <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                              <td class="font-light">{{ shift.notes || '--' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Panel: Household members -->
+              @if (activeTab() === 'household') {
+                <div class="flex flex-col gap-4">
+                  @if (householdId()) {
+                    <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id"></pc-people-in-household>
+                  } @else {
+                    <div class="text-center py-10 text-base-content/40 italic">
+                      Contact does not belong to a household
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    } @else {
+      <div class="alert alert-error">
+        <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+        <span>Record not found or failed to load.</span>
+      </div>
+    }
+
+  </div>
+</div>

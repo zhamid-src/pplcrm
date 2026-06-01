@@ -9,15 +9,9 @@ import { ActivityService } from '../../../experiences/activity/services/activity
   imports: [DatePipe, Icon],
   template: `
     <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
-      <!-- Collapsed header / toggle -->
-      <button
-        type="button"
-        id="record-activities-toggle"
-        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-gray-50 border-b border-gray-200 hover:bg-gray-100 transition-colors"
-        (click)="toggle()"
-        [attr.aria-expanded]="expanded()"
-        aria-controls="activities-panel"
-        aria-label="Toggle activity log"
+      <!-- Header -->
+      <div
+        class="flex items-center justify-between px-3 py-2 text-sm font-medium bg-gray-50 border-b border-gray-200"
       >
         <span class="flex items-center gap-2">
           <pc-icon name="clock" [size]="4" class="text-gray-500"></pc-icon>
@@ -31,61 +25,52 @@ import { ActivityService } from '../../../experiences/activity/services/activity
             </span>
           }
         </span>
-        <span class="cursor-pointer ml-2 text-xs text-gray-500">
-          @if (expanded()) {
-            Hide
-          } @else {
-            Show
-          }
-        </span>
-      </button>
+      </div>
 
-      @if (expanded()) {
-        <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
-          @if (isLoading()) {
-            <div class="flex items-center justify-center py-6">
-              <span
-                class="loading loading-spinner loading-sm text-gray-400"
-                aria-label="Loading activities"
-              ></span>
-            </div>
-          } @else if (activities().length === 0) {
-            <div class="flex flex-col items-center justify-center py-6 gap-1 text-gray-400">
-              <pc-icon name="information-circle" [size]="5"></pc-icon>
-              <span class="text-xs">No activity recorded yet</span>
-            </div>
-          } @else {
-            <ol
-              class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3"
-              aria-label="Record activity timeline"
-            >
-              @for (act of activities(); track act.id) {
-                <li class="ml-4">
-                  <!-- Timeline dot -->
-                  <span
-                    class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white"
-                    [class]="getActivityDotClass(act.activity)"
-                  >
-                    <pc-icon [name]="getActivityIcon(act.activity)" [size]="2.5"></pc-icon>
-                  </span>
+      <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
+        @if (isLoading()) {
+          <div class="flex items-center justify-center py-6">
+            <span
+              class="loading loading-spinner loading-sm text-gray-400"
+              aria-label="Loading activities"
+            ></span>
+          </div>
+        } @else if (activities().length === 0) {
+          <div class="flex flex-col items-center justify-center py-6 gap-1 text-gray-400">
+            <pc-icon name="information-circle" [size]="5"></pc-icon>
+            <span class="text-xs">No activity recorded yet</span>
+          </div>
+        } @else {
+          <ol
+            class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3"
+            aria-label="Record activity timeline"
+          >
+            @for (act of activities(); track act.id) {
+              <li class="ml-4">
+                <!-- Timeline dot -->
+                <span
+                  class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white"
+                  [class]="getActivityDotClass(act.activity)"
+                >
+                  <pc-icon [name]="getActivityIcon(act.activity)" [size]="2.5"></pc-icon>
+                </span>
 
-                  <!-- Content -->
-                  <div class="pl-1">
-                    <p class="text-xs text-gray-700 leading-snug">
-                      <span class="font-semibold">{{ act.first_name }} {{ act.last_name }}</span>
-                      {{ getActivityLabel(act) }}
-                    </p>
-                    <time
-                      class="text-[10px] text-gray-400 mt-0.5 block"
-                      [title]="act.created_at | date:'medium'"
-                    >{{ act.created_at | date:'short' }}</time>
-                  </div>
-                </li>
-              }
-            </ol>
-          }
-        </div>
-      }
+                <!-- Content -->
+                <div class="pl-1">
+                  <p class="text-xs text-gray-700 leading-snug">
+                    <span class="font-semibold">{{ act.first_name }} {{ act.last_name }}</span>
+                    {{ getActivityLabel(act) }}
+                  </p>
+                  <time
+                    class="text-[10px] text-gray-400 mt-0.5 block"
+                    [title]="act.created_at | date:'medium'"
+                  >{{ act.created_at | date:'short' }}</time>
+                </div>
+              </li>
+            }
+          </ol>
+        }
+      </div>
     </div>
   `,
 })
@@ -95,7 +80,6 @@ export class RecordActivities {
   public entity = input.required<string>();
   public entityId = input.required<string>();
 
-  protected readonly expanded = signal(false);
   protected readonly isLoading = signal(false);
   protected readonly activities = signal<any[]>([]);
 
@@ -106,19 +90,8 @@ export class RecordActivities {
       // Access signals to subscribe to updates
       this.entityId();
       this.entity();
-      const isExpanded = this.expanded();
-
-      if (isExpanded) {
-        void this.loadActivities();
-      } else {
-        this.activities.set([]);
-      }
+      void this.loadActivities();
     }, { allowSignalWrites: true });
-  }
-
-  public toggle(): void {
-    const wasExpanded = this.expanded();
-    this.expanded.set(!wasExpanded);
   }
 
   protected async loadActivities(): Promise<void> {

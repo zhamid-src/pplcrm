@@ -239,6 +239,10 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   company_id: string | null;
   json: Json | null;
   notes: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  facebook: string | null;
+  instagram: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {

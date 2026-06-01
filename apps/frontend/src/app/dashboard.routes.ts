@@ -26,6 +26,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
       },
     ],

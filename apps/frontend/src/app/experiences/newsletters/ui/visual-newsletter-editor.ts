@@ -367,23 +367,23 @@ import {
       <!-- RIGHT: CONTROL PANEL -->
       <aside class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden">
         <!-- TABS -->
-        <div class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
-          <button
-            type="button"
-            class="tab"
+        <div role="tablist" class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
+          <a
+            role="tab"
+            class="tab focus:outline-none cursor-pointer"
             [class.tab-active]="activeTab() === 'blocks'"
             (click)="activeTab.set('blocks')"
           >
             Blocks
-          </button>
-          <button
-            type="button"
-            class="tab"
+          </a>
+          <a
+            role="tab"
+            class="tab focus:outline-none cursor-pointer"
             [class.tab-active]="activeTab() === 'edit'"
             (click)="activeTab.set('edit')"
           >
             Customize
-          </button>
+          </a>
         </div>
 
         <!-- TAB CONTENT -->

@@ -24,6 +24,10 @@ const PersonType = {
   zip: { type: 'string' },
   country: { type: 'string' },
   json: { type: 'string' },
+  linkedin: { type: 'string' },
+  twitter: { type: 'string' },
+  facebook: { type: 'string' },
+  instagram: { type: 'string' },
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };

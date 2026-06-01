@@ -1,7 +1,6 @@
 /**
  * @file Component for creating or updating individual person records.
  */
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -12,7 +11,6 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 import { ColumnType } from 'kysely';
 
@@ -21,7 +19,6 @@ import { HouseholdsService } from '../../households/services/households-service'
 import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
-import { PeopleInHousehold } from './people-in-household';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
@@ -32,7 +29,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [DatePipe, FormField, Tags, AddBtnRow, RouterModule, PeopleInHousehold, Icon, RecordActivities],
+  imports: [FormField, Tags, AddBtnRow, RouterModule, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
@@ -97,6 +94,10 @@ export class PersonDetail implements OnInit {
     mobile: '',
     notes: '',
     company_id: '',
+    linkedin: '',
+    twitter: '',
+    facebook: '',
+    instagram: '',
   });
 
   /** Signal form for person data validation and status tracking */
@@ -577,6 +578,10 @@ export class PersonDetail implements OnInit {
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
       company_id: person.company_id ?? '',
+      linkedin: (person as any).linkedin ?? '',
+      twitter: (person as any).twitter ?? '',
+      facebook: (person as any).facebook ?? '',
+      instagram: (person as any).instagram ?? '',
     });
   }
 
