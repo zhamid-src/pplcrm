@@ -34,6 +34,7 @@ interface TagView {
             [name]="tag.name"
             [color]="tag.color"
             [canDelete]="canDelete()"
+            [compact]="compact()"
             (click)="clicked(tag.name)"
             (close)="closed(tag.name)"
           ></pc-tagitem>
@@ -95,6 +96,7 @@ export class Tags implements OnInit {
    */
   public readonly = input<boolean>(false);
   public readonly type = input<'tag' | 'issue'>('tag');
+  public compact = input<boolean>(false);
   public tagSvc = inject(TagsService);
   public tags = input<string[]>([]);
 
