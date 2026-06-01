@@ -34,6 +34,10 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
     const stats = await this.getRepo().getOneWithStats({ tenant_id: auth.tenant_id, id: input.id });
     if (!stats) throw new NotFoundError('Import not found');
 
+    if (stats.status === 'pending' || stats.status === 'processing') {
+      throw new BadRequestError('Cannot delete an import that is still processing.');
+    }
+
     const wantsContactDeletion = Boolean(input.deleteContacts);
     const canDeleteContacts =
       stats.contact_count > 0 && stats.tag_exists && stats.tag_assignment_count > 0;
@@ -135,6 +139,8 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       householdsCreated: row.households_created,
       contactCount: row.contact_count,
       householdCount: row.household_count,
+      status: row.status,
+      errorMessage: row.error_message,
       canDeleteContacts,
     };
   }

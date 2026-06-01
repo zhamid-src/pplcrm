@@ -25,6 +25,8 @@ export class ImportsPage {
   protected readonly deleteContacts = signal(false);
   protected readonly error = signal<string | null>(null);
 
+  private pollInterval: any;
+
   constructor() {
     void this.load();
 
@@ -38,7 +40,35 @@ export class ImportsPage {
       }
     });
 
-    this.destroyRef.onDestroy(() => this.imports.abort());
+    this.startPolling();
+
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
+  }
+
+  private startPolling() {
+    this.pollInterval = setInterval(async () => {
+      const hasActiveJobs = this.items().some(
+        (item) => item.status === 'pending' || item.status === 'processing'
+      );
+      if (hasActiveJobs) {
+        try {
+          const list = await this.imports.list();
+          this.items.set(list ?? []);
+        } catch (err) {
+          console.error('Failed to poll imports status:', err);
+        }
+      }
+    }, 4000);
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
   }
 
   protected formatDate(value: Date) {

@@ -12,6 +12,7 @@ import { TeamsRepo } from '../../teams/repositories/teams.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
+import { StorageService } from '../../../lib/storage.service';
 
 export class PersonsService {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -22,6 +23,7 @@ export class PersonsService {
   private importsRepo = new ImportsRepo();
   private personsRepo = new PersonsRepo();
   private userActivity = new UserActivityRepo();
+  private storageService = new StorageService();
 
   public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
     // Enforce email uniqueness within the tenant
@@ -377,24 +379,15 @@ export class PersonsService {
     auth: IAuthKeyPayload,
   ) {
     const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    const households = new HouseholdRepo();
-    const personsBefore = await this.personsRepo.count(auth.tenant_id);
-
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
     const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 
     const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
-      inserted: 0,
-      errors: 0,
-      households_created: 0,
-      skipped: 0,
-    };
-
     const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
     const requestedFileName = (input.file_name ?? '').trim();
     const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
 
     let hasImportableRow = false;
     for (const candidate of input.rows) {
@@ -404,10 +397,10 @@ export class PersonsService {
         break;
       }
     }
-    const totalRows = input.rows.length + skippedFromClient;
 
     if (!hasImportableRow) {
       const totalSkipped = skippedFromClient + input.rows.length;
+      const personsBefore = await this.personsRepo.count(auth.tenant_id);
       return {
         inserted: 0,
         errors: 0,
@@ -419,12 +412,9 @@ export class PersonsService {
         campaign_id,
         persons_total_after: personsBefore,
         persons_total_before: personsBefore,
+        status: 'completed',
       } as any;
     }
-
-    let importRecordId: string | null = null;
-    let autoTagId: string | null = null;
-    const errorMessages: string[] = [];
 
     const importRow = {
       tenant_id: auth.tenant_id,
@@ -439,255 +429,333 @@ export class PersonsService {
       error_count: 0,
       skipped_count: skippedFromClient,
       households_created: 0,
+      status: 'pending',
       metadata: null,
       processed_at: now,
-    } as OperationDataType<'data_imports', 'insert'>;
+    } as any;
 
     const savedImport = await this.importsRepo.add({ row: importRow });
-    importRecordId = savedImport?.id != null ? String(savedImport.id) : null;
-
-    let cachedBlankHouseholdId: string | null = null;
-
-    for (const raw of input.rows) {
-      const sanitized = this.sanitizeRow(raw);
-      if (
-        !sanitized.first_name &&
-        !sanitized.last_name &&
-        !sanitized.email &&
-        !sanitized.mobile &&
-        !sanitized.notes
-      ) {
-        results.skipped += 1;
-        continue;
-      }
-
-      const isBlankAddress =
-        !sanitized.home_phone &&
-        !sanitized.street_num &&
-        !sanitized.street1 &&
-        !sanitized.street2 &&
-        !sanitized.apt &&
-        !sanitized.city &&
-        !sanitized.state &&
-        !sanitized.zip &&
-        !sanitized.country;
-
-      try {
-        const outcome = await this.personsRepo
-          .transaction()
-          .execute(async (rowTrx) => {
-            let localBlankHouseholdId = cachedBlankHouseholdId;
-            let localAutoTagId = autoTagId;
-            let householdsCreatedDelta = 0;
-
-            let householdId: string | null = null;
-            if (isBlankAddress) {
-              if (!localBlankHouseholdId) {
-                const existingBlank = await households.getBlankHousehold(
-                  { tenant_id: auth.tenant_id, campaign_id },
-                  rowTrx,
-                );
-                if (existingBlank?.id) {
-                  localBlankHouseholdId = String(existingBlank.id);
-                } else {
-                  const created = await households.add(
-                    {
-                      row: {
-                        tenant_id: auth.tenant_id,
-                        campaign_id,
-                        createdby_id: auth.user_id,
-                        updatedby_id: auth.user_id,
-                        file_id: importRecordId,
-                      } as OperationDataType<'households', 'insert'>,
-                    },
-                    rowTrx,
-                  );
-                  localBlankHouseholdId = String(created?.id);
-                  householdsCreatedDelta += 1;
-                }
-              }
-              householdId = localBlankHouseholdId;
-            } else {
-              const fp_street = fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              });
-              const fp_full = fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              });
-
-              const match = await households.findByFingerprint(
-                { tenant_id: auth.tenant_id, campaign_id, fp_street: fp_street, fp_full: fp_full },
-                rowTrx,
-              );
-              if (match?.id) {
-                householdId = String(match.id);
-              } else {
-                const hhRow = {
-                  tenant_id: auth.tenant_id,
-                  campaign_id,
-                  createdby_id: auth.user_id,
-                  updatedby_id: auth.user_id,
-                  home_phone: sanitized.home_phone ?? null,
-                  street_num: sanitized.street_num ?? null,
-                  street1: sanitized.street1 ?? null,
-                  street2: sanitized.street2 ?? null,
-                  apt: sanitized.apt ?? null,
-                  city: sanitized.city ?? null,
-                  state: sanitized.state ?? null,
-                  zip: sanitized.zip ?? null,
-                  country: sanitized.country ?? null,
-                  address_fp_street: fp_street,
-                  address_fp_full: fp_full,
-                  notes: null,
-                  json: null,
-                  file_id: importRecordId,
-                } as OperationDataType<'households', 'insert'>;
-
-                const household = await households.add({ row: hhRow }, rowTrx);
-                householdId = String(household?.id);
-                householdsCreatedDelta += 1;
-              }
-            }
-
-            if (!householdId) {
-              throw new Error('Failed to resolve household for imported person');
-            }
-
-            const personRow = {
-              tenant_id: auth.tenant_id,
-              campaign_id,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-              household_id: householdId,
-              first_name: sanitized.first_name ?? null,
-              middle_names: null,
-              last_name: sanitized.last_name ?? null,
-              email: sanitized.email ?? null,
-              email2: null,
-              mobile: sanitized.mobile ?? null,
-              home_phone: null,
-              file_id: importRecordId,
-              notes: sanitized.notes ?? null,
-              json: null,
-            } as OperationDataType<'persons', 'insert'>;
-
-            const person = await this.personsRepo.add({ row: personRow }, rowTrx);
-
-            for (const name of tags) {
-              const row = {
-                name,
-                tenant_id: auth.tenant_id,
-                createdby_id: auth.user_id,
-                updatedby_id: auth.user_id,
-              } as OperationDataType<'tags', 'insert'>;
-
-              const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, rowTrx);
-              if (name === autoTag && tag?.id != null && !localAutoTagId) {
-                localAutoTagId = String(tag.id);
-              }
-              if (!tag?.id) {
-                throw new Error('Failed to create tag for imported person');
-              }
-
-              await this.mapPersonsTagRepo.add(
-                {
-                  row: {
-                    tenant_id: auth.tenant_id,
-                    person_id: person?.id as string,
-                    tag_id: tag.id as unknown as string,
-                    createdby_id: auth.user_id,
-                    updatedby_id: auth.user_id,
-                  } as OperationDataType<'map_peoples_tags', 'insert'>,
-                },
-                rowTrx,
-              );
-            }
-
-            return {
-              householdsCreatedDelta,
-              blankHouseholdId: localBlankHouseholdId,
-              autoTagId: localAutoTagId,
-            };
-          });
-
-        results.inserted += 1;
-        results.households_created += outcome.householdsCreatedDelta;
-        if (outcome.blankHouseholdId) {
-          cachedBlankHouseholdId = outcome.blankHouseholdId;
-        }
-        if (!autoTagId && outcome.autoTagId) {
-          autoTagId = outcome.autoTagId;
-        }
-      } catch (err: any) {
-        results.errors += 1;
-        const message = err?.message || err?.data?.message || String(err);
-        errorMessages.push(message);
-        console.error('Import row failed', { message, raw, sanitized, err });
-      }
-    }
-
-    if (importRecordId) {
-      await this.importsRepo.update({
-        tenant_id: auth.tenant_id as any,
-        id: importRecordId as any,
-        row: {
-          tag_id: autoTagId,
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skippedFromClient + results.skipped,
-          households_created: results.households_created,
-          updatedby_id: auth.user_id,
-          processed_at: now,
-          updated_at: now,
-        } as OperationDataType<'data_imports', 'update'>,
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
       });
     }
 
-    const personsAfter = await this.personsRepo.count(auth.tenant_id);
-    const totalSkipped = skippedFromClient + results.skipped;
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
 
-    const lastError = errorMessages.at(-1) ?? null;
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      console.error('Failed to upload import payload to storage', err);
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
 
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'import',
-      entity: 'persons',
-      quantity: results.inserted,
-      metadata: {
-        rows_received: input.rows.length,
-        tags_applied: tags.slice(0, 10),
-        auto_tag: autoTag,
-        households_created: results.households_created,
-        errors: results.errors,
-        skipped: totalSkipped,
-        file_name: baseFileName,
-        import_id: importRecordId,
-      },
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id as any,
+      id: importRecordId as any,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
     });
 
+    await this.importsRepo.db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags,
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
     return {
-      ...results,
-      skipped: totalSkipped,
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
       tag: autoTag,
       file_name: baseFileName,
       import_id: importRecordId,
       tenant_id: auth.tenant_id,
       campaign_id,
-      persons_total_after: personsAfter,
-      persons_total_before: personsBefore,
-      errorMessages,
-      lastError,
+      status: 'pending',
     } as any;
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: any[],
+  ) {
+    const households = new HouseholdRepo();
+    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+      skipped: 0,
+    };
+
+    const errorMessages: string[] = [];
+    let cachedBlankHouseholdId: string | null = null;
+    let autoTagId: string | null = null;
+    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      for (const raw of chunk) {
+        const sanitized = this.sanitizeRow(raw);
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
+          results.skipped += 1;
+          continue;
+        }
+
+        const isBlankAddress =
+          !sanitized.home_phone &&
+          !sanitized.street_num &&
+          !sanitized.street1 &&
+          !sanitized.street2 &&
+          !sanitized.apt &&
+          !sanitized.city &&
+          !sanitized.state &&
+          !sanitized.zip &&
+          !sanitized.country;
+
+        try {
+          const outcome = await this.personsRepo
+            .transaction()
+            .execute(async (rowTrx) => {
+              let localBlankHouseholdId = cachedBlankHouseholdId;
+              let localAutoTagId = autoTagId;
+              let householdsCreatedDelta = 0;
+
+              let householdId: string | null = null;
+              if (isBlankAddress) {
+                if (!localBlankHouseholdId) {
+                  const existingBlank = await households.getBlankHousehold(
+                    { tenant_id, campaign_id },
+                    rowTrx,
+                  );
+                  if (existingBlank?.id) {
+                    localBlankHouseholdId = String(existingBlank.id);
+                  } else {
+                    const created = await households.add(
+                      {
+                        row: {
+                          tenant_id,
+                          campaign_id,
+                          createdby_id: user_id,
+                          updatedby_id: user_id,
+                          file_id: import_id,
+                        } as OperationDataType<'households', 'insert'>,
+                      },
+                      rowTrx,
+                    );
+                    localBlankHouseholdId = String(created?.id);
+                    householdsCreatedDelta += 1;
+                  }
+                }
+                householdId = localBlankHouseholdId;
+              } else {
+                const fp_street = fingerprintStreet({
+                  street_num: sanitized.street_num,
+                  street1: sanitized.street1,
+                  street2: sanitized.street2,
+                });
+                const fp_full = fingerprintFull({
+                  apt: sanitized.apt,
+                  street_num: sanitized.street_num,
+                  street1: sanitized.street1,
+                  street2: sanitized.street2,
+                  city: sanitized.city,
+                  state: sanitized.state,
+                  zip: sanitized.zip,
+                  country: sanitized.country,
+                });
+
+                const match = await households.findByFingerprint(
+                  { tenant_id, campaign_id, fp_street: fp_street, fp_full: fp_full },
+                  rowTrx,
+                );
+                if (match?.id) {
+                  householdId = String(match.id);
+                } else {
+                  const hhRow = {
+                    tenant_id,
+                    campaign_id,
+                    createdby_id: user_id,
+                    updatedby_id: user_id,
+                    home_phone: sanitized.home_phone ?? null,
+                    street_num: sanitized.street_num ?? null,
+                    street1: sanitized.street1 ?? null,
+                    street2: sanitized.street2 ?? null,
+                    apt: sanitized.apt ?? null,
+                    city: sanitized.city ?? null,
+                    state: sanitized.state ?? null,
+                    zip: sanitized.zip ?? null,
+                    country: sanitized.country ?? null,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                    notes: null,
+                    json: null,
+                    file_id: import_id,
+                  } as OperationDataType<'households', 'insert'>;
+
+                  const household = await households.add({ row: hhRow }, rowTrx);
+                  householdId = String(household?.id);
+                  householdsCreatedDelta += 1;
+                }
+              }
+
+              if (!householdId) {
+                throw new Error('Failed to resolve household for imported person');
+              }
+
+              const personRow = {
+                tenant_id,
+                campaign_id,
+                createdby_id: user_id,
+                updatedby_id: user_id,
+                household_id: householdId,
+                first_name: sanitized.first_name ?? null,
+                middle_names: null,
+                last_name: sanitized.last_name ?? null,
+                email: sanitized.email ?? null,
+                email2: null,
+                mobile: sanitized.mobile ?? null,
+                home_phone: null,
+                file_id: import_id,
+                notes: sanitized.notes ?? null,
+                json: null,
+              } as OperationDataType<'persons', 'insert'>;
+
+              const person = await this.personsRepo.add({ row: personRow }, rowTrx);
+
+              for (const name of tags) {
+                const row = {
+                  name,
+                  tenant_id,
+                  createdby_id: user_id,
+                  updatedby_id: user_id,
+                } as OperationDataType<'tags', 'insert'>;
+
+                const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, rowTrx);
+                if (name === autoTag && tag?.id != null && !localAutoTagId) {
+                  localAutoTagId = String(tag.id);
+                }
+                if (!tag?.id) {
+                  throw new Error('Failed to create tag for imported person');
+                }
+
+                await this.mapPersonsTagRepo.add(
+                  {
+                    row: {
+                      tenant_id,
+                      person_id: person?.id as string,
+                      tag_id: tag.id as unknown as string,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                    } as OperationDataType<'map_peoples_tags', 'insert'>,
+                  },
+                  rowTrx,
+                );
+              }
+
+              return {
+                householdsCreatedDelta,
+                blankHouseholdId: localBlankHouseholdId,
+                autoTagId: localAutoTagId,
+              };
+            });
+
+          results.inserted += 1;
+          results.households_created += outcome.householdsCreatedDelta;
+          if (outcome.blankHouseholdId) {
+            cachedBlankHouseholdId = outcome.blankHouseholdId;
+          }
+          if (!autoTagId && outcome.autoTagId) {
+            autoTagId = outcome.autoTagId;
+          }
+        } catch (err: any) {
+          results.errors += 1;
+          const message = err?.message || err?.data?.message || String(err);
+          errorMessages.push(message);
+          console.error('Import row failed', { message, raw, sanitized, err });
+        }
+      }
+
+      // Update intermediate counts
+      await this.importsRepo.update({
+        tenant_id: tenant_id as any,
+        id: import_id as any,
+        row: {
+          tag_id: autoTagId,
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          households_created: results.households_created,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Log the user activity
+    try {
+      await this.userActivity.log({
+        tenant_id,
+        user_id,
+        activity: 'import',
+        entity: 'persons',
+        quantity: results.inserted,
+        metadata: {
+          rows_received: rows.length,
+          tags_applied: tags.slice(0, 10),
+          auto_tag: autoTag,
+          households_created: results.households_created,
+          errors: results.errors,
+          skipped: skipped + results.skipped,
+          import_id,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to log import activity', e);
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      households_created: results.households_created,
+      tag_id: autoTagId,
+      errorMessages,
+    };
   }
 
   public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
