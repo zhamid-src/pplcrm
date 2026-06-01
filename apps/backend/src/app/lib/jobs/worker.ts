@@ -1,6 +1,7 @@
 import { StorageService } from '../storage.service';
 import { PersonsService } from '../../modules/persons/services/persons.service';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { ListsController } from '../../modules/lists/controller';
 
 export class BackgroundJobWorker {
   private isRunning = false;
@@ -80,7 +81,10 @@ export class BackgroundJobWorker {
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
 
     try {
-      if (payload.import_id && payload.storage_key) {
+      if (payload.type === 'refresh_list') {
+        const listsController = new ListsController();
+        await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+      } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
           tenant_id: payload.tenant_id as any,

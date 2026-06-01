@@ -292,6 +292,7 @@ export interface Lists extends RecordType {
   is_dynamic: boolean;
   definition: Json | null;
   last_refreshed_at: Timestamp | null;
+  status: Generated<'idle' | 'refreshing' | 'failed'>;
 }
 
 export interface Tags extends RecordType {

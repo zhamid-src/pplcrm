@@ -42,13 +42,28 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
+      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
     };
 
     const list = await this.add(row as OperationDataType<'lists', 'insert'>);
 
-    // For dynamic lists, trigger an immediate initial refresh to populate membership cache
+    // For dynamic lists, trigger an immediate initial refresh via background job
     if (row.is_dynamic) {
-      await this.refreshList(auth, list.id);
+      await this.getRepo().db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: list.id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
     } else {
       // For static lists, populate membership by explicit IDs if provided; otherwise by definition
       const ids = payload.member_ids ?? [];
@@ -113,7 +128,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   }
 
   /**
-   * Refreshes membership mapping for a dynamic list based on its definition rules.
+   * Refreshes membership mapping for a dynamic list by queuing a background job.
    */
   public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
     const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
@@ -124,69 +139,145 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       return list;
     }
 
-    const definition = list.definition as getAllOptionsType;
-    if (!definition) {
-      return list;
-    }
-
-    if (list.object === 'people') {
-      // Clear current mappings
-      await this.mapListsPersonsRepo.db
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('list_id', '=', id)
-        .execute();
-
-      // Resolve and insert new mappings
-      const result = await this.personsController.getAllWithAddress(auth, definition);
-      const rows = result.rows.map((p) => ({
-        tenant_id: auth.tenant_id,
-        list_id: list.id,
-        person_id: p['id'],
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      }));
-      if (rows.length) {
-        await this.mapListsPersonsRepo.addMany({
-          rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-        });
-      }
-    } else if (list.object === 'households') {
-      // Clear current mappings
-      await this.mapListsHouseholdsRepo.db
-        .deleteFrom('map_lists_households')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('list_id', '=', id)
-        .execute();
-
-      // Resolve and insert new mappings
-      const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
-      const rows = result.rows.map((h) => ({
-        tenant_id: auth.tenant_id,
-        list_id: list.id,
-        household_id: h['id'],
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      }));
-      if (rows.length) {
-        await this.mapListsHouseholdsRepo.addMany({
-          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-        });
-      }
-    }
-
-    // Update refreshed timestamp
-    const updated = await this.update({
+    // Set list status to refreshing
+    await this.update({
       tenant_id: auth.tenant_id,
       id,
       row: {
-        last_refreshed_at: new Date(),
-        updated_at: new Date(),
+        status: 'refreshing',
         updatedby_id: auth.user_id,
+        updated_at: new Date(),
       } as any,
     });
 
-    return updated;
+    // Queue background job
+    await this.getRepo().db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'refresh_list',
+          list_id: id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
+    return { ...list, status: 'refreshing' };
+  }
+
+  /**
+   * Performs the actual list membership resolution and writes to database.
+   * This is called by the background worker.
+   */
+  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
+    const auth: IAuthKeyPayload = {
+      tenant_id,
+      user_id,
+      name: 'System Worker',
+      session_id: 'worker-session',
+    };
+
+    const list = (await this.getOneById({ tenant_id, id })) as any;
+    if (!list) {
+      throw new Error(`List ${id} not found`);
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    const definition = list.definition as getAllOptionsType;
+    if (!definition) {
+      // Set back to idle if no definition
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      return list;
+    }
+
+    try {
+      if (list.object === 'people') {
+        // Clear current mappings
+        await this.mapListsPersonsRepo.db
+          .deleteFrom('map_lists_persons')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.personsController.getAllWithAddress(auth, definition);
+        const rows = result.rows.map((p) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          person_id: p['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsPersonsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+          });
+        }
+      } else if (list.object === 'households') {
+        // Clear current mappings
+        await this.mapListsHouseholdsRepo.db
+          .deleteFrom('map_lists_households')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
+        const rows = result.rows.map((h) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          household_id: h['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsHouseholdsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+          });
+        }
+      }
+
+      // Update refreshed timestamp and status back to idle
+      const updated = await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          last_refreshed_at: new Date(),
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+
+      return updated;
+    } catch (error) {
+      // Set status to failed
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'failed',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -275,16 +366,49 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   /**
    * Update an existing list.
    */
-  public updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
+  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = {
       ...row,
       updatedby_id: auth.user_id,
     };
-    return this.update({
+    const result = await this.update({
       tenant_id: auth.tenant_id,
       id,
       row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
     });
+
+    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
+      // Update status to refreshing
+      await this.update({
+        tenant_id: auth.tenant_id,
+        id,
+        row: {
+          status: 'refreshing',
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+
+      await this.getRepo().db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
+    }
+
+    return result;
   }
 
   /**
@@ -325,5 +449,31 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       .execute();
 
     return super.deleteMany(tenant_id as any, idsToDelete);
+  }
+
+  /**
+   * Override getOneById to lazily queue a background refresh job if the list is dynamic
+   * and has not been refreshed in the last 24 hours.
+   */
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const list = await super.getOneById(input) as any;
+    if (list && list.is_dynamic) {
+      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
+        if (list.status !== 'refreshing') {
+          // Lazily trigger refresh in background
+          const mockAuth: IAuthKeyPayload = {
+            tenant_id: input.tenant_id,
+            user_id: list.createdby_id,
+            name: 'System Worker',
+            session_id: 'lazy-refresh',
+          };
+          this.refreshList(mockAuth, input.id).catch((err) =>
+            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err)
+          );
+        }
+      }
+    }
+    return list;
   }
 }

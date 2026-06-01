@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
@@ -15,7 +15,7 @@ import { HouseholdsService } from '../../households/services/households-service'
   imports: [ReactiveFormsModule, AddBtnRow, Icon, RouterLink, CommonModule],
   templateUrl: './list-view.html',
 })
-export class ListView implements OnInit {
+export class ListView implements OnInit, OnDestroy {
   private readonly alerts = inject(AlertService);
   private readonly fb = inject(FormBuilder);
   private readonly lists = inject(ListsService);
@@ -87,16 +87,49 @@ export class ListView implements OnInit {
     }
   }
 
+  private pollInterval: any = null;
+
   protected async refreshList() {
     try {
       this.refreshing.set(true);
       await this.lists.refreshList(this.id());
-      this.alerts.showSuccess('List refreshed successfully');
-      await this.loadListDetails();
+      this.alerts.showSuccess('Refresh job scheduled in background');
+      this.pollRefreshStatus();
     } catch (e: any) {
       this.alerts.showError(e?.message ?? String(e));
-    } finally {
       this.refreshing.set(false);
+    }
+  }
+
+  private pollRefreshStatus() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+
+    this.pollInterval = setInterval(async () => {
+      try {
+        const list = (await this.lists.getById(this.id())) as ListsType;
+        this.listData.set(list);
+        if (list.status !== 'refreshing') {
+          clearInterval(this.pollInterval);
+          this.pollInterval = null;
+          this.refreshing.set(false);
+          if (list.status === 'failed') {
+            this.alerts.showError('List refresh failed in background');
+          } else {
+            this.alerts.showSuccess('List refreshed successfully');
+          }
+          await this.loadListDetails();
+        }
+      } catch (e) {
+        clearInterval(this.pollInterval);
+        this.pollInterval = null;
+        this.refreshing.set(false);
+      }
+    }, 1500);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
     }
   }
 
