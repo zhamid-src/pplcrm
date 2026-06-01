@@ -6,10 +6,8 @@ import {
   TRPCClientError,
   TRPCLink,
   createTRPCClient,
-  httpBatchLink,
   httpLink as trpcHttpLink,
   loggerLink,
-  splitLink,
 } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import superjson from 'superjson';
@@ -100,11 +98,7 @@ export class TRPCService<T> {
         loggerLink(),
         refreshLink(this.tokenService, this.router),
         errorLink(this.errorSvc),
-        splitLink({
-          condition: (op) => op.type === 'mutation',
-          true: httpUnbatchedLink(this.tokenService),
-          false: httpBatchedLink(this.tokenService),
-        }) as any,
+        httpUnbatchedLink(this.tokenService),
       ],
     });
   }
@@ -231,18 +225,3 @@ function httpUnbatchedLink(tokenSvc: TokenService) {
   });
 }
 
-/**
- * Creates a TRPC HTTP batch link with the auth token included in headers.
- *
- * @param tokenSvc - The TokenService instance
- */
-function httpBatchedLink(tokenSvc: TokenService) {
-  return httpBatchLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}

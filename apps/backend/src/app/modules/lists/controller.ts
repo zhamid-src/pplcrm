@@ -46,8 +46,11 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 
     const list = await this.add(row as OperationDataType<'lists', 'insert'>);
 
-    // For static lists, populate membership by explicit IDs if provided; otherwise by definition
-    if (!row.is_dynamic) {
+    // For dynamic lists, trigger an immediate initial refresh to populate membership cache
+    if (row.is_dynamic) {
+      await this.refreshList(auth, list.id);
+    } else {
+      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
       const ids = payload.member_ids ?? [];
 
       if (ids.length && payload.object === 'people') {
@@ -110,6 +113,152 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   }
 
   /**
+   * Refreshes membership mapping for a dynamic list based on its definition rules.
+   */
+  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    const definition = list.definition as getAllOptionsType;
+    if (!definition) {
+      return list;
+    }
+
+    if (list.object === 'people') {
+      // Clear current mappings
+      await this.mapListsPersonsRepo.db
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('list_id', '=', id)
+        .execute();
+
+      // Resolve and insert new mappings
+      const result = await this.personsController.getAllWithAddress(auth, definition);
+      const rows = result.rows.map((p) => ({
+        tenant_id: auth.tenant_id,
+        list_id: list.id,
+        person_id: p['id'],
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      }));
+      if (rows.length) {
+        await this.mapListsPersonsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+        });
+      }
+    } else if (list.object === 'households') {
+      // Clear current mappings
+      await this.mapListsHouseholdsRepo.db
+        .deleteFrom('map_lists_households')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('list_id', '=', id)
+        .execute();
+
+      // Resolve and insert new mappings
+      const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
+      const rows = result.rows.map((h) => ({
+        tenant_id: auth.tenant_id,
+        list_id: list.id,
+        household_id: h['id'],
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      }));
+      if (rows.length) {
+        await this.mapListsHouseholdsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+        });
+      }
+    }
+
+    // Update refreshed timestamp
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        last_refreshed_at: new Date(),
+        updated_at: new Date(),
+        updatedby_id: auth.user_id,
+      } as any,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Fetch statistical aggregates and campaign newsletter history for a list.
+   */
+  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Fetch all newsletters that are sent
+    const newsletters = await this.getRepo().db
+      .selectFrom('newsletters')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'sent')
+      .execute();
+
+    // Filter newsletters in JS where their target_lists matches this list
+    const targetedNewsletters = newsletters.filter((n) => {
+      if (!n.target_lists) return false;
+      try {
+        const parsed = JSON.parse(n.target_lists);
+        if (Array.isArray(parsed)) {
+          return parsed.includes(id);
+        }
+        if (parsed && typeof parsed === 'object') {
+          const include = Array.isArray(parsed.include) ? parsed.include : [];
+          return include.includes(id);
+        }
+      } catch {
+        const parts = n.target_lists.split(',').map((s) => s.trim());
+        return parts.includes(id);
+      }
+      return false;
+    });
+
+    // Compute aggregated metrics
+    const totalNewsletters = targetedNewsletters.length;
+    let totalDelivered = 0;
+    let totalOpens = 0;
+    let totalClicks = 0;
+
+    for (const n of targetedNewsletters) {
+      totalDelivered += Number(n.delivered_count ?? 0);
+      totalOpens += Number(n.unique_opens ?? 0);
+      totalClicks += Number(n.unique_clicks ?? 0);
+    }
+
+    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
+    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
+
+    return {
+      totalNewsletters,
+      totalDelivered,
+      avgOpenRate,
+      avgClickRate,
+      newsletters: targetedNewsletters.map((n) => ({
+        id: n.id,
+        name: n.name,
+        subject: n.subject,
+        send_date: n.send_date,
+        total_recipients: n.total_recipients,
+        delivered_count: n.delivered_count,
+        open_rate: n.open_rate,
+        click_rate: n.click_rate,
+      })),
+    };
+  }
+
+  /**
    * Get all household members of a list.
    */
   public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
@@ -136,5 +285,45 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       id,
       row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
     });
+  }
+
+  /**
+   * Override delete to clear list membership mapping records first to satisfy FK constraints.
+   */
+  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    return super.delete(tenant_id as any, idToDelete, userId);
+  }
+
+  /**
+   * Override deleteMany to clear list membership mapping records first for all target lists.
+   */
+  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
+    if (idsToDelete.length === 0) return false;
+
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    return super.deleteMany(tenant_id as any, idsToDelete);
   }
 }

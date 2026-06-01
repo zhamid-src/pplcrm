@@ -486,6 +486,27 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.sortDir(),
       );
     });
+
+    // React to limitToTags and limitToIssues input signal changes
+    effect(() => {
+      const tags = this.limitToTags();
+      untracked(() => {
+        this.tagFilter.selectedTags.set([...tags]);
+        if (this._initialized) {
+          this.doRefresh();
+        }
+      });
+    });
+
+    effect(() => {
+      const issues = this.limitToIssues();
+      untracked(() => {
+        this.tagFilter.selectedIssues.set([...issues]);
+        if (this._initialized) {
+          this.doRefresh();
+        }
+      });
+    });
     // Virtualizer count sync handled by controller
     // Pin offsets recompute centralized in PinningController
   }

@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, resource, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, input, resource, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddListType, UpdateHouseholdsType, UpdatePersonsType } from '@common';
@@ -29,7 +29,7 @@ import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-build
     [disableImport]="true"
     [disableRefresh]="true"
     [disableView]="true"
-    [limitToTags]="tags"
+    [limitToTags]="tags()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
@@ -38,10 +38,25 @@ import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-build
 })
 export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholdsType> {
   protected col: ColDef[] = [
-    { field: 'street1', headerName: 'Street 1' },
-    { field: 'city', headerName: 'City' },
-    { field: 'state', headerName: 'State' },
-    { field: 'zip', headerName: 'Zip' },
+    {
+      field: 'address',
+      headerName: 'Address',
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [
+          data.apt ? `Apt ${data.apt}` : null,
+          data.street_num,
+          data.street1,
+          data.street2,
+        ].filter(Boolean);
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'Unknown Address';
+      },
+    },
     { field: 'people_count', headerName: 'People' },
     { field: 'tags', headerName: 'Tags' },
   ];
@@ -49,7 +64,7 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
   public override allowFilter = input<boolean>(true);
   public override showToolbar = input<boolean>(true);
   public override enableSelection = input<boolean>(true);
-  public tags: string[] = [];
+  public readonly tags = input<string[]>([]);
 }
 
 /** Grid component for filtering people when creating lists */
@@ -63,7 +78,7 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
     [disableImport]="true"
     [disableRefresh]="true"
     [disableView]="true"
-    [limitToTags]="tags"
+    [limitToTags]="tags()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
@@ -77,15 +92,31 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
     { field: 'email', headerName: 'Email' },
     { field: 'mobile', headerName: 'Mobile' },
     { field: 'tags', headerName: 'Tags' },
-    { field: 'city', headerName: 'City' },
-    { field: 'state', headerName: 'State' },
-    { field: 'zip', headerName: 'Zip' },
+    {
+      field: 'address',
+      headerName: 'Address',
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [
+          data.apt ? `Apt ${data.apt}` : null,
+          data.street_num,
+          data.street1,
+          data.street2,
+        ].filter(Boolean);
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'Unknown Address';
+      },
+    },
   ];
 
   public override allowFilter = input<boolean>(true);
   public override showToolbar = input<boolean>(true);
   public override enableSelection = input<boolean>(true);
-  public tags: string[] = [];
+  public readonly tags = input<string[]>([]);
 }
 
 /** Component for creating new lists. Allows building static or dynamic lists using filters. */
@@ -155,27 +186,38 @@ export class ListDetail {
   };
   protected isLoading = this._loading.visible;
 
+  protected readonly rulesError = computed(() => {
+    const validationErr = this.validateRules();
+    if (validationErr) {
+      return validationErr;
+    }
+    const hasRules = this.hasAnyRule(this.rulesRoot());
+    const tags = this.flattenPositiveTags(this.rulesRoot());
+    if (hasRules && tags.length === 0) {
+      return 'Preview count requires at least one "tag is …" rule';
+    }
+    return null;
+  });
+
   protected readonly matchCountResource = resource({
     params: () => ({
       rules: this.rulesRoot(),
       object: this.listType(),
       hasRules: this.hasAnyRule(this.rulesRoot()),
       tags: this.flattenPositiveTags(this.rulesRoot()),
+      hasError: !!this.rulesError(),
     }),
     loader: async ({ params }) => {
-      const err = this.validateRules();
-      if (err) {
-        throw new Error(err);
+      if (params.hasError) {
+        return 0;
       }
 
       const svc = params.object === 'people' ? this.personsSvc : this.householdsSvc;
       if (!params.hasRules) {
         return await svc.count();
-      } else if (params.tags.length > 0) {
+      } else {
         const res = (await svc.getAll({ tags: params.tags, limit: 1 })) as { count: number };
         return res?.count ?? 0;
-      } else {
-        throw new Error('Preview count requires at least one "tag is …" rule');
       }
     }
   });
@@ -187,31 +229,10 @@ export class ListDetail {
 
   protected readonly counting = this.matchCountResource.isLoading;
 
-  protected readonly rulesError = computed(() => {
-    const err = this.matchCountResource.error();
-    if (err instanceof Error) {
-      return err.message;
-    }
-    if (err) {
-      return String(err);
-    }
-    return null;
-  });
+  protected readonly previewTags = computed(() => this.flattenPositiveTags(this.rulesRoot()));
 
   // Wizard state
   protected step = signal<1 | 2 | 3 | 4>(1);
-
-  constructor() {
-    // Keep preview grids in sync with tag rules (use only positive eq tags for quick preview)
-    effect(() => {
-      const tags = this.flattenPositiveTags(this.rulesRoot());
-      if (this.peopleGrid()) this.peopleGrid()!.tags = tags;
-      if (this.householdGrid()) this.householdGrid()!.tags = tags;
-      // Refresh external filter consumers
-      this.peopleGrid()?.triggerFilterChanged();
-      this.householdGrid()?.triggerFilterChanged();
-    });
-  }
 
   protected back() {
     const s = this.step();

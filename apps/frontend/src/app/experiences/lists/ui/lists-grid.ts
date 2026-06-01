@@ -6,6 +6,7 @@ import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -23,6 +24,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 })
 export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alerts = inject(AlertService);
 
   constructor() {
     super();
@@ -38,19 +41,85 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
     { field: 'id', headerName: 'ID' },
     { field: 'name', headerName: 'List Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
-    { field: 'object', headerName: 'Type', cellEditorParams: { values: ['people', 'households'] } },
+    {
+      field: 'object',
+      headerName: 'Target Object',
+      valueFormatter: (p: any) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return val ?? '—';
+      }
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'List Type',
+      cellRenderer: (p: any) => {
+        const isDynamic = p?.data?.is_dynamic;
+        return isDynamic
+          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
+          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
+      }
+    },
     {
       field: 'list_size',
-      headerName: 'List Size',
-      valueFormatter: (p: any) => {
-        const dyn = p?.data?.is_dynamic;
-        const isDynamic = dyn === true || dyn === 'true' || dyn === 1;
-        return isDynamic ? 'N/A' : p?.value ?? 0;
-      },
+      headerName: 'Size',
+      valueFormatter: (p: any) => p?.value ?? 0
     },
-    { field: 'used_in', headerName: 'Used In' },
-    { field: 'updated_at', headerName: 'Last Updated' },
+    {
+      field: 'last_refreshed_at',
+      headerName: 'Last Refreshed',
+      valueFormatter: (p: any) => {
+        const isDynamic = p?.data?.is_dynamic;
+        if (!isDynamic) return '—';
+        if (!p?.value) return 'Never';
+        const date = new Date(p.value);
+        if (isNaN(date.getTime())) return 'Never';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      }
+    },
+    {
+      field: 'refresh_action',
+      headerName: 'Refresh',
+      cellRenderer: (p: any) => {
+        const isDynamic = p?.data?.is_dynamic;
+        if (!isDynamic) return '—';
+        return `
+          <button class="btn btn-xs btn-circle btn-primary btn-outline flex items-center justify-center hover:scale-105 transition-transform" title="Refresh dynamic list">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          </button>
+        `;
+      },
+      onCellClicked: (p: any) => {
+        const isDynamic = p?.data?.is_dynamic;
+        if (isDynamic) {
+          void this.refreshList(p.data.id);
+        }
+      }
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last Updated',
+      valueFormatter: (p: any) => {
+        if (!p?.value) return '—';
+        const date = new Date(p.value);
+        if (isNaN(date.getTime())) return '—';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      }
+    },
     { field: 'created_by', headerName: 'Created By' },
   ];
 
+  private async refreshList(id: string) {
+    try {
+      this.alerts.showSuccess('Refreshing list members cache...');
+      await this.listsSvc.refreshList(id);
+      this.alerts.showSuccess('List refreshed successfully');
+      await this.refresh();
+    } catch (e: any) {
+      this.alerts.showError(e?.message ?? String(e));
+    }
+  }
 }

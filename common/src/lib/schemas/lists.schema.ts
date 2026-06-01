@@ -23,6 +23,7 @@ export const ListsObj = z.object({
     .lazy(() => getAllOptions)
     .nullable()
     .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
 });
 
 export const UpdateListObj = z.object({
@@ -34,6 +35,7 @@ export const UpdateListObj = z.object({
     .lazy(() => getAllOptions)
     .nullable()
     .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
 });
 
 export const ImportListItemObj = z.object({
