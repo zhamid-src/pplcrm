@@ -5,7 +5,20 @@ export const WorkflowObj = z.object({
   tenant_id: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
-  trigger_type: z.enum(['volunteer_signup', 'manual']).default('manual'),
+  trigger_type: z
+    .enum([
+      'volunteer_signup',
+      'manual',
+      'tag_added',
+      'web_form_submitted',
+      'volunteer_shift_status',
+      'contact_created',
+      'list_joined',
+      'payment_event',
+      'new_subscriber',
+      'new_unsubscriber',
+    ])
+    .default('manual'),
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft'),
   createdby_id: z.string(),
@@ -17,7 +30,20 @@ export const WorkflowObj = z.object({
 export const AddWorkflowObj = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().nullable().optional(),
-  trigger_type: z.enum(['volunteer_signup', 'manual']).default('manual'),
+  trigger_type: z
+    .enum([
+      'volunteer_signup',
+      'manual',
+      'tag_added',
+      'web_form_submitted',
+      'volunteer_shift_status',
+      'contact_created',
+      'list_joined',
+      'payment_event',
+      'new_subscriber',
+      'new_unsubscriber',
+    ])
+    .default('manual'),
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
 });

@@ -3,6 +3,8 @@ import { env } from '../../../env';
 import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { WebhookEventsRepo } from './repositories/webhook-events.repo';
+import { WorkflowsController } from '../workflows/controller';
+import { sql } from 'kysely';
 
 const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
 const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
@@ -302,6 +304,26 @@ export class BillingController {
             .executeTakeFirst();
 
           if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db.selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(
+                  dbTenant.id,
+                  String(person.id),
+                  'payment_event',
+                  event.type,
+                );
+              } catch (err) {
+                console.error('Failed to trigger billing workflow on invoice.paid:', err);
+              }
+            }
+
             const mailService = new TransactionalEmailService();
             const amountPaid = invoice.amount_paid / 100;
             const pdfUrl = invoice.hosted_invoice_url || '';
@@ -331,6 +353,26 @@ export class BillingController {
             .executeTakeFirst();
 
           if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db.selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(
+                  dbTenant.id,
+                  String(person.id),
+                  'payment_event',
+                  event.type,
+                );
+              } catch (err) {
+                console.error('Failed to trigger billing workflow on invoice.payment_failed:', err);
+              }
+            }
+
             const mailService = new TransactionalEmailService();
             const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
             await mailService.sendMail({
