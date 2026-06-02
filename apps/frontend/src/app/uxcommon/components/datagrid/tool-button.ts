@@ -16,10 +16,24 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.cursor-not-allowed]="!enabled()"
       [class.text-neutral-400]="!enabled()"
       [class.text-primary]="active()"
+      [class.dropdown]="hasDropdown()"
+      [class.dropdown-end]="dropdownEnd()"
       [attr.data-tip]="tip()"
-      (click)="enabled() && emitClick()"
+      (click)="enabled() && !hasDropdown() && emitClick()"
     >
-      <a><pc-icon [name]="icon()"></pc-icon></a>
+      @if (hasDropdown()) {
+        <a tabindex="0" role="button" class="relative">
+          <pc-icon [name]="icon()"></pc-icon>
+          @if (badge() && badge()! > 0) {
+            <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+              {{ badge() }}
+            </span>
+          }
+        </a>
+        <ng-content></ng-content>
+      } @else {
+        <a><pc-icon [name]="icon()"></pc-icon></a>
+      }
     </li>
   `,
   imports: [Icon],
@@ -33,6 +47,9 @@ export class GridActionComponent {
   public icon = input.required<PcIconNameType>();
   public tip = input.required<string>();
   public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
+  public hasDropdown = input(false);
+  public dropdownEnd = input(true);
+  public badge = input<number | undefined>(undefined);
 
   public emitClick() {
     this.action.emit();
