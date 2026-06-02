@@ -1,4 +1,10 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, UpdateHouseholdsType, getAllOptionsType } from '@common';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '@common';
 import { TRPCError } from '@trpc/server';
 
 import { BaseRepository, QueryParams } from '../../lib/base.repo';
@@ -67,9 +73,12 @@ export class HouseholdsController extends BaseController<'households', Household
 
     // Try to dedupe: find existing by fingerprint
     if (fp_street || fp_full) {
-      const existing = await this.getRepo().findByFingerprint(
-        { tenant_id: auth.tenant_id, campaign_id: String(campaign_id), fp_street: fp_street, fp_full: fp_full },
-      );
+      const existing = await this.getRepo().findByFingerprint({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+        fp_street: fp_street,
+        fp_full: fp_full,
+      });
       if (existing?.id) return { id: String(existing.id) } as any;
     }
 
@@ -89,12 +98,15 @@ export class HouseholdsController extends BaseController<'households', Household
     const household = await super.getOneById(input);
     if (!household) return undefined;
 
-    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
       .select('placeholder_household_id')
       .where('id', '=', input.tenant_id)
       .executeTakeFirst();
 
-    const is_placeholder = tenantRow?.placeholder_household_id ? String(tenantRow.placeholder_household_id) === String((household as any).id) : false;
+    const is_placeholder = tenantRow?.placeholder_household_id
+      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
+      : false;
     return {
       ...household,
       is_placeholder,
@@ -106,7 +118,11 @@ export class HouseholdsController extends BaseController<'households', Household
    * The fingerprint update is attempted in a separate step so that the main update
    * always succeeds — even if the address_fp_* columns have not been migrated yet.
    */
-  public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'households', 'update'> }) {
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'households', 'update'>;
+  }) {
     const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
     if (placeholders.has(input.id)) {
       throw new TRPCError({
@@ -148,8 +164,8 @@ export class HouseholdsController extends BaseController<'households', Household
         await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
 
         // Get all member persons of this household to queue duplicates maintenance
-        const members = await this.getRepo().db
-          .selectFrom('persons')
+        const members = await this.getRepo()
+          .db.selectFrom('persons')
           .select('id')
           .where('tenant_id', '=', input.tenant_id)
           .where('household_id', '=', input.id)
@@ -157,8 +173,8 @@ export class HouseholdsController extends BaseController<'households', Household
         const memberIds = members.map((m) => String(m.id));
 
         if (memberIds.length > 0) {
-          await this.getRepo().db
-            .insertInto('background_jobs' as any)
+          await this.getRepo()
+            .db.insertInto('background_jobs' as any)
             .values({
               tenant_id: input.tenant_id,
               queue: 'default',
@@ -181,7 +197,6 @@ export class HouseholdsController extends BaseController<'households', Household
 
     return result;
   }
-
 
   /**
    * Attach a tag to a household. Creates the tag if it doesn't exist.
@@ -234,7 +249,7 @@ export class HouseholdsController extends BaseController<'households', Household
     household_id: string,
     tag_name: string,
     type: 'tag' | 'issue' = 'tag',
-    userId?: string
+    userId?: string,
   ) {
     const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
     if (placeholders.has(household_id)) {
@@ -380,5 +395,25 @@ export class HouseholdsController extends BaseController<'households', Household
       source_id,
       user_id: auth.user_id,
     });
+  }
+
+  /**
+   * Queue a background job to recompute address fingerprints for a tenant.
+   */
+  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'recompute_address_fingerprints',
+          tenant_id: tenantId,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
   }
 }

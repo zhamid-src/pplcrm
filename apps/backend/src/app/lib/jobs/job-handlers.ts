@@ -13,6 +13,7 @@ import { sql } from 'kysely';
 import { TransactionalEmailService } from '../mail/transactional-mail.service';
 import { UserActivityRepo } from '../user-activity.repo';
 import { NewsletterEmailService } from '../mail/newsletter-mail.service';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
@@ -27,7 +28,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     await activityController.deleteOldActivities();
 
     // Schedule next cleanup_activities job 24 hours later
-    await db.insertInto('background_jobs' as any)
+    await db
+      .insertInto('background_jobs' as any)
       .values({
         tenant_id: null,
         queue: 'default',
@@ -41,7 +43,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     await queueUserSyncJobs(db);
 
     // Schedule next schedule_sync_jobs job 10 minutes later
-    await db.insertInto('background_jobs' as any)
+    await db
+      .insertInto('background_jobs' as any)
       .values({
         tenant_id: null,
         queue: 'default',
@@ -70,16 +73,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'potential_duplicates_maintenance') {
     const maintenanceSvc = new DuplicateMaintenanceService();
-    await maintenanceSvc.runMaintenance(
-      payload.tenant_id,
-      payload.person_ids || [],
-      payload.group_keys || []
-    );
+    await maintenanceSvc.runMaintenance(payload.tenant_id, payload.person_ids || [], payload.group_keys || []);
   } else if (payload.type === 'recompute_all_duplicates') {
-    const tenants = await db
-      .selectFrom('tenants')
-      .select('id')
-      .execute();
+    const tenants = await db.selectFrom('tenants').select('id').execute();
 
     const maintenanceSvc = new DuplicateMaintenanceService();
     for (const tenant of tenants) {
@@ -90,7 +86,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       }
     }
 
-    await db.insertInto('background_jobs' as any)
+    await db
+      .insertInto('background_jobs' as any)
       .values({
         tenant_id: null,
         queue: 'default',
@@ -123,7 +120,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     });
 
     // 2. Send Alert Email to the Tenant Admin
-    const admin = await db.selectFrom('authusers')
+    const admin = await db
+      .selectFrom('authusers')
       .select(['email', 'first_name'])
       .where('tenant_id', '=', payload.tenantId as any)
       .limit(1)
@@ -138,11 +136,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       });
     }
   } else if (payload.type === 'send-shift-reminder') {
-    const shift = await db
+    const shift = (await db
       .selectFrom('volunteer_shifts')
       .selectAll()
       .where('id', '=', payload.shiftId as any)
-      .executeTakeFirst() as any;
+      .executeTakeFirst()) as any;
 
     if (!shift) {
       console.log(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
@@ -154,11 +152,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       return;
     }
 
-    const event = await db
+    const event = (await db
       .selectFrom('volunteer_events')
       .selectAll()
       .where('id', '=', shift.event_id as any)
-      .executeTakeFirst() as any;
+      .executeTakeFirst()) as any;
 
     if (!event) {
       console.log(`Skipping shift reminder: event ${shift.event_id} not found.`);
@@ -170,11 +168,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       return;
     }
 
-    const person = await db
+    const person = (await db
       .selectFrom('persons')
       .selectAll()
       .where('id', '=', shift.person_id as any)
-      .executeTakeFirst() as any;
+      .executeTakeFirst()) as any;
 
     if (!person) {
       console.log(`Skipping shift reminder: person ${shift.person_id} not found.`);
@@ -339,18 +337,86 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       quantity: totalRecipients,
       metadata: { recipientsCount: totalRecipients, deliveredCount },
     });
+  } else if (payload.type === 'recompute_address_fingerprints') {
+    const tenantIds: string[] = [];
+    if (payload.tenant_id) {
+      tenantIds.push(String(payload.tenant_id));
+    } else {
+      const tenants = await db.selectFrom('tenants').select('id').execute();
+      for (const tenant of tenants) {
+        tenantIds.push(String(tenant.id));
+      }
+    }
+
+    for (const tenantId of tenantIds) {
+      try {
+        await recomputeTenantAddressFingerprints(tenantId, db);
+      } catch (tenantErr) {
+        console.error(`Failed to recompute address fingerprints for tenant ${tenantId}:`, tenantErr);
+      }
+    }
+
+    // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
+    if (!payload.tenant_id) {
+      await db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: null,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
+          run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          max_attempts: 3,
+        })
+        .execute();
+    }
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }
 }
 
+async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Promise<void> {
+  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
+
+  for (const hh of households) {
+    const fp_street = fingerprintStreet({
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: hh.apt,
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+      city: hh.city,
+      state: hh.state,
+      zip: hh.zip,
+      country: hh.country,
+    });
+
+    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
+      await db
+        .updateTable('households')
+        .set({
+          address_fp_street: fp_street,
+          address_fp_full: fp_full,
+          updated_at: new Date(),
+        })
+        .where('id', '=', hh.id)
+        .where('tenant_id', '=', tenantId)
+        .execute();
+    }
+  }
+
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  await maintenanceSvc.recomputeAllDuplicates(tenantId);
+}
+
 async function queueUserSyncJobs(db: any): Promise<void> {
   try {
     // Find all connected Google accounts
-    const googleTokens = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'tenant_id'])
-      .execute();
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select(['user_id', 'tenant_id']).execute();
 
     for (const token of googleTokens) {
       const userId = String(token.user_id);
@@ -387,10 +453,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
     }
 
     // Find all connected Microsoft accounts
-    const msTokens = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'tenant_id'])
-      .execute();
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select(['user_id', 'tenant_id']).execute();
 
     for (const token of msTokens) {
       const userId = String(token.user_id);

@@ -30,7 +30,7 @@ function attachTag() {
         id: idSchema,
         tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
         type: z.enum(['tag', 'issue']).default('tag').optional(),
-      })
+      }),
     )
     .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
 }
@@ -56,7 +56,9 @@ function deleteMany() {
  * Delete a single household by ID.
  */
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input, ctx.auth.user_id));
+  return authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => households.delete(ctx.auth.tenant_id, input, ctx.auth.user_id));
 }
 
 /**
@@ -69,9 +71,11 @@ function detachTag() {
         id: idSchema,
         tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
         type: z.enum(['tag', 'issue']).default('tag').optional(),
-      })
+      }),
     )
-    .mutation(({ input, ctx }) => households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id));
+    .mutation(({ input, ctx }) =>
+      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
+    );
 }
 
 /**
@@ -94,9 +98,7 @@ function getAllWithPeopleCount() {
  * Get the count of people in a specific household.
  */
 function getPeopleCount() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth));
 }
 
 /**
@@ -134,9 +136,7 @@ function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) =>
-      households.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
-    );
+    .mutation(({ input, ctx }) => households.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
 }
 
 /**
@@ -165,6 +165,10 @@ function mergeHouseholds() {
     .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth));
 }
 
+function recomputeAddressFingerprints() {
+  return authProcedure.mutation(({ ctx }) => households.recomputeAddressFingerprints(ctx.auth.tenant_id));
+}
+
 const households = new HouseholdsController();
 
 /**
@@ -187,4 +191,5 @@ export const HouseholdsRouter = router({
   exportCsv: exportCsv(),
   findPotentialDuplicates: findPotentialDuplicates(),
   mergeHouseholds: mergeHouseholds(),
+  recomputeAddressFingerprints: recomputeAddressFingerprints(),
 });
