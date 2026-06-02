@@ -3,7 +3,7 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
-  selector: 'pc-grid-action',
+  selector: 'pc-grid-tool-btn',
   template: `
     <li
       class="tooltip tooltip-accent"

@@ -1,35 +1,35 @@
 <ul class="menu menu-horizontal flex flex-row pt-0 relative z-30">
-  <pc-grid-action [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-action
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
     [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
     [tip]="'Clone'"
     icon="document-duplicate"
     [hidden]="!grid.addRoute()"
     (action)="onClone()"
   />
-  <pc-grid-action
+  <pc-grid-tool-btn
     [enabled]="!grid.disableRefresh()"
     [tip]="'Refresh the grid'"
     icon="arrow-path"
     (action)="onRefresh()"
   />
-  <pc-grid-action [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-action [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-  <pc-grid-action
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+  <pc-grid-tool-btn
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
     [tip]="'Deleted selected row(s)'"
     icon="trash"
     (action)="onDeleteSelected()"
   />
 
-  <pc-grid-action
+  <pc-grid-tool-btn
     [enabled]="!grid.disableImport()"
     [tip]="'Import data from CSV'"
     icon="arrow-up-tray"
     (action)="onImportCsv()"
   />
 
-  <pc-grid-action
+  <pc-grid-tool-btn
     [enabled]="!grid.disableExport()"
     [tip]="'Download as CSV'"
     icon="arrow-down-tray"
@@ -178,7 +178,7 @@
   </li>
   }
 
-  <pc-grid-action
+  <pc-grid-tool-btn
     icon="funnel"
     tip="Advanced Filters"
     [hidden]="!grid.allowFilter()"
@@ -187,7 +187,7 @@
     (action)="onToggleFilters()"
   />
 
-  <pc-grid-action
+  <pc-grid-tool-btn
     icon="adjustments-horizontal"
     tip="Advanced Query Builder"
     [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
@@ -226,7 +226,7 @@
     </ul>
   </li>
 
-  <pc-grid-action
+  <pc-grid-tool-btn
     [icon]="grid.archiveIcon()"
     [tip]="grid.archiveTip()"
     [hidden]="!grid.showArchiveIcon()"
