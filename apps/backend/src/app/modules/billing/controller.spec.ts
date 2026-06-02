@@ -119,6 +119,7 @@ describe('Billing Webhook Async Processing Integration', () => {
         type: mockEvent.type,
         payload: mockEvent as any,
         status: 'pending',
+        run_at: new Date(Date.now() - 10000),
       })
       .execute();
 
@@ -158,6 +159,7 @@ describe('Billing Webhook Async Processing Integration', () => {
         payload: mockEvent as any,
         status: 'pending',
         attempts: 2,
+        run_at: new Date(Date.now() - 10000),
       })
       .execute();
 
