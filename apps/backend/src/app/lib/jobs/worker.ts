@@ -1,5 +1,6 @@
 import { StorageService } from '../storage.service';
 import { PersonsService } from '../../modules/persons/services/persons.service';
+import { DuplicateMaintenanceService } from '../../modules/persons/services/duplicate-maintenance.service';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { ListsController } from '../../modules/lists/controller';
 import { ActivityController } from '../../modules/activity/controller';
@@ -26,6 +27,9 @@ export class BackgroundJobWorker {
     );
     this.ensureSyncSchedulerJobScheduled().catch((err) =>
       console.error('Failed to ensure sync scheduler job scheduled:', err)
+    );
+    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
+      console.error('Failed to ensure duplicates recompute job scheduled:', err)
     );
     this.poll();
   }
@@ -170,6 +174,33 @@ export class BackgroundJobWorker {
     }
   }
 
+  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
+    try {
+      const existing = await this.db
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+        .executeTakeFirst();
+      if (!existing) {
+        console.log('Scheduling nightly duplicates recomputation background job…');
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    } catch (err) {
+      console.error('Failed to ensure duplicates recompute job scheduled:', err);
+    }
+  }
+
   public stop() {
     this.isRunning = false;
     if (this.timer) {
@@ -283,6 +314,38 @@ export class BackgroundJobWorker {
         });
         const syncSvc = new MsSyncService(this.db as any, oauthSvc);
         await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+      } else if (payload.type === 'potential_duplicates_maintenance') {
+        const maintenanceSvc = new DuplicateMaintenanceService();
+        await maintenanceSvc.runMaintenance(
+          payload.tenant_id,
+          payload.person_ids || [],
+          payload.group_keys || []
+        );
+      } else if (payload.type === 'recompute_all_duplicates') {
+        const tenants = await this.db
+          .selectFrom('tenants')
+          .select('id')
+          .execute();
+
+        const maintenanceSvc = new DuplicateMaintenanceService();
+        for (const tenant of tenants) {
+          try {
+            await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+          } catch (tenantErr) {
+            console.error(`Failed to recompute duplicates for tenant ${tenant.id}:`, tenantErr);
+          }
+        }
+
+        await this.db.insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+            run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
+            max_attempts: 3,
+          })
+          .execute();
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
@@ -429,6 +492,21 @@ export class BackgroundJobWorker {
               .execute();
           } catch (schedErr) {
             console.error('Failed to reschedule failed sync scheduler job:', schedErr);
+          }
+        } else if (payload.type === 'recompute_all_duplicates') {
+          try {
+            await this.db.insertInto('background_jobs' as any)
+              .values({
+                tenant_id: null,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+                run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                max_attempts: 3,
+              })
+              .execute();
+          } catch (schedErr) {
+            console.error('Failed to reschedule failed duplicates recompute job:', schedErr);
           }
         }
       }

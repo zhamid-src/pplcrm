@@ -381,87 +381,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   /**
-   * Find potential duplicates within the tenant (sharing identical email or same name at same address/household).
+   * Find potential duplicates within the tenant (querying pre-computed potential_duplicates table).
    */
   public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
-    const duplicateEmails = await this.getSelect()
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
       .select([
-        sql<string>`lower(email)`.as('email_lower'),
-      ])
-      .select((eb) => [
-        eb.fn.count('persons.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
-      .where('tenant_id', '=', tenant_id)
-      .where('email', 'is not', null)
-      .where(sql`trim(email)`, '!=', '')
-      .groupBy(sql`lower(email)`)
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', tenant_id)
-      .executeTakeFirst();
-    const placeholderHhId = tenantRow?.placeholder_household_id;
-
-    const duplicateNamesInSameHousehold = await this.getSelect()
-      .select([
-        sql<string>`lower(first_name)`.as('first_name_lower'),
-        sql<string>`lower(last_name)`.as('last_name_lower'),
-        'household_id',
-      ])
-      .select((eb) => [
-        eb.fn.count('persons.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
-      .where('tenant_id', '=', tenant_id)
-      .where('first_name', 'is not', null)
-      .where('last_name', 'is not', null)
-      .where(sql`trim(first_name)`, '!=', '')
-      .where(sql`trim(last_name)`, '!=', '')
-      .where('household_id', 'is not', null)
-      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId!))
-      .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    const duplicateNamesInSameAddress = await this.getSelect()
-      .innerJoin('households', 'persons.household_id', 'households.id')
-      .select([
-        sql<string>`lower(persons.first_name)`.as('first_name_lower'),
-        sql<string>`lower(persons.last_name)`.as('last_name_lower'),
-        'households.address_fp_full',
-      ])
-      .select((eb) => [
-        eb.fn.count('persons.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('persons.first_name', 'is not', null)
-      .where('persons.last_name', 'is not', null)
-      .where(sql`trim(persons.first_name)`, '!=', '')
-      .where(sql`trim(persons.last_name)`, '!=', '')
-      .where('households.address_fp_full', 'is not', null)
-      .where(sql`trim(households.address_fp_full)`, '!=', '')
-      .groupBy([sql`lower(persons.first_name)`, sql`lower(persons.last_name)`, 'households.address_fp_full'])
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    const duplicateIds = new Set<string>();
-    for (const group of [...duplicateEmails, ...duplicateNamesInSameHousehold, ...duplicateNamesInSameAddress]) {
-      const ids = group.ids;
-      if (Array.isArray(ids)) {
-        ids.forEach((id) => duplicateIds.add(String(id)));
-      }
-    }
-
-    if (duplicateIds.size === 0) {
-      return [];
-    }
-
-    const dbRows = await this.getSelect()
-      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
         'persons.id',
         'persons.first_name',
         'persons.last_name',
@@ -473,65 +401,53 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.household_id',
         'persons.created_at',
       ])
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('persons.id', 'in', Array.from(duplicateIds))
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
       .execute();
 
-    const personsMap = new Map<string, any>();
-    for (const row of dbRows) {
-      personsMap.set(String(row.id), {
+    const groupsMap = new Map<string, { reason: string; persons: any[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
+        });
+      }
+      groupsMap.get(groupKey)!.persons.push({
         ...row,
         id: String(row.id),
       });
     }
 
-    const groups: Array<{ reason: string; persons: any[] }> = [];
+    return Array.from(groupsMap.values());
+  }
 
-    const groupedByEmail = new Map<string, string[]>();
-    for (const group of duplicateEmails) {
-      groupedByEmail.set(group.email_lower, group.ids);
-    }
-    for (const [email, ids] of groupedByEmail) {
-      const groupPersons = ids.map((id) => personsMap.get(id)).filter(Boolean);
-      if (groupPersons.length > 1) {
-        groups.push({
-          reason: `Matching Email: "${email}"`,
-          persons: groupPersons,
-        });
-      }
-    }
-
-    for (const group of duplicateNamesInSameHousehold) {
-      const groupPersons = group.ids.map((id) => personsMap.get(id)).filter(Boolean);
-      if (groupPersons.length > 1) {
-        const alreadyGrouped = groups.some(
-          (g) => g.persons.length === groupPersons.length && g.persons.every((p) => groupPersons.some((gp) => gp.id === p.id)),
-        );
-        if (!alreadyGrouped) {
-          groups.push({
-            reason: `Matching Name at Same Household: "${groupPersons[0].first_name} ${groupPersons[0].last_name}"`,
-            persons: groupPersons,
-          });
-        }
-      }
-    }
-
-    for (const group of duplicateNamesInSameAddress) {
-      const groupPersons = group.ids.map((id) => personsMap.get(id)).filter(Boolean);
-      if (groupPersons.length > 1) {
-        const alreadyGrouped = groups.some(
-          (g) => g.persons.length === groupPersons.length && g.persons.every((p) => groupPersons.some((gp) => gp.id === p.id)),
-        );
-        if (!alreadyGrouped) {
-          groups.push({
-            reason: `Matching Name at Same Address: "${groupPersons[0].first_name} ${groupPersons[0].last_name}"`,
-            persons: groupPersons,
-          });
-        }
-      }
-    }
-
-    return groups;
+  /**
+   * Helper to queue duplicates maintenance background job.
+   */
+  public async queueDuplicatesJob(
+    tenant_id: string,
+    person_ids: string[],
+    group_keys: string[] = [],
+    trx?: Transaction<Models>
+  ): Promise<void> {
+    const db = trx || this.db;
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'potential_duplicates_maintenance',
+          tenant_id,
+          person_ids,
+          group_keys,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
   }
 
   /**
@@ -684,6 +600,14 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('team_captain_id', '=', input.source_id)
         .execute();
 
+      // Get old group keys of source before deleting them
+      const oldSourceKeys = await trx.selectFrom('potential_duplicates')
+        .select('group_key')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      const sourceKeys = oldSourceKeys.map((r) => r.group_key);
+
       // 6. Delete source person
       await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
 
@@ -702,6 +626,9 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .execute();
         }
       }
+
+      // 8. Queue duplicates maintenance job
+      await this.queueDuplicatesJob(input.tenant_id, [input.target_id], sourceKeys, trx);
 
       return { success: true };
     });

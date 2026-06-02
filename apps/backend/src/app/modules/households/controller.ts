@@ -146,8 +146,36 @@ export class HouseholdsController extends BaseController<'households', Household
           }),
         };
         await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
-      } catch {
-        // Fingerprint columns may not exist yet (migration pending) — safe to ignore
+
+        // Get all member persons of this household to queue duplicates maintenance
+        const members = await this.getRepo().db
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', input.id)
+          .execute();
+        const memberIds = members.map((m) => String(m.id));
+
+        if (memberIds.length > 0) {
+          await this.getRepo().db
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: input.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'potential_duplicates_maintenance',
+                tenant_id: input.tenant_id,
+                person_ids: memberIds,
+                group_keys: [],
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      } catch (err) {
+        console.error('Failed to update address fingerprint and queue duplicates maintenance', err);
       }
     }
 

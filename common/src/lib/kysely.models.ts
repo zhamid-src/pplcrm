@@ -77,6 +77,7 @@ export interface Models {
   web_forms: WebForms;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
+  potential_duplicates: PotentialDuplicates;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -517,6 +518,16 @@ export interface WebhookEvents {
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
   processed_at: Timestamp | null;
+}
+
+export interface PotentialDuplicates {
+  id: Generated<string>;
+  tenant_id: string;
+  group_key: string;
+  person_id: string;
+  reason: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 interface MsOauthTokens {

@@ -71,6 +71,9 @@ export class PersonsService {
     };
 
     const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    if (result && typeof result === 'object') {
+      await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
+    }
     try {
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
@@ -117,6 +120,9 @@ export class PersonsService {
         updatedby_id: auth.user_id,
       } as OperationDataType<'persons', 'update'>,
     });
+    if (result && typeof result === 'object') {
+      await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
+    }
     try {
       const changes: Record<string, any> = {};
       const resultObj = result && typeof result === 'object' ? (result as any) : null;
@@ -513,6 +519,7 @@ export class PersonsService {
       households_created: 0,
       skipped: 0,
     };
+    const importedPersonIds: string[] = [];
 
     const errorMessages: string[] = [];
     let cachedBlankHouseholdId: string | null = null;
@@ -688,6 +695,7 @@ export class PersonsService {
               }
 
               return {
+                personId: person?.id ? String(person.id) : null,
                 householdsCreatedDelta,
                 blankHouseholdId: localBlankHouseholdId,
                 autoTagId: localAutoTagId,
@@ -696,6 +704,9 @@ export class PersonsService {
 
           results.inserted += 1;
           results.households_created += outcome.householdsCreatedDelta;
+          if (outcome.personId) {
+            importedPersonIds.push(outcome.personId);
+          }
           if (outcome.blankHouseholdId) {
             cachedBlankHouseholdId = outcome.blankHouseholdId;
           }
@@ -746,6 +757,14 @@ export class PersonsService {
       });
     } catch (e) {
       console.error('Failed to log import activity', e);
+    }
+
+    if (importedPersonIds.length > 0) {
+      try {
+        await this.personsRepo.queueDuplicatesJob(tenant_id, importedPersonIds);
+      } catch (err) {
+        console.error('Failed to queue duplicate maintenance job for imported persons', err);
+      }
     }
 
     return {
