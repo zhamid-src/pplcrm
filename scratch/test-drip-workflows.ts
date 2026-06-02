@@ -117,7 +117,7 @@ async function runTest() {
     // 4. Trigger the volunteer signup trigger programmatically (simulates shift signup)
     console.log('4. Simulating volunteer signup trigger...');
     await db.transaction().execute(async (trx) => {
-      await ctrl.triggerVolunteerSignup(tenantId, testPersonId!, trx);
+      await ctrl.triggerVolunteerSignup(tenantId, testPersonId!, null, trx);
     });
 
     // 5. Verify enrollment was created

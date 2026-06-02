@@ -126,6 +126,11 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'envelope',
       },
       {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+      {
         name: 'Newsletter',
         route: '/newsletter',
         icon: 'megaphone',
@@ -133,19 +138,13 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Workflows',
         route: '/workflows',
-        icon: 'arrow-path',
-      },
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
+        icon: 'cog',
       },
     ],
   },
   {
     name: `TEAMS`,
     type: 'subheading',
-    collapsed: true,
     children: [
       {
         name: 'Teams',

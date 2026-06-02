@@ -235,7 +235,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       try {
         const workflowsController = new WorkflowsController();
         await this.getRepo().transaction().execute(async (trx) => {
-          await workflowsController.triggerVolunteerSignup(auth.tenant_id, String(payload.person_id), trx);
+          await workflowsController.triggerVolunteerSignup(auth.tenant_id, String(payload.person_id), String(payload.event_id), trx);
         });
       } catch (err) {
         console.error('Failed to trigger volunteer signup workflows:', err);
@@ -779,7 +779,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       // Trigger volunteer signup workflows
       try {
         const workflowsController = new WorkflowsController();
-        await workflowsController.triggerVolunteerSignup(tenantId, personId, trx);
+        await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
       } catch (err) {
         console.error('Failed to trigger volunteer signup workflows in public form:', err);
       }

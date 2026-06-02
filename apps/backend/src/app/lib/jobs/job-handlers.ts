@@ -474,7 +474,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             .executeTakeFirst();
 
           if (nextStep) {
-            const nextRunAt = new Date(Date.now() + nextStep.delay_days * 24 * 60 * 60 * 1000);
+            const delayMs = nextStep.delay_unit === 'hours'
+              ? nextStep.delay_days * 60 * 60 * 1000
+              : nextStep.delay_days * 24 * 60 * 60 * 1000;
+            const nextRunAt = new Date(Date.now() + delayMs);
             await trx
               .updateTable('workflow_enrollments')
               .set({

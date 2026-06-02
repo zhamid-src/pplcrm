@@ -87,6 +87,7 @@ export const icons = {
   'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
   clock: 'assets/icons/clock.svg',
   'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
   'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
   'collapse-content': 'assets/icons/collapse-content.svg',
   'credit-card': 'assets/icons/credit-card.svg',
