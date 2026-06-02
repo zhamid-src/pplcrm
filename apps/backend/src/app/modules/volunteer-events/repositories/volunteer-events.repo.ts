@@ -36,6 +36,14 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
           );
         });
 
+      // Archive filter based on event time
+      const includeArchived = (options as any).includeArchived === true;
+      if (includeArchived) {
+        q = q.where('volunteer_events.end_time', '<', new Date());
+      } else {
+        q = q.where('volunteer_events.end_time', '>=', new Date());
+      }
+
       // Apply basic column filters
       q = this.applyColumnFilter(q, 'volunteer_events.name', filterModel['name']);
       q = this.applyColumnFilter(q, 'volunteer_events.location_address', filterModel['location_address']);

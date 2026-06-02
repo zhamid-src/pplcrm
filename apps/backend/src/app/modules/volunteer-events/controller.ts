@@ -31,6 +31,17 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
    * Create a new volunteer event.
    */
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().db.selectFrom('volunteer_events')
+      .select('id')
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
     const row = {
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
@@ -44,23 +55,121 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       contact_email: payload.contact_email ?? null,
       contact_phone: payload.contact_phone ?? null,
       is_private: payload.is_private ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      slug: payload.slug,
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
+  }
+
+  /**
+   * Check if a URL slug is unique.
+   */
+  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo().db.selectFrom('volunteer_events')
+      .select('id')
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId as any);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
   }
 
   /**
    * Update an existing volunteer event.
    */
   public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo().db.selectFrom('volunteer_events')
+        .select('id')
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id as any)
+        .executeTakeFirst();
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
     const row = {
       ...payload,
       updatedby_id: auth.user_id,
     } as OperationDataType<'volunteer_events', 'update'>;
-    return this.update({
+    const result = await this.update({
       tenant_id: auth.tenant_id,
       id,
       row,
     });
+
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo().db.deleteFrom('background_jobs' as any)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        console.error('Failed to clean up pending reminders for disabled event reminders', err);
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        // Fetch all signed up shifts for this event
+        const shifts = await this.getRepo().db.selectFrom('volunteer_shifts')
+          .select(['id', 'person_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('event_id', '=', id)
+          .where('status', '=', 'signed_up')
+          .execute();
+        
+        // Fetch event start time
+        const event = await this.getRepo().db.selectFrom('volunteer_events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+        
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            for (const shift of shifts) {
+              // Delete existing pending reminder for safety
+              await this.getRepo().db.deleteFrom('background_jobs' as any)
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
+                .execute();
+              
+              // Queue new reminder
+              await this.getRepo().db.insertInto('background_jobs' as any)
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(shift.id),
+                    eventId: String(id),
+                    personId: String(shift.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to re-schedule shift reminders for event', err);
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -86,6 +195,40 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       notes: payload.notes,
       user_id: auth.user_id,
     });
+
+    if (result && result.status === 'signed_up') {
+      try {
+        const event = await this.getRepo().db.selectFrom('volunteer_events')
+          .select(['start_time', 'send_reminder'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', payload.event_id)
+          .executeTakeFirst();
+        
+        if (event && event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo().db.insertInto('background_jobs' as any)
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to schedule shift reminder for volunteer', err);
+      }
+    }
 
     try {
       await this.userActivity.log({
@@ -115,6 +258,59 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       user_id: auth.user_id,
     });
 
+    if (result) {
+      try {
+        if (payload.status && payload.status !== 'signed_up') {
+          // Cancel/remove pending reminder
+          await this.getRepo().db.deleteFrom('background_jobs' as any)
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+        } else if (payload.status === 'signed_up') {
+          // Remove existing pending reminders first
+          await this.getRepo().db.deleteFrom('background_jobs' as any)
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+
+          // Fetch event to check if we should schedule a new reminder
+          const event = await this.getRepo().db.selectFrom('volunteer_events')
+            .select(['start_time', 'send_reminder'])
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', result.event_id)
+            .executeTakeFirst();
+
+          if (event && event.send_reminder !== false) {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await this.getRepo().db.insertInto('background_jobs' as any)
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(id),
+                    eventId: String(result.event_id),
+                    personId: String(result.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to update shift reminder job status', err);
+      }
+    }
+
     try {
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
@@ -140,6 +336,19 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       tenant_id: auth.tenant_id,
       id,
     });
+
+    if (result) {
+      try {
+        await this.getRepo().db.deleteFrom('background_jobs' as any)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'shiftId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        console.error('Failed to delete pending shift reminder job', err);
+      }
+    }
 
     try {
       await this.userActivity.log({
@@ -206,6 +415,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         'volunteer_events.contact_email',
         'volunteer_events.contact_phone',
         'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
       ])
       .select((eb) => [
         eb
@@ -225,7 +436,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
    * Public: Get event details and current signup count.
    */
   public async getEventPublic(eventId: string) {
-    return this.getRepo().db
+    const isNumeric = /^\d+$/.test(eventId);
+    let query = this.getRepo().db
       .selectFrom('volunteer_events')
       .select([
         'volunteer_events.id',
@@ -239,6 +451,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         'volunteer_events.contact_email',
         'volunteer_events.contact_phone',
         'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
       ])
       .select((eb) => [
         eb
@@ -246,9 +460,18 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
           .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
           .as('volunteers_count'),
-      ])
-      .where('volunteer_events.id', '=', eventId as any)
-      .executeTakeFirst();
+      ]);
+
+    if (isNumeric) {
+      query = query.where((eb) => eb.or([
+        eb('volunteer_events.id', '=', eventId as any),
+        eb('volunteer_events.slug', '=', eventId)
+      ]));
+    } else {
+      query = query.where('volunteer_events.slug', '=', eventId);
+    }
+
+    return query.executeTakeFirst();
   }
 
   public getTenantSlug(tenantId: string): string {
@@ -264,7 +487,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       const slug = this.getTenantSlug(input.tenant_id);
       return {
         ...event,
-        public_url: `/api/events/view/${event.id}`,
+        public_url: `/api/events/view/${event.slug || event.id}`,
         tenant_public_url: `/api/events/org/${slug}`,
       } as any;
     }
@@ -409,7 +632,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       const existingShift = await trx.selectFrom('volunteer_shifts')
         .select('id')
         .where('tenant_id', '=', tenantId as any)
-        .where('event_id', '=', eventId as any)
+        .where('event_id', '=', event.id as any)
         .where('person_id', '=', personId as any)
         .executeTakeFirst();
 
@@ -468,17 +691,20 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       }
 
       // Insert Shift
-      await trx.insertInto('volunteer_shifts')
+      const shiftResult = await trx.insertInto('volunteer_shifts')
         .values({
           tenant_id: tenantId as any,
-          event_id: eventId as any,
+          event_id: event.id as any,
           person_id: personId as any,
           status: 'signed_up',
           notes: notes,
           createdby_id: creatorId as any,
           updatedby_id: creatorId as any,
         })
-        .execute();
+        .returning('id')
+        .executeTakeFirstOrThrow();
+
+      const shiftId = shiftResult.id;
 
       // Log user activity
       await trx.insertInto('user_activity')
@@ -487,7 +713,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           user_id: creatorId,
           activity: 'signup',
           entity: 'volunteer_events',
-          entity_id: eventId,
+          entity_id: String(event.id),
           quantity: 1,
           metadata: JSON.stringify({ person_id: personId, email }),
           createdby_id: creatorId,
@@ -503,7 +729,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           status: 'pending',
           payload: JSON.stringify({
             type: 'send-form-notifications',
-            eventId,
+            eventId: String(event.id),
             tenantId,
             email,
             firstName,
@@ -514,6 +740,29 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           run_at: new Date(),
         })
         .execute();
+
+      // Queue shift reminder email if enabled
+      if (event.send_reminder !== false) {
+        const startMs = new Date(event.start_time).getTime();
+        const nowMs = Date.now();
+        if (startMs > nowMs) {
+          const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+          await trx.insertInto('background_jobs' as any)
+            .values({
+              tenant_id: tenantId as any,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-shift-reminder',
+                shiftId: String(shiftId),
+                eventId: String(event.id),
+                personId: String(personId),
+              }),
+              run_at: runAt,
+            })
+            .execute();
+        }
+      }
     });
 
     return { success: true };

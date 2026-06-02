@@ -11,6 +11,8 @@ export const AddVolunteerEventObj = z.object({
   contact_email: z.string().trim().max(255).nullable().optional(),
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().default(false).optional(),
+  send_reminder: z.boolean().default(true).optional(),
+  slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens'),
 });
 
 export const VolunteerEventsObj = z.object({
@@ -25,6 +27,8 @@ export const VolunteerEventsObj = z.object({
   contact_email: z.string().nullable().optional(),
   contact_phone: z.string().nullable().optional(),
   is_private: z.boolean(),
+  send_reminder: z.boolean(),
+  slug: z.string(),
 });
 
 export const UpdateVolunteerEventObj = z.object({
@@ -37,6 +41,8 @@ export const UpdateVolunteerEventObj = z.object({
   contact_email: z.string().trim().max(255).nullable().optional(),
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().optional(),
+  send_reminder: z.boolean().optional(),
+  slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens').optional(),
 });
 
 export const AddVolunteerShiftObj = z.object({

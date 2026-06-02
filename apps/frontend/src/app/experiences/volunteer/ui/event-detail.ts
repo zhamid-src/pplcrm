@@ -1,6 +1,6 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { form, required, FormField } from '@angular/forms/signals';
+import { form, required, pattern, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddVolunteerEventType, UpdateVolunteerEventType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -25,14 +25,80 @@ export class EventDetailComponent implements OnInit {
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-
+ 
   protected id: string | null = null;
+  protected slugManuallyEdited = false;
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+  private slugTimeoutId: any = null;
+ 
+  constructor() {
+    effect(() => {
+      const name = this.payload().name;
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        this.payload.update((p) => ({
+          ...p,
+          slug: suggested,
+        }));
+      }
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      const slug = this.payload().slug;
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : this.id);
+            if (this.payload().slug === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (this.payload().slug === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    }, { allowSignalWrites: true });
+  }
+ 
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+ 
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
 
   protected readonly detail = signal<any>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
   protected readonly isNew = signal(false);
+  protected readonly eventPassed = computed(() => {
+    const end = this.payload().end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
 
   // Roster state
   protected readonly roster = signal<any[]>([]);
@@ -43,6 +109,7 @@ export class EventDetailComponent implements OnInit {
 
   protected readonly payload = signal({
     name: '',
+    slug: '',
     description: '',
     location_address: '',
     start_time: '',
@@ -51,10 +118,13 @@ export class EventDetailComponent implements OnInit {
     contact_email: '',
     contact_phone: '',
     is_private: false,
+    send_reminder: true,
   });
 
   protected readonly form = form(this.payload, (p) => {
     required(p.name);
+    required(p.slug);
+    pattern(p.slug, /^(?=.*[a-z])[a-z0-9-]+$/);
     required(p.start_time);
     required(p.end_time);
   });
@@ -118,6 +188,7 @@ export class EventDetailComponent implements OnInit {
       this.detail.set(event);
       this.payload.set({
         name: event.name ?? '',
+        slug: event.slug ?? '',
         description: event.description ?? '',
         location_address: event.location_address ?? '',
         start_time: this.toDatetimeLocalString(event.start_time),
@@ -126,6 +197,7 @@ export class EventDetailComponent implements OnInit {
         contact_email: event.contact_email ?? '',
         contact_phone: event.contact_phone ?? '',
         is_private: !!event.is_private,
+        send_reminder: event.send_reminder !== false,
       });
 
       await this.loadRoster();
@@ -152,12 +224,18 @@ export class EventDetailComponent implements OnInit {
     this.form().markAsTouched();
     if (this.form().invalid()) return;
 
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
     this.saving.set(true);
     this.error.set(null);
 
     const raw = this.payload();
     const data = {
       name: raw.name.trim(),
+      slug: raw.slug.trim(),
       description: raw.description?.trim() || null,
       location_address: raw.location_address?.trim() || null,
       start_time: new Date(raw.start_time),
@@ -166,6 +244,7 @@ export class EventDetailComponent implements OnInit {
       contact_email: raw.contact_email?.trim() || null,
       contact_phone: raw.contact_phone?.trim() || null,
       is_private: !!raw.is_private,
+      send_reminder: !!raw.send_reminder,
     };
 
     try {

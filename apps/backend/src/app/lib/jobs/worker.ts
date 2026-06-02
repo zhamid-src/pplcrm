@@ -385,6 +385,70 @@ export class BackgroundJobWorker {
             html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}</p>`,
           });
         }
+      } else if (payload.type === 'send-shift-reminder') {
+        const shift = await this.db
+          .selectFrom('volunteer_shifts')
+          .selectAll()
+          .where('id', '=', payload.shiftId as any)
+          .executeTakeFirst() as any;
+
+        if (!shift) {
+          console.log(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+          return;
+        }
+
+        if (shift.status !== 'signed_up') {
+          console.log(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+          return;
+        }
+
+        const event = await this.db
+          .selectFrom('volunteer_events')
+          .selectAll()
+          .where('id', '=', shift.event_id as any)
+          .executeTakeFirst() as any;
+
+        if (!event) {
+          console.log(`Skipping shift reminder: event ${shift.event_id} not found.`);
+          return;
+        }
+
+        if (event.send_reminder === false) {
+          console.log(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+          return;
+        }
+
+        const person = await this.db
+          .selectFrom('persons')
+          .selectAll()
+          .where('id', '=', shift.person_id as any)
+          .executeTakeFirst() as any;
+
+        if (!person) {
+          console.log(`Skipping shift reminder: person ${shift.person_id} not found.`);
+          return;
+        }
+
+        if (!person.email) {
+          console.log(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+          return;
+        }
+
+        const startFormatted = new Date(event.start_time).toLocaleString();
+        const endFormatted = new Date(event.end_time).toLocaleString();
+
+        const subject = `Volunteer Shift Reminder: ${event.name}`;
+        const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+        const html = `<p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p>Thank you for volunteering, and we look forward to seeing you there!</p>`;
+
+        await this.mailService.sendMail({
+          to: person.email,
+          subject,
+          text,
+          html,
+        });
+
+        console.log(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
