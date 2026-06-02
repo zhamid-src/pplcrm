@@ -17,25 +17,25 @@ export class BackgroundJobWorker {
     this.isRunning = true;
     console.log('Background Job Worker started.');
 
-    this.ensureCleanupJobScheduled().catch((err) =>
-      console.error('Failed to ensure cleanup job scheduled:', err)
-    );
+    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
     this.ensureSyncSchedulerJobScheduled().catch((err) =>
-      console.error('Failed to ensure sync scheduler job scheduled:', err)
+      console.error('Failed to ensure sync scheduler job scheduled:', err),
     );
     this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
-      console.error('Failed to ensure duplicates recompute job scheduled:', err)
+      console.error('Failed to ensure duplicates recompute job scheduled:', err),
+    );
+    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
+      console.error('Failed to ensure address fingerprints job scheduled:', err),
     );
 
     // Run stale job recovery on startup and then every 5 minutes
-    this.recoverStaleJobs().catch((err) =>
-      console.error('Failed to recover stale jobs on startup:', err)
+    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
+    this.recoveryInterval = setInterval(
+      () => {
+        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
+      },
+      5 * 60 * 1000,
     );
-    this.recoveryInterval = setInterval(() => {
-      this.recoverStaleJobs().catch((err) =>
-        console.error('Failed to recover stale jobs:', err)
-      );
-    }, 5 * 60 * 1000);
 
     this.poll();
   }
@@ -52,7 +52,9 @@ export class BackgroundJobWorker {
     }
 
     if (this.activeJobsCount > 0) {
-      console.log(`Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`);
+      console.log(
+        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
+      );
       await new Promise<void>((resolve) => {
         this.shutdownResolver = resolve;
       });
@@ -97,7 +99,7 @@ export class BackgroundJobWorker {
 
     // Try to find and lock a job using SKIP LOCKED
     const job = await this.db.transaction().execute(async (trx: any) => {
-      const pendingJob = await trx
+      const pendingJob = (await trx
         .selectFrom('background_jobs' as any)
         .selectAll()
         .where('status', '=', 'pending')
@@ -106,7 +108,7 @@ export class BackgroundJobWorker {
         .limit(1)
         .forUpdate()
         .skipLocked()
-        .executeTakeFirst() as any;
+        .executeTakeFirst()) as any;
 
       if (!pendingJob) return null;
 
@@ -175,10 +177,12 @@ export class BackgroundJobWorker {
 
       if (attempts < maxAttempts) {
         // Retry with backoff (exponential backoff for mail, linear for others)
-        const isMail = payload.type === 'send-transactional-email' || payload.type === 'send-form-notifications' || payload.type === 'send-shift-reminder' || payload.type === 'send-newsletter';
-        const delaySeconds = isMail
-          ? Math.pow(2, attempts) * 30
-          : attempts * 30;
+        const isMail =
+          payload.type === 'send-transactional-email' ||
+          payload.type === 'send-form-notifications' ||
+          payload.type === 'send-shift-reminder' ||
+          payload.type === 'send-newsletter';
+        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
         console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
 
@@ -224,11 +228,14 @@ export class BackgroundJobWorker {
       delayMs = 10 * 60 * 1000;
     } else if (type === 'recompute_all_duplicates') {
       delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'recompute_address_fingerprints') {
+      delayMs = 24 * 60 * 60 * 1000;
     }
 
     if (delayMs > 0) {
       try {
-        await this.db.insertInto('background_jobs' as any)
+        await this.db
+          .insertInto('background_jobs' as any)
           .values({
             tenant_id: null,
             queue: 'default',
@@ -331,6 +338,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       console.error('Failed to ensure duplicates recompute job scheduled:', err);
+    }
+  }
+
+  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly address fingerprints recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure address fingerprints job scheduled:', err);
     }
   }
 

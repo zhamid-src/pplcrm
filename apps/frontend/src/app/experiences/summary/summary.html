@@ -230,7 +230,7 @@
               ></path>
 
               <!-- Interactive Points -->
-              @for (p of linePoints(); track p; let first = $first; let last = $last) {
+              @for (p of linePoints(); track p.date; let first = $first; let last = $last) {
               <circle
                 [attr.cx]="p.x"
                 [attr.cy]="p.y"

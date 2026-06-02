@@ -157,4 +157,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
   public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
     return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
   }
+
+  /**
+   * Recompute address fingerprints for duplicate matching.
+   */
+  public recomputeAddressFingerprints(): Promise<void> {
+    return this.api.households.recomputeAddressFingerprints.mutate();
+  }
 }

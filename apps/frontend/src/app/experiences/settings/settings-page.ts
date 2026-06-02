@@ -11,6 +11,7 @@ import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { GoogleSyncSettings } from './google-sync/google-sync-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
+import { HouseholdsService } from '../households/services/households-service';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -34,6 +35,7 @@ export class SettingsPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly alerts = inject(AlertService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly householdsSvc = inject(HouseholdsService);
 
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
@@ -41,6 +43,7 @@ export class SettingsPage implements OnInit {
   protected readonly savingSectionId = signal<string | null>(null);
   protected readonly hasLoaded = signal(false);
   protected readonly verifyingEmail = signal<string | null>(null);
+  protected readonly recomputingFingerprints = signal(false);
 
   constructor() {
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
@@ -120,7 +123,10 @@ export class SettingsPage implements OnInit {
 
     for (const field of section.fields) {
       const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(field, this.settingsSvc.getValue(field.key, field.defaultValue));
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
       fieldStates.push({ config: field, controlName });
     }
 
@@ -181,7 +187,7 @@ export class SettingsPage implements OnInit {
       case 'number': {
         if (raw === null || raw === undefined || raw === '') return fallback ?? null;
         const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : fallback ?? null;
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
       }
       case 'select': {
         const options = field.options ?? [];
@@ -191,15 +197,15 @@ export class SettingsPage implements OnInit {
         return (fallback ?? options[0]?.value ?? '') as string;
       }
       case 'date':
-        return typeof raw === 'string' && raw.length ? raw : (fallback as string) ?? '';
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
       case 'email':
       case 'tel':
       case 'password':
       case 'url':
       case 'text':
-        return raw === undefined || raw === null ? (fallback as string) ?? '' : String(raw);
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
       case 'textarea':
-        return raw === undefined || raw === null ? (fallback as string) ?? '' : String(raw);
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
       default:
         return raw ?? fallback ?? '';
     }
@@ -278,10 +284,10 @@ export class SettingsPage implements OnInit {
     const key = 'pk_live_' + this.randomHex(24);
     const secret = 'whsec_' + this.randomHex(32);
 
-    section.payload.update(p => ({
+    section.payload.update((p) => ({
       ...p,
       integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret
+      integrations_webhook_api_secret: secret,
     }));
 
     (section.form as any)['integrations_webhook_api_key']().markAsDirty();
@@ -300,10 +306,25 @@ export class SettingsPage implements OnInit {
 
   protected copyToClipboard(val: string | null | undefined) {
     if (!val) return;
-    navigator.clipboard.writeText(val).then(() => {
-      this.alerts.showSuccess('Copied to clipboard!');
-    }).catch(() => {
-      this.alerts.showError('Failed to copy to clipboard.');
-    });
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
+  }
+
+  protected async recomputeAddressFingerprints() {
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
   }
 }
