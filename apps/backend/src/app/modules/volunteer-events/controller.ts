@@ -4,7 +4,6 @@ import type { IAuthKeyPayload } from 'common/src/lib/auth';
 import type { OperationDataType, Models } from 'common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { env } from '../../../env';
 import { createHmac } from 'crypto';
 
@@ -13,7 +12,6 @@ const SIGNUP_RATE_LIMIT_MAX = 5;
 const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 
 export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
-  private mailService = new TransactionalEmailService();
 
   constructor() {
     super(new VolunteerEventsRepo());
@@ -496,37 +494,27 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           updatedby_id: creatorId,
         })
         .execute();
+
+      // Queue email notification job in background
+      await trx.insertInto('background_jobs' as any)
+        .values({
+          tenant_id: tenantId as any,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'send-form-notifications',
+            eventId,
+            tenantId,
+            email,
+            firstName,
+            lastName,
+            mobile,
+            notes,
+          }),
+          run_at: new Date(),
+        })
+        .execute();
     });
-
-    // 7. Send Emails
-    try {
-      const startFormatted = new Date(event.start_time).toLocaleString();
-      const endFormatted = new Date(event.end_time).toLocaleString();
-
-      await this.mailService.sendMail({
-        to: email,
-        subject: `Volunteer Signup Confirmation: ${event.name}`,
-        text: `Hi ${firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nWe look forward to seeing you there!`,
-        html: `<p>Hi ${firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p>We look forward to seeing you there!</p>`,
-      });
-
-      const admin = await this.getRepo().db.selectFrom('authusers')
-        .select(['email', 'first_name'])
-        .where('tenant_id', '=', tenantId as any)
-        .limit(1)
-        .executeTakeFirst();
-
-      if (admin && admin.email) {
-        await this.mailService.sendMail({
-          to: admin.email,
-          subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-          text: `Hi ${admin.first_name || 'Admin'},\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${firstName || ''} ${lastName || ''}\nEmail: ${email}\nPhone: ${mobile || 'N/A'}\nNotes: ${notes || 'None'}`,
-          html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${firstName || ''} ${lastName || ''}<br>Email: ${email}<br>Phone: ${mobile || 'N/A'}<br>Notes: ${notes || 'None'}</p>`,
-        });
-      }
-    } catch (mailErr) {
-      console.error('Failed to send volunteer signup notification emails', mailErr);
-    }
 
     return { success: true };
   }
