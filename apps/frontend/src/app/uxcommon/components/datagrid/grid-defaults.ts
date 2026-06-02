@@ -13,6 +13,7 @@ export interface ColumnDef {
   hide?: boolean;
   onCellClicked?: (event: any) => void;
   onCellDoubleClicked?: (event: any) => void;
+  isCellInteractive?: (row: any) => boolean;
   tagColumn?: boolean;
   valueFormatter?: (p: { data: any; value: any; colDef: ColumnDef }) => any;
 

@@ -48,16 +48,27 @@ export class PersonDetail implements OnInit {
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
 
-  protected readonly addressResource = resource({
+  protected readonly householdResource = resource({
     params: () => this.householdId(),
     loader: async ({ params: householdId }) => {
       if (!householdId) return null;
-      const address = (await this.householdsSvc.getById(householdId)) as AddressType;
-      return this.getFormattedAddress(address);
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
     },
   });
 
-  protected readonly addressString = computed(() => this.addressResource.value() ?? null);
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value();
+    if (!hh || hh.is_placeholder) return null;
+    return this.getFormattedAddress(hh);
+  });
+
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return this.householdResource.value()?.is_placeholder ?? false;
+  });
 
   // Drawer state for assigning household
   protected readonly assignDrawerOpen = signal(false);
@@ -108,9 +119,7 @@ export class PersonDetail implements OnInit {
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
 
-  public readonly householdId = computed(
-    () => (this.person()?.household_id ?? null) || this.pendingHouseholdId()
-  );
+  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
@@ -133,11 +142,8 @@ export class PersonDetail implements OnInit {
       .toUpperCase();
   });
 
-
   /** Whether to show 'two' or 'three' buttons — depends on whether person is already saved */
-  protected readonly buttonsToShow = computed<'two' | 'three'>(() =>
-    this.person()?.id ? 'two' : 'three'
-  );
+  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
 
   /**
    * Initializes the component and determines edit mode via route params.
@@ -153,8 +159,6 @@ export class PersonDetail implements OnInit {
         this.usersById = new Map(u.map((x) => [x.id, x]));
       })
       .catch(() => void 0);
-
-
   }
 
   public async ngOnInit() {
@@ -386,8 +390,7 @@ export class PersonDetail implements OnInit {
     if (!this.id) return;
 
     const normalized = tag.trim().toLowerCase();
-    const restoreTag = () =>
-      this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
+    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
 
     try {
       if (normalized === 'volunteer') {
@@ -452,8 +455,7 @@ export class PersonDetail implements OnInit {
   protected async issueRemoved(issue: string) {
     if (!this.id) return;
 
-    const restoreIssue = () =>
-      this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
+    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
 
     try {
       await this.personsSvc.detachTag(this.id, issue, 'issue');
@@ -508,7 +510,9 @@ export class PersonDetail implements OnInit {
     // tRPC wraps backend errors; check both data.httpStatus and message
     return (
       e['data']?.['httpStatus'] === 409 ||
-      String(e['message'] ?? '').toLowerCase().includes('already exists')
+      String(e['message'] ?? '')
+        .toLowerCase()
+        .includes('already exists')
     );
   }
 

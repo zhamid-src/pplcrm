@@ -45,16 +45,13 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
         const data = params?.data;
         if (!data) return '';
         const parts: string[] = [];
-        const streetParts = [
-          data.apt ? `Apt ${data.apt}` : null,
-          data.street_num,
-          data.street1,
-          data.street2,
-        ].filter(Boolean);
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'Unknown Address';
+        return parts.join(', ').trim() || 'No household assigned';
       },
     },
     { field: 'people_count', headerName: 'People' },
@@ -99,16 +96,13 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
         const data = params?.data;
         if (!data) return '';
         const parts: string[] = [];
-        const streetParts = [
-          data.apt ? `Apt ${data.apt}` : null,
-          data.street_num,
-          data.street1,
-          data.street2,
-        ].filter(Boolean);
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'Unknown Address';
+        return parts.join(', ').trim() || 'No household assigned';
       },
     },
   ];
@@ -122,14 +116,7 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
 /** Component for creating new lists. Allows building static or dynamic lists using filters. */
 @Component({
   selector: 'pc-list-detail',
-  imports: [
-    ReactiveFormsModule,
-    AddBtnRow,
-    PeopleFilterGrid,
-    HouseholdFilterGrid,
-    Icon,
-    TagRuleBuilderComponent,
-  ],
+  imports: [ReactiveFormsModule, AddBtnRow, PeopleFilterGrid, HouseholdFilterGrid, Icon, TagRuleBuilderComponent],
   templateUrl: './list-detail.html',
 })
 export class ListDetail {
@@ -157,10 +144,9 @@ export class ListDetail {
     initialValue: this.form.get('object')!.value,
   });
 
-  protected readonly isDynamic = toSignal(
-    this.form.get('is_dynamic')!.valueChanges,
-    { initialValue: this.form.get('is_dynamic')!.value === true }
-  );
+  protected readonly isDynamic = toSignal(this.form.get('is_dynamic')!.valueChanges, {
+    initialValue: this.form.get('is_dynamic')!.value === true,
+  });
 
   protected readonly countRowSelected = computed(() => {
     const type = this.listType();
@@ -174,7 +160,7 @@ export class ListDetail {
   protected readonly btnLabel = computed(() => {
     const isDynamic = this.isDynamic();
     const count = this.countRowSelected();
-    return (!isDynamic && count > 0) ? `SAVE (${count} selected)` : 'SAVE';
+    return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
   });
 
   protected readonly rulesRoot = signal<TagGroup>({ kind: 'group', bool: 'and', items: [] });
@@ -219,7 +205,7 @@ export class ListDetail {
         const res = (await svc.getAll({ tags: params.tags, limit: 1 })) as { count: number };
         return res?.count ?? 0;
       }
-    }
+    },
   });
 
   protected readonly matchCount = computed(() => {
@@ -286,7 +272,8 @@ export class ListDetail {
 
     if (payload.is_dynamic) {
       // Dynamic lists: use current filters/search as definition
-      const def = payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+      const def =
+        payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
       const tags_expression = this.rulesRoot();
       payload.definition = {
         ...(def ?? {}),
@@ -296,7 +283,8 @@ export class ListDetail {
       };
     } else {
       // Static lists: persist a snapshot based on the full filter definition
-      const def = payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+      const def =
+        payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
       const tags_expression = this.rulesRoot();
       payload.definition = {
         ...(def ?? {}),
@@ -354,8 +342,6 @@ export class ListDetail {
   } {
     return item.kind === 'rule';
   }
-
-
 
   /** Validate rules: every rule must have a value; at least one rule somewhere */
   private validateRules(): string | null {
