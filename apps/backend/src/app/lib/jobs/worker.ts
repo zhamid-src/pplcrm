@@ -133,7 +133,7 @@ export class BackgroundJobWorker {
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
 
     try {
-      await executeJob(payload, this.db);
+      await executeJob(payload, this.db, job.id);
 
       // Mark job as completed
       await this.db
@@ -175,7 +175,7 @@ export class BackgroundJobWorker {
 
       if (attempts < maxAttempts) {
         // Retry with backoff (exponential backoff for mail, linear for others)
-        const isMail = payload.type === 'send-transactional-email' || payload.type === 'send-form-notifications' || payload.type === 'send-shift-reminder';
+        const isMail = payload.type === 'send-transactional-email' || payload.type === 'send-form-notifications' || payload.type === 'send-shift-reminder' || payload.type === 'send-newsletter';
         const delaySeconds = isMail
           ? Math.pow(2, attempts) * 30
           : attempts * 30;

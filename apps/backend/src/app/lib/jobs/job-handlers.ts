@@ -11,12 +11,14 @@ import { MsSyncService } from '../../modules/ms-sync/ms-sync.service';
 import { env } from '../../../env';
 import { sql } from 'kysely';
 import { TransactionalEmailService } from '../mail/transactional-mail.service';
+import { UserActivityRepo } from '../user-activity.repo';
+import { NewsletterEmailService } from '../mail/newsletter-mail.service';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
 const mailService = new TransactionalEmailService();
 
-export async function executeJob(payload: any, db: any): Promise<void> {
+export async function executeJob(payload: any, db: any, jobId?: string): Promise<void> {
   if (payload.type === 'refresh_list') {
     const listsController = new ListsController();
     await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
@@ -244,12 +246,99 @@ export async function executeJob(payload: any, db: any): Promise<void> {
       } as any,
     });
 
-    // 5. Clean up temporary payload file from storage
     try {
       await storageService.delete(payload.storage_key);
     } catch (storageErr) {
       console.error(`Failed to clean up storage key ${payload.storage_key}:`, storageErr);
     }
+  } else if (payload.type === 'send-newsletter') {
+    const newsletterMailSvc = new NewsletterEmailService();
+    const recipients = payload.recipients || [];
+    const totalRecipients = recipients.length;
+    const batchSize = 500;
+
+    let offset = payload.offset || 0;
+    let deliveredCount = payload.deliveredCount || 0;
+
+    if (offset === 0) {
+      await db
+        .updateTable('newsletters')
+        .set({
+          status: 'sending',
+          total_recipients: totalRecipients,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', payload.tenantId)
+        .where('id', '=', payload.newsletterId)
+        .execute();
+    }
+
+    while (offset < totalRecipients) {
+      const chunk = recipients.slice(offset, offset + batchSize);
+
+      const batchDelivered = await newsletterMailSvc.sendNewsletter({
+        fromName: payload.fromName,
+        fromEmail: payload.fromEmail,
+        recipients: chunk,
+        subject: payload.subject,
+        html: payload.html,
+        text: payload.text,
+        sendgridApiKey: payload.sendgridApiKey,
+        subuserUsername: payload.subuserUsername,
+        newsletterId: payload.newsletterId,
+        tenantId: payload.tenantId,
+      });
+
+      deliveredCount += batchDelivered;
+      offset += chunk.length;
+
+      // Update progress in the background job payload
+      if (jobId) {
+        await db
+          .updateTable('background_jobs')
+          .set({
+            payload: JSON.stringify({
+              ...payload,
+              offset,
+              deliveredCount,
+            }),
+            updated_at: new Date(),
+          })
+          .where('id', '=', jobId)
+          .execute();
+      }
+
+      // Add a small delay between batches to respect rate limits
+      if (offset < totalRecipients) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Update newsletter status to 'sent'
+    await db
+      .updateTable('newsletters')
+      .set({
+        status: 'sent',
+        delivered_count: deliveredCount,
+        send_date: new Date(),
+        updatedby_id: payload.userId,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', payload.tenantId)
+      .where('id', '=', payload.newsletterId)
+      .execute();
+
+    // Log user activity
+    const userActivity = new UserActivityRepo();
+    await userActivity.log({
+      tenant_id: payload.tenantId,
+      user_id: payload.userId,
+      activity: 'send',
+      entity: 'newsletters',
+      entity_id: payload.newsletterId,
+      quantity: totalRecipients,
+      metadata: { recipientsCount: totalRecipients, deliveredCount },
+    });
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }
