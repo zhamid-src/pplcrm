@@ -1,4 +1,4 @@
-<ul class="menu menu-horizontal flex flex-row pt-0">
+<ul class="menu menu-horizontal flex flex-row pt-0 relative z-30">
   <pc-grid-action [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
   <pc-grid-action
     [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
