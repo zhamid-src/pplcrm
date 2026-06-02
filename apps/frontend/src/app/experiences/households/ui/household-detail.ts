@@ -108,6 +108,7 @@ export class HouseholdDetail implements OnInit {
 
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
 
   /**
    * Handles address selection and parses Google Places data into form.
@@ -146,10 +147,30 @@ export class HouseholdDetail implements OnInit {
    * Lifecycle hook that initializes the component.
    */
   public async ngOnInit() {
-    if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
+    this.id = this.route.snapshot.paramMap.get('id');
     await this.loadHousehold();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          formatted_address: data.formatted_address ?? '',
+          type: data.type ?? '',
+          lat: data.lat ?? 0,
+          lng: data.lng ?? 0,
+          street_num: data.street_num ?? '',
+          street1: data.street1 ?? '',
+          street2: data.street2 ?? '',
+          apt: data.apt ?? '',
+          city: data.city ?? '',
+          state: data.state ?? '',
+          country: data.country ?? '',
+          zip: data.zip ?? '',
+          home_phone: data.home_phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
   }
 
   /**

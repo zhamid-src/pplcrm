@@ -114,6 +114,7 @@ export class PersonDetail implements OnInit {
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
 
   /** Reactive display name derived from live form values — avoids method calls in template */
   protected readonly formName = computed(() => {
@@ -142,9 +143,7 @@ export class PersonDetail implements OnInit {
    * Initializes the component and determines edit mode via route params.
    */
   constructor() {
-    if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
+    this.id = this.route.snapshot.paramMap.get('id');
 
     // Load users once for display names
     this.auth
@@ -158,10 +157,33 @@ export class PersonDetail implements OnInit {
 
   }
 
-  /** Lifecycle hook to initialize the component and load person data */
-  public ngOnInit() {
-    this.loadPerson();
-    this.loadCompanies();
+  public async ngOnInit() {
+    await this.loadPerson();
+    await this.loadCompanies();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          first_name: data.first_name ?? '',
+          middle_names: data.middle_names ?? '',
+          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
+          email: data.email ?? '',
+          email2: data.email2 ?? '',
+          home_phone: data.home_phone ?? '',
+          mobile: data.mobile ?? '',
+          notes: data.notes ?? '',
+          company_id: data.company_id ?? '',
+          linkedin: data.linkedin ?? '',
+          twitter: data.twitter ?? '',
+          facebook: data.facebook ?? '',
+          instagram: data.instagram ?? '',
+        });
+        if (data.household_id) {
+          this.pendingHouseholdId.set(data.household_id);
+        }
+      }
+    }
   }
 
   private async loadCompanies() {

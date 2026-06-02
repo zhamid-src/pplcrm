@@ -216,6 +216,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
+  public readonly hasSingleSelection = computed(() =>
+    this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
+  );
 
   // Display range helpers (1-based)
   protected readonly displayStartIndex = computed(() => {
@@ -655,6 +658,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
   public doAdd() {
     this.add();
+  }
+
+  protected cloneSelected() {
+    if (!this.hasSingleSelection()) return;
+    const selectedId = Array.from(this.selectedIdSet())[0];
+    const selectedRow = this.rows().find((r) => this.toId(r) === selectedId);
+    if (!selectedRow) return;
+
+    void this.router.navigate([this.addRoute()], { relativeTo: this.route, state: { cloneData: selectedRow } });
+  }
+
+  public doClone() {
+    this.cloneSelected();
   }
 
   protected applyPanelFilters() {

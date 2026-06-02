@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { form, FormField, required } from '@angular/forms/signals';
@@ -29,10 +29,10 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
           <div>
             <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
               <pc-icon name="briefcase" class="text-primary" [size]="7"></pc-icon>
-              {{ mode() === 'new' ? 'Add Company' : 'Company: ' + (company()?.name || '') }}
+              {{ isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '') }}
             </h1>
             <p class="text-sm text-base-content/60 mt-1">
-              {{ mode() === 'new' ? 'Create a new company record' : 'View and update company information' }}
+              {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
             </p>
           </div>
           <button class="btn btn-outline btn-sm gap-2" (click)="goBack()">
@@ -156,7 +156,7 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
           <!-- Members & Info Panel -->
           <div class="space-y-6">
             <!-- Employee List (Only when edit mode) -->
-            @if (mode() === 'edit' && id) {
+            @if (!isNewMode() && id) {
             <div class="card bg-base-100 border border-base-300 shadow-xl">
               <div class="card-body p-6">
                 <h3 class="font-bold text-lg text-base-content mb-4 flex items-center gap-2">
@@ -169,12 +169,12 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
             }
 
             <!-- Activity history (Only when edit mode) -->
-            @if (mode() === 'edit' && id) {
+            @if (!isNewMode() && id) {
             <pc-record-activities [entity]="'companies'" [entityId]="id"></pc-record-activities>
             }
 
             <!-- Metadata Card -->
-            @if (mode() === 'edit') {
+            @if (!isNewMode()) {
             <div class="card bg-base-200/50 border border-base-300 shadow-xl">
               <div class="card-body p-5 space-y-3 text-xs text-base-content/60">
                 <div class="flex justify-between">
@@ -221,12 +221,26 @@ export class CompanyDetail implements OnInit {
   protected isLoading = this._loading.visible;
 
   public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
 
   public async ngOnInit() {
-    if (this.mode() === 'edit') {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
+    this.id = this.route.snapshot.paramMap.get('id');
     await this.loadCompany();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
   }
 
   private async loadCompany() {
