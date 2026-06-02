@@ -233,6 +233,20 @@ export class TaskAddComponent implements OnInit {
           team_id: queryTeamId,
         }));
       }
+
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          details: data.details || '',
+          status: data.status || 'todo',
+          priority: data.priority || 'medium',
+          due_at: data.due_at ? new Date(data.due_at).toISOString().split('T')[0] : '',
+          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
+          team_id: data.team_id ? String(data.team_id) : '',
+        });
+      }
     } catch (err) {
       this.alertSvc.showError('Failed to load teammates or teams list: ' + String(err));
     } finally {

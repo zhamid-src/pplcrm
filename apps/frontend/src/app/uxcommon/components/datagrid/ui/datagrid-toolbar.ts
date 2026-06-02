@@ -16,6 +16,10 @@ export class DataGridToolbarComponent {
     this.grid.doAdd();
   }
 
+  public onClone() {
+    this.grid.doClone();
+  }
+
   public onDeleteSelected() {
     this.grid.doConfirmDelete();
   }

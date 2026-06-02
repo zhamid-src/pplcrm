@@ -93,16 +93,50 @@ export class TeamDetailComponent implements OnInit {
     });
   }
 
-  public ngOnInit(): void {
+  public async ngOnInit(): Promise<void> {
     const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
     this.isNew.set(mode === 'new');
     if (!this.isNew()) {
       this.id = this.route.snapshot.paramMap.get('id');
     }
-    this.loadPeople();
-    this.loadUsers();
-    this.loadLists();
-    this.loadTeam();
+    await Promise.all([
+      this.loadPeople(),
+      this.loadUsers(),
+      this.loadLists(),
+      this.loadTeam(),
+    ]);
+
+    if (this.isNew()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const sourceTeamId = state.cloneData.id;
+        if (sourceTeamId) {
+          try {
+            const teamDetail = await this.teams.getById(sourceTeamId);
+            this.payload.set({
+              name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
+              description: teamDetail.description ?? '',
+              team_captain_id: teamDetail.team_captain_id ?? '',
+              team_lead_user_id: teamDetail.team_lead_user_id ?? '',
+              volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
+              list_ids: teamDetail.list_ids ?? [],
+            });
+            this.assignedLists.set(teamDetail.lists ?? []);
+          } catch (err) {
+            console.error('Failed to load source team details for cloning', err);
+            const data = state.cloneData;
+            this.payload.set({
+              name: data.name ? `${data.name} (Copy)` : '',
+              description: data.description ?? '',
+              team_captain_id: data.team_captain_id ?? '',
+              team_lead_user_id: data.team_lead_user_id ?? '',
+              volunteer_ids: [],
+              list_ids: [],
+            });
+          }
+        }
+      }
+    }
   }
 
   protected captainLabel(captainId: string | null) {

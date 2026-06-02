@@ -179,6 +179,23 @@ export class EventDetailComponent implements OnInit {
 
   protected async loadEvent() {
     if (this.isNew()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const event = state.cloneData;
+        this.payload.set({
+          name: event.name ? `${event.name} (Copy)` : '',
+          slug: event.slug ? `${event.slug}-copy` : '',
+          description: event.description ?? '',
+          location_address: event.location_address ?? '',
+          start_time: this.toDatetimeLocalString(event.start_time),
+          end_time: this.toDatetimeLocalString(event.end_time),
+          capacity: event.capacity ?? null,
+          contact_email: event.contact_email ?? '',
+          contact_phone: event.contact_phone ?? '',
+          is_private: !!event.is_private,
+          send_reminder: event.send_reminder !== false,
+        });
+      }
       this.loading.set(false);
       return;
     }

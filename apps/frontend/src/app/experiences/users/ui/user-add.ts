@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -88,7 +88,7 @@ import { AuthUsersService } from '../services/authusers-service';
     </section>
   `,
 })
-export class UserAddComponent {
+export class UserAddComponent implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -110,6 +110,19 @@ export class UserAddComponent {
   });
 
   protected readonly submitting = signal(false);
+
+  public ngOnInit(): void {
+    const state = window.history.state;
+    if (state && state.cloneData) {
+      const data = state.cloneData;
+      this.payload.set({
+        email: data.email || '',
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        role: data.role || '',
+      });
+    }
+  }
 
   protected cancel() {
     void this.router.navigate(['../'], { relativeTo: this.route });
