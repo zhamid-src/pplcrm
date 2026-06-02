@@ -13,6 +13,7 @@ import { OperationDataType } from 'common/src/lib/kysely.models';
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
+import { WorkflowsController } from '../../workflows/controller';
 
 export class PersonsService {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -73,6 +74,12 @@ export class PersonsService {
     const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
     if (result && typeof result === 'object') {
       await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerWorkflow(auth.tenant_id, String((result as any).id), 'contact_created', null);
+      } catch (err) {
+        console.error('Failed to trigger contact_created workflow in add:', err);
+      }
     }
     try {
       await this.userActivity.log({
@@ -272,6 +279,15 @@ export class PersonsService {
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     });
+
+    if (result && tag?.id) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
+      } catch (err) {
+        console.error('Failed to trigger tag_added workflow:', err);
+      }
+    }
 
     try {
       await this.userActivity.log({
@@ -664,6 +680,13 @@ export class PersonsService {
 
               const person = await this.personsRepo.add({ row: personRow }, rowTrx);
 
+              const workflowsController = new WorkflowsController();
+              try {
+                await workflowsController.triggerWorkflow(tenant_id, String(person?.id), 'contact_created', null, rowTrx);
+              } catch (err) {
+                console.error('Failed to trigger contact_created workflow in CSV import:', err);
+              }
+
               for (const name of tags) {
                 const row = {
                   name,
@@ -680,7 +703,7 @@ export class PersonsService {
                   throw new Error('Failed to create tag for imported person');
                 }
 
-                await this.mapPersonsTagRepo.add(
+                const mapResult = await this.mapPersonsTagRepo.add(
                   {
                     row: {
                       tenant_id,
@@ -692,6 +715,14 @@ export class PersonsService {
                   },
                   rowTrx,
                 );
+
+                if (mapResult) {
+                  try {
+                    await workflowsController.triggerTagAdded(tenant_id, String(person?.id), String(tag.id), name, rowTrx);
+                  } catch (err) {
+                    console.error('Failed to trigger tag_added workflow in CSV import:', err);
+                  }
+                }
               }
 
               return {

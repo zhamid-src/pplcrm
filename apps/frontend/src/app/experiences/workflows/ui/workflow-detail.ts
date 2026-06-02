@@ -12,12 +12,15 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TRPCClientError } from '@trpc/client';
 import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
 import { VolunteerEventsFrontendService } from '../../volunteer/services/volunteer-events-frontend-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
+import { ListsService } from '@experiences/lists/services/lists-service';
 
 @Component({
   selector: 'pc-workflow-detail',
   imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe, VisualNewsletterEditorComponent],
   templateUrl: './workflow-detail.html',
-  providers: [WorkflowsService, VolunteerEventsFrontendService],
+  providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],
 })
 export class WorkflowDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
@@ -26,6 +29,9 @@ export class WorkflowDetailComponent implements OnInit {
   private readonly personsSvc = inject(PersonsService);
   private readonly alertSvc = inject(AlertService);
   private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
+  private readonly tagsSvc = inject(TagsService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -44,12 +50,26 @@ export class WorkflowDetailComponent implements OnInit {
 
   // Loaded volunteer events list
   protected readonly volunteerEvents = signal<any[]>([]);
+  // Loaded tags, forms, and static lists
+  protected readonly tags = signal<any[]>([]);
+  protected readonly webForms = signal<any[]>([]);
+  protected readonly lists = signal<any[]>([]);
 
   // Backing payload signal for workflow settings form
   protected readonly payload = signal<{
     name: string;
     description: string;
-    trigger_type: 'volunteer_signup' | 'manual';
+    trigger_type:
+      | 'volunteer_signup'
+      | 'manual'
+      | 'tag_added'
+      | 'web_form_submitted'
+      | 'volunteer_shift_status'
+      | 'contact_created'
+      | 'list_joined'
+      | 'payment_event'
+      | 'new_subscriber'
+      | 'new_unsubscriber';
     trigger_event_id: string;
     status: 'active' | 'draft' | 'paused';
   }>({
@@ -68,9 +88,31 @@ export class WorkflowDetailComponent implements OnInit {
   // Computed signal to resolve the name of the selected event
   protected readonly selectedEventName = computed(() => {
     const eventId = this.payload().trigger_event_id;
-    if (!eventId || this.payload().trigger_type !== 'volunteer_signup') return null;
-    const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
-    return event ? event.name : 'Unknown Event';
+    if (!eventId) return null;
+    const type = this.payload().trigger_type;
+    if (type === 'volunteer_signup') {
+      const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
+      return event ? event.name : 'Unknown Event';
+    }
+    if (type === 'tag_added') {
+      const tag = this.tags().find((t) => String(t.id) === String(eventId));
+      return tag ? tag.name : 'Unknown Tag';
+    }
+    if (type === 'web_form_submitted') {
+      const formEl = this.webForms().find((f) => String(f.id) === String(eventId));
+      return formEl ? formEl.name : 'Unknown Web Form';
+    }
+    if (type === 'list_joined') {
+      const listEl = this.lists().find((l) => String(l.id) === String(eventId));
+      return listEl ? listEl.name : 'Unknown List';
+    }
+    if (type === 'volunteer_shift_status') {
+      if (eventId === 'attended') return 'Attended';
+      if (eventId === 'no_show') return 'No Show';
+      if (eventId === 'cancelled') return 'Cancelled';
+      return eventId;
+    }
+    return null;
   });
 
   // Steps signal
@@ -86,6 +128,9 @@ export class WorkflowDetailComponent implements OnInit {
   public ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     void this.loadVolunteerEvents();
+    void this.loadTags();
+    void this.loadWebForms();
+    void this.loadLists();
     if (id && id !== 'add') {
       this.isNew.set(false);
       this.workflowId.set(id);
@@ -109,6 +154,33 @@ export class WorkflowDetailComponent implements OnInit {
     }
   }
 
+  private async loadTags(): Promise<void> {
+    try {
+      const res = await this.tagsSvc.getAll({ limit: 1000 });
+      this.tags.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load tags', err);
+    }
+  }
+
+  private async loadWebForms(): Promise<void> {
+    try {
+      const res = await this.formsSvc.getAll({ limit: 1000 });
+      this.webForms.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load web forms', err);
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAll({ limit: 1000 });
+      this.lists.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    }
+  }
+
   // --- TAB MANAGEMENT ---
   protected selectTab(tab: 'steps' | 'enrollments' | 'activity'): void {
     this.activeTab.set(tab);
@@ -119,16 +191,71 @@ export class WorkflowDetailComponent implements OnInit {
   }
 
   // --- TRIGGER SELECTION ---
-  protected selectTrigger(type: 'volunteer_signup' | 'manual'): void {
+  protected selectTrigger(
+    type:
+      | 'volunteer_signup'
+      | 'manual'
+      | 'tag_added'
+      | 'web_form_submitted'
+      | 'volunteer_shift_status'
+      | 'contact_created'
+      | 'list_joined'
+      | 'payment_event'
+      | 'new_subscriber'
+      | 'new_unsubscriber',
+  ): void {
+    let name = 'New Workflow Campaign';
+    let description = 'Custom multi-step communication sequence.';
+
+    switch (type) {
+      case 'volunteer_signup':
+        name = 'Volunteer Signup Welcome Onboarding';
+        description = 'Automated welcoming sequence sent to volunteer signups.';
+        break;
+      case 'tag_added':
+        name = 'Tag Assigned Campaign';
+        description = 'Automated campaign triggered when a specific tag is added to a constituent.';
+        break;
+      case 'web_form_submitted':
+        name = 'Web Form Submission Response';
+        description = 'Runs automatically after a contact submits a public web form.';
+        break;
+      case 'volunteer_shift_status':
+        name = 'Volunteer Shift Follow-up';
+        description = 'Triggered when a volunteer shift status is updated.';
+        break;
+      case 'contact_created':
+        name = 'New Constituent Welcome Series';
+        description = 'Welcoming sequence triggered when any new person is added to the database.';
+        break;
+      case 'list_joined':
+        name = 'List Joined Campaign';
+        description = 'Triggered when a constituent is added to a static list.';
+        break;
+      case 'payment_event':
+        name = 'Stripe Billing Event Campaign';
+        description = 'Runs in response to payment events like invoice payment status updates.';
+        break;
+      case 'new_subscriber':
+        name = 'New Subscriber Onboarding';
+        description = 'Welcomes new subscribers to the newsletter list.';
+        break;
+      case 'new_unsubscriber':
+        name = 'Unsubscribe Confirmation Campaign';
+        description = 'Triggered when a contact is marked unsubscribed.';
+        break;
+      case 'manual':
+        name = 'Constituent Re-engagement Campaign';
+        description = 'Custom multi-step communication sequence.';
+        break;
+    }
+
     this.payload.update((p) => ({
       ...p,
       trigger_type: type,
       trigger_event_id: '',
-      name: type === 'volunteer_signup' ? 'Volunteer Signup Welcome Onboarding' : 'Constituent Re-engagement Campaign',
-      description:
-        type === 'volunteer_signup'
-          ? 'Automated welcoming sequence sent to volunteer signups.'
-          : 'Custom multi-step communication sequence.',
+      name,
+      description,
     }));
 
     // Initialize with 1 default step
@@ -408,6 +535,14 @@ export class WorkflowDetailComponent implements OnInit {
   protected formatTriggerType(trigger: string): string {
     if (trigger === 'volunteer_signup') return 'Volunteer Signup';
     if (trigger === 'manual') return 'Manual Enrollment';
+    if (trigger === 'tag_added') return 'Tag Added';
+    if (trigger === 'web_form_submitted') return 'Web Form Submitted';
+    if (trigger === 'volunteer_shift_status') return 'Volunteer Shift Status';
+    if (trigger === 'contact_created') return 'New Contact Created';
+    if (trigger === 'list_joined') return 'List Joined';
+    if (trigger === 'payment_event') return 'Billing / Payment Event';
+    if (trigger === 'new_subscriber') return 'New Subscriber';
+    if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
     return trigger;
   }
 }

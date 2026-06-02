@@ -242,6 +242,23 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       }
     }
 
+    if (result && result.status) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo().transaction().execute(async (trx) => {
+          await workflowsController.triggerWorkflow(
+            auth.tenant_id,
+            String(payload.person_id),
+            'volunteer_shift_status',
+            result.status,
+            trx,
+          );
+        });
+      } catch (err) {
+        console.error('Failed to trigger volunteer_shift_status workflow in signupVolunteer:', err);
+      }
+    }
+
     try {
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
@@ -271,6 +288,24 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
 
     if (result) {
+      // Trigger volunteer shift status workflows
+      if (payload.status) {
+        try {
+          const workflowsController = new WorkflowsController();
+          await this.getRepo().transaction().execute(async (trx) => {
+            await workflowsController.triggerWorkflow(
+              auth.tenant_id,
+              String(result.person_id),
+              'volunteer_shift_status',
+              payload.status,
+              trx,
+            );
+          });
+        } catch (err) {
+          console.error('Failed to trigger volunteer_shift_status workflows:', err);
+        }
+      }
+
       try {
         if (payload.status && payload.status !== 'signed_up') {
           // Cancel/remove pending reminder
@@ -638,6 +673,14 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .returning('id')
           .executeTakeFirstOrThrow();
         personId = String(insertRes.id);
+
+        // Trigger contact created workflow
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+        } catch (err) {
+          console.error('Failed to trigger contact_created workflow in signupVolunteerPublic:', err);
+        }
       }
 
       // Check if shift already exists
@@ -654,6 +697,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           message: 'You are already signed up for this event.',
         });
       }
+
+      const workflowsController = new WorkflowsController();
 
       // Add tag "volunteer" and "Event: <Event Name>"
       const allTagsToApply = ['volunteer', `Event: ${event.name}`];
@@ -699,6 +744,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               updatedby_id: creatorId as any,
             })
             .execute();
+
+          // Trigger tag_added and specialized subscriber workflows
+          try {
+            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+          } catch (err) {
+            console.error('Failed to trigger tag_added workflow in signupVolunteerPublic:', err);
+          }
         }
       }
 

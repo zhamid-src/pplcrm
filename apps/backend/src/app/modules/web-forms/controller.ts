@@ -6,6 +6,7 @@ import { Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { WorkflowsController } from '../workflows/controller';
 
 // Sliding window memory for rate-limiting
 const ipSubmissionTimestamps = new Map<string, number[]>();
@@ -170,7 +171,17 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           .returning('id')
           .executeTakeFirstOrThrow();
         personId = String(insertRes.id);
+
+        // Trigger contact created workflow
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+        } catch (err) {
+          console.error('Failed to trigger contact_created workflow in WebFormsController:', err);
+        }
       }
+
+      const workflowsController = new WorkflowsController();
 
       // Add target custom tags & read-only system tag
       const targetTags: string[] = Array.isArray(form.target_tags) ? form.target_tags : JSON.parse((form.target_tags as any) || '[]');
@@ -219,6 +230,13 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
               updatedby_id: creatorId as any,
             })
             .execute();
+
+          // Trigger tag_added and specialized subscriber workflows
+          try {
+            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+          } catch (err) {
+            console.error('Failed to trigger tag_added workflow in WebFormsController:', err);
+          }
         }
       }
 
@@ -251,7 +269,21 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
               updatedby_id: creatorId as any,
             })
             .execute();
+
+          // Trigger list joined workflows
+          try {
+            await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+          } catch (err) {
+            console.error('Failed to trigger list_joined workflow in WebFormsController:', err);
+          }
         }
+      }
+
+      // Trigger web form submitted workflows
+      try {
+        await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
+      } catch (err) {
+        console.error('Failed to trigger web_form_submitted workflow in WebFormsController:', err);
       }
 
       // Log user activity

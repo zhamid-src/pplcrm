@@ -8,6 +8,7 @@ import { ListsRepo } from './repositories/lists.repo';
 import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
 import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
 import type { OperationDataType } from 'common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
 
 /**
  * Controller handling CRUD and reporting for lists of people or households.
@@ -49,8 +50,8 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 
     // For dynamic lists, trigger an immediate initial refresh via background job
     if (row.is_dynamic) {
-      await this.getRepo().db
-        .insertInto('background_jobs' as any)
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
         .values({
           tenant_id: auth.tenant_id,
           queue: 'default',
@@ -77,6 +78,14 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           updatedby_id: auth.user_id,
         }));
         await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
+        try {
+          const workflowsController = new WorkflowsController();
+          for (const person_id of ids) {
+            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
+          }
+        } catch (err) {
+          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
+        }
       } else if (ids.length && payload.object === 'households') {
         const rows = ids.map((household_id) => ({
           tenant_id: auth.tenant_id,
@@ -94,7 +103,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           const rows = result.rows.map((p) => ({
             tenant_id: auth.tenant_id,
             list_id: list.id,
-            person_id: p['id'],
+            person_id: String(p['id']),
             createdby_id: auth.user_id,
             updatedby_id: auth.user_id,
           }));
@@ -102,6 +111,14 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             await this.mapListsPersonsRepo.addMany({
               rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
             });
+            try {
+              const workflowsController = new WorkflowsController();
+              for (const r of rows) {
+                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
+              }
+            } catch (err) {
+              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
+            }
           }
         } else if (payload.object === 'households') {
           const result = await this.householdsController.getAllWithPeopleCount(
@@ -151,8 +168,8 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     });
 
     // Queue background job
-    await this.getRepo().db
-      .insertInto('background_jobs' as any)
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',
@@ -290,8 +307,8 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     }
 
     // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo().db
-      .selectFrom('newsletters')
+    const newsletters = await this.getRepo()
+      .db.selectFrom('newsletters')
       .selectAll()
       .where('tenant_id', '=', auth.tenant_id)
       .where('status', '=', 'sent')
@@ -391,8 +408,8 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         } as any,
       });
 
-      await this.getRepo().db
-        .insertInto('background_jobs' as any)
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
         .values({
           tenant_id: auth.tenant_id,
           queue: 'default',
@@ -456,7 +473,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
    * and has not been refreshed in the last 24 hours.
    */
   public override async getOneById(input: { tenant_id: string; id: string }) {
-    const list = await super.getOneById(input) as any;
+    const list = (await super.getOneById(input)) as any;
     if (list && list.is_dynamic) {
       const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
       if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
@@ -469,7 +486,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             session_id: 'lazy-refresh',
           };
           this.refreshList(mockAuth, input.id).catch((err) =>
-            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err)
+            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
           );
         }
       }

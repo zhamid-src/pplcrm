@@ -29,7 +29,7 @@
 
   <!-- TRIGGER SELECTOR SCREEN FOR NEW WORKFLOWS -->
   @if (isNew() && !triggerSelected()) {
-  <div class="flex flex-col gap-8 items-center justify-center py-12 max-w-3xl mx-auto">
+  <div class="flex flex-col gap-8 items-center justify-center py-12 max-w-5xl mx-auto">
     <div class="text-center gap-2 flex flex-col">
       <h2 class="text-2xl font-black tracking-tight text-base-content">Select a trigger event</h2>
       <p class="text-sm text-base-content/60">
@@ -37,8 +37,30 @@
       </p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mt-4">
-      <!-- Trigger Card 1: Volunteer Event Signup -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full mt-4">
+      <!-- Trigger Card: Manual Enrollment -->
+      <div
+        (click)="selectTrigger('manual')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
+        >
+          <pc-icon name="user-plus"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">Manual Enrollment</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers only when you manually select a constituent to enroll. Perfect for custom tracks.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Volunteer Event Signup -->
       <div
         (click)="selectTrigger('volunteer_signup')"
         class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
@@ -46,15 +68,14 @@
         <div
           class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
         >
-          <pc-icon name="volunteer" class="w-8 h-8"></pc-icon>
+          <pc-icon name="volunteer"></pc-icon>
         </div>
         <div class="flex flex-col gap-1">
           <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
             Volunteer Event Signup
           </h3>
           <p class="text-xs text-base-content/50 leading-relaxed">
-            Runs automatically when a constituent signs up for any shift or event in the system. Ideal for welcome
-            series, check-ins, and reminders.
+            Runs when a constituent signs up for an event. Ideal for welcome series and check-ins.
           </p>
         </div>
         <span
@@ -63,25 +84,182 @@
         >
       </div>
 
-      <!-- Trigger Card 2: Manual Enrollment -->
+      <!-- Trigger Card: Tag Added -->
       <div
-        (click)="selectTrigger('manual')"
+        (click)="selectTrigger('tag_added')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
+        >
+          <pc-icon name="tag"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">Tag Added</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers when a specific tag is attached to a constituent's profile.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Web Form Submitted -->
+      <div
+        (click)="selectTrigger('web_form_submitted')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
+        >
+          <pc-icon name="document-text"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">Web Form Submitted</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Runs when a constituent submits a public-facing contact or petition web form.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Volunteer Shift Status -->
+      <div
+        (click)="selectTrigger('volunteer_shift_status')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-warning hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-warning/10 text-warning flex items-center justify-center group-hover:bg-warning group-hover:text-warning-content transition-all shadow-inner"
+        >
+          <pc-icon name="volunteer"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-warning transition-all">
+            Volunteer Shift Status
+          </h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers when a shift is marked as Attended, No Show, or Cancelled.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-warning mt-2 group-hover:bg-warning group-hover:text-warning-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Contact Created -->
+      <div
+        (click)="selectTrigger('contact_created')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-info hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-info/10 text-info flex items-center justify-center group-hover:bg-info group-hover:text-info-content transition-all shadow-inner"
+        >
+          <pc-icon name="user-plus"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-info transition-all">New Contact Created</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Welcome series triggered automatically for any new constituent in the database.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-info mt-2 group-hover:bg-info group-hover:text-info-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: List Joined -->
+      <div
+        (click)="selectTrigger('list_joined')"
         class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
       >
         <div
           class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
         >
-          <pc-icon name="user-plus" class="w-8 h-8"></pc-icon>
+          <pc-icon name="queue-list"></pc-icon>
         </div>
         <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">Manual Enrollment</h3>
+          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">List Joined</h3>
           <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggers only when you manually select a constituent to enroll. Perfect for targeted re-engagement, custom
-            newsletters, or custom tracks.
+            Runs when a constituent is added to a specific static organizing list.
           </p>
         </div>
         <span
           class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Billing / Payment Event -->
+      <div
+        (click)="selectTrigger('payment_event')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
+        >
+          <pc-icon name="credit-card"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
+            Billing / Payment Event
+          </h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers on Stripe webhook events (e.g. invoice paid or payment failed).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Subscriber -->
+      <div
+        (click)="selectTrigger('new_subscriber')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
+        >
+          <pc-icon name="bell"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">New Subscriber</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggered automatically when a constituent becomes a subscriber (subscriber tag added).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Unsubscriber -->
+      <div
+        (click)="selectTrigger('new_unsubscriber')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
+        >
+          <pc-icon name="x-circle"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">New Unsubscriber</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggered automatically when a constituent unsubscribes (unsubscribed tag added).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
           >Select Trigger</span
         >
       </div>
@@ -140,23 +318,20 @@
       >
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner">
-            @if (payload().trigger_type === 'volunteer_signup') {
-            <pc-icon name="volunteer"></pc-icon>
-            } @else {
-            <pc-icon name="user-plus"></pc-icon>
-            }
+            @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> } @case
+            ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+            <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') { <pc-icon name="document-text"></pc-icon> }
+            @case ('contact_created') { <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') {
+            <pc-icon name="queue-list"></pc-icon> } @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> }
+            @case ('new_subscriber') { <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') {
+            <pc-icon name="x-circle"></pc-icon> } @default { <pc-icon name="user-plus"></pc-icon> } }
           </div>
           <div class="flex flex-col">
             <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
-            <span class="text-sm font-bold text-base-content">
-              {{ payload().trigger_type === 'volunteer_signup' ? 'Volunteer Event Signup' : 'Manual Enrollment' }}
-            </span>
-            @if (payload().trigger_type === 'volunteer_signup') {
-            <span
-              class="text-[10px] text-success font-semibold truncate max-w-[200px]"
-              [title]="selectedEventName() || 'Any Event'"
-            >
-              Event: {{ selectedEventName() || 'Any Event' }}
+            <span class="text-sm font-bold text-base-content"> {{ formatTriggerType(payload().trigger_type) }} </span>
+            @if (selectedEventName()) {
+            <span class="text-[10px] text-success font-semibold truncate max-w-[200px]" [title]="selectedEventName()">
+              Filter: {{ selectedEventName() }}
             </span>
             }
           </div>
@@ -311,20 +486,18 @@
         <div class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5">
           <div class="flex items-center gap-2 text-success">
             <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
-              @if (payload().trigger_type === 'volunteer_signup') {
-              <pc-icon name="volunteer"></pc-icon>
-              } @else {
-              <pc-icon name="user-plus"></pc-icon>
-              }
+              @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
+              @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+              <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') { <pc-icon name="document-text"></pc-icon> }
+              @case ('contact_created') { <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') {
+              <pc-icon name="queue-list"></pc-icon> } @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> }
+              @case ('new_subscriber') { <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') {
+              <pc-icon name="x-circle"></pc-icon> } @default { <pc-icon name="user-plus"></pc-icon> } }
             </div>
-            <span class="font-black text-sm">
-              {{ payload().trigger_type === 'volunteer_signup' ? 'Volunteer Event Signup' : 'Manual Enrollment' }}
-            </span>
+            <span class="font-black text-sm text-base-content"> {{ formatTriggerType(payload().trigger_type) }} </span>
           </div>
           <p class="text-xs text-base-content/75 leading-relaxed">
-            {{ payload().trigger_type === 'volunteer_signup' ? 'This trigger runs automatically whenever a contact
-            registers for a volunteer event or shift.' : 'This trigger only initiates manually. You can enroll
-            constituents inside the "Enrolled Contacts" tab.' }}
+            This trigger activates automatically based on system events or manual selection settings.
           </p>
         </div>
 
@@ -336,6 +509,14 @@
           >
             <option value="manual">Manual Enrollment</option>
             <option value="volunteer_signup">Volunteer Event Signup</option>
+            <option value="tag_added">Tag Added</option>
+            <option value="web_form_submitted">Web Form Submitted</option>
+            <option value="volunteer_shift_status">Volunteer Shift Status</option>
+            <option value="contact_created">New Contact Created</option>
+            <option value="list_joined">List Joined</option>
+            <option value="payment_event">Billing / Payment Event</option>
+            <option value="new_subscriber">New Subscriber</option>
+            <option value="new_unsubscriber">New Unsubscriber</option>
           </select>
           <p class="text-[10px] text-base-content/50 mt-1.5">
             Warning: Changing trigger type will modify how future subscribers enroll.
@@ -357,6 +538,70 @@
           <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
             Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer
             event signup.
+          </p>
+        </div>
+        } @if (payload().trigger_type === 'tag_added') {
+        <div class="form-control mt-2">
+          <label class="label label-text font-semibold text-xs py-1">Tag Filter</label>
+          <select
+            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+            [formField]="form.trigger_event_id"
+          >
+            <option value="">-- Any Tag --</option>
+            @for (tag of tags(); track tag.id) {
+            <option [value]="tag.id">{{ tag.name }}</option>
+            }
+          </select>
+          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+            Select a specific tag that triggers enrollment, or leave as "Any Tag".
+          </p>
+        </div>
+        } @if (payload().trigger_type === 'web_form_submitted') {
+        <div class="form-control mt-2">
+          <label class="label label-text font-semibold text-xs py-1">Web Form Filter</label>
+          <select
+            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+            [formField]="form.trigger_event_id"
+          >
+            <option value="">-- Any Web Form --</option>
+            @for (formEl of webForms(); track formEl.id) {
+            <option [value]="formEl.id">{{ formEl.name }}</option>
+            }
+          </select>
+          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+            Select a specific web form that triggers enrollment, or leave as "Any Web Form".
+          </p>
+        </div>
+        } @if (payload().trigger_type === 'list_joined') {
+        <div class="form-control mt-2">
+          <label class="label label-text font-semibold text-xs py-1">Static List Filter</label>
+          <select
+            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+            [formField]="form.trigger_event_id"
+          >
+            <option value="">-- Any Static List --</option>
+            @for (listEl of lists(); track listEl.id) {
+            <option [value]="listEl.id">{{ listEl.name }}</option>
+            }
+          </select>
+          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+            Select a static list that triggers enrollment when joined.
+          </p>
+        </div>
+        } @if (payload().trigger_type === 'volunteer_shift_status') {
+        <div class="form-control mt-2">
+          <label class="label label-text font-semibold text-xs py-1">Shift Status Filter</label>
+          <select
+            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+            [formField]="form.trigger_event_id"
+          >
+            <option value="">-- Any Status --</option>
+            <option value="attended">Attended</option>
+            <option value="no_show">No Show</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+            Select a volunteer shift status update that triggers enrollment.
           </p>
         </div>
         }
