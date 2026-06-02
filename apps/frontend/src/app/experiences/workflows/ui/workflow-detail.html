@@ -92,7 +92,6 @@
   <!-- ACTIVE WORKSPACE: DESIGNER, ENROLLMENTS, OR LOGS -->
   @if (triggerSelected()) {
   <!-- Tabs Navigation -->
-  @if (!isNew()) {
   <div class="tabs tabs-box bg-base-200 p-1 rounded-2xl flex gap-2 w-fit">
     <button
       (click)="selectTab('steps')"
@@ -102,21 +101,28 @@
       Sequence Designer ({{ steps().length }})
     </button>
     <button
-      (click)="selectTab('enrollments')"
+      (click)="!isNew() && selectTab('enrollments')"
       class="tab rounded-xl transition-all font-semibold"
       [class.tab-active]="activeTab() === 'enrollments'"
+      [class.opacity-50]="isNew()"
+      [class.cursor-not-allowed]="isNew()"
+      [class.tooltip]="isNew()"
+      [attr.data-tip]="isNew() ? 'Save workflow to enroll contacts' : null"
     >
       Enrolled Contacts ({{ enrollments().length }})
     </button>
     <button
-      (click)="selectTab('activity')"
+      (click)="!isNew() && selectTab('activity')"
       class="tab rounded-xl transition-all font-semibold"
       [class.tab-active]="activeTab() === 'activity'"
+      [class.opacity-50]="isNew()"
+      [class.cursor-not-allowed]="isNew()"
+      [class.tooltip]="isNew()"
+      [attr.data-tip]="isNew() ? 'Save workflow to view audit log' : null"
     >
       Activity & Audit
     </button>
   </div>
-  }
 
   <!-- TAB 1: VISUAL SEQUENCE DESIGNER -->
   @if (activeTab() === 'steps') {
