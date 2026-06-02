@@ -131,6 +131,11 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'megaphone',
       },
       {
+        name: 'Workflows',
+        route: '/workflows',
+        icon: 'arrow-path',
+      },
+      {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',

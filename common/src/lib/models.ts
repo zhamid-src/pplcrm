@@ -44,7 +44,15 @@ import type {
   QueryBuilderRuleNode,
   QueryBuilderGroupNode,
   QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
 } from './schema';
+
 
 /**
  * Used to get the current time in string from the database
@@ -131,5 +139,14 @@ export type AddWebFormType = z.infer<typeof AddWebFormObj>;
 export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
 export type WebFormsType = z.infer<typeof WebFormsObj>;
 
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
+
 

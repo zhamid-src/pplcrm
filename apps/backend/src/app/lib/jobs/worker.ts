@@ -27,6 +27,9 @@ export class BackgroundJobWorker {
     this.ensureAddressFingerprintsJobScheduled().catch((err) =>
       console.error('Failed to ensure address fingerprints job scheduled:', err),
     );
+    this.ensureWorkflowsJobScheduled().catch((err) =>
+      console.error('Failed to ensure workflows job scheduled:', err),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
@@ -230,7 +233,10 @@ export class BackgroundJobWorker {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'recompute_address_fingerprints') {
       delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'process_drip_workflows') {
+      delayMs = 10 * 60 * 1000;
     }
+
 
     if (delayMs > 0) {
       try {
@@ -370,6 +376,37 @@ export class BackgroundJobWorker {
       console.error('Failed to ensure address fingerprints job scheduled:', err);
     }
   }
+
+  private async ensureWorkflowsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling periodic drip workflows processing background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_drip_workflows' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure workflows job scheduled:', err);
+    }
+  }
+
 
   private async recoverStaleJobs(): Promise<void> {
     try {
