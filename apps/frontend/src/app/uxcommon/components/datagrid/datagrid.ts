@@ -379,6 +379,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public allowFilter = input<boolean>(true);
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
+  public disableAdvancedFilter = input<boolean>(false);
   public disableExport = input<boolean>(false);
   public confirmDeleteOverride = input<((selected: any[]) => Promise<boolean | void>) | null>(null);
   public disableImport = input<boolean>(false);
