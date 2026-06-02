@@ -62,8 +62,10 @@ async function createTestSeed(db: any) {
 }
 
 async function cleanTenant(db: any, tenantId: string) {
+  // Allow any in-flight un-awaited background promises from lazy list refresh to finish
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
   await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('id', '=', tenantId).execute();
-  await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenantId).execute();
@@ -72,6 +74,7 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
 }
@@ -157,22 +160,26 @@ describe('ListsController Background Refresh', () => {
       definition: { tags: ['Donors'] }
     }, auth);
 
-    // Give the un-awaited background refresh trigger time to update the database
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Poll the database until status is 'refreshing' and job is enqueued (max 2 seconds)
+    let listInDb;
+    let job;
+    for (let i = 0; i < 20; i++) {
+      listInDb = await db.selectFrom('lists')
+        .select('status')
+        .where('id', '=', listId)
+        .executeTakeFirst();
+      job = await db.selectFrom('background_jobs')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
 
-    // Verify status is changed to refreshing
-    const listInDb = await db.selectFrom('lists')
-      .select('status')
-      .where('id', '=', listId)
-      .executeTakeFirst();
-    expect(listInDb.status).toBe('refreshing');
+      if (listInDb?.status === 'refreshing' && job) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
 
-    // Verify background job enqueued
-    const job = await db.selectFrom('background_jobs')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    
+    expect(listInDb?.status).toBe('refreshing');
     expect(job).toBeDefined();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
     expect(payload.type).toBe('refresh_list');
@@ -279,22 +286,27 @@ describe('ListsController Background Refresh', () => {
     const list = await controller.getOneById({ tenant_id: tenantId, id: listId });
     expect(list).toBeDefined();
 
-    // Give the un-awaited background refresh trigger time to update the database
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Poll the database until status is 'refreshing' and job is enqueued (max 2 seconds)
+    let listInDb;
+    let job;
+    for (let i = 0; i < 20; i++) {
+      listInDb = await db.selectFrom('lists')
+        .selectAll()
+        .where('id', '=', listId)
+        .executeTakeFirst();
+      job = await db.selectFrom('background_jobs')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
 
-    // 3. Verify that status has been changed to 'refreshing' (because getOneById triggers it)
-    const listInDb = await db.selectFrom('lists')
-      .selectAll()
-      .where('id', '=', listId)
-      .executeTakeFirst();
+      if (listInDb?.status === 'refreshing' && job) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    expect(listInDb).toBeDefined();
     expect(listInDb.status).toBe('refreshing');
-
-    // 4. Verify a background job is enqueued
-    const job = await db.selectFrom('background_jobs')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    
     expect(job).toBeDefined();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
     expect(payload.type).toBe('refresh_list');

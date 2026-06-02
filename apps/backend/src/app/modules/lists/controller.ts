@@ -131,7 +131,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
    * Refreshes membership mapping for a dynamic list by queuing a background job.
    */
   public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
     if (!list) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
     }
