@@ -565,7 +565,92 @@ describe('PersonsRepo Integration', () => {
     dups = await repo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(0);
   });
+
+  it('should filter persons using advancedFilterModel', async () => {
+    // 1. Create two persons
+    const p1 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Alice',
+        last_name: 'Smith',
+        email: 'alice@example.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    const p2 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Bob',
+        last_name: 'Jones',
+        email: 'bob@example.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    // 2. Fetch using advanced filter: first_name equals 'Alice'
+    const result1 = await repo.getAllWithAddress({
+      tenant_id: tenantId,
+      options: {
+        advancedFilterModel: {
+          kind: 'group',
+          id: 'root',
+          conjunction: 'AND',
+          rules: [
+            {
+              kind: 'rule',
+              id: 'r1',
+              field: 'first_name',
+              op: 'equals',
+              value: 'Alice',
+            },
+          ],
+        },
+      } as any,
+    });
+
+    expect(result1.rows).toHaveLength(1);
+    expect(String(result1.rows[0].id)).toBe(p1.id);
+
+    // 3. Fetch using advanced filter: email contains 'example' AND last_name equals 'Jones'
+    const result2 = await repo.getAllWithAddress({
+      tenant_id: tenantId,
+      options: {
+        advancedFilterModel: {
+          kind: 'group',
+          id: 'root',
+          conjunction: 'AND',
+          rules: [
+            {
+              kind: 'rule',
+              id: 'r2',
+              field: 'email',
+              op: 'contains',
+              value: 'example',
+            },
+            {
+              kind: 'rule',
+              id: 'r3',
+              field: 'last_name',
+              op: 'equals',
+              value: 'Jones',
+            },
+          ],
+        },
+      } as any,
+    });
+
+    expect(result2.rows).toHaveLength(1);
+    expect(String(result2.rows[0].id)).toBe(p2.id);
+  });
 });
+
 
 describe('HouseholdRepo Duplicates', () => {
   const householdsRepo = new HouseholdRepo();

@@ -115,7 +115,7 @@ describe('ListsController Background Refresh', () => {
       is_dynamic: true,
       definition: {
         filterModel: {
-          tags_expression: { kind: 'rule', field: 'tag', op: 'eq', value: 'Volunteer' }
+          tags_expression: { kind: 'rule', id: 'rule1', field: 'tag', op: 'eq', value: 'Volunteer' }
         },
         tags: ['Volunteer']
       }

@@ -1,0 +1,161 @@
+<div class="flex flex-col gap-3">
+  <!-- Summary Bar -->
+  @if (showSummary()) {
+  <div
+    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
+  >
+    <div class="min-w-0">
+      <span class="font-medium mr-1">Summary:</span>
+      <span class="font-mono break-all text-primary">{{ summarizeGroup(group()) }}</span>
+    </div>
+    @if (summaryMatches() !== null || summaryCounting() || summaryError()) {
+    <div class="whitespace-nowrap font-medium shrink-0">
+      @if (summaryError()) {
+      <span class="text-warning">⚠️ {{ summaryError() }}</span>
+      } @else if (summaryCounting()) {
+      <span class="loading loading-spinner loading-xs vertical-middle mr-1"></span>
+      <span>Counting...</span>
+      } @else {
+      <span class="text-success">Matches: {{ summaryMatches() }}</span>
+      }
+    </div>
+    }
+  </div>
+  }
+
+  <!-- Group Header / Conjunction Toggle & Controls -->
+  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Conjunction:</span>
+      <div class="join border border-base-300">
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'AND'"
+          [class.btn-ghost]="group().conjunction !== 'AND'"
+          (click)="setConjunction('AND')"
+        >
+          AND (All)
+        </button>
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'OR'"
+          [class.btn-ghost]="group().conjunction !== 'OR'"
+          (click)="setConjunction('OR')"
+        >
+          OR (Any)
+        </button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
+      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
+    </div>
+  </div>
+
+  <!-- Rules and Nested Groups List -->
+  <div class="flex flex-col gap-3.5 pl-1">
+    @for (item of group().rules; track item.id; let i = $index) {
+    <!-- Rule Item -->
+    @if (isRule(item)) {
+    <div
+      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
+    >
+      <!-- Field Selector -->
+      <select
+        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
+        [value]="item.field"
+        (change)="setField(i, $any($event.target).value)"
+      >
+        @for (field of fields(); track field.name) {
+        <option [value]="field.name" [selected]="item.field === field.name">{{ field.label }}</option>
+        }
+      </select>
+
+      <!-- Operator Selector -->
+      @let fieldDef = getFieldDef(item.field);
+      <select
+        class="select select-bordered select-sm w-28 md:w-36 text-xs"
+        [value]="item.op"
+        (change)="setOp(i, $any($event.target).value)"
+      >
+        @for (op of fieldDef?.operators; track op.value) {
+        <option [value]="op.value" [selected]="item.op === op.value">{{ op.label }}</option>
+        }
+      </select>
+
+      <!-- Value Input -->
+      @if (showValueInput(item)) {
+      <div class="flex-1 min-w-[150px] flex items-center gap-2">
+        @if (fieldDef?.inputType === 'autocomplete') {
+        <div class="w-full max-w-xs">
+          <pc-autocomplete
+            [filterSvc]="tagSvc()!"
+            placeholder="Type a tag..."
+            (valueChange)="setRuleValue(i, $event)"
+          />
+        </div>
+        @if (item.value) {
+        <span class="badge badge-neutral text-xs px-2 py-1 select-none">{{ item.value }}</span>
+        } } @else if (fieldDef?.inputType === 'select') {
+        <select
+          class="select select-bordered select-sm w-full max-w-xs text-xs"
+          [value]="item.value"
+          (change)="setRuleValue(i, $any($event.target).value)"
+        >
+          <option value="" disabled [selected]="!item.value">Select option...</option>
+          @for (choice of fieldDef?.choices; track choice.value) {
+          <option [value]="choice.value" [selected]="item.value === choice.value">{{ choice.label }}</option>
+          }
+        </select>
+        } @else {
+        <input
+          type="text"
+          class="input input-bordered input-sm w-full bg-base-100 text-xs"
+          placeholder="Enter value..."
+          [value]="item.value || ''"
+          (input)="setRuleValue(i, $any($event.target).value)"
+        />
+        }
+      </div>
+      }
+
+      <!-- Remove Button -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
+        title="Remove condition"
+        (click)="removeItem(i)"
+      >
+        ❌
+      </button>
+    </div>
+    }
+
+    <!-- Nested Group Item -->
+    @if (isGroup(item)) {
+    <div
+      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
+    >
+      <pc-query-builder
+        [group]="asGroup(item)"
+        [fields]="fields()"
+        [tagSvc]="tagSvc()"
+        [showSummary]="false"
+        (changed)="emitChange()"
+      ></pc-query-builder>
+      <div class="flex justify-end pt-1">
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold flex items-center gap-1"
+          (click)="removeItem(i)"
+        >
+          🗑️ Remove Group
+        </button>
+      </div>
+    </div>
+    } }
+  </div>
+</div>

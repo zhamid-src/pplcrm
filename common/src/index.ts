@@ -50,9 +50,13 @@ export type {
   AddWebFormType,
   UpdateWebFormType,
   WebFormsType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
 } from './lib/models';
 
 export {
+  cloneQueryBuilderNode,
   AddTagObj,
   AddListObj,
   AddMarketingEmailObj,
