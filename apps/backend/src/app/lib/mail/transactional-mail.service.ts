@@ -1,11 +1,14 @@
+import { Transaction, Kysely } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
+import { BaseRepository } from '../base.repo';
 
 export interface SendMailOptions {
   to: string;
   subject: string;
   text: string;
   html: string;
+  tenant_id?: string | null;
 }
 
 export class TransactionalEmailService {
@@ -52,5 +55,29 @@ export class TransactionalEmailService {
     } catch (error: any) {
       throw new InternalError('Failed to send transactional email', undefined, { cause: error });
     }
+  }
+
+  /**
+   * Enqueues a transactional email to be processed in the background.
+   */
+  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+    const dbClient = trx || BaseRepository.dbInstance;
+    await dbClient
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-transactional-email',
+          to: options.to,
+          subject: options.subject,
+          text: options.text,
+          html: options.html,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
   }
 }

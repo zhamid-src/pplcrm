@@ -449,6 +449,13 @@ export class BackgroundJobWorker {
         });
 
         console.log(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+      } else if (payload.type === 'send-transactional-email') {
+        await this.mailService.sendMail({
+          to: payload.to,
+          subject: payload.subject,
+          text: payload.text,
+          html: payload.html,
+        });
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({
@@ -535,7 +542,9 @@ export class BackgroundJobWorker {
 
       if (attempts < maxAttempts) {
         // Retry with backoff (e.g. attempts * 30s delay)
-        const delaySeconds = attempts * 30;
+        const delaySeconds = payload.type === 'send-transactional-email'
+          ? Math.pow(2, attempts) * 30
+          : attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
         console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
 
