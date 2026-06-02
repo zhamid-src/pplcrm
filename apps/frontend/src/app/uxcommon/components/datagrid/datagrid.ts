@@ -677,9 +677,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const raw = this.panelFilters();
     const cleaned: Record<string, any> = {};
     for (const [k, v] of Object.entries(raw)) {
+      const op = v?.op ?? 'contains';
       const sv = String(v?.value ?? '').trim();
-      if (!sv) continue;
-      cleaned[k] = { op: v?.op ?? 'contains', value: sv };
+      if (op === 'isEmpty' || op === 'isNotEmpty') {
+        cleaned[k] = { op, value: '' };
+      } else if (sv) {
+        cleaned[k] = { op, value: sv };
+      }
     }
     this.filterValues.set(cleaned);
     this.showFilterPanel.set(false);
@@ -1435,7 +1439,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // header resize is handled via HeaderResizeDirective
 
-  protected onPanelOpChange(field: string, op: 'contains' | 'equals') {
+  protected onPanelOpChange(field: string, op: string) {
     const next = { ...this.panelFilters() };
     const prev = next[field] || { op: 'contains', value: '' };
     next[field] = { ...prev, op };
@@ -1658,7 +1662,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         advancedFilterModel: this.hasActiveAdvancedFilters()
           ? {
               conjunction: this.advConjunction(),
-              rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+              rules: this.advRules()
+                .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
+                .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
             }
           : undefined,
         gridSvc: this.gridSvc,
@@ -2000,7 +2006,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       advancedFilterModel: this.hasActiveAdvancedFilters()
         ? {
             conjunction: this.advConjunction(),
-            rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+            rules: this.advRules()
+              .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
+              .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
           }
         : undefined,
       gridSvc: this.gridSvc,
@@ -2041,7 +2049,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       advancedFilterModel: this.hasActiveAdvancedFilters()
         ? {
             conjunction: this.advConjunction(),
-            rules: this.advRules().map(r => ({ field: r.field, op: r.op, value: r.value })),
+            rules: this.advRules()
+              .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
+              .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
           }
         : undefined,
     });

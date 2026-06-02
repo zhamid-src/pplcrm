@@ -7,7 +7,7 @@ export class GridStoreService {
   readonly colVisibility = signal<Record<string, boolean>>({});
   readonly colWidths = signal<Record<string, number>>({});
   readonly filterValues = signal<Record<string, any>>({});
-  readonly panelFilters = signal<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
+  readonly panelFilters = signal<Record<string, { op: string; value: any }>>({});
   readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
     source: () => this.filterValues(),
     computation: () => new Set<string>(),

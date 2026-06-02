@@ -8,7 +8,7 @@ import { Icon } from '@icons/icon';
 })
 export class DataGridFilterPanelComponent {
   public apply = output<void>();
-  public changeOp = output<{ field: string; op: 'contains' | 'equals' }>();
+  public changeOp = output<{ field: string; op: string }>();
   public changeValue = output<{ field: string; value: any }>();
   public clear = output<void>();
   public close = output<void>();
@@ -17,5 +17,5 @@ export class DataGridFilterPanelComponent {
   public labelFor = input<(field: string) => string>((f) => f);
   public optionsFor = input<(field: string) => string[] | null>((_f) => null);
   public panelFields = input<string[]>([]);
-  public panelFilters = input<Record<string, { op: 'contains' | 'equals'; value: any }>>({});
+  public panelFilters = input<Record<string, { op: string; value: any }>>({});
 }

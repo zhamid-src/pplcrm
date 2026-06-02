@@ -376,11 +376,17 @@ export class BaseRepository<T extends keyof Models> {
     column: string,
     filter: { op?: string; value?: any }
   ) {
-    if (!filter || filter.value === undefined || filter.value === null || String(filter.value).trim() === '') {
+    if (!filter) {
       return query;
     }
     const op = filter.op || 'contains';
     const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
+      }
+    }
 
     switch (op) {
       case 'equals':
@@ -393,6 +399,20 @@ export class BaseRepository<T extends keyof Models> {
         return query.where(column, 'not ilike', `%${val}%`);
       case 'notEquals':
         return query.where(column, 'not ilike', val);
+      case 'isEmpty':
+        return query.where((eb: any) =>
+          eb.or([
+            eb(column, 'is', null),
+            eb(column, '=', '')
+          ])
+        );
+      case 'isNotEmpty':
+        return query.where((eb: any) =>
+          eb.and([
+            eb(column, 'is not', null),
+            eb(column, '!=', '')
+          ])
+        );
       case 'contains':
       default:
         return query.where(column, 'ilike', `%${val}%`);
@@ -407,11 +427,17 @@ export class BaseRepository<T extends keyof Models> {
     sqlExpression: any,
     filter: { op?: string; value?: any }
   ) {
-    if (!filter || filter.value === undefined || filter.value === null || String(filter.value).trim() === '') {
+    if (!filter) {
       return query;
     }
     const op = filter.op || 'contains';
     const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
+      }
+    }
 
     switch (op) {
       case 'equals':
@@ -424,6 +450,10 @@ export class BaseRepository<T extends keyof Models> {
         return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + val + '%'}` as any);
       case 'notEquals':
         return query.where(sql`${sqlExpression} NOT ILIKE ${val}` as any);
+      case 'isEmpty':
+        return query.where(sql`${sqlExpression} IS NULL OR ${sqlExpression} = ''` as any);
+      case 'isNotEmpty':
+        return query.where(sql`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''` as any);
       case 'contains':
       default:
         return query.where(sql`${sqlExpression} ILIKE ${'%' + val + '%'}` as any);
@@ -482,6 +512,14 @@ export class BaseRepository<T extends keyof Models> {
         return isCast ? sql`${sql.raw(column)} NOT ILIKE ${'%' + val + '%'}` : eb(column, 'not ilike', `%${val}%`);
       case 'notEquals':
         return isCast ? sql`${sql.raw(column)} NOT ILIKE ${val}` : eb(column, 'not ilike', val);
+      case 'isEmpty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
+          : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
+      case 'isNotEmpty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
+          : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
       case 'contains':
       default:
         return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + val + '%'}` : eb(column, 'ilike', `%${val}%`);
@@ -498,7 +536,11 @@ export class BaseRepository<T extends keyof Models> {
     }
 
     const validRules = advancedFilterModel.rules.filter(
-      (r) => r.field && columnMapping[r.field] && r.value !== undefined && r.value !== null && String(r.value).trim() !== ''
+      (r) => {
+        if (!r.field || !columnMapping[r.field]) return false;
+        if (r.op === 'isEmpty' || r.op === 'isNotEmpty') return true;
+        return r.value !== undefined && r.value !== null && String(r.value).trim() !== '';
+      }
     );
 
     if (validRules.length === 0) {

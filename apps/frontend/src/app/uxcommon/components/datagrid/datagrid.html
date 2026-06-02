@@ -494,11 +494,14 @@
               <option value="notEquals" i18n="Datagrid|Operator for not matching exactly@@datagrid.advancedFilter.op.notEquals">does not equal</option>
               <option value="startsWith" i18n="Datagrid|Operator for starting with prefix@@datagrid.advancedFilter.op.startsWith">starts with</option>
               <option value="endsWith" i18n="Datagrid|Operator for ending with suffix@@datagrid.advancedFilter.op.endsWith">ends with</option>
+              <option value="isEmpty" i18n="Datagrid|Operator for empty field@@datagrid.advancedFilter.op.isEmpty">is empty</option>
+              <option value="isNotEmpty" i18n="Datagrid|Operator for non-empty field@@datagrid.advancedFilter.op.isNotEmpty">is not empty</option>
             </select>
           </div>
 
           <!-- Value Input -->
           <div class="flex-1 min-w-0">
+            @if (rule.op !== 'isEmpty' && rule.op !== 'isNotEmpty') {
             <input
               type="text"
               placeholder="Enter value..."
@@ -507,6 +510,7 @@
               [value]="rule.value"
               (input)="updateAdvRule(rule.id, { value: $any($event.target).value })"
             />
+            }
           </div>
 
           <!-- Delete Row -->

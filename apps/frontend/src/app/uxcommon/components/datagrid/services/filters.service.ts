@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
 
-export type Op = 'contains' | 'equals' | 'in';
+export type Op = 'contains' | 'equals' | 'in' | 'isEmpty' | 'isNotEmpty' | 'notContains' | 'notEquals' | 'startsWith' | 'endsWith';
 
 export interface SelectOption {
   value: string;
@@ -24,8 +24,12 @@ export class DataGridFiltersService {
         const vv = v as { op?: Op; value?: unknown };
         const op = vv.op ?? 'contains';
         const sv = String(vv.value ?? '').trim();
-        if (!sv) continue;
-        out[k] = { type: 'text', op, value: sv };
+        if (op === 'isEmpty' || op === 'isNotEmpty') {
+          out[k] = { type: 'text', op, value: '' };
+        } else {
+          if (!sv) continue;
+          out[k] = { type: 'text', op, value: sv };
+        }
       } else {
         const sv = String(v).trim();
         if (!sv) continue;
@@ -95,12 +99,12 @@ export class DataGridFiltersService {
     return `${arr.length} selected`;
   }
 
-  preparePanelFilters(current: Record<string, any>): Record<string, { op: 'contains' | 'equals'; value: any }> {
-    const panel: Record<string, { op: 'contains' | 'equals'; value: any }> = {};
+  preparePanelFilters(current: Record<string, any>): Record<string, { op: string; value: any }> {
+    const panel: Record<string, { op: string; value: any }> = {};
     for (const [k, v] of Object.entries(current)) {
-      const entry = v as { op?: 'contains' | 'equals'; value?: any };
+      const entry = v as { op?: string; value?: any };
       if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry)
-        panel[k] = entry as { op: 'contains' | 'equals'; value: any };
+        panel[k] = entry as { op: string; value: any };
       else panel[k] = { op: 'contains', value: v };
     }
     return panel;

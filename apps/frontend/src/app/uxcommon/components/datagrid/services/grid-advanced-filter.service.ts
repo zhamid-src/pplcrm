@@ -22,7 +22,11 @@ export class GridAdvancedFilterService {
   // ── Computeds ─────────────────────────────────────────────────────────────
   readonly hasActiveAdvancedFilters = computed(() =>
     this.advRules().some(
-      (r) => r.field && r.value !== undefined && r.value !== null && String(r.value).trim() !== '',
+      (r) => {
+        if (!r.field) return false;
+        if (r.op === 'isEmpty' || r.op === 'isNotEmpty') return true;
+        return r.value !== undefined && r.value !== null && String(r.value).trim() !== '';
+      },
     ),
   );
 
@@ -34,7 +38,17 @@ export class GridAdvancedFilterService {
     if (!this.hasActiveAdvancedFilters()) return undefined;
     return {
       conjunction: this.advConjunction(),
-      rules: this.advRules().map((r) => ({ field: r.field, op: r.op, value: r.value })),
+      rules: this.advRules()
+        .filter((r) => {
+          if (!r.field) return false;
+          if (r.op === 'isEmpty' || r.op === 'isNotEmpty') return true;
+          return r.value !== undefined && r.value !== null && String(r.value).trim() !== '';
+        })
+        .map((r) => ({
+          field: r.field,
+          op: r.op,
+          value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
+        })),
     };
   }
 
