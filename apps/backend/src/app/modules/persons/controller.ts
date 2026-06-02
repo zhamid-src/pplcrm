@@ -73,12 +73,27 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return await this.getRepo()
       .transaction()
       .execute(async (trx) => {
+        // Fetch active duplicate group keys for these persons before they are deleted
+        const activeGroupKeys = await trx.selectFrom('potential_duplicates')
+          .select('group_key')
+          .where('tenant_id', '=', tenant_id)
+          .where('person_id', 'in', idsToDelete)
+          .execute();
+        const groupKeysToMaintenance = Array.from(new Set(activeGroupKeys.map((k) => k.group_key)));
+
         // Delete tag mappings
         await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete list mappings
         await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete persons within the same transaction
-        return this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
+        const result = await this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
+
+        // Queue duplicate maintenance for the affected group keys
+        if (groupKeysToMaintenance.length > 0) {
+          await this.getRepo().queueDuplicatesJob(tenant_id, [], groupKeysToMaintenance, trx);
+        }
+
+        return result;
       });
   }
 
