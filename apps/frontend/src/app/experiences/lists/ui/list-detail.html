@@ -117,15 +117,15 @@
     <div class="grid gap-4">
       <div class="grid gap-3">
         <div class="label-text mb-1">Build Tag Rules</div>
-        <pc-tag-rule-builder
+        <pc-query-builder
           [group]="rulesRoot()"
+          [fields]="listFields()"
           [tagSvc]="tagSvc"
-          [objectType]="$any(form.get('object')?.value || 'people')"
           [summaryMatches]="matchCount()"
           [summaryCounting]="counting()"
           [summaryError]="rulesError()"
           (changed)="onRulesChanged()"
-        ></pc-tag-rule-builder>
+        ></pc-query-builder>
         <div class="text-xs text-base-content/70">Use AND/OR and nested groups to combine Tag is / is not rules.</div>
       </div>
       <!-- Matches are shown in the summary line above -->
@@ -151,7 +151,7 @@
           [enableSelection]="false"
           [disableView]="true"
           [allowFilter]="false"
-          [tags]="previewTags()"
+          [externalAdvancedFilterModel]="rulesRoot()"
         />
         } @else {
         <pc-household-filter-grid
@@ -159,7 +159,7 @@
           [enableSelection]="false"
           [disableView]="true"
           [allowFilter]="false"
-          [tags]="previewTags()"
+          [externalAdvancedFilterModel]="rulesRoot()"
         />
         }
       </div>

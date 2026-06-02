@@ -223,10 +223,12 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         street_num: { col: 'households.street_num::text', isCast: true },
         zip: { col: 'households.zip' },
         home_phone: { col: 'households.home_phone' },
+        tag: { col: 'tags.name' },
         tags: { col: 'tags.name' },
         issues: { col: 'tags.name' },
       };
-      q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
+      const advModel = options.advancedFilterModel || (options.filterModel as any)?.tags_expression;
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
       return q;
     };

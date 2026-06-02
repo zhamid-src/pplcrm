@@ -4,7 +4,7 @@
  * Shared base repository that wraps Kysely and provides common CRUD helpers.
  * Specific repositories for individual tables extend this class.
  */
-import { INow } from '@common';
+import { INow, QueryBuilderGroupNode } from '@common';
 
 import { promises as fs } from 'fs';
 import {
@@ -517,10 +517,12 @@ export class BaseRepository<T extends keyof Models> {
       case 'notEquals':
         return isCast ? sql`${sql.raw(column)} NOT ILIKE ${val}` : eb(column, 'not ilike', val);
       case 'isEmpty':
+      case 'empty':
         return isCast
           ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
           : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
       case 'isNotEmpty':
+      case 'notempty':
         return isCast
           ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
           : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
@@ -532,37 +534,76 @@ export class BaseRepository<T extends keyof Models> {
 
   protected applyAdvancedFilters(
     query: any,
-    advancedFilterModel: { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] } | undefined,
+    advancedFilterModel: QueryBuilderGroupNode | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] } | undefined,
     columnMapping: Record<string, { col: string; isCast?: boolean }>
   ) {
-    if (!advancedFilterModel || !Array.isArray(advancedFilterModel.rules) || advancedFilterModel.rules.length === 0) {
+    if (!advancedFilterModel) {
       return query;
     }
 
-    const validRules = advancedFilterModel.rules.filter(
-      (r) => {
-        if (!r.field || !columnMapping[r.field]) return false;
-        if (r.op === 'isEmpty' || r.op === 'isNotEmpty') return true;
-        return r.value !== undefined && r.value !== null && String(r.value).trim() !== '';
-      }
-    );
+    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as any).kind !== 'group';
+    let rootGroup: QueryBuilderGroupNode;
 
-    if (validRules.length === 0) {
-      return query;
+    if (isLegacy) {
+      const legacyModel = advancedFilterModel as { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] };
+      if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
+        return query;
+      }
+      rootGroup = {
+        kind: 'group',
+        id: 'legacy-root',
+        conjunction: legacyModel.conjunction,
+        rules: legacyModel.rules.map((r, i) => ({
+          kind: 'rule',
+          id: `legacy-rule-${i}`,
+          field: r.field,
+          op: r.op,
+          value: r.value,
+        })),
+      };
+    } else {
+      rootGroup = advancedFilterModel as QueryBuilderGroupNode;
     }
 
     return query.where((eb: any) => {
-      const expressions = validRules.map((rule) => {
-        const mapping = columnMapping[rule.field];
-        return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, rule.op, rule.value);
-      });
-
-      if (advancedFilterModel.conjunction === 'OR') {
-        return eb.or(expressions);
-      } else {
-        return eb.and(expressions);
-      }
+      const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
+      return expression || sql`true`;
     });
+  }
+
+  private buildGroupExpression(
+    eb: any,
+    group: QueryBuilderGroupNode,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>
+  ): any {
+    if (!group.rules || group.rules.length === 0) {
+      return null;
+    }
+
+    const expressions = group.rules
+      .map((node) => {
+        if (node.kind === 'rule') {
+          const mapping = columnMapping[node.field];
+          if (!mapping) return null;
+
+          if (node.op !== 'isEmpty' && node.op !== 'isNotEmpty' && node.op !== 'empty' && node.op !== 'notempty') {
+            if (node.value === undefined || node.value === null || String(node.value).trim() === '') {
+              return null;
+            }
+          }
+
+          const mappedOp = node.op === 'eq' ? 'equals' : node.op === 'neq' ? 'notEquals' : node.op;
+          return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, mappedOp, node.value);
+        } else {
+          return this.buildGroupExpression(eb, node, columnMapping);
+        }
+      })
+      .filter(Boolean);
+
+    if (expressions.length === 0) return null;
+    if (expressions.length === 1) return expressions[0];
+
+    return group.conjunction === 'OR' ? eb.or(expressions) : eb.and(expressions);
   }
 }
 
@@ -584,7 +625,7 @@ export type JoinedQueryParams = {
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, keyof Models, object>[];
-  advancedFilterModel?: {
+  advancedFilterModel?: QueryBuilderGroupNode | {
     conjunction: 'AND' | 'OR';
     rules: { field: string; op: string; value: any }[];
   };

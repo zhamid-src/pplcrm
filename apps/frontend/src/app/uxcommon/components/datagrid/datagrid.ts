@@ -17,7 +17,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { getAllOptionsType } from '@common';
+import { cloneQueryBuilderNode, getAllOptionsType, QueryBuilderGroupNode } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { Tags } from '@uxcommon/components/tags/tags';
@@ -47,6 +47,8 @@ import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 import { GridTagFilterService } from './services/grid-tag-filter.service';
 import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
 // Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';
@@ -70,6 +72,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
     Tags,
     EditableCellDirective,
     HeaderResizeDirective,
+    QueryBuilderComponent,
   ],
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',
@@ -388,6 +391,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public limitToIssues = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
+  public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
@@ -442,12 +446,37 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
   private readonly advFilter = new GridAdvancedFilterService();
+  protected readonly tagsSvc = inject(TagsService, { optional: true });
 
   // Proxy aliases — same public names used by the toolbar and datagrid.html
   public readonly showAdvancedFilterBuilder = this.advFilter.showAdvancedFilterBuilder;
-  public readonly advConjunction = this.advFilter.advConjunction;
-  public readonly advRules = this.advFilter.advRules;
+  public readonly advFilterRoot = this.advFilter.advFilterRoot;
   public readonly hasActiveAdvancedFilters = this.advFilter.hasActiveAdvancedFilters;
+
+  protected readonly advancedFilterFields = computed<QueryBuilderField[]>(() => {
+    return this.colDefsWithEdit
+      .filter((c) => c.field && c.field !== 'actions' && c.field !== SELECTION_COLUMN.field)
+      .map((c) => {
+        const fieldName = c.field!;
+        const isTagCol = fieldName === 'tags' || fieldName === 'issues' || c.tagColumn === true;
+        const operators = [
+          { value: 'contains', label: 'contains' },
+          { value: 'notContains', label: 'does not contain' },
+          { value: 'equals', label: 'equals' },
+          { value: 'notEquals', label: 'does not equal' },
+          { value: 'startsWith', label: 'starts with' },
+          { value: 'endsWith', label: 'ends with' },
+          { value: 'isEmpty', label: 'is empty' },
+          { value: 'isNotEmpty', label: 'is not empty' },
+        ];
+        return {
+          name: fieldName,
+          label: c.headerName || fieldName,
+          operators,
+          inputType: isTagCol ? ('autocomplete' as const) : ('text' as const),
+        };
+      });
+  });
 
   public openAdvancedFilterBuilder() {
     this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit);
@@ -458,21 +487,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       () => this.colDefsWithEdit,
     );
   }
-  public addAdvRule() {
-    this.advFilter.addRule(() => this.colDefsWithEdit);
-  }
-  public removeAdvRule(id: string) {
-    this.advFilter.removeRule(id);
-  }
-  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) {
-    this.advFilter.updateRule(id, updates);
-  }
   public applyAdvancedFilter() {
     this.advFilter.apply(() => this.doRefresh());
   }
   public clearAdvancedFilter() {
     this.advFilter.clear(() => this.doRefresh());
   }
+  public onAdvancedFilterChanged() {
+    this.advFilterRoot.update((root) => cloneQueryBuilderNode(root) as QueryBuilderGroupNode);
+  }
+
 
   private _squelch = false;
   private _initialized = false;
@@ -564,6 +588,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const issues = this.limitToIssues();
       untracked(() => {
         this.tagFilter.selectedIssues.set([...issues]);
+        if (this._initialized) {
+          this.doRefresh();
+        }
+      });
+    });
+
+    effect(() => {
+      this.externalAdvancedFilterModel();
+      untracked(() => {
         if (this._initialized) {
           this.doRefresh();
         }
@@ -1720,24 +1753,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         searchText: this.searchSvc.getFilterText(),
         limitToTags: this.selectedTags(),
         limitToIssues: this.selectedIssues(),
-        advancedFilterModel: this.hasActiveAdvancedFilters()
-          ? {
-              conjunction: this.advConjunction(),
-              rules: this.advRules()
-                .filter(
-                  (r) =>
-                    r.field &&
-                    (r.op === 'isEmpty' ||
-                      r.op === 'isNotEmpty' ||
-                      (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
-                )
-                .map((r) => ({
-                  field: r.field,
-                  op: r.op,
-                  value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
-                })),
-            }
-          : undefined,
+        advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
         gridSvc: this.gridSvc,
         rowCanSelect: this.rowCanSelect(),
       });
@@ -2074,24 +2090,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortState: this.sorting(),
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
-      advancedFilterModel: this.hasActiveAdvancedFilters()
-        ? {
-            conjunction: this.advConjunction(),
-            rules: this.advRules()
-              .filter(
-                (r) =>
-                  r.field &&
-                  (r.op === 'isEmpty' ||
-                    r.op === 'isNotEmpty' ||
-                    (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
-              )
-              .map((r) => ({
-                field: r.field,
-                op: r.op,
-                value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
-              })),
-          }
-        : undefined,
+      advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
       gridSvc: this.gridSvc,
       dataSvc: this.dataSvc,
       getRows: () => this.rows(),
@@ -2127,24 +2126,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
       includeArchived: this.archiveMode(),
-      advancedFilterModel: this.hasActiveAdvancedFilters()
-        ? {
-            conjunction: this.advConjunction(),
-            rules: this.advRules()
-              .filter(
-                (r) =>
-                  r.field &&
-                  (r.op === 'isEmpty' ||
-                    r.op === 'isNotEmpty' ||
-                    (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
-              )
-              .map((r) => ({
-                field: r.field,
-                op: r.op,
-                value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
-              })),
-          }
-        : undefined,
+      advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
     });
     return this.gridSvc.exportCsv({
       options,

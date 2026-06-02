@@ -224,11 +224,13 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         street1: { col: 'households.street1' },
         street_num: { col: 'households.street_num::text', isCast: true },
         zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
         tags: { col: 'tags.name' },
         issues: { col: 'tags.name' },
         company_name: { col: 'companies.name' },
       };
-      q = this.applyAdvancedFilters(q, options.advancedFilterModel, columnMapping);
+      const advModel = options.advancedFilterModel || (options.filterModel as any)?.tags_expression;
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
       return q;
     };

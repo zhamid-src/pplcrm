@@ -41,6 +41,9 @@ import type {
   AddWebFormObj,
   UpdateWebFormObj,
   WebFormsObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
 } from './schema';
 
 /**
@@ -127,4 +130,6 @@ export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
 export type AddWebFormType = z.infer<typeof AddWebFormObj>;
 export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
 export type WebFormsType = z.infer<typeof WebFormsObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 

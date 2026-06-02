@@ -1,5 +1,5 @@
 import { Component, computed, inject, input, resource, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AddListType, UpdateHouseholdsType, UpdatePersonsType } from '@common';
 import { HouseholdsService } from '@experiences/households/services/households-service';
@@ -16,7 +16,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
-import { TagGroup, TagRuleBuilderComponent, TagRuleItem } from './tag-rule-builder';
+import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
+import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '@common';
 
 /** Grid component for filtering households when creating lists */
 @Component({
@@ -116,7 +117,7 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
 /** Component for creating new lists. Allows building static or dynamic lists using filters. */
 @Component({
   selector: 'pc-list-detail',
-  imports: [ReactiveFormsModule, AddBtnRow, PeopleFilterGrid, HouseholdFilterGrid, Icon, TagRuleBuilderComponent],
+  imports: [ReactiveFormsModule, AddBtnRow, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
   templateUrl: './list-detail.html',
 })
 export class ListDetail {
@@ -140,13 +141,21 @@ export class ListDetail {
     is_dynamic: [false],
   });
 
-  protected readonly listType = toSignal(this.form.get('object')!.valueChanges, {
-    initialValue: this.form.get('object')!.value,
-  });
+  protected readonly listType = signal<string>('people');
 
-  protected readonly isDynamic = toSignal(this.form.get('is_dynamic')!.valueChanges, {
-    initialValue: this.form.get('is_dynamic')!.value === true,
-  });
+  protected readonly isDynamic = signal<boolean>(false);
+
+  constructor() {
+    this.listType.set(this.form.get('object')?.value || 'people');
+    this.isDynamic.set(this.form.get('is_dynamic')?.value === true);
+
+    this.form.get('object')!.valueChanges.subscribe((val) => {
+      if (val) this.listType.set(val);
+    });
+    this.form.get('is_dynamic')!.valueChanges.subscribe((val) => {
+      this.isDynamic.set(val === true);
+    });
+  }
 
   protected readonly countRowSelected = computed(() => {
     const type = this.listType();
@@ -163,7 +172,62 @@ export class ListDetail {
     return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
   });
 
-  protected readonly rulesRoot = signal<TagGroup>({ kind: 'group', bool: 'and', items: [] });
+  protected readonly rulesRoot = signal<QueryBuilderGroupNode>({ kind: 'group', id: 'root', conjunction: 'AND', rules: [] });
+
+  protected readonly listFields = computed<QueryBuilderField[]>(() => {
+    const isPeople = this.listType() === 'people';
+    const tagOperators = [
+      { value: 'eq', label: 'is' },
+      { value: 'neq', label: 'is not' },
+      { value: 'contains', label: 'contains' },
+      { value: 'notContains', label: 'does not contain' },
+      { value: 'equals', label: 'equals' },
+      { value: 'notEquals', label: 'does not equal' },
+      { value: 'startsWith', label: 'starts with' },
+      { value: 'endsWith', label: 'ends with' },
+      { value: 'isEmpty', label: 'is empty' },
+      { value: 'isNotEmpty', label: 'is not empty' },
+    ];
+    const textOperators = [
+      { value: 'contains', label: 'contains' },
+      { value: 'notContains', label: 'does not contain' },
+      { value: 'equals', label: 'equals' },
+      { value: 'notEquals', label: 'does not equal' },
+      { value: 'startsWith', label: 'starts with' },
+      { value: 'endsWith', label: 'ends with' },
+      { value: 'isEmpty', label: 'is empty' },
+      { value: 'isNotEmpty', label: 'is not empty' },
+    ];
+
+    if (isPeople) {
+      return [
+        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'first_name', label: 'First Name', operators: textOperators, inputType: 'text' as const },
+        { name: 'last_name', label: 'Last Name', operators: textOperators, inputType: 'text' as const },
+        { name: 'email', label: 'Email', operators: textOperators, inputType: 'text' as const },
+        { name: 'mobile', label: 'Mobile', operators: textOperators, inputType: 'text' as const },
+        { name: 'company_name', label: 'Company', operators: textOperators, inputType: 'text' as const },
+        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
+        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
+        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
+        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
+        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
+      ];
+    } else {
+      return [
+        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
+        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
+        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
+        { name: 'street2', label: 'Street 2', operators: textOperators, inputType: 'text' as const },
+        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
+        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
+        { name: 'home_phone', label: 'Home Phone', operators: textOperators, inputType: 'text' as const },
+      ];
+    }
+  });
 
   /** Full rule evaluation against a row's tags */
   protected externalRowFilter = (row: any) => {
@@ -173,16 +237,7 @@ export class ListDetail {
   protected isLoading = this._loading.visible;
 
   protected readonly rulesError = computed(() => {
-    const validationErr = this.validateRules();
-    if (validationErr) {
-      return validationErr;
-    }
-    const hasRules = this.hasAnyRule(this.rulesRoot());
-    const tags = this.flattenPositiveTags(this.rulesRoot());
-    if (hasRules && tags.length === 0) {
-      return 'Preview count requires at least one "tag is …" rule';
-    }
-    return null;
+    return this.validateRules();
   });
 
   protected readonly matchCountResource = resource({
@@ -190,7 +245,6 @@ export class ListDetail {
       rules: this.rulesRoot(),
       object: this.listType(),
       hasRules: this.hasAnyRule(this.rulesRoot()),
-      tags: this.flattenPositiveTags(this.rulesRoot()),
       hasError: !!this.rulesError(),
     }),
     loader: async ({ params }) => {
@@ -202,7 +256,10 @@ export class ListDetail {
       if (!params.hasRules) {
         return await svc.count();
       } else {
-        const res = (await svc.getAll({ tags: params.tags, limit: 1 })) as { count: number };
+        const res = (await svc.getAll({
+          advancedFilterModel: params.rules,
+          limit: 1,
+        })) as { count: number };
         return res?.count ?? 0;
       }
     },
@@ -226,19 +283,19 @@ export class ListDetail {
   }
 
   /** Returns only positive (equals) tags from the rule tree for preview */
-  protected flattenPositiveTags(group: TagGroup): string[] {
+  protected flattenPositiveTags(group: QueryBuilderGroupNode): string[] {
     const out: string[] = [];
-    const walk = (items: TagRuleItem[]) => {
-      for (const it of items) {
+    const walk = (rules: QueryBuilderNode[]) => {
+      for (const it of rules) {
         if (it.kind === 'rule') {
           const r = it as { kind: 'rule'; op: 'eq' | 'neq'; value: string };
           if (r.op === 'eq' && r.value) out.push(r.value);
         } else if (it.kind === 'group') {
-          walk(it.items as TagRuleItem[]);
+          walk(it.rules as QueryBuilderNode[]);
         }
       }
     };
-    walk(group.items);
+    walk(group.rules);
     return Array.from(new Set(out));
   }
 
@@ -253,8 +310,7 @@ export class ListDetail {
   }
 
   protected onRulesChanged() {
-    // trigger effects; nothing else required as we use signals
-    this.rulesRoot.update((g) => ({ ...g }));
+    this.rulesRoot.update((g) => cloneQueryBuilderNode(g) as QueryBuilderGroupNode);
     this.peopleGrid()?.triggerFilterChanged();
     this.householdGrid()?.triggerFilterChanged();
   }
@@ -278,6 +334,7 @@ export class ListDetail {
       payload.definition = {
         ...(def ?? {}),
         filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+        advancedFilterModel: tags_expression,
         // provide a simplified positive-tags list for compatibility
         tags: this.flattenPositiveTags(tags_expression),
       };
@@ -289,6 +346,7 @@ export class ListDetail {
       payload.definition = {
         ...(def ?? {}),
         filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+        advancedFilterModel: tags_expression,
         tags: this.flattenPositiveTags(tags_expression),
       };
       // Do not send member_ids limited to the current page; backend will expand definition to all matches
@@ -307,69 +365,98 @@ export class ListDetail {
       .finally(() => end());
   }
 
-  private evalGroupWithRow(group: TagGroup, tagSet: Set<string>, row: any): boolean {
-    const results = group.items.map((it) =>
-      this.isRule(it) ? this.evalRule(it, tagSet, row) : this.evalGroupWithRow(it as TagGroup, tagSet, row),
+  private evalGroupWithRow(group: QueryBuilderGroupNode, tagSet: Set<string>, row: any): boolean {
+    const results = group.rules.map((it) =>
+      this.isRule(it) ? this.evalRule(it, tagSet, row) : this.evalGroupWithRow(it as QueryBuilderGroupNode, tagSet, row),
     );
-    if (group.bool === 'and') return results.every(Boolean);
+    if (group.conjunction === 'AND') return results.every(Boolean);
     return results.some(Boolean);
   }
 
   private evalRule(
-    rule: { field: 'tag' | 'email' | 'mobile'; op: 'eq' | 'neq' | 'empty' | 'notempty'; value?: string },
+    rule: { field: string; op: string; value?: any },
     tagSet: Set<string>,
     row: any,
   ): boolean {
-    if (rule.field === 'tag') {
-      if (!rule.value) return false;
-      const has = tagSet.has(rule.value);
-      return rule.op === 'eq' ? has : !has;
-    }
-    // For households, ignore non-tag rules
-    const object = this.form.get('object')!.value as 'people' | 'households';
-    if (object === 'households') return true;
+    const field = rule.field;
+    const op = rule.op;
+    const val = rule.value;
 
-    const value = String((rule.field === 'email' ? row?.email : row?.mobile) ?? '').trim();
-    const isEmpty = value.length === 0;
-    return rule.op === 'empty' ? isEmpty : !isEmpty;
+    if (field === 'tag' || field === 'tags' || field === 'issues') {
+      if (!val) return false;
+      const has = tagSet.has(val);
+      return (op === 'eq' || op === 'equals' || op === 'contains') ? has : !has;
+    }
+
+    // For other fields, retrieve the row value
+    const rowVal = String(row?.[field] ?? '').trim().toLowerCase();
+    const searchVal = String(val ?? '').trim().toLowerCase();
+
+    const isEmpty = rowVal.length === 0;
+
+    switch (op) {
+      case 'empty':
+      case 'isEmpty':
+        return isEmpty;
+      case 'notempty':
+      case 'isNotEmpty':
+        return !isEmpty;
+      case 'equals':
+      case 'eq':
+        return rowVal === searchVal;
+      case 'notEquals':
+      case 'neq':
+        return rowVal !== searchVal;
+      case 'contains':
+        return rowVal.includes(searchVal);
+      case 'notContains':
+        return !rowVal.includes(searchVal);
+      case 'startsWith':
+        return rowVal.startsWith(searchVal);
+      case 'endsWith':
+        return rowVal.endsWith(searchVal);
+      default:
+        return true;
+    }
   }
 
-  private isRule(item: TagRuleItem): item is {
+  private isRule(item: QueryBuilderNode): item is {
     kind: 'rule';
-    field: 'tag' | 'email' | 'mobile';
-    op: 'eq' | 'neq' | 'empty' | 'notempty';
-    value?: string;
+    id: string;
+    field: string;
+    op: string;
+    value?: any;
   } {
     return item.kind === 'rule';
   }
 
-  /** Validate rules: every rule must have a value; at least one rule somewhere */
+  /** Validate rules: every rule must have a value unless the operator is valueless */
   private validateRules(): string | null {
     let invalid = false;
-    const walk = (items: TagRuleItem[]) => {
-      for (const it of items) {
+    const walk = (rules: QueryBuilderNode[]) => {
+      for (const it of rules) {
         if (it.kind === 'rule') {
-          const r = it as { field: 'tag' | 'email' | 'mobile'; value?: string };
-          if (r.field === 'tag') {
-            if (!r.value || !String(r.value).trim()) invalid = true;
+          const r = it as { field: string; op: string; value?: string };
+          const valueless = ['isEmpty', 'isNotEmpty', 'empty', 'notempty'].includes(r.op);
+          if (!valueless && (!r.value || !String(r.value).trim())) {
+            invalid = true;
           }
         } else if (it.kind === 'group') {
-          walk(it.items as TagRuleItem[]);
+          walk(it.rules as QueryBuilderNode[]);
         }
       }
     };
-    walk(this.rulesRoot().items);
-    // Allow zero rules (Everyone)
-    if (invalid) return 'Complete all tag rules (select a tag)';
+    walk(this.rulesRoot().rules);
+    if (invalid) return 'Complete all rules (enter a search term or value)';
     return null;
   }
 
-  private hasAnyRule(group: TagGroup): boolean {
-    const stack: TagRuleItem[] = [...group.items];
+  private hasAnyRule(group: QueryBuilderGroupNode): boolean {
+    const stack: QueryBuilderNode[] = [...group.rules];
     while (stack.length) {
       const item = stack.pop()!;
       if (item.kind === 'rule') return true;
-      if (item.kind === 'group') stack.push(...item.items);
+      if (item.kind === 'group') stack.push(...item.rules);
     }
     return false;
   }
