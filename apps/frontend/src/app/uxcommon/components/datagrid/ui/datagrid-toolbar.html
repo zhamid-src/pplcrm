@@ -35,19 +35,16 @@
     icon="arrow-down-tray"
     (action)="onExportCsv()"
   />
-  <pc-grid-action
-    icon="funnel"
-    tip="Filter the grid"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
 
   <!-- Tag Filter Dropdown -->
   @if (grid.showTagFilter()) {
   <li class="dropdown dropdown-end">
-    <div tabindex="0" role="button" class="btn btn-ghost btn-sm relative" [class.text-primary]="grid.selectedTags().length > 0">
+    <div
+      tabindex="0"
+      role="button"
+      class="btn btn-ghost btn-sm relative"
+      [class.text-primary]="grid.selectedTags().length > 0"
+    >
       <pc-icon name="tag"></pc-icon>
       @if (grid.selectedTags().length > 0) {
       <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75"
@@ -112,7 +109,12 @@
   <!-- Issue Filter Dropdown -->
   @if (grid.showIssueFilter()) {
   <li class="dropdown dropdown-end">
-    <div tabindex="0" role="button" class="btn btn-ghost btn-sm relative" [class.text-primary]="grid.selectedIssues().length > 0">
+    <div
+      tabindex="0"
+      role="button"
+      class="btn btn-ghost btn-sm relative"
+      [class.text-primary]="grid.selectedIssues().length > 0"
+    >
       <pc-icon name="shield-exclamation"></pc-icon>
       @if (grid.selectedIssues().length > 0) {
       <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75"
@@ -173,6 +175,15 @@
     </div>
   </li>
   }
+
+  <pc-grid-action
+    icon="funnel"
+    tip="Filter the grid"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
 
   <pc-grid-action
     icon="adjustments-horizontal"
