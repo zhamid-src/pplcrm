@@ -67,7 +67,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   mockActivatedRoute = {
     snapshot: {
       paramMap: {
-        get: vi.fn((key: string) => (key === 'id' ? '123' : null)),
+        get: vi.fn((key: string) => (key === 'id' && mode === 'edit' ? '123' : null)),
       },
     },
   };
