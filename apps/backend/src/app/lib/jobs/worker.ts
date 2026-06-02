@@ -10,6 +10,7 @@ import { MsOAuthService } from '../../modules/ms-sync/ms-oauth.service';
 import { MsSyncService } from '../../modules/ms-sync/ms-sync.service';
 import { env } from '../../../env';
 import { sql } from 'kysely';
+import { TransactionalEmailService } from '../mail/transactional-mail.service';
 
 export class BackgroundJobWorker {
   private isRunning = false;
@@ -17,6 +18,7 @@ export class BackgroundJobWorker {
   private readonly storageService = new StorageService();
   private readonly importsRepo = new ImportsRepo();
   private readonly db = this.importsRepo.db; // Kysely DB instance
+  private readonly mailService = new TransactionalEmailService();
 
   public start() {
     if (this.isRunning) return;
@@ -346,6 +348,43 @@ export class BackgroundJobWorker {
             max_attempts: 3,
           })
           .execute();
+      } else if (payload.type === 'send-form-notifications') {
+        const event = await this.db
+          .selectFrom('volunteer_events')
+          .select(['name', 'start_time', 'end_time', 'location_address'])
+          .where('id', '=', payload.eventId as any)
+          .executeTakeFirst();
+
+        if (!event) {
+          throw new Error(`Event not found: ${payload.eventId}`);
+        }
+
+        const startFormatted = new Date(event.start_time).toLocaleString();
+        const endFormatted = new Date(event.end_time).toLocaleString();
+
+        // 1. Send Confirmation Email to the Constituent
+        await this.mailService.sendMail({
+          to: payload.email,
+          subject: `Volunteer Signup Confirmation: ${event.name}`,
+          text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nWe look forward to seeing you there!`,
+          html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p>We look forward to seeing you there!</p>`,
+        });
+
+        // 2. Send Alert Email to the Tenant Admin
+        const admin = await this.db.selectFrom('authusers')
+          .select(['email', 'first_name'])
+          .where('tenant_id', '=', payload.tenantId as any)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (admin && admin.email) {
+          await this.mailService.sendMail({
+            to: admin.email,
+            subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+            text: `Hi ${admin.first_name || 'Admin'},\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+            html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}</p>`,
+          });
+        }
       } else if (payload.import_id && payload.storage_key) {
         // 1. Mark import status as 'processing' in data_imports
         await this.importsRepo.update({

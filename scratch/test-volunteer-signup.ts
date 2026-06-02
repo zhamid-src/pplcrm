@@ -115,12 +115,45 @@ async function runTest() {
     }
     testPersonId = String(person.id);
 
+    // Verify background job was queued
+    const job = await db.selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'send-form-notifications')
+      .executeTakeFirst();
+    
+    if (!job) {
+      throw new Error('Background job not queued for volunteer signup confirmation');
+    }
+    console.log('Verified: send-form-notifications background job was successfully queued.');
+
+    // Import BackgroundJobWorker and run it to process the job
+    const { BackgroundJobWorker } = await import('../apps/backend/src/app/lib/jobs/worker');
+    const worker = new BackgroundJobWorker();
+    console.log('Running background job worker to process the queued job...');
+    await (worker as any).processNextJob();
+    console.log('Background job processed successfully!');
+
+    // Verify the job was marked completed in DB
+    const processedJob = await db.selectFrom('background_jobs')
+      .select(['status', 'error'])
+      .where('id', '=', job.id)
+      .executeTakeFirst();
+    if (!processedJob || processedJob.status !== 'completed') {
+      throw new Error(`Background job processing failed. Status: ${processedJob?.status}, Error: ${processedJob?.error}`);
+    }
+    console.log('Verified: Job marked as completed in DB.');
+
     console.log('🎉 V2 Integration test completed successfully!');
 
   } catch (error) {
     console.error('❌ V2 Test failed with error:', error);
   } finally {
     console.log('Cleaning up test data...');
+    await db.deleteFrom('background_jobs')
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'send-form-notifications')
+      .execute();
     if (publicEventId) {
       await db.deleteFrom('volunteer_events')
         .where('tenant_id', '=', tenantId)
