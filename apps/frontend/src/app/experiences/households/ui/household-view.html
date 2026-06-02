@@ -8,19 +8,38 @@
           Back to Households
         </a>
       </div>
+      @if (household() && !household()?.is_placeholder) {
       <div class="flex items-center gap-2">
         <a [routerLink]="['edit']" class="btn btn-primary btn-sm gap-2">
           <pc-icon name="pencil-square" [size]="4"></pc-icon>
           EDIT HOUSEHOLD
         </a>
       </div>
+      }
     </div>
 
     @if (isLoading()) {
     <div class="flex justify-center items-center py-20">
       <progress class="progress w-56"></progress>
     </div>
-    } @else { @if (household(); as h) {
+    } @else { @if (household(); as h) { @if (h.is_placeholder) {
+    <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+      <div class="avatar placeholder mb-4">
+        <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+          <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
+        </div>
+      </div>
+      <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+      <p class="text-sm text-base-content/60 mb-6">
+        This is a system placeholder representing individuals who do not currently have a household or address assigned.
+        It is not a real household record and cannot be edited.
+      </p>
+      <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+        <pc-icon name="arrow-left" [size]="4"></pc-icon>
+        Return to People
+      </a>
+    </div>
+    } @else {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: Household Card, Map & Segmentation -->
@@ -330,7 +349,7 @@
         </div>
       </div>
     </div>
-    } @else {
+    } } @else {
     <div class="alert alert-error">
       <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
       <span>Household not found or failed to load.</span>

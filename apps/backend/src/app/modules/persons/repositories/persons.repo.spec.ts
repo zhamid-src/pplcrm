@@ -13,51 +13,67 @@ async function createTestSeed(db: any) {
   const householdId = rand();
 
   // 1. Tenant
-  await db.insertInto('tenants').values({
-    id: tenantId,
-    name: 'Test Tenant',
-  }).execute();
+  await db
+    .insertInto('tenants')
+    .values({
+      id: tenantId,
+      name: 'Test Tenant',
+    })
+    .execute();
 
   // 2. User
-  await db.insertInto('authusers').values({
-    id: userId,
-    tenant_id: tenantId,
-    email: `test-${userId}@example.com`,
-    password: 'password',
-    first_name: 'Test',
-    last_name: 'User',
-    verified: true,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('authusers')
+    .values({
+      id: userId,
+      tenant_id: tenantId,
+      email: `test-${userId}@example.com`,
+      password: 'password',
+      first_name: 'Test',
+      last_name: 'User',
+      verified: true,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // Update tenant admin and creator
   await db.updateTable('tenants').set({ admin_id: userId, createdby_id: userId }).where('id', '=', tenantId).execute();
 
   // 3. Campaign
-  await db.insertInto('campaigns').values({
-    id: campaignId,
-    tenant_id: tenantId,
-    admin_id: userId,
-    name: 'Test Campaign',
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('campaigns')
+    .values({
+      id: campaignId,
+      tenant_id: tenantId,
+      admin_id: userId,
+      name: 'Test Campaign',
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // 4. Household
-  await db.insertInto('households').values({
-    id: householdId,
-    tenant_id: tenantId,
-    campaign_id: campaignId,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('households')
+    .values({
+      id: householdId,
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   return { tenantId, userId, campaignId, householdId };
 }
 
 async function cleanTenant(db: any, tenantId: string) {
-  await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('id', '=', tenantId).execute();
+  await db
+    .updateTable('tenants')
+    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+    .where('id', '=', tenantId)
+    .execute();
   await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
@@ -120,6 +136,60 @@ describe('PersonsRepo Integration', () => {
     expect(check?.file_id).toBeNull();
   });
 
+  it('should return household_is_placeholder true only for persons in the placeholder household', async () => {
+    // 1. Create a person in the default household (householdId)
+    const p1 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Regular',
+        last_name: 'User',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    // 2. Set householdId as the tenant's placeholder household
+    await db.updateTable('tenants').set({ placeholder_household_id: householdId }).where('id', '=', tenantId).execute();
+
+    // 3. Create a second household that is NOT a placeholder
+    const otherHhId = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('households')
+      .values({
+        id: otherHhId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 4. Create a person in the second household
+    const p2 = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: otherHhId,
+        first_name: 'Other',
+        last_name: 'User',
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+
+    // 5. Fetch all persons with address
+    const result = await repo.getAllWithAddress({ tenant_id: tenantId });
+    expect(result.rows).toHaveLength(2);
+
+    const r1 = result.rows.find((r) => String(r.id) === String(p1.id));
+    const r2 = result.rows.find((r) => String(r.id) === String(p2.id));
+
+    expect(r1?.household_is_placeholder).toBe(true);
+    expect(r2?.household_is_placeholder).toBe(false);
+  });
+
   it('should fetch persons by ids with tag filtering', async () => {
     const p1 = await repo.add({
       row: {
@@ -146,22 +216,29 @@ describe('PersonsRepo Integration', () => {
     });
 
     const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    const tag = await db.insertInto('tags').values({
-      id: randTagId,
-      tenant_id: tenantId,
-      name: 'TestTag',
-      deletable: true,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).returningAll().execute();
+    const tag = await db
+      .insertInto('tags')
+      .values({
+        id: randTagId,
+        tenant_id: tenantId,
+        name: 'TestTag',
+        deletable: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .execute();
 
-    await db.insertInto('map_peoples_tags').values({
-      tenant_id: tenantId,
-      person_id: p1.id,
-      tag_id: randTagId,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id: tenantId,
+        person_id: p1.id,
+        tag_id: randTagId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Fetch without tag filtering
     const allFetched = await repo.getByIds({ tenant_id: tenantId, ids: [p1.id, p2.id] });
@@ -220,17 +297,21 @@ describe('PersonsRepo Integration', () => {
     // 2. Name + Address duplicates (John Smith in different households but same address fingerprint)
     // Create a second household with same address fingerprint
     const householdId2 = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('households').values({
-      id: householdId2,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      address_fp_full: '123 Main St, Springfield',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('households')
+      .values({
+        id: householdId2,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        address_fp_full: '123 Main St, Springfield',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Update first household's address fingerprint to match
-    await db.updateTable('households')
+    await db
+      .updateTable('households')
       .set({ address_fp_full: '123 Main St, Springfield' })
       .where('id', '=', householdId)
       .execute();
@@ -265,12 +346,12 @@ describe('PersonsRepo Integration', () => {
     const dups = await repo.findPotentialDuplicates(tenantId);
     expect(dups.length).toBeGreaterThanOrEqual(2);
 
-    const householdGroup = dups.find(d => d.reason.includes('Same Household'));
+    const householdGroup = dups.find((d) => d.reason.includes('Same Household'));
     expect(householdGroup).toBeDefined();
     expect(householdGroup.persons.map((p: any) => p.id)).toContain(p1.id);
     expect(householdGroup.persons.map((p: any) => p.id)).toContain(p2.id);
 
-    const addressGroup = dups.find(d => d.reason.includes('Same Address') && d.reason.toLowerCase().includes('john'));
+    const addressGroup = dups.find((d) => d.reason.includes('Same Address') && d.reason.toLowerCase().includes('john'));
     expect(addressGroup).toBeDefined();
     expect(addressGroup.persons.map((p: any) => p.id)).toContain(p3.id);
     expect(addressGroup.persons.map((p: any) => p.id)).toContain(p4.id);
@@ -304,22 +385,28 @@ describe('PersonsRepo Integration', () => {
     });
 
     const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('tags').values({
-      id: randTagId,
-      tenant_id: tenantId,
-      name: 'MergeTag',
-      deletable: true,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('tags')
+      .values({
+        id: randTagId,
+        tenant_id: tenantId,
+        name: 'MergeTag',
+        deletable: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
-    await db.insertInto('map_peoples_tags').values({
-      tenant_id: tenantId,
-      person_id: source.id,
-      tag_id: randTagId,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id: tenantId,
+        person_id: source.id,
+        tag_id: randTagId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     await repo.mergePersons({
       tenant_id: tenantId,
@@ -331,7 +418,8 @@ describe('PersonsRepo Integration', () => {
     const updatedTarget = await repo.getOneBy('id', { tenant_id: tenantId, value: target.id });
     expect(updatedTarget?.mobile).toBe('123-456-7890');
 
-    const targetTags = await db.selectFrom('map_peoples_tags')
+    const targetTags = await db
+      .selectFrom('map_peoples_tags')
       .where('tenant_id', '=', tenantId)
       .where('person_id', '=', target.id)
       .selectAll()
@@ -462,7 +550,8 @@ describe('PersonsRepo Integration', () => {
     expect(dups).toHaveLength(1);
 
     // 2. Fetch duplicate keys for deleted person and delete them (simulating deleteMany logic)
-    const activeGroupKeys = await db.selectFrom('potential_duplicates')
+    const activeGroupKeys = await db
+      .selectFrom('potential_duplicates')
       .select('group_key')
       .where('tenant_id', '=', tenantId)
       .where('person_id', '=', p2.id)
@@ -498,23 +587,58 @@ describe('HouseholdRepo Duplicates', () => {
     await cleanTenant(db, tenantId);
   });
 
+  it('should exclude the placeholder household in getAllWithPeopleCount', async () => {
+    // Create a household to act as the placeholder
+    const placeholderHhId = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('households')
+      .values({
+        id: placeholderHhId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Set it as the tenant's placeholder household
+    await db
+      .updateTable('tenants')
+      .set({ placeholder_household_id: placeholderHhId })
+      .where('id', '=', tenantId)
+      .execute();
+
+    // Fetch households
+    const result = await householdsRepo.getAllWithPeopleCount({ tenant_id: tenantId });
+
+    // The placeholder household should be hidden
+    const ids = result.rows.map((row: any) => String(row.id));
+    expect(ids).toContain(householdId);
+    expect(ids).not.toContain(placeholderHhId);
+    expect(result.count).toBe(1);
+  });
+
   it('should find potential duplicate households by address fingerprint', async () => {
     // Modify first household address fingerprint
-    await db.updateTable('households')
+    await db
+      .updateTable('households')
       .set({ address_fp_full: '456 Main St, Springfield' })
       .where('id', '=', householdId)
       .execute();
 
     // Create a second duplicate household
     const randId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('households').values({
-      id: randId,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      address_fp_full: '456 Main St, Springfield',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('households')
+      .values({
+        id: randId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        address_fp_full: '456 Main St, Springfield',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     const dups = await householdsRepo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
@@ -523,55 +647,68 @@ describe('HouseholdRepo Duplicates', () => {
 
   it('should merge source household into target household transactionally', async () => {
     // Set address fp for target
-    await db.updateTable('households')
+    await db
+      .updateTable('households')
       .set({ address_fp_full: '789 Elm St, Springfield', home_phone: '111-222-3333' })
       .where('id', '=', householdId)
       .execute();
 
     // Create source household
     const sourceHhId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('households').values({
-      id: sourceHhId,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      address_fp_full: '789 Elm St, Springfield',
-      notes: 'Source notes',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('households')
+      .values({
+        id: sourceHhId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        address_fp_full: '789 Elm St, Springfield',
+        notes: 'Source notes',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Create tag to merge
     const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('tags').values({
-      id: randTagId,
-      tenant_id: tenantId,
-      name: 'HouseholdMergeTag',
-      deletable: true,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('tags')
+      .values({
+        id: randTagId,
+        tenant_id: tenantId,
+        name: 'HouseholdMergeTag',
+        deletable: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Tag the source household
-    await db.insertInto('map_households_tags').values({
-      tenant_id: tenantId,
-      household_id: sourceHhId,
-      tag_id: randTagId,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('map_households_tags')
+      .values({
+        tenant_id: tenantId,
+        household_id: sourceHhId,
+        tag_id: randTagId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Reassign person to source household to test reassigning
     const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('persons').values({
-      id: personId,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      household_id: sourceHhId,
-      first_name: 'Resident',
-      last_name: 'One',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('persons')
+      .values({
+        id: personId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: sourceHhId,
+        first_name: 'Resident',
+        last_name: 'One',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     await householdsRepo.mergeHouseholds({
       tenant_id: tenantId,
@@ -586,7 +723,8 @@ describe('HouseholdRepo Duplicates', () => {
     expect(updatedTarget?.home_phone).toBe('111-222-3333');
 
     // Check tags transferred
-    const targetTags = await db.selectFrom('map_households_tags')
+    const targetTags = await db
+      .selectFrom('map_households_tags')
       .where('tenant_id', '=', tenantId)
       .where('household_id', '=', householdId)
       .selectAll()
@@ -626,23 +764,29 @@ describe('CompaniesRepo Duplicates', () => {
   it('should find potential duplicate companies by name', async () => {
     // Create first company
     const compId1 = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('companies').values({
-      id: compId1,
-      tenant_id: tenantId,
-      name: 'Acme Corp',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('companies')
+      .values({
+        id: compId1,
+        tenant_id: tenantId,
+        name: 'Acme Corp',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Create second duplicate company
     const compId2 = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('companies').values({
-      id: compId2,
-      tenant_id: tenantId,
-      name: ' acme corp  ', // test spacing and case
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('companies')
+      .values({
+        id: compId2,
+        tenant_id: tenantId,
+        name: ' acme corp  ', // test spacing and case
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     const dups = await companiesRepo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
@@ -652,39 +796,48 @@ describe('CompaniesRepo Duplicates', () => {
   it('should merge source company into target company transactionally', async () => {
     // Create target
     const targetCompId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('companies').values({
-      id: targetCompId,
-      tenant_id: tenantId,
-      name: 'Acme',
-      website: 'acme.com',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('companies')
+      .values({
+        id: targetCompId,
+        tenant_id: tenantId,
+        name: 'Acme',
+        website: 'acme.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Create source
     const sourceCompId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('companies').values({
-      id: sourceCompId,
-      tenant_id: tenantId,
-      name: 'Acme',
-      description: 'Acme company description',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('companies')
+      .values({
+        id: sourceCompId,
+        tenant_id: tenantId,
+        name: 'Acme',
+        description: 'Acme company description',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Create person linked to source company
     const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('persons').values({
-      id: personId,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      household_id: householdId,
-      company_id: sourceCompId,
-      first_name: 'Employee',
-      last_name: 'One',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('persons')
+      .values({
+        id: personId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        company_id: sourceCompId,
+        first_name: 'Employee',
+        last_name: 'One',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     await companiesRepo.mergeCompanies({
       tenant_id: tenantId,

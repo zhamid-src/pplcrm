@@ -48,10 +48,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
   }
 
-  public async getByIds(
-    input: { tenant_id: string; ids: string[]; tags?: string[] },
-    trx?: Transaction<Models>,
-  ) {
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
     const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
     if (!ids.length) return [];
 
@@ -86,10 +83,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
   public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
     const row = await this.getSelect()
-      .select(() => [
-        sql<number>`count(*)`.as('total'),
-        sql<Date>`max(created_at)`.as('last_created_at'),
-      ])
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
       .where('tenant_id', '=', input.tenant_id)
       .where('createdby_id', '=', input.user_id)
       .executeTakeFirst();
@@ -179,6 +173,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
         .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
         .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
         .where('households.tenant_id', '=', tenantId)
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
@@ -247,7 +242,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
     // Data query
     const rows = await applyFilters(this.getSelect(trx))
-      .select(() => [
+      .select((eb) => [
         'persons.id',
         'persons.first_name',
         'persons.last_name',
@@ -266,8 +261,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.street2',
         'households.street_num',
         'households.apt',
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as('tags'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
       ])
       .groupBy([
         'persons.id',
@@ -288,6 +294,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.street2',
         'households.street_num',
         'households.apt',
+        'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
@@ -429,7 +436,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     tenant_id: string,
     person_ids: string[],
     group_keys: string[] = [],
-    trx?: Transaction<Models>
+    trx?: Transaction<Models>,
   ): Promise<void> {
     const db = trx || this.db;
     await db
@@ -453,12 +460,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   /**
    * Merges a source person record into a target person record in a transaction.
    */
-  public async mergePersons(input: {
-    tenant_id: string;
-    target_id: string;
-    source_id: string;
-    user_id: string;
-  }) {
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
       const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
@@ -485,7 +487,11 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       for (const field of fields) {
         const targetVal = target[field];
         const sourceVal = source[field];
-        if ((targetVal == null || String(targetVal).trim() === '') && (sourceVal != null && String(sourceVal).trim() !== '')) {
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
           targetUpdate[field] = sourceVal;
         }
       }
@@ -497,14 +503,16 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       }
 
       // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx.selectFrom('map_peoples_tags')
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
         .select('tag_id')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.target_id)
         .execute();
       const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
 
-      const sourceTags = await trx.selectFrom('map_peoples_tags')
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
         .select(['id', 'tag_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
@@ -513,7 +521,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       for (const st of sourceTags) {
         const tagIdStr = String(st.tag_id);
         if (!targetTagIds.has(tagIdStr)) {
-          await trx.insertInto('map_peoples_tags')
+          await trx
+            .insertInto('map_peoples_tags')
             .values({
               tenant_id: input.tenant_id,
               person_id: input.target_id,
@@ -524,20 +533,23 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .execute();
         }
       }
-      await trx.deleteFrom('map_peoples_tags')
+      await trx
+        .deleteFrom('map_peoples_tags')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
         .execute();
 
       // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx.selectFrom('map_lists_persons')
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
         .select('list_id')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.target_id)
         .execute();
       const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
 
-      const sourceLists = await trx.selectFrom('map_lists_persons')
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
         .select(['list_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
@@ -545,7 +557,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
       for (const sl of sourceLists) {
         if (!targetListIds.has(String(sl.list_id))) {
-          await trx.insertInto('map_lists_persons')
+          await trx
+            .insertInto('map_lists_persons')
             .values({
               tenant_id: input.tenant_id,
               person_id: input.target_id,
@@ -556,20 +569,23 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .execute();
         }
       }
-      await trx.deleteFrom('map_lists_persons')
+      await trx
+        .deleteFrom('map_lists_persons')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
         .execute();
 
       // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx.selectFrom('map_teams_persons')
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
         .select('team_id')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.target_id)
         .execute();
       const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
 
-      const sourceTeams = await trx.selectFrom('map_teams_persons')
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
         .select(['team_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
@@ -577,7 +593,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
       for (const st of sourceTeams) {
         if (!targetTeamIds.has(String(st.team_id))) {
-          await trx.insertInto('map_teams_persons')
+          await trx
+            .insertInto('map_teams_persons')
             .values({
               tenant_id: input.tenant_id,
               person_id: input.target_id,
@@ -588,20 +605,23 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .execute();
         }
       }
-      await trx.deleteFrom('map_teams_persons')
+      await trx
+        .deleteFrom('map_teams_persons')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
         .execute();
 
       // 5. Reassign captaincy if source was captain of any team
-      await trx.updateTable('teams')
+      await trx
+        .updateTable('teams')
         .set({ team_captain_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('team_captain_id', '=', input.source_id)
         .execute();
 
       // Get old group keys of source before deleting them
-      const oldSourceKeys = await trx.selectFrom('potential_duplicates')
+      const oldSourceKeys = await trx
+        .selectFrom('potential_duplicates')
         .select('group_key')
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
@@ -614,13 +634,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       // 7. Clean up empty household if source's household is now empty
       const sourceHhId = source.household_id;
       if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx.selectFrom('persons')
+        const remainingHhMembers = await trx
+          .selectFrom('persons')
           .select('id')
           .where('tenant_id', '=', input.tenant_id)
           .where('household_id', '=', sourceHhId)
           .execute();
         if (remainingHhMembers.length === 0) {
-          await trx.deleteFrom('households')
+          await trx
+            .deleteFrom('households')
             .where('tenant_id', '=', input.tenant_id)
             .where('id', '=', sourceHhId)
             .execute();
@@ -634,4 +656,3 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     });
   }
 }
-

@@ -156,20 +156,18 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       editable: false,
       onCellClicked: this.onAddressCellClicked.bind(this),
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
       valueGetter: (params: any) => {
         const data = params?.data;
         if (!data) return '';
         const parts: string[] = [];
-        const streetParts = [
-          data.apt ? `Apt ${data.apt}` : null,
-          data.street_num,
-          data.street1,
-          data.street2,
-        ].filter(Boolean);
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'Unknown Address';
+        return parts.join(', ').trim() || 'No household assigned';
       },
     },
     {
@@ -349,10 +347,10 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         skippedReported,
         fileName || undefined,
       );
-      
+
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-      
+
       this.importSummary.set({
         inserted: 0,
         errors: 0,

@@ -1260,6 +1260,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Bridge for column-level click handlers */
   protected handleCellClick(row: any, col: ColDef) {
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     if (typeof col.onCellClicked === 'function') {
       col.onCellClicked({ data: row, colDef: col });
     }
@@ -1267,6 +1268,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** Bridge for column-level double-click handlers */
   protected handleCellDblClick(row: any, col: ColDef) {
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     if (this.isCellEditable(row, col)) {
       this.startEdit(row, col);
       return;
@@ -1373,6 +1375,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected isCellPointerInteractive(row: any, col: ColDef | undefined): boolean {
     if (!col) return false;
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return false;
     if (this.isCellEditable(row, col)) return false;
     if (typeof col.onCellDoubleClicked === 'function') return true;
     if (typeof col.onCellClicked === 'function') return true;

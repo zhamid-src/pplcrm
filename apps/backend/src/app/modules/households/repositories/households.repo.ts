@@ -174,9 +174,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       let q = qb
         .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
         .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
         .where('households.tenant_id', '=', tenantId)
+        .where((eb) =>
+          eb.or([
+            eb('tenants.placeholder_household_id', 'is', null),
+            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+          ]),
+        )
         .$if(!!searchStr, (qb) => {
           const text = `%${searchStr}%`;
           return qb.where(
@@ -233,7 +240,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     // Data query
     const rows = await applyFilters(this.getSelect(trx))
-      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
       .select([
         'households.id',
         'households.country',

@@ -44,19 +44,25 @@ export class PersonView implements OnInit {
 
   // Address
   protected readonly householdId = computed(() => this.person()?.household_id ?? null);
-  protected readonly addressResource = resource({
+  protected readonly householdResource = resource({
     params: () => this.householdId(),
     loader: async ({ params: householdId }) => {
       if (!householdId) return null;
       try {
-        const address = (await this.householdsSvc.getById(householdId)) as AddressType;
-        return this.getFormattedAddress(address);
+        return await this.householdsSvc.getById(householdId);
       } catch {
-        return 'No Address Assigned';
+        return null;
       }
     },
   });
-  protected readonly addressString = computed(() => this.addressResource.value() ?? 'No Address Assigned');
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value();
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return this.householdResource.value()?.is_placeholder ?? false;
+  });
 
   // Contact initials and full name computation
   protected readonly initials = computed(() => {
@@ -123,7 +129,6 @@ export class PersonView implements OnInit {
       } catch (err) {
         console.error('Failed to load activity log', err);
       }
-
     } catch (err) {
       this.alertSvc.showError('Failed to load person details: ' + String(err));
     } finally {
@@ -133,11 +138,14 @@ export class PersonView implements OnInit {
 
   protected copyToClipboard(text: string | null | undefined, label: string) {
     if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      this.alertSvc.showSuccess(`${label} copied to clipboard`);
-    }).catch(() => {
-      this.alertSvc.showError(`Failed to copy ${label}`);
-    });
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
   }
 
   protected getCreatedAt(): Date | null {
