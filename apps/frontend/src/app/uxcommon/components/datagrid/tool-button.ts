@@ -7,6 +7,10 @@ import { PcIconNameType } from '@icons/icons.index';
   template: `
     <li
       class="tooltip tooltip-accent"
+      [class.tooltip-left]="placement() === 'left'"
+      [class.tooltip-right]="placement() === 'right'"
+      [class.tooltip-top]="placement() === 'top'"
+      [class.tooltip-bottom]="placement() === 'bottom'"
       [class.hidden]="hidden()"
       [class.disabled]="!enabled()"
       [class.cursor-not-allowed]="!enabled()"
@@ -28,6 +32,7 @@ export class GridActionComponent {
   public active = input(false);
   public icon = input.required<PcIconNameType>();
   public tip = input.required<string>();
+  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
 
   public emitClick() {
     this.action.emit();
