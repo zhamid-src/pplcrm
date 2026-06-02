@@ -91,7 +91,9 @@ describe('TeamDetailComponent', () => {
       name: 'Outreach Team',
       description: 'Community Outreach',
       team_captain_id: 'p1',
-      volunteer_ids: ['p1']
+      team_lead_user_id: '',
+      volunteer_ids: ['p1'],
+      list_ids: []
     });
     expect(component['volunteers']()).toEqual(mockTeam.volunteers);
   });
@@ -109,7 +111,9 @@ describe('TeamDetailComponent', () => {
       name: '',
       description: '',
       team_captain_id: '',
-      volunteer_ids: []
+      team_lead_user_id: '',
+      volunteer_ids: [],
+      list_ids: []
     });
   });
 
@@ -137,7 +141,9 @@ describe('TeamDetailComponent', () => {
       name: 'New Team',
       description: 'Brand new focus',
       team_captain_id: 'p2',
-      volunteer_ids: ['p1', 'p2']
+      team_lead_user_id: '',
+      volunteer_ids: ['p1', 'p2'],
+      list_ids: []
     });
 
     await component['save']();
@@ -146,7 +152,9 @@ describe('TeamDetailComponent', () => {
       name: 'New Team',
       description: 'Brand new focus',
       team_captain_id: 'p2',
-      volunteer_ids: ['p1', 'p2']
+      team_lead_user_id: undefined,
+      volunteer_ids: ['p1', 'p2'],
+      list_ids: []
     });
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
@@ -174,7 +182,9 @@ describe('TeamDetailComponent', () => {
       name: 'Updated Outreach Team',
       description: 'Community Outreach',
       team_captain_id: 'p1',
-      volunteer_ids: []
+      team_lead_user_id: '',
+      volunteer_ids: [],
+      list_ids: []
     });
 
     await component['save']();
@@ -183,7 +193,9 @@ describe('TeamDetailComponent', () => {
       name: 'Updated Outreach Team',
       description: 'Community Outreach',
       team_captain_id: 'p1',
-      volunteer_ids: []
+      team_lead_user_id: null,
+      volunteer_ids: [],
+      list_ids: []
     });
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Team updated');
@@ -225,7 +237,9 @@ describe('TeamDetailComponent', () => {
       name: 'Team with options',
       description: '',
       team_captain_id: 'p1',
-      volunteer_ids: ['p1', 'p2']
+      team_lead_user_id: '',
+      volunteer_ids: ['p1', 'p2'],
+      list_ids: []
     });
 
     // Verify selections are correct initially

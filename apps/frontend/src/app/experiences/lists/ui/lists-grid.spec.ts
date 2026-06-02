@@ -62,7 +62,7 @@ describe('ListsGridComponent', () => {
   it('should create and initialize columns', () => {
     expect(component).toBeTruthy();
     expect(component['col']).toBeDefined();
-    expect(component['col'].length).toBe(8);
+    expect(component['col'].length).toBe(10);
   });
 
   it('should format list_size correctly for dynamic vs static lists', () => {

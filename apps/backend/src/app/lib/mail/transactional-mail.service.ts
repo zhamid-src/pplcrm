@@ -61,7 +61,7 @@ export class TransactionalEmailService {
    * Enqueues a transactional email to be processed in the background.
    */
   public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
-    const dbClient = trx || BaseRepository.dbInstance;
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
     await dbClient
       .insertInto('background_jobs' as any)
       .values({

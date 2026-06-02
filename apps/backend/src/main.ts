@@ -40,8 +40,8 @@ const server = new FastifyServer(logger);
  */
 onShutdown(async () => {
   console.log('Stopping background workers…');
-  worker.stop();
-  webhookWorker.stop();
+  await worker.stop();
+  await webhookWorker.stop();
   console.log('Closing DB…');
   await server.close();
 });

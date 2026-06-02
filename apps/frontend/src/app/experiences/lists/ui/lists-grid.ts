@@ -64,7 +64,13 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
     {
       field: 'list_size',
       headerName: 'Size',
-      valueFormatter: (p: any) => p?.value ?? 0
+      valueFormatter: (p: any) => {
+        const isDynamic = p?.data?.is_dynamic;
+        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
+          return 'N/A';
+        }
+        return p?.value ?? 0;
+      }
     },
     {
       field: 'last_refreshed_at',
