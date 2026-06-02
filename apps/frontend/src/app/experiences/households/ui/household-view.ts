@@ -45,12 +45,7 @@ export class HouseholdView implements OnInit {
     if (raw.formatted_address) return raw.formatted_address;
 
     const parts: string[] = [];
-    const streetParts = [
-      raw.apt ? `Apt ${raw.apt}` : null,
-      raw.street_num,
-      raw.street1,
-      raw.street2,
-    ].filter(Boolean);
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
 
     const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
 
@@ -126,6 +121,7 @@ export class HouseholdView implements OnInit {
 
     try {
       await this.loader.importLibrary('maps');
+      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
       const center = { lat: Number(h.lat), lng: Number(h.lng) };
       const map = new google.maps.Map(mapEl, {
         center,
@@ -134,9 +130,10 @@ export class HouseholdView implements OnInit {
         zoomControl: true,
         streetViewControl: false,
         mapTypeControl: false,
+        mapId: 'DEMO_MAP_ID',
       });
 
-      new google.maps.Marker({
+      new AdvancedMarkerElement({
         position: center,
         map,
         title: this.addressString(),
@@ -149,11 +146,14 @@ export class HouseholdView implements OnInit {
 
   protected copyToClipboard(text: string | null | undefined, label: string) {
     if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      this.alertSvc.showSuccess(`${label} copied to clipboard`);
-    }).catch(() => {
-      this.alertSvc.showError(`Failed to copy ${label}`);
-    });
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
   }
 
   protected getCreatedAt(): Date | null {

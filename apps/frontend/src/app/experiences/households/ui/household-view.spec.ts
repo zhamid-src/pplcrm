@@ -55,8 +55,15 @@ describe('HouseholdView', () => {
     };
 
     mockLoader = {
-      importLibrary: vi.fn().mockResolvedValue({
-        Map: vi.fn().mockImplementation(() => ({})),
+      importLibrary: vi.fn().mockImplementation((name: string) => {
+        if (name === 'marker') {
+          return Promise.resolve({
+            AdvancedMarkerElement: vi.fn().mockImplementation(() => ({})),
+          });
+        }
+        return Promise.resolve({
+          Map: vi.fn().mockImplementation(() => ({})),
+        });
       }),
     };
 
@@ -65,6 +72,9 @@ describe('HouseholdView', () => {
       maps: {
         Map: vi.fn().mockImplementation(() => ({})),
         Marker: vi.fn().mockImplementation(() => ({})),
+        marker: {
+          AdvancedMarkerElement: vi.fn().mockImplementation(() => ({})),
+        },
       },
     } as any;
 
@@ -110,7 +120,7 @@ describe('HouseholdView', () => {
 
     component['copyToClipboard']('555-555-5555', 'Phone');
     expect(clipboardMock.writeText).toHaveBeenCalledWith('555-555-5555');
-    
+
     // Allow promise resolve microtasks
     await new Promise((r) => setTimeout(r, 0));
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Phone copied to clipboard');
