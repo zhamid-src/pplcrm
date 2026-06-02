@@ -4,7 +4,6 @@ import { sql } from 'kysely';
 import { BaseController } from '../../lib/base.controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
   constructor() {
@@ -41,8 +40,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     if (!newsletter) {
       throw new NotFoundError('Newsletter not found');
     }
-    if (newsletter.status === 'sent') {
-      throw new BadRequestError('Newsletter has already been sent');
+    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
     }
 
     let includeListIds: string[] = [];
@@ -153,6 +152,10 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const persons = await query.execute();
     const recipients = Array.from(new Set(persons.map((p) => p.email?.trim()).filter(Boolean))) as string[];
 
+    if (recipients.length === 0) {
+      throw new BadRequestError('No recipients found for the selected lists or tags');
+    }
+
     const settingsRows = await db.selectFrom('settings')
       .select(['key', 'value'])
       .where('tenant_id', '=', tenant_id as any)
@@ -176,42 +179,41 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
     const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
 
-    const newsletterMailSvc = new NewsletterEmailService();
-    const deliveredCount = await newsletterMailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      recipients,
-      subject: newsletter.subject || 'Newsletter',
-      html: newsletter.html_content || '',
-      text: newsletter.plain_text_content || undefined,
-      sendgridApiKey,
-      subuserUsername,
-      newsletterId: id,
-      tenantId: tenant_id,
-    });
-
     const updated = await this.update({
       tenant_id,
       id,
       row: {
-        status: 'sent',
+        status: 'queuing',
         total_recipients: recipients.length,
-        delivered_count: deliveredCount,
-        send_date: new Date(),
         updatedby_id: userId,
         updated_at: new Date(),
       },
     });
 
-    await this.userActivity.log({
-      tenant_id,
-      user_id: userId,
-      activity: 'send',
-      entity: 'newsletters',
-      entity_id: id,
-      quantity: recipients.length,
-      metadata: { recipientsCount: recipients.length, deliveredCount },
-    });
+    await db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenant_id,
+          userId: userId,
+          recipients,
+          offset: 0,
+          deliveredCount: 0,
+          fromName,
+          fromEmail,
+          subject: newsletter.subject || 'Newsletter',
+          html: newsletter.html_content || '',
+          text: newsletter.plain_text_content || undefined,
+          sendgridApiKey,
+          subuserUsername,
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
 
     return updated;
   }
