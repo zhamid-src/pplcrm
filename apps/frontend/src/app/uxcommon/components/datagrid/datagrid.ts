@@ -1,6 +1,20 @@
 //tsco: ignore
 
-import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { getAllOptionsType } from '@common';
@@ -151,6 +165,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected columnMinWidthPx(colId: string | null | undefined): number {
     if (!colId) return 40;
+    const colDef = this.getColDefById(colId);
+    const configuredMin = colDef?.minWidth;
+    if (typeof configuredMin === 'number' && configuredMin > 0) {
+      return configuredMin;
+    }
     const minMap = this.headerMinWidths();
     const measured = minMap[colId];
     if (typeof measured === 'number' && measured > 0) {
@@ -176,8 +195,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
-  protected readonly isEmptyState = computed(() =>
-    this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0,
+  protected readonly isEmptyState = computed(
+    () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0,
   );
   /** True when the grid has data but active filters reduced the visible count to zero */
   protected readonly isFilteredEmpty = computed(() => {
@@ -388,22 +407,38 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // showTagFilter / showIssueFilter must stay here — they depend on the colDefs input signal
   public readonly showTagFilter = computed(() => {
     const defs = this.colDefs();
-    return defs.some(col => col.field === 'tags' || col.tagColumn === true);
+    return defs.some((col) => col.field === 'tags' || col.tagColumn === true);
   });
 
   public readonly showIssueFilter = computed(() => {
     const defs = this.colDefs();
-    return defs.some(col => col.field === 'issues' || col.field === 'issue');
+    return defs.some((col) => col.field === 'issues' || col.field === 'issue');
   });
 
-  public toggleTagFilter(tag: string, checked: boolean) { this.tagFilter.toggleTagFilter(tag, checked); }
-  public clearTagsFilter() { this.tagFilter.clearTagsFilter(); }
-  public selectAllTags() { this.tagFilter.selectAllTags(); }
-  public clearAllTagsVisible() { this.tagFilter.clearAllTagsVisible(); }
-  public toggleIssueFilter(issue: string, checked: boolean) { this.tagFilter.toggleIssueFilter(issue, checked); }
-  public clearIssuesFilter() { this.tagFilter.clearIssuesFilter(); }
-  public selectAllIssues() { this.tagFilter.selectAllIssues(); }
-  public clearAllIssuesVisible() { this.tagFilter.clearAllIssuesVisible(); }
+  public toggleTagFilter(tag: string, checked: boolean) {
+    this.tagFilter.toggleTagFilter(tag, checked);
+  }
+  public clearTagsFilter() {
+    this.tagFilter.clearTagsFilter();
+  }
+  public selectAllTags() {
+    this.tagFilter.selectAllTags();
+  }
+  public clearAllTagsVisible() {
+    this.tagFilter.clearAllTagsVisible();
+  }
+  public toggleIssueFilter(issue: string, checked: boolean) {
+    this.tagFilter.toggleIssueFilter(issue, checked);
+  }
+  public clearIssuesFilter() {
+    this.tagFilter.clearIssuesFilter();
+  }
+  public selectAllIssues() {
+    this.tagFilter.selectAllIssues();
+  }
+  public clearAllIssuesVisible() {
+    this.tagFilter.clearAllIssuesVisible();
+  }
 
   // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
   private readonly advFilter = new GridAdvancedFilterService();
@@ -414,13 +449,30 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly advRules = this.advFilter.advRules;
   public readonly hasActiveAdvancedFilters = this.advFilter.hasActiveAdvancedFilters;
 
-  public openAdvancedFilterBuilder() { this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit); }
-  public switchToAdvancedFilter() { this.advFilter.switchToAdvancedFilter(() => this.showFilterPanel.set(false), () => this.colDefsWithEdit); }
-  public addAdvRule() { this.advFilter.addRule(() => this.colDefsWithEdit); }
-  public removeAdvRule(id: string) { this.advFilter.removeRule(id); }
-  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) { this.advFilter.updateRule(id, updates); }
-  public applyAdvancedFilter() { this.advFilter.apply(() => this.doRefresh()); }
-  public clearAdvancedFilter() { this.advFilter.clear(() => this.doRefresh()); }
+  public openAdvancedFilterBuilder() {
+    this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit);
+  }
+  public switchToAdvancedFilter() {
+    this.advFilter.switchToAdvancedFilter(
+      () => this.showFilterPanel.set(false),
+      () => this.colDefsWithEdit,
+    );
+  }
+  public addAdvRule() {
+    this.advFilter.addRule(() => this.colDefsWithEdit);
+  }
+  public removeAdvRule(id: string) {
+    this.advFilter.removeRule(id);
+  }
+  public updateAdvRule(id: string, updates: Partial<{ field: string; op: string; value: string }>) {
+    this.advFilter.updateRule(id, updates);
+  }
+  public applyAdvancedFilter() {
+    this.advFilter.apply(() => this.doRefresh());
+  }
+  public clearAdvancedFilter() {
+    this.advFilter.clear(() => this.doRefresh());
+  }
 
   private _squelch = false;
   private _initialized = false;
@@ -437,10 +489,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
 
     // Mark that a load has started — prevents empty-state flash before first fetch
-    effect(() => { if (this.isLoading()) this.hasInitiatedLoad.set(true); });
+    effect(() => {
+      if (this.isLoading()) this.hasInitiatedLoad.set(true);
+    });
 
     // Clear the tag search box whenever a different cell enters edit mode
-    effect(() => { this.editingCell(); this.tagSearch.set(''); });
+    effect(() => {
+      this.editingCell();
+      this.tagSearch.set('');
+    });
 
     // Prevents being stuck on an out-of-range page after filters change.
     effect(() => {
@@ -1057,7 +1114,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
     } catch {
       applyTags(previous);
-      const errorMsg = col.cellRendererParams?.tagType === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
+      const errorMsg =
+        col.cellRendererParams?.tagType === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
       this.alertSvc.showError(errorMsg);
     }
   }
@@ -1663,8 +1721,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           ? {
               conjunction: this.advConjunction(),
               rules: this.advRules()
-                .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
-                .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
+                .filter(
+                  (r) =>
+                    r.field &&
+                    (r.op === 'isEmpty' ||
+                      r.op === 'isNotEmpty' ||
+                      (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
+                )
+                .map((r) => ({
+                  field: r.field,
+                  op: r.op,
+                  value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
+                })),
             }
           : undefined,
         gridSvc: this.gridSvc,
@@ -2007,8 +2075,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         ? {
             conjunction: this.advConjunction(),
             rules: this.advRules()
-              .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
-              .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
+              .filter(
+                (r) =>
+                  r.field &&
+                  (r.op === 'isEmpty' ||
+                    r.op === 'isNotEmpty' ||
+                    (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
+              )
+              .map((r) => ({
+                field: r.field,
+                op: r.op,
+                value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
+              })),
           }
         : undefined,
       gridSvc: this.gridSvc,
@@ -2050,8 +2128,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         ? {
             conjunction: this.advConjunction(),
             rules: this.advRules()
-              .filter(r => r.field && (r.op === 'isEmpty' || r.op === 'isNotEmpty' || (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')))
-              .map(r => ({ field: r.field, op: r.op, value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value })),
+              .filter(
+                (r) =>
+                  r.field &&
+                  (r.op === 'isEmpty' ||
+                    r.op === 'isNotEmpty' ||
+                    (r.value !== undefined && r.value !== null && String(r.value).trim() !== '')),
+              )
+              .map((r) => ({
+                field: r.field,
+                op: r.op,
+                value: r.op === 'isEmpty' || r.op === 'isNotEmpty' ? '' : r.value,
+              })),
           }
         : undefined,
     });
@@ -2093,9 +2181,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Update visible rows array
     this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
     // Trigger green flash on the updated row
-    this.flashedRowIds.update((s) => { const n = new Set(s); n.add(id); return n; });
+    this.flashedRowIds.update((s) => {
+      const n = new Set(s);
+      n.add(id);
+      return n;
+    });
     setTimeout(() => {
-      this.flashedRowIds.update((s) => { const n = new Set(s); n.delete(id); return n; });
+      this.flashedRowIds.update((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
     }, 1300);
   }
 

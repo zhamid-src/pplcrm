@@ -30,6 +30,7 @@ const envSchema = z.object({
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
   SENDGRID_API_KEY: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -63,5 +64,5 @@ export const env = {
   postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
 };
-

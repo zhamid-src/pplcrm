@@ -5,6 +5,7 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { isBlankAddress } from '../../../lib/address-normalize';
 
 /**
  * Repository for the `households` table.
@@ -17,6 +18,38 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    */
   constructor() {
     super('households');
+  }
+
+  public override async addMany(
+    input: { rows: OperationDataType<'households', 'insert'>[] },
+    trx?: Transaction<Models>,
+  ) {
+    const createdRows = await super.addMany(input, trx);
+    const db = trx || this.db;
+
+    const jobs = createdRows
+      .filter((row) => row && row.id && !isBlankAddress(row))
+      .map((row) => ({
+        tenant_id: row.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'geocode_household',
+          household_id: String(row.id),
+          tenant_id: row.tenant_id,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      }));
+
+    if (jobs.length > 0) {
+      await db
+        .insertInto('background_jobs' as any)
+        .values(jobs)
+        .execute();
+    }
+
+    return createdRows;
   }
 
   public async getIdsByFileId(
@@ -33,11 +66,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       query = query.where((eb) =>
         eb.not(
           eb.exists(
-            eb
-              .selectFrom('persons')
-              .select('id')
-              .whereRef('persons.household_id', '=', 'households.id')
-              .limit(1),
+            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
           ),
         ),
       );
@@ -66,10 +95,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    * no address-related fields or home_phone set (all null) and no file/notes/json.
    * Returns the first match or undefined.
    */
-  public async getBlankHousehold(
-    input: { tenant_id: string; campaign_id: string },
-    trx?: Transaction<Models>,
-  ) {
+  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .where('tenant_id', '=', input.tenant_id)
       .where('campaign_id', '=', input.campaign_id)
@@ -103,11 +129,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .where('campaign_id', '=', input.campaign_id);
 
     if (input.fp_full) {
-      const full = await sel
-        .where('address_fp_full', '=', input.fp_full)
-        .selectAll()
-        .limit(1)
-        .executeTakeFirst();
+      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
       if (full) return full;
     }
     if (input.fp_street) {
@@ -224,6 +246,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.street2',
         'households.street_num',
         'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
       ])
       .select((eb) => [
         eb
@@ -241,8 +267,12 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .as('is_placeholder'),
       ])
       .select(() => [
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as('tags'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
       ])
       .groupBy([
         'households.id',
@@ -256,6 +286,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.street2',
         'households.street_num',
         'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
         'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
@@ -343,16 +377,15 @@ export class HouseholdRepo extends BaseRepository<'households'> {
    * Find potential duplicates within the tenant (sharing identical full address fingerprint).
    */
   public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
-    const tenantRow = await (BaseRepository as any)['_db'].selectFrom('tenants')
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
       .select('placeholder_household_id')
       .where('id', '=', tenant_id)
       .executeTakeFirst();
     const placeholderHhId = tenantRow?.placeholder_household_id;
 
     const duplicateAddresses = await this.getSelect()
-      .select([
-        'address_fp_full',
-      ])
+      .select(['address_fp_full'])
       .select((eb) => [
         eb.fn.count('households.id').as('match_count'),
         eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
@@ -403,7 +436,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     }
 
     // Now fetch all persons belonging to these duplicate household IDs
-    const persons = await (BaseRepository as any)['_db'].selectFrom('persons')
+    const persons = await (BaseRepository as any)['_db']
+      .selectFrom('persons')
       .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
       .where('tenant_id', '=', tenant_id)
       .where('household_id', 'in', Array.from(hhIds))
@@ -420,20 +454,24 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     const groups: Array<{ reason: string; households: any[] }> = [];
     for (const group of duplicateAddresses) {
-      const groupHouseholds = group.ids.map((id) => {
-        const hh = hhMap.get(id);
-        if (hh) {
-          return {
-            ...hh,
-            persons: hhToPersons.get(id) || [],
-          };
-        }
-        return null;
-      }).filter(Boolean);
+      const groupHouseholds = group.ids
+        .map((id) => {
+          const hh = hhMap.get(id);
+          if (hh) {
+            return {
+              ...hh,
+              persons: hhToPersons.get(id) || [],
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
 
       if (groupHouseholds.length > 1) {
         const first = groupHouseholds[0];
-        const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip].filter(Boolean).join(' ');
+        const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip]
+          .filter(Boolean)
+          .join(' ');
         groups.push({
           reason: `Matching Address: "${addrStr}"`,
           households: groupHouseholds,
@@ -446,12 +484,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   /**
    * Merges a source household record into a target household record in a transaction.
    */
-  public async mergeHouseholds(input: {
-    tenant_id: string;
-    target_id: string;
-    source_id: string;
-    user_id: string;
-  }) {
+  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
       const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
@@ -479,7 +512,11 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       for (const field of fields) {
         const targetVal = target[field];
         const sourceVal = source[field];
-        if ((targetVal == null || String(targetVal).trim() === '') && (sourceVal != null && String(sourceVal).trim() !== '')) {
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
           targetUpdate[field] = sourceVal;
         }
       }
@@ -491,14 +528,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       }
 
       // 2. Transfer tags (map_households_tags)
-      const targetTags = await trx.selectFrom('map_households_tags')
+      const targetTags = await trx
+        .selectFrom('map_households_tags')
         .select('tag_id')
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.target_id)
         .execute();
       const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
 
-      const sourceTags = await trx.selectFrom('map_households_tags')
+      const sourceTags = await trx
+        .selectFrom('map_households_tags')
         .select(['id', 'tag_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
@@ -507,7 +546,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       for (const st of sourceTags) {
         const tagIdStr = String(st.tag_id);
         if (!targetTagIds.has(tagIdStr)) {
-          await trx.insertInto('map_households_tags')
+          await trx
+            .insertInto('map_households_tags')
             .values({
               tenant_id: input.tenant_id,
               household_id: input.target_id,
@@ -518,20 +558,23 @@ export class HouseholdRepo extends BaseRepository<'households'> {
             .execute();
         }
       }
-      await trx.deleteFrom('map_households_tags')
+      await trx
+        .deleteFrom('map_households_tags')
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
         .execute();
 
       // 3. Transfer lists (map_lists_households)
-      const targetLists = await trx.selectFrom('map_lists_households')
+      const targetLists = await trx
+        .selectFrom('map_lists_households')
         .select('list_id')
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.target_id)
         .execute();
       const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
 
-      const sourceLists = await trx.selectFrom('map_lists_households')
+      const sourceLists = await trx
+        .selectFrom('map_lists_households')
         .select(['list_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
@@ -539,7 +582,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
       for (const sl of sourceLists) {
         if (!targetListIds.has(String(sl.list_id))) {
-          await trx.insertInto('map_lists_households')
+          await trx
+            .insertInto('map_lists_households')
             .values({
               tenant_id: input.tenant_id,
               household_id: input.target_id,
@@ -550,13 +594,15 @@ export class HouseholdRepo extends BaseRepository<'households'> {
             .execute();
         }
       }
-      await trx.deleteFrom('map_lists_households')
+      await trx
+        .deleteFrom('map_lists_households')
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
         .execute();
 
       // 4. Reassign people (persons.household_id)
-      await trx.updateTable('persons')
+      await trx
+        .updateTable('persons')
         .set({ household_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
