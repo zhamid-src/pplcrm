@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
+import { Component, OnInit, signal, inject, computed } from '@angular/core';
 import { FormField, form, required, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -10,12 +10,14 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TRPCClientError } from '@trpc/client';
+import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
+import { VolunteerEventsFrontendService } from '../../volunteer/services/volunteer-events-frontend-service';
 
 @Component({
   selector: 'pc-workflow-detail',
-  imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe],
+  imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe, VisualNewsletterEditorComponent],
   templateUrl: './workflow-detail.html',
-  providers: [WorkflowsService],
+  providers: [WorkflowsService, VolunteerEventsFrontendService],
 })
 export class WorkflowDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
@@ -23,30 +25,52 @@ export class WorkflowDetailComponent implements OnInit {
   private readonly workflowsSvc = inject(WorkflowsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly alertSvc = inject(AlertService);
+  private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
 
   protected readonly isNew = signal(true);
   protected readonly workflowId = signal<string | null>(null);
-  protected readonly activeTab = signal<'settings' | 'steps' | 'enrollments' | 'activity'>('settings');
+  protected readonly activeTab = signal<'steps' | 'enrollments' | 'activity'>('steps');
+
+  // Trigger state and visual designer nodes selection
+  protected readonly triggerSelected = signal(false);
+  protected readonly selectedNodeType = signal<'trigger' | 'step' | 'settings'>('settings');
+  protected readonly selectedNodeIndex = signal<number | null>(null);
+
+  // Modal visual email designer state
+  protected readonly editingEmailStepIndex = signal<number | null>(null);
+
+  // Loaded volunteer events list
+  protected readonly volunteerEvents = signal<any[]>([]);
 
   // Backing payload signal for workflow settings form
   protected readonly payload = signal<{
     name: string;
     description: string;
     trigger_type: 'volunteer_signup' | 'manual';
+    trigger_event_id: string;
     status: 'active' | 'draft' | 'paused';
   }>({
     name: '',
     description: '',
     trigger_type: 'manual',
+    trigger_event_id: '',
     status: 'draft',
   });
 
   // Signal-based form
   protected readonly form = form(this.payload, (p) => {
     required(p.name);
+  });
+
+  // Computed signal to resolve the name of the selected event
+  protected readonly selectedEventName = computed(() => {
+    const eventId = this.payload().trigger_event_id;
+    if (!eventId || this.payload().trigger_type !== 'volunteer_signup') return null;
+    const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
+    return event ? event.name : 'Unknown Event';
   });
 
   // Steps signal
@@ -61,30 +85,67 @@ export class WorkflowDetailComponent implements OnInit {
 
   public ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
+    void this.loadVolunteerEvents();
     if (id && id !== 'add') {
       this.isNew.set(false);
       this.workflowId.set(id);
+      this.triggerSelected.set(true);
+      this.activeTab.set('steps');
       void this.loadWorkflowDetails();
       void this.loadSteps();
       void this.loadEnrollments();
     } else {
       this.isNew.set(true);
-      // Initialize with one default step for convenience
-      this.steps.set([
-        {
-          delay_days: 1,
-          subject: 'Welcome to our organization!',
-          preview_text: 'Thank you for signing up',
-          html_content: '<p>Hi there,</p><p>We are thrilled to have you! We will reach out shortly.</p>',
-          plain_text_content: 'Hi there,\n\nWe are thrilled to have you! We will reach out shortly.',
-        },
-      ]);
+      this.triggerSelected.set(false);
+    }
+  }
+
+  private async loadVolunteerEvents(): Promise<void> {
+    try {
+      const res = await this.volunteerEventsSvc.getAll({ limit: 1000 });
+      this.volunteerEvents.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteer events', err);
     }
   }
 
   // --- TAB MANAGEMENT ---
-  protected selectTab(tab: 'settings' | 'steps' | 'enrollments' | 'activity'): void {
+  protected selectTab(tab: 'steps' | 'enrollments' | 'activity'): void {
     this.activeTab.set(tab);
+    if (tab !== 'steps') {
+      this.selectedNodeType.set('settings');
+      this.selectedNodeIndex.set(null);
+    }
+  }
+
+  // --- TRIGGER SELECTION ---
+  protected selectTrigger(type: 'volunteer_signup' | 'manual'): void {
+    this.payload.update((p) => ({
+      ...p,
+      trigger_type: type,
+      trigger_event_id: '',
+      name: type === 'volunteer_signup' ? 'Volunteer Signup Welcome Onboarding' : 'Constituent Re-engagement Campaign',
+      description:
+        type === 'volunteer_signup'
+          ? 'Automated welcoming sequence sent to volunteer signups.'
+          : 'Custom multi-step communication sequence.',
+    }));
+
+    // Initialize with 1 default step
+    this.steps.set([
+      {
+        step_number: 1,
+        delay_days: 1,
+        delay_unit: 'days',
+        subject: type === 'volunteer_signup' ? 'Welcome to our organization!' : 'Hello from the team!',
+        preview_text: 'Thank you for connecting with us',
+        html_content: '<p>Hi there,</p><p>We are thrilled to have you! We will reach out shortly.</p>',
+        plain_text_content: 'Hi there,\n\nWe are thrilled to have you! We will reach out shortly.',
+      },
+    ]);
+
+    this.triggerSelected.set(true);
+    this.selectedNodeType.set('settings');
   }
 
   // --- LOAD DATA ---
@@ -99,6 +160,7 @@ export class WorkflowDetailComponent implements OnInit {
           name: record.name || '',
           description: record.description || '',
           trigger_type: record.trigger_type || 'manual',
+          trigger_event_id: record.trigger_event_id || '',
           status: record.status || 'draft',
         });
       }
@@ -132,7 +194,7 @@ export class WorkflowDetailComponent implements OnInit {
     }
   }
 
-  // --- SAVE WORKFLOW SETTINGS ---
+  // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
   protected async saveSettings(event?: Event): Promise<void> {
     if (event instanceof Event) {
       event.preventDefault();
@@ -148,7 +210,11 @@ export class WorkflowDetailComponent implements OnInit {
       action: async () => {
         const end = this._loading.begin();
         try {
-          const data = this.payload();
+          const raw = this.payload();
+          const data = {
+            ...raw,
+            trigger_event_id: raw.trigger_event_id && raw.trigger_event_id !== '' ? raw.trigger_event_id : null,
+          };
           if (this.isNew()) {
             // 1. Create Workflow Settings
             const result = await this.workflowsSvc.add(data);
@@ -169,7 +235,7 @@ export class WorkflowDetailComponent implements OnInit {
               // Save steps
               await this.workflowsSvc.saveSteps(id, this.steps());
             }
-            
+
             this.alertSvc.showSuccess('Workflow saved successfully!');
             void this.loadWorkflowDetails();
             void this.loadSteps();
@@ -189,20 +255,33 @@ export class WorkflowDetailComponent implements OnInit {
   }
 
   // --- STEP DESIGNER ACTIONS ---
+  protected addStepAt(index: number): void {
+    const current = [...this.steps()];
+    const newStep = {
+      step_number: index + 1,
+      delay_days: index === 0 ? 1 : 2,
+      delay_unit: 'days',
+      subject: 'Follow-up message',
+      preview_text: '',
+      html_content: '<p>Hi there,</p><p>We wanted to touch base again...</p>',
+      plain_text_content: 'Hi there,\n\nWe wanted to touch base again...',
+    };
+    current.splice(index, 0, newStep);
+
+    // Reorder/Re-index step numbers
+    const updated = current.map((step, idx) => ({
+      ...step,
+      step_number: idx + 1,
+    }));
+    this.steps.set(updated);
+
+    // Auto-select new step properties in sidebar
+    this.selectedNodeType.set('step');
+    this.selectedNodeIndex.set(index);
+  }
+
   protected addStep(): void {
-    const current = this.steps();
-    const nextStepNum = current.length + 1;
-    this.steps.set([
-      ...current,
-      {
-        step_number: nextStepNum,
-        delay_days: 2,
-        subject: 'Follow-up message',
-        preview_text: '',
-        html_content: '<p>Hi there,</p><p>We wanted to touch base again...</p>',
-        plain_text_content: 'Hi there,\n\nWe wanted to touch base again...',
-      },
-    ]);
+    this.addStepAt(this.steps().length);
   }
 
   protected removeStep(index: number): void {
@@ -214,6 +293,60 @@ export class WorkflowDetailComponent implements OnInit {
         step_number: idx + 1,
       }));
     this.steps.set(updated);
+
+    // Clear selection if deleted step was selected
+    if (this.selectedNodeIndex() === index) {
+      this.selectedNodeType.set('settings');
+      this.selectedNodeIndex.set(null);
+    } else {
+      const selectedIndex = this.selectedNodeIndex();
+      if (selectedIndex !== null && selectedIndex > index) {
+        this.selectedNodeIndex.set(selectedIndex - 1);
+      }
+    }
+  }
+
+  // --- EMAIL DESIGNER MODAL METHODS ---
+  protected openEmailDesigner(idx: number): void {
+    this.editingEmailStepIndex.set(idx);
+  }
+
+  protected closeEmailDesigner(): void {
+    this.editingEmailStepIndex.set(null);
+  }
+
+  protected getEditingHtml(): string {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return '';
+    return this.steps()[idx]?.html_content || '';
+  }
+
+  protected getEditingText(): string {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return '';
+    return this.steps()[idx]?.plain_text_content || '';
+  }
+
+  protected onStepHtmlChange(html: string): void {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return;
+    const current = [...this.steps()];
+    current[idx] = {
+      ...current[idx],
+      html_content: html,
+    };
+    this.steps.set(current);
+  }
+
+  protected onStepTextChange(text: string): void {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return;
+    const current = [...this.steps()];
+    current[idx] = {
+      ...current[idx],
+      plain_text_content: text,
+    };
+    this.steps.set(current);
   }
 
   // --- MANUAL ENROLLMENT METHODS ---
@@ -225,7 +358,6 @@ export class WorkflowDetailComponent implements OnInit {
     }
     this.searchingContacts.set(true);
     try {
-      // Use the generic persons service search tRPC call
       const res = await this.personsSvc.getAll({ searchStr: query, limit: 10 });
       this.searchResults.set(res?.rows || []);
     } catch (err) {

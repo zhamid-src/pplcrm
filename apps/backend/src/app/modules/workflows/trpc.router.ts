@@ -58,6 +58,7 @@ export const WorkflowsRouter = router({
         steps: z.array(
           z.object({
             delay_days: z.number().int().nonnegative(),
+            delay_unit: z.enum(['days', 'hours']).default('days'),
             subject: z.string(),
             preview_text: z.string().nullable().optional(),
             html_content: z.string().nullable().optional(),

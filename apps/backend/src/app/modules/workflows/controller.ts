@@ -65,11 +65,12 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
           workflow_id: workflowId,
           step_number: idx + 1,
           delay_days: Number(step.delay_days || 0),
+          delay_unit: step.delay_unit || 'days',
           subject: step.subject || 'Follow-up Email',
           preview_text: step.preview_text || null,
           html_content: step.html_content || null,
           plain_text_content: step.plain_text_content || null,
-        } as OperationDataType<'workflow_steps', 'insert'>));
+        } as any));
 
         await trx.insertInto('workflow_steps').values(insertRows).execute();
       }
@@ -155,7 +156,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       // 4. Find the first step of this workflow
       const firstStep = await trx
         .selectFrom('workflow_steps')
-        .select(['step_number', 'delay_days'])
+        .select(['step_number', 'delay_days', 'delay_unit'])
         .where('tenant_id', '=', tenantId as any)
         .where('workflow_id', '=', workflowId as any)
         .orderBy('step_number', 'asc')
@@ -169,7 +170,10 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       }
 
       // 5. Calculate next run at based on step delay
-      const nextRunAt = new Date(Date.now() + firstStep.delay_days * 24 * 60 * 60 * 1000);
+      const delayMs = firstStep.delay_unit === 'hours'
+        ? firstStep.delay_days * 60 * 60 * 1000
+        : firstStep.delay_days * 24 * 60 * 60 * 1000;
+      const nextRunAt = new Date(Date.now() + delayMs);
 
       // 6. Insert enrollment
       const insertRow = {
@@ -278,15 +282,32 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
   /**
    * Automatic trigger hook: Enrolls a constituent into active workflows triggered by volunteer signups.
    */
-  public async triggerVolunteerSignup(tenantId: string, personId: string, trx: Transaction<Models>) {
+  public async triggerVolunteerSignup(
+    tenantId: string,
+    personId: string,
+    eventId: string | null | undefined,
+    trx: Transaction<Models>,
+  ) {
     // 1. Find all active workflows with volunteer_signup trigger
-    const activeWorkflows = await trx
+    let query = trx
       .selectFrom('workflows')
       .select(['id', 'name'])
       .where('tenant_id', '=', tenantId as any)
       .where('trigger_type', '=', 'volunteer_signup')
-      .where('status', '=', 'active')
-      .execute();
+      .where('status', '=', 'active');
+
+    if (eventId) {
+      query = query.where((eb) =>
+        eb.or([
+          eb('trigger_event_id', 'is', null),
+          eb('trigger_event_id', '=', eventId as any),
+        ])
+      );
+    } else {
+      query = query.where('trigger_event_id', 'is', null);
+    }
+
+    const activeWorkflows = await query.execute();
 
     if (activeWorkflows.length === 0) return;
 

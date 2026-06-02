@@ -647,6 +647,7 @@ export interface Workflows extends RecordType {
   description: string | null;
   trigger_type: string;
   status: string;
+  trigger_event_id: string | null;
 }
 
 export interface WorkflowSteps {
@@ -655,6 +656,7 @@ export interface WorkflowSteps {
   workflow_id: string;
   step_number: number;
   delay_days: number;
+  delay_unit: 'days' | 'hours';
   subject: string;
   preview_text: string | null;
   html_content: string | null;

@@ -6,6 +6,7 @@ export const WorkflowObj = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   trigger_type: z.enum(['volunteer_signup', 'manual']).default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft'),
   createdby_id: z.string(),
   updatedby_id: z.string(),
@@ -17,6 +18,7 @@ export const AddWorkflowObj = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().nullable().optional(),
   trigger_type: z.enum(['volunteer_signup', 'manual']).default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
 });
 
@@ -31,6 +33,7 @@ export const WorkflowStepObj = z.object({
   workflow_id: z.string(),
   step_number: z.number().int().positive(),
   delay_days: z.number().int().nonnegative(),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
   subject: z.string().min(1, 'Subject is required'),
   preview_text: z.string().nullable().optional(),
   html_content: z.string().nullable().optional(),
@@ -42,6 +45,7 @@ export const WorkflowStepObj = z.object({
 export const AddWorkflowStepObj = z.object({
   step_number: z.number().int().positive(),
   delay_days: z.number().int().nonnegative(),
+  delay_unit: z.enum(['days', 'hours']).default('days').optional(),
   subject: z.string().min(1, 'Subject is required'),
   preview_text: z.string().nullable().optional(),
   html_content: z.string().nullable().optional(),

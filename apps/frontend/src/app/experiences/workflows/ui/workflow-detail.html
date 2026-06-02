@@ -1,4 +1,4 @@
-<div class="flex flex-col gap-6 p-6 max-w-6xl mx-auto">
+<div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto h-full min-h-[calc(100vh-120px)]">
   <!-- Back navigation and title -->
   <div class="flex flex-col gap-2">
     <a routerLink="/workflows" class="btn btn-ghost btn-sm self-start gap-2">
@@ -7,48 +7,93 @@
     </a>
     <div class="flex justify-between items-center mt-2">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">{{ isNew() ? 'New Follow-up Workflow' : payload().name }}</h1>
+        <h1 class="text-2xl font-bold tracking-tight">
+          {{ isNew() && !triggerSelected() ? 'New Follow-up Workflow' : payload().name }}
+        </h1>
         <p class="text-sm text-base-content/60 mt-1">
-          {{ isNew() ? 'Configure a new drip campaign.' : 'Manage campaign steps and active participants.' }}
+          {{ isNew() && !triggerSelected() ? 'Choose a trigger event to start your drip campaign.' : 'Build sequences, manage settings, and view active enrollments.' }}
         </p>
       </div>
-      <button (click)="saveSettings($event)" class="btn btn-primary gap-2" [disabled]="isLoading()">
+      @if (triggerSelected()) {
+      <button (click)="saveSettings($event)" class="btn btn-primary gap-2 animate-fade-in" [disabled]="isLoading()">
         @if (isLoading()) {
         <span class="loading loading-spinner"></span>
         } @else {
         <pc-icon name="save"></pc-icon>
-        } Save Workflow
+        } Save Automation
       </button>
+      }
     </div>
   </div>
 
+  <!-- TRIGGER SELECTOR SCREEN FOR NEW WORKFLOWS -->
+  @if (isNew() && !triggerSelected()) {
+  <div class="flex flex-col gap-8 items-center justify-center py-12 max-w-3xl mx-auto">
+    <div class="text-center gap-2 flex flex-col">
+      <h2 class="text-2xl font-black tracking-tight text-base-content">Select a trigger event</h2>
+      <p class="text-sm text-base-content/60">Choose what action will automatically enroll constituents into this workflow sequence</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mt-4">
+      <!-- Trigger Card 1: Volunteer Event Signup -->
+      <div 
+        (click)="selectTrigger('volunteer_signup')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner">
+          <pc-icon name="volunteer" class="w-8 h-8"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">Volunteer Event Signup</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Runs automatically when a constituent signs up for any shift or event in the system. Ideal for welcome series, check-ins, and reminders.
+          </p>
+        </div>
+        <span class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg">Select Trigger</span>
+      </div>
+
+      <!-- Trigger Card 2: Manual Enrollment -->
+      <div 
+        (click)="selectTrigger('manual')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner">
+          <pc-icon name="user-plus" class="w-8 h-8"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">Manual Enrollment</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers only when you manually select a constituent to enroll. Perfect for targeted re-engagement, custom newsletters, or custom tracks.
+          </p>
+        </div>
+        <span class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg">Select Trigger</span>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ACTIVE WORKSPACE: DESIGNER, ENROLLMENTS, OR LOGS -->
+  @if (triggerSelected()) {
   <!-- Tabs Navigation -->
   @if (!isNew()) {
-  <div class="tabs tabs-box bg-base-200 p-1 rounded-2xl flex gap-2">
-    <button
-      (click)="selectTab('settings')"
-      class="tab flex-1 rounded-xl transition-all"
-      [class.tab-active]="activeTab() === 'settings'"
-    >
-      Settings
-    </button>
+  <div class="tabs tabs-box bg-base-200 p-1 rounded-2xl flex gap-2 w-fit">
     <button
       (click)="selectTab('steps')"
-      class="tab flex-1 rounded-xl transition-all"
+      class="tab rounded-xl transition-all font-semibold"
       [class.tab-active]="activeTab() === 'steps'"
     >
       Sequence Designer ({{ steps().length }})
     </button>
     <button
       (click)="selectTab('enrollments')"
-      class="tab flex-1 rounded-xl transition-all"
+      class="tab rounded-xl transition-all font-semibold"
       [class.tab-active]="activeTab() === 'enrollments'"
     >
       Enrolled Contacts ({{ enrollments().length }})
     </button>
     <button
       (click)="selectTab('activity')"
-      class="tab flex-1 rounded-xl transition-all"
+      class="tab rounded-xl transition-all font-semibold"
       [class.tab-active]="activeTab() === 'activity'"
     >
       Activity & Audit
@@ -56,190 +101,355 @@
   </div>
   }
 
-  <!-- TAB 1: SETTINGS -->
-  @if (isNew() || activeTab() === 'settings') {
-  <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl">
-    <div class="card-body gap-6">
-      <h2 class="card-title text-lg font-bold">Workflow Configuration</h2>
-
-      <form (submit)="saveSettings($event)" class="flex flex-col gap-4">
-        <!-- Name Input -->
-        <div class="form-control">
-          <label class="label label-text font-semibold">Workflow Name</label>
-          <input
-            type="text"
-            class="input input-bordered w-full"
-            placeholder="e.g. New Volunteer Welcome Series"
-            [formField]="form.name"
-          />
+  <!-- TAB 1: VISUAL SEQUENCE DESIGNER -->
+  @if (activeTab() === 'steps') {
+  <div class="flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-270px)] min-h-[600px] w-full">
+    <!-- Visual Canvas (Left/Center) -->
+    <div class="flex-1 bg-base-200/50 border border-base-350 rounded-2xl p-8 flex flex-col items-center h-full overflow-y-auto relative shadow-inner">
+      
+      <!-- Trigger Node -->
+      <div 
+        (click)="selectedNodeType.set('trigger'); selectedNodeIndex.set(null)"
+        class="card bg-base-100 border-2 shadow-md rounded-2xl p-5 w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+        [class.border-success]="selectedNodeType() === 'trigger'"
+        [class.border-base-200]="selectedNodeType() !== 'trigger'"
+      >
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner">
+            @if (payload().trigger_type === 'volunteer_signup') {
+              <pc-icon name="volunteer" class="w-5 h-5"></pc-icon>
+            } @else {
+              <pc-icon name="user-plus" class="w-5 h-5"></pc-icon>
+            }
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
+            <span class="text-sm font-bold text-base-content">
+              {{ payload().trigger_type === 'volunteer_signup' ? 'Volunteer Event Signup' : 'Manual Enrollment' }}
+            </span>
+            @if (payload().trigger_type === 'volunteer_signup') {
+            <span class="text-[10px] text-success font-semibold truncate max-w-[200px]" [title]="selectedEventName() || 'Any Event'">
+              Event: {{ selectedEventName() || 'Any Event' }}
+            </span>
+            }
+          </div>
         </div>
+      </div>
 
-        <!-- Description Input -->
-        <div class="form-control">
-          <label class="label label-text font-semibold">Description</label>
-          <textarea
-            class="textarea textarea-bordered w-full"
-            rows="3"
-            placeholder="Brief summary of what this drip campaign does..."
-            [formField]="form.description"
-          ></textarea>
+      <!-- Connector line + Add Button below trigger -->
+      <div class="flex flex-col items-center">
+        <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+        <div class="dropdown dropdown-bottom dropdown-center">
+          <div tabindex="0" role="button" class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm">
+            <pc-icon name="plus" class="w-3.5 h-3.5"></pc-icon>
+          </div>
+          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1">
+            <li>
+              <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
+                <pc-icon name="envelope" class="w-4 h-4 text-primary"></pc-icon>
+                Add Email Step
+              </a>
+            </li>
+          </ul>
         </div>
+        <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+      </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Trigger Type Selection -->
-          <div class="form-control">
-            <label class="label label-text font-semibold">Trigger Event</label>
-            <select class="select select-bordered w-full" [formField]="form.trigger_type">
-              <option value="manual">Manual Enrollment</option>
-              <option value="volunteer_signup">Volunteer Event Signup</option>
-            </select>
-            <p class="text-xs text-base-content/50 mt-1">
-              When trigger fires, constituents are automatically enrolled in this campaign.
+      <!-- Steps Flow List -->
+      @for (step of steps(); track $index) {
+        <div class="flex flex-col items-center w-full">
+          <!-- Delay Node (Hourglass/Clock) -->
+          <div 
+            (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+            class="bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-amber-100 hover:scale-[1.02] transition-all duration-150"
+            [class.ring-2]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+            [class.ring-amber-400]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+          >
+            <pc-icon name="clock"></pc-icon>
+            <span>Wait <strong>{{ step.delay_days }}</strong> {{ (step.delay_unit === 'hours' ? 'hour' : 'day') + (step.delay_days === 1 ? '' : 's') }}</span>
+          </div>
+
+          <!-- Vertical connector line -->
+          <div class="w-0.5 h-8 bg-base-content/15 border-dashed border-l-2"></div>
+
+          <!-- Email Action Node Card -->
+          <div 
+            (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+            class="card bg-base-100 border-2 shadow-md rounded-2xl w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+            [class.border-primary]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+            [class.border-base-200]="selectedNodeType() !== 'step' || selectedNodeIndex() !== $index"
+          >
+            <div class="card-body p-4 gap-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+                    <pc-icon name="envelope" class="w-4 h-4"></pc-icon>
+                  </div>
+                  <span class="text-[10px] font-black text-base-content/40 uppercase">Step {{ $index + 1 }}</span>
+                </div>
+                
+                <button (click)="removeStep($index); $event.stopPropagation()" class="btn btn-ghost btn-xs text-error p-1 hover:bg-transparent rounded-full" title="Remove Step">
+                  <pc-icon name="trash" class="w-4 h-4"></pc-icon>
+                </button>
+              </div>
+
+              <div class="flex flex-col gap-1 border-b border-base-100 pb-2">
+                <span class="text-[10px] font-bold text-base-content/40 uppercase">Email Subject</span>
+                <span class="text-xs font-semibold text-base-content truncate">{{ step.subject || '(No subject)' }}</span>
+              </div>
+
+              <div class="flex items-center justify-between pt-1">
+                <button (click)="openEmailDesigner($index); $event.stopPropagation()" class="btn btn-xs btn-outline btn-primary gap-1 px-3 rounded-lg shadow-sm">
+                  <pc-icon name="pencil-square" class="w-3 h-3"></pc-icon>
+                  Edit Email
+                </button>
+                <span class="text-[9px] text-base-content/40 font-medium italic">
+                  {{ step.html_content ? 'Visual Template' : 'Plain Text Only' }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connector line + Add Button below step -->
+          <div class="flex flex-col items-center">
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+            <div class="dropdown dropdown-bottom dropdown-center">
+              <div tabindex="0" role="button" class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm">
+                <pc-icon name="plus" class="w-3.5 h-3.5"></pc-icon>
+              </div>
+              <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1">
+                <li>
+                  <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
+                    <pc-icon name="envelope" class="w-4 h-4 text-primary"></pc-icon>
+                    Add Email Step
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+          </div>
+        </div>
+      }
+
+      <!-- Exit Node -->
+      <div 
+        (click)="selectedNodeType.set('settings'); selectedNodeIndex.set(null)"
+        class="bg-neutral text-neutral-content text-xs font-black px-6 py-3.5 rounded-2xl shadow-md uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:bg-neutral-focus hover:scale-[1.02] transition-all duration-150"
+      >
+        <pc-icon name="x-circle" class="w-4 h-4"></pc-icon>
+        <span>Exit Automation</span>
+      </div>
+    </div>
+
+    <!-- Properties Panel Sidebar (Right) -->
+    <aside class="w-full lg:w-96 shrink-0 border border-base-300 bg-base-100 p-6 flex flex-col gap-5 h-full rounded-2xl shadow-sm overflow-y-auto">
+      
+      <!-- Option A: Trigger Node Selected -->
+      @if (selectedNodeType() === 'trigger') {
+        <div class="flex flex-col gap-4">
+          <div class="flex justify-between items-center pb-2 border-b border-base-200">
+            <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Trigger</h3>
+            <button (click)="selectedNodeType.set('settings')" class="btn btn-ghost btn-xs text-primary font-bold">Automation Settings</button>
+          </div>
+          
+          <div class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5">
+            <div class="flex items-center gap-2 text-success">
+              <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
+                @if (payload().trigger_type === 'volunteer_signup') {
+                  <pc-icon name="volunteer" class="w-4 h-4"></pc-icon>
+                } @else {
+                  <pc-icon name="user-plus" class="w-4 h-4"></pc-icon>
+                }
+              </div>
+              <span class="font-black text-sm">
+                {{ payload().trigger_type === 'volunteer_signup' ? 'Volunteer Event Signup' : 'Manual Enrollment' }}
+              </span>
+            </div>
+            <p class="text-xs text-base-content/75 leading-relaxed">
+              {{ payload().trigger_type === 'volunteer_signup' 
+                 ? 'This trigger runs automatically whenever a contact registers for a volunteer event or shift.' 
+                 : 'This trigger only initiates manually. You can enroll constituents inside the "Enrolled Contacts" tab.' }}
             </p>
           </div>
 
-          <!-- Status Selection -->
           <div class="form-control">
-            <label class="label label-text font-semibold">Campaign Status</label>
-            <select class="select select-bordered w-full" [formField]="form.status">
-              <option value="draft">Draft (Inactive)</option>
-              <option value="active">Active (Processing)</option>
-              <option value="paused">Paused</option>
+            <label class="label label-text font-semibold text-xs py-1">Trigger Type</label>
+            <select class="select select-bordered select-sm w-full font-bold text-xs rounded-xl" [formField]="form.trigger_type">
+              <option value="manual">Manual Enrollment</option>
+              <option value="volunteer_signup">Volunteer Event Signup</option>
             </select>
-            <p class="text-xs text-base-content/50 mt-1">Only active campaigns will send scheduled emails.</p>
+            <p class="text-[10px] text-base-content/50 mt-1.5">Warning: Changing trigger type will modify how future subscribers enroll.</p>
           </div>
+
+          @if (payload().trigger_type === 'volunteer_signup') {
+          <div class="form-control mt-2">
+            <label class="label label-text font-semibold text-xs py-1">Volunteer Event</label>
+            <select
+              class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+              [formField]="form.trigger_event_id"
+            >
+              <option value="">-- Any Event --</option>
+              @for (event of volunteerEvents(); track event.id) {
+              <option [value]="event.id">{{ event.name }}</option>
+              }
+            </select>
+            <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+              Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer event signup.
+            </p>
+          </div>
+          }
         </div>
-      </form>
-    </div>
-  </div>
-  }
-
-  <!-- TAB 2: SEQUENCE DESIGNER -->
-  @if (!isNew() && activeTab() === 'steps') {
-  <div class="flex flex-col gap-6">
-    <div class="flex justify-between items-center">
-      <div>
-        <h2 class="text-lg font-bold">Email Sequence Timeline</h2>
-        <p class="text-sm text-base-content/50">Define steps in chronological order relative to previous step run.</p>
-      </div>
-      <button (click)="addStep()" class="btn btn-secondary btn-sm gap-2">
-        <pc-icon name="plus"></pc-icon>
-        Add Step
-      </button>
-    </div>
-
-    @if (steps().length === 0) {
-    <div class="alert alert-info rounded-2xl shadow-sm border-base-200">
-      <pc-icon name="information-circle" class="w-5 h-5 shrink-0"></pc-icon>
-      <div>
-        <h3 class="font-bold">No steps defined</h3>
-        <div class="text-xs">Add your first email step to create the automated sequence.</div>
-      </div>
-    </div>
-    }
-
-    <!-- Timeline steps list -->
-    <div class="flex flex-col gap-6">
-      @for (step of steps(); track $index) {
-      <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl relative overflow-visible">
-        <!-- Step Badge Index -->
-        <div
-          class="absolute -left-3 top-6 w-8 h-8 rounded-full bg-secondary text-secondary-content font-bold flex items-center justify-center shadow-md"
-        >
-          {{ $index + 1 }}
-        </div>
-
-        <div class="card-body pl-10 gap-4">
-          <!-- Step configuration header -->
-          <div class="flex justify-between items-start gap-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-sm font-semibold">Send</span>
-              <input
-                type="number"
-                class="input input-bordered input-sm w-20 text-center font-bold"
-                [(ngModel)]="step.delay_days"
-                min="0"
-              />
-              <span class="text-sm font-semibold">days after previous step execution</span>
+      } 
+      
+      <!-- Option B: Step Node Selected -->
+      @else if (selectedNodeType() === 'step' && selectedNodeIndex() !== null) {
+        @let idx = selectedNodeIndex()!;
+        @let step = steps()[idx];
+        @if (step) {
+          <div class="flex flex-col gap-4">
+            <div class="flex justify-between items-center pb-2 border-b border-base-200">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Step {{ idx + 1 }}</h3>
+              <button (click)="removeStep(idx)" class="btn btn-ghost btn-xs text-error gap-1 px-1.5 hover:bg-error/10 rounded">
+                <pc-icon name="trash" class="w-3.5 h-3.5"></pc-icon>
+                Delete Step
+              </button>
             </div>
-            <button (click)="removeStep($index)" class="btn btn-ghost btn-xs text-error gap-1">
-              <pc-icon name="trash"></pc-icon>
-              Remove Step
-            </button>
-          </div>
 
-          <!-- Subject & Preview -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="form-control">
-              <label class="label label-text font-semibold text-xs">Email Subject Line</label>
+              <label class="label label-text font-semibold text-xs py-1">Delay Duration</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  class="input input-bordered input-sm w-20 text-center font-bold rounded-xl"
+                  [(ngModel)]="step.delay_days"
+                  min="0"
+                />
+                <select
+                  class="select select-bordered select-sm font-bold text-xs rounded-xl"
+                  [(ngModel)]="step.delay_unit"
+                >
+                  <option value="days">day(s)</option>
+                  <option value="hours">hour(s)</option>
+                </select>
+                <span class="text-xs text-base-content/60 font-semibold">after previous step</span>
+              </div>
+              <p class="text-[10px] text-base-content/50 mt-1">Set to 0 to send instantly.</p>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Email Subject Line</label>
               <input
                 type="text"
-                class="input input-bordered input-sm w-full"
+                class="input input-bordered input-sm w-full font-semibold rounded-xl"
                 placeholder="e.g. Welcome aboard!"
                 [(ngModel)]="step.subject"
               />
             </div>
+
             <div class="form-control">
-              <label class="label label-text font-semibold text-xs">Preview Text / Snippet</label>
+              <label class="label label-text font-semibold text-xs py-1">Preview Text / Snippet</label>
               <input
                 type="text"
-                class="input input-bordered input-sm w-full"
+                class="input input-bordered input-sm w-full rounded-xl"
                 placeholder="Secondary subtitle in inbox preview..."
                 [(ngModel)]="step.preview_text"
               />
             </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Plain Text Fallback (Plain Text Only)</label>
+              <textarea
+                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+                rows="4"
+                placeholder="Fallback message without HTML formatting..."
+                [(ngModel)]="step.plain_text_content"
+              ></textarea>
+            </div>
+
+            <div class="border-t border-base-250 pt-4 flex flex-col gap-3">
+              <button (click)="openEmailDesigner(idx)" class="btn btn-primary w-full gap-2 shadow-sm rounded-xl">
+                <pc-icon name="pencil-square"></pc-icon>
+                Design Email Content
+              </button>
+              <div class="text-center">
+                <span class="text-[10px] text-base-content/40 italic font-semibold">Opens drag-and-drop block designer</span>
+              </div>
+            </div>
+          </div>
+        }
+      } 
+      
+      <!-- Option C: Workflow Settings (Default/Fallback) -->
+      @else {
+        <div class="flex flex-col gap-4">
+          <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50 pb-2 border-b border-base-200">
+            Workflow Settings
+          </h3>
+
+          <div class="form-control">
+            <label class="label label-text font-semibold text-xs py-1">Workflow Name</label>
+            <input
+              type="text"
+              class="input input-bordered input-sm w-full font-semibold rounded-xl"
+              placeholder="e.g. Volunteer Welcome Series"
+              [formField]="form.name"
+            />
           </div>
 
-          <!-- HTML Content Editor -->
           <div class="form-control">
-            <label class="label label-text font-semibold text-xs">HTML Email Content</label>
+            <label class="label label-text font-semibold text-xs py-1">Description</label>
             <textarea
-              class="textarea textarea-bordered font-mono text-xs w-full"
-              rows="6"
-              placeholder="<p>Hi there,</p><p>Welcome to our organization...</p>"
-              [(ngModel)]="step.html_content"
+              class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+              rows="4"
+              placeholder="Brief summary of what this drip campaign does..."
+              [formField]="form.description"
             ></textarea>
           </div>
 
-          <!-- Plain Text Fallback -->
           <div class="form-control">
-            <label class="label label-text font-semibold text-xs">Plain Text Fallback (No HTML)</label>
-            <textarea
-              class="textarea textarea-bordered text-xs w-full"
-              rows="3"
-              placeholder="Hi there,\n\nWelcome to our organization..."
-              [(ngModel)]="step.plain_text_content"
-            ></textarea>
+            <label class="label label-text font-semibold text-xs py-1">Campaign Status</label>
+            <select class="select select-bordered select-sm w-full font-bold text-xs rounded-xl" [formField]="form.status">
+              <option value="draft">Draft (Inactive)</option>
+              <option value="active">Active (Processing)</option>
+              <option value="paused">Paused</option>
+            </select>
+            <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+              Only active campaigns will parse background queues to send emails.
+            </p>
+          </div>
+
+          <div class="border-t border-base-200 pt-4 mt-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Sequence Overview</span>
+            <div class="flex items-center justify-between text-xs font-semibold mt-2 text-base-content/70">
+              <span>Total steps:</span>
+              <span class="font-mono font-black">{{ steps().length }}</span>
+            </div>
           </div>
         </div>
-      </div>
       }
-    </div>
-
-    <button (click)="saveSettings($event)" class="btn btn-primary self-end gap-2" [disabled]="isLoading()">
-      <pc-icon name="save"></pc-icon>
-      Save Sequence & Settings
-    </button>
+    </aside>
   </div>
   }
 
-  <!-- TAB 3: ENROLLED CONTACTS -->
+  <!-- TAB 2: ENROLLED CONTACTS ROSTER -->
   @if (!isNew() && activeTab() === 'enrollments') {
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full items-start">
+    
     <!-- Enrollment Search & Add (1/3 width) -->
-    <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl lg:col-span-1 h-fit">
-      <div class="card-body gap-4">
+    <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-1 h-fit">
+      <div class="card-body gap-4 p-5">
         <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
+        <p class="text-xs text-base-content/60">Search for a constituent to manually subscribe them to this sequence.</p>
 
-        <div class="join w-full">
+        <div class="join w-full mt-1">
           <input
             type="text"
-            class="input input-bordered join-item w-full"
+            class="input input-bordered join-item w-full text-xs rounded-l-xl"
             placeholder="Search by name or email..."
             [(ngModel)]="searchQuery"
             (keyup.enter)="searchContacts()"
           />
-          <button (click)="searchContacts()" class="btn btn-secondary join-item">
+          <button (click)="searchContacts()" class="btn btn-secondary join-item px-4 rounded-r-xl">
             @if (searchingContacts()) {
             <span class="loading loading-spinner"></span>
             } @else {
@@ -261,10 +471,10 @@
             </div>
             <button
               (click)="enrollSelected(contact.id)"
-              class="btn btn-xs btn-primary gap-1"
+              class="btn btn-xs btn-primary gap-1 px-3 rounded-lg shadow-sm"
               [disabled]="!contact.email"
             >
-              <pc-icon name="user-plus"></pc-icon>
+              <pc-icon name="user-plus" class="w-3.5 h-3.5"></pc-icon>
               Enroll
             </button>
           </div>
@@ -277,22 +487,23 @@
     </div>
 
     <!-- Enrollment list (2/3 width) -->
-    <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl lg:col-span-2">
-      <div class="card-body gap-4">
-        <h3 class="card-title text-base font-bold">Active Enrollments roster</h3>
+    <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-2">
+      <div class="card-body gap-4 p-5">
+        <h3 class="card-title text-base font-bold">Active Enrollments Roster</h3>
 
         @if (enrollments().length === 0) {
-        <div class="text-center p-8 border border-dashed border-base-300 rounded-xl">
-          <p class="text-sm text-base-content/50">No contacts have been enrolled in this sequence yet.</p>
+        <div class="text-center py-12 border-2 border-dashed border-base-300 rounded-xl bg-base-50">
+          <pc-icon name="user-group" class="w-8 h-8 mx-auto text-base-content/30 mb-2"></pc-icon>
+          <p class="text-sm font-semibold text-base-content/50">No contacts have been enrolled in this sequence yet.</p>
         </div>
         } @else {
-        <div class="overflow-x-auto w-full">
+        <div class="overflow-x-auto w-full mt-2">
           <table class="table table-zebra table-sm w-full">
             <thead>
               <tr>
                 <th>Contact Name</th>
                 <th>Email</th>
-                <th>Step #</th>
+                <th class="text-center">Step #</th>
                 <th>Status</th>
                 <th>Next Run At</th>
                 <th class="text-right">Actions</th>
@@ -301,16 +512,18 @@
             <tbody>
               @for (en of enrollments(); track en.id) {
               <tr>
-                <td class="font-semibold text-xs">
+                <td class="font-bold text-xs">
                   <a [routerLink]="['/people', en.person_id]" class="link link-primary">
                     {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
                   </a>
                 </td>
                 <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
-                <td class="text-xs font-mono font-bold">{{ en.current_step_number }}</td>
+                <td class="text-xs font-mono font-bold text-center">
+                  <span class="bg-base-250 px-2 py-0.5 rounded">{{ en.current_step_number }}</span>
+                </td>
                 <td>
                   <span
-                    class="badge badge-sm font-semibold"
+                    class="badge badge-sm font-semibold border-none"
                     [class.badge-success]="en.status === 'completed'"
                     [class.badge-info]="en.status === 'active'"
                     [class.badge-ghost]="en.status === 'cancelled'"
@@ -323,12 +536,12 @@
                 </td>
                 <td class="text-right">
                   @if (en.status === 'active') {
-                  <button (click)="cancelEnrollment(en.id)" class="btn btn-ghost btn-xs text-error gap-1">
-                    <pc-icon name="trash"></pc-icon>
+                  <button (click)="cancelEnrollment(en.id)" class="btn btn-ghost btn-xs text-error gap-1 hover:bg-error/10 px-2 rounded">
+                    <pc-icon name="trash" class="w-3.5 h-3.5"></pc-icon>
                     Cancel
                   </button>
                   } @else {
-                  <span class="text-[10px] text-base-content/40 italic">Inactive</span>
+                  <span class="text-[10px] text-base-content/40 italic font-semibold">Inactive</span>
                   }
                 </td>
               </tr>
@@ -342,17 +555,53 @@
   </div>
   }
 
-  <!-- TAB 4: ACTIVITY LOGS -->
+  <!-- TAB 3: ACTIVITY LOGS & AUDIT -->
   @if (!isNew() && activeTab() === 'activity') {
-  <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl">
-    <div class="card-body gap-4">
+  <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl w-full">
+    <div class="card-body gap-4 p-5">
       <h2 class="card-title text-lg font-bold">Activity Track & Audit Log</h2>
       <p class="text-xs text-base-content/50">
-        Full audit log of changes made to this workflow and auto-sending executions.
+        Full audit logs of manual triggers, edits, cancellations, and background system deliveries.
       </p>
 
-      <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+      <div class="mt-2 border-t border-base-200 pt-4">
+        <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+      </div>
     </div>
   </div>
   }
+  }
 </div>
+
+<!-- FULLSCREEN DIALOG: EMAIL TEMPLATE VISUAL DESIGNER -->
+@if (editingEmailStepIndex() !== null) {
+<div class="fixed inset-0 z-[150] flex flex-col bg-base-100 animate-fade-in">
+  <!-- Designer Header -->
+  <div class="flex justify-between items-center px-6 py-4 border-b border-base-300 bg-base-100 shadow-sm">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+        <pc-icon name="envelope" class="w-5 h-5"></pc-icon>
+      </div>
+      <div class="flex flex-col">
+        <h2 class="text-base font-black text-base-content">Visual Email Designer</h2>
+        <p class="text-xs text-base-content/50">Sequence Step {{ editingEmailStepIndex()! + 1 }} Email Template</p>
+      </div>
+    </div>
+    
+    <button (click)="closeEmailDesigner()" class="btn btn-primary btn-sm gap-2 px-5 rounded-xl shadow-md">
+      <pc-icon name="check-circle" class="w-4 h-4"></pc-icon>
+      Done Designing
+    </button>
+  </div>
+  
+  <!-- Visual Designer Frame -->
+  <div class="flex-1 overflow-hidden p-6 bg-base-200">
+    <pc-visual-newsletter-editor
+      [htmlContent]="getEditingHtml()"
+      [plainTextContent]="getEditingText()"
+      (htmlContentChange)="onStepHtmlChange($event)"
+      (plainTextContentChange)="onStepTextChange($event)"
+    ></pc-visual-newsletter-editor>
+  </div>
+</div>
+}
