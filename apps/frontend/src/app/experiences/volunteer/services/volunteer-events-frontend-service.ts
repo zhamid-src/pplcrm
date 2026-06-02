@@ -45,8 +45,8 @@ export class VolunteerEventsFrontendService extends AbstractAPIService<'voluntee
     return this.api.volunteer.getAll.query(options, { signal: this.ac.signal });
   }
 
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
+  public getAllArchived(options?: getAllOptionsType) {
+    return this.api.volunteer.getAll.query({ ...options, includeArchived: true }, { signal: this.ac.signal });
   }
 
   public getById(id: string) {
@@ -59,6 +59,10 @@ export class VolunteerEventsFrontendService extends AbstractAPIService<'voluntee
 
   public update(id: string, data: UpdateVolunteerEventType) {
     return this.api.volunteer.update.mutate({ id, data });
+  }
+
+  public checkSlugUnique(slug: string, excludeId?: string | null) {
+    return this.api.volunteer.checkSlugUnique.query({ slug, excludeId });
   }
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {

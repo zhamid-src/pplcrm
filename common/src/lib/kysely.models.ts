@@ -625,6 +625,8 @@ export interface VolunteerEvents extends RecordType {
   contact_email: string | null;
   contact_phone: string | null;
   is_private: boolean;
+  send_reminder: boolean;
+  slug: string;
 }
 
 export interface VolunteerShifts extends RecordType {

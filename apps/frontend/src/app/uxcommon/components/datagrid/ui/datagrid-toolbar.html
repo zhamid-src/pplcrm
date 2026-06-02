@@ -202,8 +202,8 @@
   </li>
 
   <pc-grid-action
-    icon="archive-box"
-    tip="See archived tasks"
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
     [hidden]="!grid.showArchiveIcon()"
     [active]="grid.archiveModeState()"
     (action)="onToggleArchive()"

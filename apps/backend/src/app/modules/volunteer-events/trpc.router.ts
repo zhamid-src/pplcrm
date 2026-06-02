@@ -26,6 +26,10 @@ export const VolunteerRouter = router({
     .input(AddVolunteerEventObj)
     .mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
 
+  checkSlugUnique: authProcedure
+    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
+    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
+
   update: authProcedure
     .input(z.object({ id: idSchema, data: UpdateVolunteerEventObj }))
     .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),

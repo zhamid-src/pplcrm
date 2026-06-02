@@ -411,7 +411,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
                     ${capacityBadge}
                     ${isFull 
                       ? `<button class="btn btn-disabled" disabled>Event Full</button>` 
-                      : `<a href="/api/events/view/${ev.id}" class="btn">View Details & Sign Up</a>`}
+                      : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`}
                   </div>
                 </div>
               </div>
@@ -618,9 +618,13 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
     }
   });
 
-  // Event detail & signup view
   fastify.get('/view/:eventId', async (req: any, reply) => {
     const { eventId } = req.params;
+
+    if (/^\d+$/.test(eventId)) {
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
 
     try {
       const event = await ctrl.getEventPublic(eventId);
@@ -632,6 +636,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       const slug = ctrl.getTenantSlug(String(event.tenant_id));
       const start = new Date(event.start_time);
       const end = new Date(event.end_time);
+      const hasPassed = end < new Date();
       
       const dateStr = start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
@@ -926,20 +931,25 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
         <div class="card">
           <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
 
-          ${isFull 
+          ${hasPassed
             ? `<div class="spots-alert spots-alert-warning">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
-                This shift is currently fully booked.
+                This event has passed and registration is closed.
                </div>`
-            : remainingSpots !== null && remainingSpots <= 5
-              ? `<div class="spots-alert spots-alert-info">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  Hurry! Only ${remainingSpots} spot(s) remaining.
+            : isFull 
+              ? `<div class="spots-alert spots-alert-warning">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+                  This shift is currently fully booked.
                  </div>`
-              : `<div class="spots-alert spots-alert-success">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  Spots are available. Sign up below!
-                 </div>`
+              : remainingSpots !== null && remainingSpots <= 5
+                ? `<div class="spots-alert spots-alert-info">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Hurry! Only ${remainingSpots} spot(s) remaining.
+                   </div>`
+                : `<div class="spots-alert spots-alert-success">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Spots are available. Sign up below!
+                   </div>`
           }
 
           <form action="/api/events/signup/${event.id}" method="POST">
@@ -948,30 +958,30 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 
             <div class="form-group">
               <label for="first_name">First Name</label>
-              <input type="text" id="first_name" name="first_name" placeholder="John" />
+              <input type="text" id="first_name" name="first_name" placeholder="John" ${hasPassed ? 'disabled' : ''} />
             </div>
 
             <div class="form-group">
               <label for="last_name">Last Name</label>
-              <input type="text" id="last_name" name="last_name" placeholder="Doe" />
+              <input type="text" id="last_name" name="last_name" placeholder="Doe" ${hasPassed ? 'disabled' : ''} />
             </div>
 
             <div class="form-group">
               <label for="email">Email Address *</label>
-              <input type="email" id="email" name="email" placeholder="john@example.com" required />
+              <input type="email" id="email" name="email" placeholder="john@example.com" required ${hasPassed ? 'disabled' : ''} />
             </div>
 
             <div class="form-group">
               <label for="mobile">Mobile / Phone Number</label>
-              <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" />
+              <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${hasPassed ? 'disabled' : ''} />
             </div>
 
             <div class="form-group">
               <label for="notes">Notes / Special Requirements</label>
-              <textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences..."></textarea>
+              <textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences..." ${hasPassed ? 'disabled' : ''}></textarea>
             </div>
 
-            <button type="submit" ${isFull ? 'disabled' : ''}>Sign Up for Shift</button>
+            <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
           </form>
         </div>
       </div>
@@ -989,8 +999,17 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
   // Handle volunteer signup POST
   fastify.post('/signup/:eventId', async (req: any, reply) => {
     const { eventId } = req.params;
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
     const isJsonExpected = req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    if (/^\d+$/.test(eventId)) {
+      if (isJsonExpected) {
+        return reply.status(404).send({ error: 'Event not found' });
+      }
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
 
     try {
       const body = req.body || {};
@@ -999,6 +1018,10 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       const event = await ctrl.getEventPublic(eventId);
       if (!event) {
         throw new Error('Event not found');
+      }
+
+      if (new Date(event.end_time) < new Date()) {
+        throw new Error('This event has passed and registration is closed.');
       }
 
       await ctrl.signupVolunteerPublic(eventId, body, clientIp);
