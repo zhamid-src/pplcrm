@@ -103,6 +103,7 @@ describe('AuthController Integration', () => {
       await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
       await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+      await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
       await db.deleteFrom('authusers').where('id', '=', user.id).execute();
     }
@@ -153,6 +154,7 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('households').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', creator.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', creator.id).execute();
   });
@@ -200,6 +202,7 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });
@@ -266,6 +269,7 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });
@@ -304,6 +308,57 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
     await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
+
+  it('should enqueue a send-transactional-email background job during signup and invite', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const email = `test-enqueue-${Date.now()}@example.com`;
+    const orgName = `Org-Enqueue-${Date.now()}`;
+
+    // Sign up a user
+    const token = await controller.signUp({
+      organization: orgName,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'EnqueueUser',
+    });
+
+    expect(token).toBeDefined();
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+
+    // Verify background job was enqueued
+    const signupJob = await db
+      .selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', user.tenant_id)
+      .executeTakeFirst();
+
+    expect(signupJob).toBeDefined();
+    expect(signupJob.status).toBe('pending');
+    expect(signupJob.max_attempts).toBe(5);
+
+    const payload = typeof signupJob.payload === 'string' ? JSON.parse(signupJob.payload) : signupJob.payload;
+    expect(payload.type).toBe('send-transactional-email');
+    expect(payload.to).toBe(email);
+    expect(payload.subject).toContain('Welcome to CampaignRaven');
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });

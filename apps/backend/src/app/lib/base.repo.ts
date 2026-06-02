@@ -62,6 +62,10 @@ export class BaseRepository<T extends keyof Models> {
   private static _db = new Kysely<Models>({ dialect });
   private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
 
+  public static get dbInstance(): Kysely<Models> {
+    return BaseRepository._db;
+  }
+
   protected readonly table: T;
 
   /**
