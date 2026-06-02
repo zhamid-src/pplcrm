@@ -14,6 +14,7 @@ import { TransactionalEmailService } from '../mail/transactional-mail.service';
 import { UserActivityRepo } from '../user-activity.repo';
 import { NewsletterEmailService } from '../mail/newsletter-mail.service';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { geocodeAndMapHousehold } from '../gis/geocoding';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
@@ -370,6 +371,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         })
         .execute();
     }
+  } else if (payload.type === 'geocode_household') {
+    await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }

@@ -25,9 +25,8 @@ type JsonObject = { [K in string]?: JsonValue };
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
-  ? ColumnType<S, I | undefined, U>
-  : ColumnType<T, T | undefined, T>;
+type Generated<T> =
+  T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
 
 export interface Models {
   authusers: AuthUsers;
@@ -81,7 +80,6 @@ export interface Models {
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
-
 
 export type GetOperandType<
   T extends Keys<TablesOperationMap>,
@@ -185,6 +183,10 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   address_fp_street: string | null;
   address_fp_full: string | null;
   is_placeholder?: boolean;
+  district: string | null;
+  precinct: string | null;
+  ward: string | null;
+  geocoding_status: string | null;
 }
 
 interface MapCampaignsUsers extends RecordType {
@@ -651,4 +653,3 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-

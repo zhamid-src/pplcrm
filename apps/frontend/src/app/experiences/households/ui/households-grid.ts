@@ -59,7 +59,6 @@ interface ParamsType {
   providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
 })
 
-
 /**
  * This is the households grid component used to display the list of households.
  * It also gets the number of people that belong to each household.
@@ -142,7 +141,8 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       field: 'street1',
       headerName: 'Street 1',
       editable: true,
-      valueFormatter: (params: any) => params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+      valueFormatter: (params: any) =>
+        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
     },
     { field: 'street2', headerName: 'Street 2', editable: true },
     { field: 'city', headerName: 'City', editable: true },
@@ -200,6 +200,9 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },
     { field: 'country', headerName: 'Country', editable: true },
+    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
     { field: 'home_phone', headerName: 'Home phone', editable: true },
     {
       field: 'notes',
@@ -261,9 +264,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
 
     // Guard: the tenant's placeholder household is permanent and cannot be deleted.
     if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError(
-        'The placeholder household cannot be deleted. It holds people who have no address.',
-      );
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
       return true;
     }
 
@@ -276,7 +277,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       const personIdArrays = await Promise.all(
         populated.map(async (h) => {
           try {
-            const people = await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] }) as Array<{ id: string }>;
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
             return people.map((p) => p.id);
           } catch {
             return [];

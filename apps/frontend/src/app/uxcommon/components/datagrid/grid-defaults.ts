@@ -19,6 +19,7 @@ export interface ColumnDef {
   // Compatibility props (ignored by current table but kept for typing)
   valueGetter?: (p: any) => any;
   valueSetter?: (p: any) => boolean;
+  minWidth?: number;
 }
 
 type CellRendererResult = string | HTMLElement;

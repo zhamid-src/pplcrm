@@ -71,6 +71,55 @@
                 <span class="font-light">Type: <strong class="font-medium">{{ h.type }}</strong></span>
               </div>
               }
+
+              <!-- Mapped Districts (GIS) -->
+              @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+              <div
+                class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+              >
+                <div
+                  class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50"
+                >
+                  <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+                  <span>Electoral Boundaries</span>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+                  @if (h.district) {
+                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                    <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+                    <span class="font-bold text-base-content">{{ h.district }}</span>
+                  </div>
+                  } @if (h.ward) {
+                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                    <span class="text-[10px] text-base-content/40 block">Ward</span>
+                    <span class="font-bold text-base-content">{{ h.ward }}</span>
+                  </div>
+                  } @if (h.precinct) {
+                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                    <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+                    <span class="font-bold text-base-content">{{ h.precinct }}</span>
+                  </div>
+                  }
+                </div>
+
+                <!-- Geocoding Status Badge -->
+                <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+                  <span class="text-base-content/60">Geocoding Status:</span>
+                  @if (h.geocoding_status === 'success') {
+                  <span class="badge badge-success badge-sm font-medium">Success</span>
+                  } @else if (h.geocoding_status === 'pending') {
+                  <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+                    <span class="loading loading-spinner loading-xs scale-75"></span>
+                    Pending
+                  </span>
+                  } @else if (h.geocoding_status === 'failed') {
+                  <span class="badge badge-error badge-sm font-medium">Unresolved</span>
+                  } @else {
+                  <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+                  }
+                </div>
+              </div>
+              }
             </div>
 
             <!-- System Metadata -->
