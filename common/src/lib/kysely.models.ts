@@ -77,6 +77,9 @@ export interface Models {
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
   potential_duplicates: PotentialDuplicates;
+  workflows: Workflows;
+  workflow_steps: WorkflowSteps;
+  workflow_enrollments: WorkflowEnrollments;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -637,6 +640,40 @@ export interface VolunteerShifts extends RecordType {
   status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
   hours_worked: number | null;
   notes: string | null;
+}
+
+export interface Workflows extends RecordType {
+  name: string;
+  description: string | null;
+  trigger_type: string;
+  status: string;
+}
+
+export interface WorkflowSteps {
+  id: Generated<string>;
+  tenant_id: string;
+  workflow_id: string;
+  step_number: number;
+  delay_days: number;
+  subject: string;
+  preview_text: string | null;
+  html_content: string | null;
+  plain_text_content: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface WorkflowEnrollments {
+  id: Generated<string>;
+  tenant_id: string;
+  workflow_id: string;
+  person_id: string;
+  status: string;
+  current_step_number: number;
+  next_run_at: Timestamp | null;
+  enrolled_at: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 /** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */

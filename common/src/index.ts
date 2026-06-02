@@ -53,6 +53,13 @@ export type {
   QueryBuilderRuleNode,
   QueryBuilderGroupNode,
   QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
 } from './lib/models';
 
 export {
@@ -103,6 +110,13 @@ export {
   AddWebFormObj,
   UpdateWebFormObj,
   WebFormsObj,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

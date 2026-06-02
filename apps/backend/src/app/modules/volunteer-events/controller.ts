@@ -6,6 +6,8 @@ import { Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { createHmac } from 'crypto';
+import { WorkflowsController } from '../workflows/controller';
+
 
 const ipSignupTimestamps = new Map<string, number[]>();
 const SIGNUP_RATE_LIMIT_MAX = 5;
@@ -227,6 +229,16 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         }
       } catch (err) {
         console.error('Failed to schedule shift reminder for volunteer', err);
+      }
+
+      // Trigger volunteer signup workflows
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo().transaction().execute(async (trx) => {
+          await workflowsController.triggerVolunteerSignup(auth.tenant_id, String(payload.person_id), trx);
+        });
+      } catch (err) {
+        console.error('Failed to trigger volunteer signup workflows:', err);
       }
     }
 
@@ -762,6 +774,14 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             })
             .execute();
         }
+      }
+
+      // Trigger volunteer signup workflows
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerVolunteerSignup(tenantId, personId, trx);
+      } catch (err) {
+        console.error('Failed to trigger volunteer signup workflows in public form:', err);
       }
     });
 

@@ -1,0 +1,358 @@
+<div class="flex flex-col gap-6 p-6 max-w-6xl mx-auto">
+  <!-- Back navigation and title -->
+  <div class="flex flex-col gap-2">
+    <a routerLink="/workflows" class="btn btn-ghost btn-sm self-start gap-2">
+      <pc-icon name="arrow-left"></pc-icon>
+      Back to Workflows
+    </a>
+    <div class="flex justify-between items-center mt-2">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">{{ isNew() ? 'New Follow-up Workflow' : payload().name }}</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          {{ isNew() ? 'Configure a new drip campaign.' : 'Manage campaign steps and active participants.' }}
+        </p>
+      </div>
+      <button (click)="saveSettings($event)" class="btn btn-primary gap-2" [disabled]="isLoading()">
+        @if (isLoading()) {
+        <span class="loading loading-spinner"></span>
+        } @else {
+        <pc-icon name="save"></pc-icon>
+        } Save Workflow
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs Navigation -->
+  @if (!isNew()) {
+  <div class="tabs tabs-box bg-base-200 p-1 rounded-2xl flex gap-2">
+    <button
+      (click)="selectTab('settings')"
+      class="tab flex-1 rounded-xl transition-all"
+      [class.tab-active]="activeTab() === 'settings'"
+    >
+      Settings
+    </button>
+    <button
+      (click)="selectTab('steps')"
+      class="tab flex-1 rounded-xl transition-all"
+      [class.tab-active]="activeTab() === 'steps'"
+    >
+      Sequence Designer ({{ steps().length }})
+    </button>
+    <button
+      (click)="selectTab('enrollments')"
+      class="tab flex-1 rounded-xl transition-all"
+      [class.tab-active]="activeTab() === 'enrollments'"
+    >
+      Enrolled Contacts ({{ enrollments().length }})
+    </button>
+    <button
+      (click)="selectTab('activity')"
+      class="tab flex-1 rounded-xl transition-all"
+      [class.tab-active]="activeTab() === 'activity'"
+    >
+      Activity & Audit
+    </button>
+  </div>
+  }
+
+  <!-- TAB 1: SETTINGS -->
+  @if (isNew() || activeTab() === 'settings') {
+  <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl">
+    <div class="card-body gap-6">
+      <h2 class="card-title text-lg font-bold">Workflow Configuration</h2>
+
+      <form (submit)="saveSettings($event)" class="flex flex-col gap-4">
+        <!-- Name Input -->
+        <div class="form-control">
+          <label class="label label-text font-semibold">Workflow Name</label>
+          <input
+            type="text"
+            class="input input-bordered w-full"
+            placeholder="e.g. New Volunteer Welcome Series"
+            [formField]="form.name"
+          />
+        </div>
+
+        <!-- Description Input -->
+        <div class="form-control">
+          <label class="label label-text font-semibold">Description</label>
+          <textarea
+            class="textarea textarea-bordered w-full"
+            rows="3"
+            placeholder="Brief summary of what this drip campaign does..."
+            [formField]="form.description"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Trigger Type Selection -->
+          <div class="form-control">
+            <label class="label label-text font-semibold">Trigger Event</label>
+            <select class="select select-bordered w-full" [formField]="form.trigger_type">
+              <option value="manual">Manual Enrollment</option>
+              <option value="volunteer_signup">Volunteer Event Signup</option>
+            </select>
+            <p class="text-xs text-base-content/50 mt-1">
+              When trigger fires, constituents are automatically enrolled in this campaign.
+            </p>
+          </div>
+
+          <!-- Status Selection -->
+          <div class="form-control">
+            <label class="label label-text font-semibold">Campaign Status</label>
+            <select class="select select-bordered w-full" [formField]="form.status">
+              <option value="draft">Draft (Inactive)</option>
+              <option value="active">Active (Processing)</option>
+              <option value="paused">Paused</option>
+            </select>
+            <p class="text-xs text-base-content/50 mt-1">Only active campaigns will send scheduled emails.</p>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  }
+
+  <!-- TAB 2: SEQUENCE DESIGNER -->
+  @if (!isNew() && activeTab() === 'steps') {
+  <div class="flex flex-col gap-6">
+    <div class="flex justify-between items-center">
+      <div>
+        <h2 class="text-lg font-bold">Email Sequence Timeline</h2>
+        <p class="text-sm text-base-content/50">Define steps in chronological order relative to previous step run.</p>
+      </div>
+      <button (click)="addStep()" class="btn btn-secondary btn-sm gap-2">
+        <pc-icon name="plus"></pc-icon>
+        Add Step
+      </button>
+    </div>
+
+    @if (steps().length === 0) {
+    <div class="alert alert-info rounded-2xl shadow-sm border-base-200">
+      <pc-icon name="information-circle" class="w-5 h-5 shrink-0"></pc-icon>
+      <div>
+        <h3 class="font-bold">No steps defined</h3>
+        <div class="text-xs">Add your first email step to create the automated sequence.</div>
+      </div>
+    </div>
+    }
+
+    <!-- Timeline steps list -->
+    <div class="flex flex-col gap-6">
+      @for (step of steps(); track $index) {
+      <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl relative overflow-visible">
+        <!-- Step Badge Index -->
+        <div
+          class="absolute -left-3 top-6 w-8 h-8 rounded-full bg-secondary text-secondary-content font-bold flex items-center justify-center shadow-md"
+        >
+          {{ $index + 1 }}
+        </div>
+
+        <div class="card-body pl-10 gap-4">
+          <!-- Step configuration header -->
+          <div class="flex justify-between items-start gap-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-semibold">Send</span>
+              <input
+                type="number"
+                class="input input-bordered input-sm w-20 text-center font-bold"
+                [(ngModel)]="step.delay_days"
+                min="0"
+              />
+              <span class="text-sm font-semibold">days after previous step execution</span>
+            </div>
+            <button (click)="removeStep($index)" class="btn btn-ghost btn-xs text-error gap-1">
+              <pc-icon name="trash"></pc-icon>
+              Remove Step
+            </button>
+          </div>
+
+          <!-- Subject & Preview -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs">Email Subject Line</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full"
+                placeholder="e.g. Welcome aboard!"
+                [(ngModel)]="step.subject"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs">Preview Text / Snippet</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full"
+                placeholder="Secondary subtitle in inbox preview..."
+                [(ngModel)]="step.preview_text"
+              />
+            </div>
+          </div>
+
+          <!-- HTML Content Editor -->
+          <div class="form-control">
+            <label class="label label-text font-semibold text-xs">HTML Email Content</label>
+            <textarea
+              class="textarea textarea-bordered font-mono text-xs w-full"
+              rows="6"
+              placeholder="<p>Hi there,</p><p>Welcome to our organization...</p>"
+              [(ngModel)]="step.html_content"
+            ></textarea>
+          </div>
+
+          <!-- Plain Text Fallback -->
+          <div class="form-control">
+            <label class="label label-text font-semibold text-xs">Plain Text Fallback (No HTML)</label>
+            <textarea
+              class="textarea textarea-bordered text-xs w-full"
+              rows="3"
+              placeholder="Hi there,\n\nWelcome to our organization..."
+              [(ngModel)]="step.plain_text_content"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+      }
+    </div>
+
+    <button (click)="saveSettings($event)" class="btn btn-primary self-end gap-2" [disabled]="isLoading()">
+      <pc-icon name="save"></pc-icon>
+      Save Sequence & Settings
+    </button>
+  </div>
+  }
+
+  <!-- TAB 3: ENROLLED CONTACTS -->
+  @if (!isNew() && activeTab() === 'enrollments') {
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Enrollment Search & Add (1/3 width) -->
+    <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl lg:col-span-1 h-fit">
+      <div class="card-body gap-4">
+        <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
+
+        <div class="join w-full">
+          <input
+            type="text"
+            class="input input-bordered join-item w-full"
+            placeholder="Search by name or email..."
+            [(ngModel)]="searchQuery"
+            (keyup.enter)="searchContacts()"
+          />
+          <button (click)="searchContacts()" class="btn btn-secondary join-item">
+            @if (searchingContacts()) {
+            <span class="loading loading-spinner"></span>
+            } @else {
+            <pc-icon name="magnifying-glass"></pc-icon>
+            }
+          </button>
+        </div>
+
+        <!-- Search Results list -->
+        @if (searchResults().length > 0) {
+        <div class="flex flex-col gap-2 max-h-60 overflow-y-auto mt-2 border border-base-200 p-2 rounded-xl bg-base-50">
+          @for (contact of searchResults(); track contact.id) {
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-base-100 hover:bg-base-200 border border-base-150 transition-all text-xs"
+          >
+            <div class="flex flex-col">
+              <span class="font-bold">{{ contact.first_name || '' }} {{ contact.last_name || '' }}</span>
+              <span class="text-[10px] text-base-content/50">{{ contact.email || 'No email' }}</span>
+            </div>
+            <button
+              (click)="enrollSelected(contact.id)"
+              class="btn btn-xs btn-primary gap-1"
+              [disabled]="!contact.email"
+            >
+              <pc-icon name="user-plus"></pc-icon>
+              Enroll
+            </button>
+          </div>
+          }
+        </div>
+        } @else if (searchQuery() && !searchingContacts()) {
+        <span class="text-xs text-base-content/50 mt-1 italic">No contacts found for query.</span>
+        }
+      </div>
+    </div>
+
+    <!-- Enrollment list (2/3 width) -->
+    <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl lg:col-span-2">
+      <div class="card-body gap-4">
+        <h3 class="card-title text-base font-bold">Active Enrollments roster</h3>
+
+        @if (enrollments().length === 0) {
+        <div class="text-center p-8 border border-dashed border-base-300 rounded-xl">
+          <p class="text-sm text-base-content/50">No contacts have been enrolled in this sequence yet.</p>
+        </div>
+        } @else {
+        <div class="overflow-x-auto w-full">
+          <table class="table table-zebra table-sm w-full">
+            <thead>
+              <tr>
+                <th>Contact Name</th>
+                <th>Email</th>
+                <th>Step #</th>
+                <th>Status</th>
+                <th>Next Run At</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (en of enrollments(); track en.id) {
+              <tr>
+                <td class="font-semibold text-xs">
+                  <a [routerLink]="['/people', en.person_id]" class="link link-primary">
+                    {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
+                  </a>
+                </td>
+                <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
+                <td class="text-xs font-mono font-bold">{{ en.current_step_number }}</td>
+                <td>
+                  <span
+                    class="badge badge-sm font-semibold"
+                    [class.badge-success]="en.status === 'completed'"
+                    [class.badge-info]="en.status === 'active'"
+                    [class.badge-ghost]="en.status === 'cancelled'"
+                  >
+                    {{ en.status }}
+                  </span>
+                </td>
+                <td class="text-xs text-base-content/60">
+                  {{ en.next_run_at ? (en.next_run_at | date: 'short') : 'Ended' }}
+                </td>
+                <td class="text-right">
+                  @if (en.status === 'active') {
+                  <button (click)="cancelEnrollment(en.id)" class="btn btn-ghost btn-xs text-error gap-1">
+                    <pc-icon name="trash"></pc-icon>
+                    Cancel
+                  </button>
+                  } @else {
+                  <span class="text-[10px] text-base-content/40 italic">Inactive</span>
+                  }
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- TAB 4: ACTIVITY LOGS -->
+  @if (!isNew() && activeTab() === 'activity') {
+  <div class="card bg-base-100 border border-base-200 shadow-sm rounded-2xl">
+    <div class="card-body gap-4">
+      <h2 class="card-title text-lg font-bold">Activity Track & Audit Log</h2>
+      <p class="text-xs text-base-content/50">
+        Full audit log of changes made to this workflow and auto-sending executions.
+      </p>
+
+      <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+    </div>
+  </div>
+  }
+</div>

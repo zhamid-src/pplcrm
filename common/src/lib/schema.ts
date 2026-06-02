@@ -10,4 +10,6 @@ export * from './schemas/settings.schema';
 export * from './schemas/tasks.schema';
 export * from './schemas/volunteer.schema';
 export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+
 

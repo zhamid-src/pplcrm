@@ -25,6 +25,8 @@ import { NotificationsRouter } from './notifications/trpc.router';
 import { VolunteerRouter } from './volunteer-events/trpc.router';
 import { WebFormsRouter } from './web-forms/trpc.router';
 import { BillingRouter } from './billing/trpc.router';
+import { WorkflowsRouter } from './workflows/trpc.router';
+
 
 
 /**
@@ -66,7 +68,9 @@ export const trpcRouter = router({
   volunteer: VolunteerRouter,
   webForms: WebFormsRouter,
   billing: BillingRouter,
+  workflows: WorkflowsRouter,
 });
+
 
 // Re-export individual routers for convenience.
 export { AuthRouter } from './auth/trpc.router';
@@ -111,3 +115,6 @@ export { VolunteerRouter } from './volunteer-events/trpc.router';
 export { WebFormsRouter } from './web-forms/trpc.router';
 
 export { BillingRouter } from './billing/trpc.router';
+
+export { WorkflowsRouter } from './workflows/trpc.router';
+

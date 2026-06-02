@@ -131,6 +131,30 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    path: 'workflows',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/workflows/ui/workflow-detail').then((m) => m.WorkflowDetailComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/workflows/ui/workflow-detail').then((m) => m.WorkflowDetailComponent),
+      },
+    ],
+  },
+
+
+  {
     path: 'schedule',
     children: [
       {
