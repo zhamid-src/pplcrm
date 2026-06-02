@@ -17,6 +17,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     [colDefs]="col"
     [disableDelete]="false"
     [disableView]="false"
+    [allowFilter]="false"
+    [disableAdvancedFilter]="true"
     plusIcon="add-list"
     addRoute="add"
   ></pc-datagrid>`,
