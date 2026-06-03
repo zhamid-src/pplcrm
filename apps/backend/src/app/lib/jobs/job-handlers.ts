@@ -338,6 +338,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       quantity: totalRecipients,
       metadata: { recipientsCount: totalRecipients, deliveredCount },
     });
+
+    const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
+    await queueUsageLimitCheck(payload.tenantId, db);
   } else if (payload.type === 'recompute_address_fingerprints') {
     const tenantIds: string[] = [];
     if (payload.tenant_id) {
@@ -424,9 +427,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             .executeTakeFirst();
 
           if (person && person.email) {
-            const textContent = step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
-            const htmlContent = step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
-            
+            const textContent =
+              step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
+            const htmlContent =
+              step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
+
             await mailService.sendMail({
               to: person.email,
               subject: step.subject,
@@ -474,9 +479,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             .executeTakeFirst();
 
           if (nextStep) {
-            const delayMs = nextStep.delay_unit === 'hours'
-              ? nextStep.delay_days * 60 * 60 * 1000
-              : nextStep.delay_days * 24 * 60 * 60 * 1000;
+            const delayMs =
+              nextStep.delay_unit === 'hours'
+                ? nextStep.delay_days * 60 * 60 * 1000
+                : nextStep.delay_days * 24 * 60 * 60 * 1000;
             const nextRunAt = new Date(Date.now() + delayMs);
             await trx
               .updateTable('workflow_enrollments')
@@ -527,9 +533,18 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     for (const user of expiredUsers) {
       const userId = String(user.id);
       await db.transaction().execute(async (trx: any) => {
-        await trx.deleteFrom('sessions').where('user_id', '=', BigInt(userId) as any).execute();
-        await trx.deleteFrom('profiles').where('auth_id', '=', BigInt(userId) as any).execute();
-        await trx.deleteFrom('authusers').where('id', '=', BigInt(userId) as any).execute();
+        await trx
+          .deleteFrom('sessions')
+          .where('user_id', '=', BigInt(userId) as any)
+          .execute();
+        await trx
+          .deleteFrom('profiles')
+          .where('auth_id', '=', BigInt(userId) as any)
+          .execute();
+        await trx
+          .deleteFrom('authusers')
+          .where('id', '=', BigInt(userId) as any)
+          .execute();
       });
     }
 
@@ -542,17 +557,50 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     for (const tenant of expiredTenants) {
       const tenantId = String(tenant.id);
       await db.transaction().execute(async (trx: any) => {
-        await trx.deleteFrom('sessions').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('profiles').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('authusers').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('campaigns').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('map_households_tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('persons').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('households').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('settings').where('tenant_id', '=', BigInt(tenantId) as any).execute();
-        await trx.deleteFrom('tenants').where('id', '=', BigInt(tenantId) as any).execute();
+        await trx
+          .deleteFrom('sessions')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('profiles')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('authusers')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('campaigns')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('map_peoples_tags')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('map_households_tags')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('persons')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('households')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('tags')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('settings')
+          .where('tenant_id', '=', BigInt(tenantId) as any)
+          .execute();
+        await trx
+          .deleteFrom('tenants')
+          .where('id', '=', BigInt(tenantId) as any)
+          .execute();
       });
     }
 
@@ -563,6 +611,23 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         queue: 'default',
         status: 'pending',
         payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        max_attempts: 3,
+      })
+      .execute();
+  } else if (payload.type === 'check_usage_limits') {
+    const { checkTenantUsage } = await import('../../modules/billing/usage-limits');
+    await checkTenantUsage(payload.tenant_id, db);
+  } else if (payload.type === 'check_all_usage_limits') {
+    const { checkAllUsageLimits } = await import('../../modules/billing/usage-limits');
+    await checkAllUsageLimits(db);
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({ type: 'check_all_usage_limits' }),
         run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
         max_attempts: 3,
       })

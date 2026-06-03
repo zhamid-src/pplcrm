@@ -44,9 +44,10 @@ export class PersonsService {
 
     let household_id = payload.household_id as string | undefined;
     if (!household_id) {
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: auth.tenant_id, campaign_id: String(campaign_id) },
-      );
+      const existingBlank = await households.getBlankHousehold({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+      });
       if (existingBlank?.id) {
         household_id = String(existingBlank.id);
       } else {
@@ -74,6 +75,12 @@ export class PersonsService {
     const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
     if (result && typeof result === 'object') {
       await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
+      } catch (err) {
+        console.error('Failed to trigger usage check in addPerson:', err);
+      }
       try {
         const workflowsController = new WorkflowsController();
         await workflowsController.triggerWorkflow(auth.tenant_id, String((result as any).id), 'contact_created', null);
@@ -134,14 +141,7 @@ export class PersonsService {
       const changes: Record<string, any> = {};
       const resultObj = result && typeof result === 'object' ? (result as any) : null;
       if (original && resultObj) {
-        const skipKeys = [
-          'id',
-          'tenant_id',
-          'createdby_id',
-          'updatedby_id',
-          'created_at',
-          'updated_at',
-        ];
+        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
         for (const key of Object.keys(data)) {
           if (skipKeys.includes(key)) continue;
           const oldVal = (original as any)[key];
@@ -160,7 +160,9 @@ export class PersonsService {
         quantity: 1,
         metadata: {
           id,
-          entity_label: resultObj ? `${resultObj.first_name || ''} ${resultObj.last_name || ''}`.trim() || 'Person' : 'Person',
+          entity_label: resultObj
+            ? `${resultObj.first_name || ''} ${resultObj.last_name || ''}`.trim() || 'Person'
+            : 'Person',
           changes,
         },
       });
@@ -212,12 +214,7 @@ export class PersonsService {
       .selectAll('emails')
       .select('email_bodies.body_html as body_html')
       .where('emails.tenant_id', '=', auth.tenant_id)
-      .where((eb) =>
-        eb.or([
-          eb('emails.from_email', 'in', emails),
-          eb('emails.to_email', 'in', emails),
-        ])
-      )
+      .where((eb) => eb.or([eb('emails.from_email', 'in', emails), eb('emails.to_email', 'in', emails)]))
       .orderBy('emails.created_at', 'desc')
       .limit(50)
       .execute();
@@ -306,7 +303,13 @@ export class PersonsService {
     return result;
   }
 
-  public async detachTag(input: { tenant_id: string; person_id: string; name: string; type?: 'tag' | 'issue'; user_id?: string }) {
+  public async detachTag(input: {
+    tenant_id: string;
+    person_id: string;
+    name: string;
+    type?: 'tag' | 'issue';
+    user_id?: string;
+  }) {
     const tag = await this.tagsRepo.getIdByName({
       tenant_id: input.tenant_id,
       name: input.name,
@@ -571,167 +574,168 @@ export class PersonsService {
           !sanitized.country;
 
         try {
-          const outcome = await this.personsRepo
-            .transaction()
-            .execute(async (rowTrx) => {
-              let localBlankHouseholdId = cachedBlankHouseholdId;
-              let localAutoTagId = autoTagId;
-              let householdsCreatedDelta = 0;
+          const outcome = await this.personsRepo.transaction().execute(async (rowTrx) => {
+            let localBlankHouseholdId = cachedBlankHouseholdId;
+            let localAutoTagId = autoTagId;
+            let householdsCreatedDelta = 0;
 
-              let householdId: string | null = null;
-              if (isBlankAddress) {
-                if (!localBlankHouseholdId) {
-                  const existingBlank = await households.getBlankHousehold(
-                    { tenant_id, campaign_id },
+            let householdId: string | null = null;
+            if (isBlankAddress) {
+              if (!localBlankHouseholdId) {
+                const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, rowTrx);
+                if (existingBlank?.id) {
+                  localBlankHouseholdId = String(existingBlank.id);
+                } else {
+                  const created = await households.add(
+                    {
+                      row: {
+                        tenant_id,
+                        campaign_id,
+                        createdby_id: user_id,
+                        updatedby_id: user_id,
+                        file_id: import_id,
+                      } as OperationDataType<'households', 'insert'>,
+                    },
                     rowTrx,
                   );
-                  if (existingBlank?.id) {
-                    localBlankHouseholdId = String(existingBlank.id);
-                  } else {
-                    const created = await households.add(
-                      {
-                        row: {
-                          tenant_id,
-                          campaign_id,
-                          createdby_id: user_id,
-                          updatedby_id: user_id,
-                          file_id: import_id,
-                        } as OperationDataType<'households', 'insert'>,
-                      },
-                      rowTrx,
-                    );
-                    localBlankHouseholdId = String(created?.id);
-                    householdsCreatedDelta += 1;
-                  }
-                }
-                householdId = localBlankHouseholdId;
-              } else {
-                const fp_street = fingerprintStreet({
-                  street_num: sanitized.street_num,
-                  street1: sanitized.street1,
-                  street2: sanitized.street2,
-                });
-                const fp_full = fingerprintFull({
-                  apt: sanitized.apt,
-                  street_num: sanitized.street_num,
-                  street1: sanitized.street1,
-                  street2: sanitized.street2,
-                  city: sanitized.city,
-                  state: sanitized.state,
-                  zip: sanitized.zip,
-                  country: sanitized.country,
-                });
-
-                const match = await households.findByFingerprint(
-                  { tenant_id, campaign_id, fp_street: fp_street, fp_full: fp_full },
-                  rowTrx,
-                );
-                if (match?.id) {
-                  householdId = String(match.id);
-                } else {
-                  const hhRow = {
-                    tenant_id,
-                    campaign_id,
-                    createdby_id: user_id,
-                    updatedby_id: user_id,
-                    home_phone: sanitized.home_phone ?? null,
-                    street_num: sanitized.street_num ?? null,
-                    street1: sanitized.street1 ?? null,
-                    street2: sanitized.street2 ?? null,
-                    apt: sanitized.apt ?? null,
-                    city: sanitized.city ?? null,
-                    state: sanitized.state ?? null,
-                    zip: sanitized.zip ?? null,
-                    country: sanitized.country ?? null,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                    notes: null,
-                    json: null,
-                    file_id: import_id,
-                  } as OperationDataType<'households', 'insert'>;
-
-                  const household = await households.add({ row: hhRow }, rowTrx);
-                  householdId = String(household?.id);
+                  localBlankHouseholdId = String(created?.id);
                   householdsCreatedDelta += 1;
                 }
               }
+              householdId = localBlankHouseholdId;
+            } else {
+              const fp_street = fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              });
+              const fp_full = fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              });
 
-              if (!householdId) {
-                throw new Error('Failed to resolve household for imported person');
-              }
-
-              const personRow = {
-                tenant_id,
-                campaign_id,
-                createdby_id: user_id,
-                updatedby_id: user_id,
-                household_id: householdId,
-                first_name: sanitized.first_name ?? null,
-                middle_names: null,
-                last_name: sanitized.last_name ?? null,
-                email: sanitized.email ?? null,
-                email2: null,
-                mobile: sanitized.mobile ?? null,
-                home_phone: null,
-                file_id: import_id,
-                notes: sanitized.notes ?? null,
-                json: null,
-              } as OperationDataType<'persons', 'insert'>;
-
-              const person = await this.personsRepo.add({ row: personRow }, rowTrx);
-
-              const workflowsController = new WorkflowsController();
-              try {
-                await workflowsController.triggerWorkflow(tenant_id, String(person?.id), 'contact_created', null, rowTrx);
-              } catch (err) {
-                console.error('Failed to trigger contact_created workflow in CSV import:', err);
-              }
-
-              for (const name of tags) {
-                const row = {
-                  name,
+              const match = await households.findByFingerprint(
+                { tenant_id, campaign_id, fp_street: fp_street, fp_full: fp_full },
+                rowTrx,
+              );
+              if (match?.id) {
+                householdId = String(match.id);
+              } else {
+                const hhRow = {
                   tenant_id,
+                  campaign_id,
                   createdby_id: user_id,
                   updatedby_id: user_id,
-                } as OperationDataType<'tags', 'insert'>;
+                  home_phone: sanitized.home_phone ?? null,
+                  street_num: sanitized.street_num ?? null,
+                  street1: sanitized.street1 ?? null,
+                  street2: sanitized.street2 ?? null,
+                  apt: sanitized.apt ?? null,
+                  city: sanitized.city ?? null,
+                  state: sanitized.state ?? null,
+                  zip: sanitized.zip ?? null,
+                  country: sanitized.country ?? null,
+                  address_fp_street: fp_street,
+                  address_fp_full: fp_full,
+                  notes: null,
+                  json: null,
+                  file_id: import_id,
+                } as OperationDataType<'households', 'insert'>;
 
-                const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, rowTrx);
-                if (name === autoTag && tag?.id != null && !localAutoTagId) {
-                  localAutoTagId = String(tag.id);
-                }
-                if (!tag?.id) {
-                  throw new Error('Failed to create tag for imported person');
-                }
+                const household = await households.add({ row: hhRow }, rowTrx);
+                householdId = String(household?.id);
+                householdsCreatedDelta += 1;
+              }
+            }
 
-                const mapResult = await this.mapPersonsTagRepo.add(
-                  {
-                    row: {
-                      tenant_id,
-                      person_id: person?.id as string,
-                      tag_id: tag.id as unknown as string,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                    } as OperationDataType<'map_peoples_tags', 'insert'>,
-                  },
-                  rowTrx,
-                );
+            if (!householdId) {
+              throw new Error('Failed to resolve household for imported person');
+            }
 
-                if (mapResult) {
-                  try {
-                    await workflowsController.triggerTagAdded(tenant_id, String(person?.id), String(tag.id), name, rowTrx);
-                  } catch (err) {
-                    console.error('Failed to trigger tag_added workflow in CSV import:', err);
-                  }
-                }
+            const personRow = {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              household_id: householdId,
+              first_name: sanitized.first_name ?? null,
+              middle_names: null,
+              last_name: sanitized.last_name ?? null,
+              email: sanitized.email ?? null,
+              email2: null,
+              mobile: sanitized.mobile ?? null,
+              home_phone: null,
+              file_id: import_id,
+              notes: sanitized.notes ?? null,
+              json: null,
+            } as OperationDataType<'persons', 'insert'>;
+
+            const person = await this.personsRepo.add({ row: personRow }, rowTrx);
+
+            const workflowsController = new WorkflowsController();
+            try {
+              await workflowsController.triggerWorkflow(tenant_id, String(person?.id), 'contact_created', null, rowTrx);
+            } catch (err) {
+              console.error('Failed to trigger contact_created workflow in CSV import:', err);
+            }
+
+            for (const name of tags) {
+              const row = {
+                name,
+                tenant_id,
+                createdby_id: user_id,
+                updatedby_id: user_id,
+              } as OperationDataType<'tags', 'insert'>;
+
+              const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, rowTrx);
+              if (name === autoTag && tag?.id != null && !localAutoTagId) {
+                localAutoTagId = String(tag.id);
+              }
+              if (!tag?.id) {
+                throw new Error('Failed to create tag for imported person');
               }
 
-              return {
-                personId: person?.id ? String(person.id) : null,
-                householdsCreatedDelta,
-                blankHouseholdId: localBlankHouseholdId,
-                autoTagId: localAutoTagId,
-              };
-            });
+              const mapResult = await this.mapPersonsTagRepo.add(
+                {
+                  row: {
+                    tenant_id,
+                    person_id: person?.id as string,
+                    tag_id: tag.id as unknown as string,
+                    createdby_id: user_id,
+                    updatedby_id: user_id,
+                  } as OperationDataType<'map_peoples_tags', 'insert'>,
+                },
+                rowTrx,
+              );
+
+              if (mapResult) {
+                try {
+                  await workflowsController.triggerTagAdded(
+                    tenant_id,
+                    String(person?.id),
+                    String(tag.id),
+                    name,
+                    rowTrx,
+                  );
+                } catch (err) {
+                  console.error('Failed to trigger tag_added workflow in CSV import:', err);
+                }
+              }
+            }
+
+            return {
+              personId: person?.id ? String(person.id) : null,
+              householdsCreatedDelta,
+              blankHouseholdId: localBlankHouseholdId,
+              autoTagId: localAutoTagId,
+            };
+          });
 
           results.inserted += 1;
           results.households_created += outcome.householdsCreatedDelta;
@@ -793,8 +797,10 @@ export class PersonsService {
     if (importedPersonIds.length > 0) {
       try {
         await this.personsRepo.queueDuplicatesJob(tenant_id, importedPersonIds);
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
       } catch (err) {
-        console.error('Failed to queue duplicate maintenance job for imported persons', err);
+        console.error('Failed to queue duplicate maintenance job or usage check for imported persons', err);
       }
     }
 
@@ -939,7 +945,10 @@ export class PersonsService {
   private stripNoise(text: string): string | undefined {
     const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
     const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
-    const cleaned = noPhone.replace(/[,]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    const cleaned = noPhone
+      .replace(/[,]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
     return cleaned || undefined;
   }
 

@@ -5,6 +5,7 @@ import { TransactionalEmailService } from '../../lib/mail/transactional-mail.ser
 import { WebhookEventsRepo } from './repositories/webhook-events.repo';
 import { WorkflowsController } from '../workflows/controller';
 import { sql } from 'kysely';
+import { getPlanLimits } from './usage-limits';
 
 const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
 const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
@@ -29,10 +30,10 @@ export class BillingController {
    * Fetch current subscription plan, status, and expiry details
    */
   public async getBillingDetails(auth: { tenant_id: string }) {
-    const tenant = await tenantsRepo.getOneBy('id', {
+    const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
-    }) as any;
+    })) as any;
 
     if (!tenant) {
       throw new Error('Tenant not found');
@@ -54,12 +55,12 @@ export class BillingController {
    */
   public async createCheckoutSession(
     auth: { tenant_id: string; user_id: string },
-    plan: 'grassroots' | 'representative'
+    plan: 'grassroots' | 'representative',
   ) {
-    const tenant = await tenantsRepo.getOneBy('id', {
+    const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
-    }) as any;
+    })) as any;
 
     if (!tenant) {
       throw new Error('Tenant not found');
@@ -84,7 +85,7 @@ export class BillingController {
         },
       });
       stripeCustomerId = customer.id;
-      
+
       // Update tenant in DB with customer ID
       await tenantsRepo.update({
         tenant_id: auth.tenant_id,
@@ -94,10 +95,7 @@ export class BillingController {
     }
 
     // Determine Stripe Price ID
-    const priceId =
-      plan === 'grassroots'
-        ? env.stripePlanGrassrootsPriceId
-        : env.stripePlanRepresentativePriceId;
+    const priceId = plan === 'grassroots' ? env.stripePlanGrassrootsPriceId : env.stripePlanRepresentativePriceId;
 
     if (!priceId) {
       throw new Error(`Stripe Price ID is not configured for plan: ${plan}`);
@@ -132,10 +130,10 @@ export class BillingController {
    * Generate Stripe Customer Portal session or a mock billing dashboard redirect
    */
   public async createPortalSession(auth: { tenant_id: string }) {
-    const tenant = await tenantsRepo.getOneBy('id', {
+    const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
-    }) as any;
+    })) as any;
 
     if (!tenant) {
       throw new Error('Tenant not found');
@@ -184,7 +182,8 @@ export class BillingController {
     // Persist event for background worker processing.
     // Handles idempotency: duplicate events will trigger unique constraint
     // violation on `stripe_event_id` and be ignored, returning 200 OK.
-    await webhookEventsRepo.db.insertInto('webhook_events' as any)
+    await webhookEventsRepo.db
+      .insertInto('webhook_events' as any)
       .values({
         stripe_event_id: event.id,
         type: event.type,
@@ -210,9 +209,9 @@ export class BillingController {
         const customerId = session.customer as string;
 
         if (tenantId && subscriptionId) {
-          const subscription = await stripe!.subscriptions.retrieve(subscriptionId) as any;
+          const subscription = (await stripe!.subscriptions.retrieve(subscriptionId)) as any;
           const priceId = subscription.items.data[0]?.price.id;
-          
+
           let planName = 'free';
           if (priceId === env.stripePlanGrassrootsPriceId) planName = 'grassroots';
           else if (priceId === env.stripePlanRepresentativePriceId) planName = 'representative';
@@ -229,6 +228,11 @@ export class BillingController {
             } as any,
           });
           console.log(`💳 Plan activated successfully for Tenant ID: ${tenantId}`);
+          try {
+            await this.handleSubscriptionChange(tenantId, planName);
+          } catch (mailErr) {
+            console.error('Failed to send subscription changed email on checkout.session.completed:', mailErr);
+          }
         }
         break;
       }
@@ -237,12 +241,12 @@ export class BillingController {
         const subscription = event.data.object as Stripe.Subscription;
         const subscriptionId = subscription.id;
         const customerId = subscription.customer as string;
-        
+
         // Search Kysely database for the tenant with matching customer id
-        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1' as any,
           value: customerId,
-        }) as any;
+        })) as any;
 
         if (dbTenant) {
           const priceId = subscription.items.data[0]?.price.id;
@@ -261,6 +265,11 @@ export class BillingController {
             } as any,
           });
           console.log(`💳 Subscription updated for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, planName);
+          } catch (mailErr) {
+            console.error('Failed to send subscription changed email on customer.subscription.updated:', mailErr);
+          }
         }
         break;
       }
@@ -269,10 +278,10 @@ export class BillingController {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
-        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1' as any,
           value: customerId,
-        }) as any;
+        })) as any;
 
         if (dbTenant) {
           await tenantsRepo.update({
@@ -285,6 +294,11 @@ export class BillingController {
             } as any,
           });
           console.log(`💳 Subscription canceled for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, 'free');
+          } catch (mailErr) {
+            console.error('Failed to send subscription cancellation email on customer.subscription.deleted:', mailErr);
+          }
         }
         break;
       }
@@ -292,20 +306,22 @@ export class BillingController {
       case 'invoice.paid': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
-        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1' as any,
           value: customerId,
-        }) as any;
+        })) as any;
 
         if (dbTenant) {
-          const admin = await tenantsRepo.db.selectFrom('authusers')
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
             .select(['email', 'first_name'])
             .where('id', '=', dbTenant.admin_id as any)
             .executeTakeFirst();
 
           if (admin && admin.email) {
             // Find person matching admin email
-            const person = await tenantsRepo.db.selectFrom('persons')
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
               .select('id')
               .where('tenant_id', '=', dbTenant.id)
               .where(sql`lower(email)`, '=', admin.email.toLowerCase())
@@ -313,12 +329,7 @@ export class BillingController {
             if (person) {
               try {
                 const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(
-                  dbTenant.id,
-                  String(person.id),
-                  'payment_event',
-                  event.type,
-                );
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
               } catch (err) {
                 console.error('Failed to trigger billing workflow on invoice.paid:', err);
               }
@@ -327,11 +338,36 @@ export class BillingController {
             const mailService = new TransactionalEmailService();
             const amountPaid = invoice.amount_paid / 100;
             const pdfUrl = invoice.hosted_invoice_url || '';
+
+            // Build charges summary
+            let summaryOfCharges = '';
+            let summaryOfChargesHtml = '';
+            if (invoice.lines && Array.isArray(invoice.lines.data)) {
+              summaryOfCharges =
+                '\nSummary of Charges:\n' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
+                  })
+                  .join('\n');
+
+              summaryOfChargesHtml =
+                '<p><strong>Summary of Charges:</strong></p><ul>' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
+                  })
+                  .join('') +
+                '</ul>';
+            }
+
             await mailService.sendMail({
               to: admin.email,
               subject: `Receipt for your CampaignRaven Subscription`,
-              text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was successfully processed.\n\nView invoice: ${pdfUrl}`,
-              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was successfully processed.</p><p><a href="${pdfUrl}">View/Download Invoice Receipt</a></p>`,
+              text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was successfully processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
+              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was successfully processed.</p>${summaryOfChargesHtml}<p><a href="${pdfUrl}">View/Download Invoice Receipt</a></p>`,
             });
           }
         }
@@ -341,20 +377,22 @@ export class BillingController {
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
-        const dbTenant = await tenantsRepo.getOneBy('stripe_customer_id', {
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1' as any,
           value: customerId,
-        }) as any;
+        })) as any;
 
         if (dbTenant) {
-          const admin = await tenantsRepo.db.selectFrom('authusers')
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
             .select(['email', 'first_name'])
             .where('id', '=', dbTenant.admin_id as any)
             .executeTakeFirst();
 
           if (admin && admin.email) {
             // Find person matching admin email
-            const person = await tenantsRepo.db.selectFrom('persons')
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
               .select('id')
               .where('tenant_id', '=', dbTenant.id)
               .where(sql`lower(email)`, '=', admin.email.toLowerCase())
@@ -362,12 +400,7 @@ export class BillingController {
             if (person) {
               try {
                 const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(
-                  dbTenant.id,
-                  String(person.id),
-                  'payment_event',
-                  event.type,
-                );
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
               } catch (err) {
                 console.error('Failed to trigger billing workflow on invoice.payment_failed:', err);
               }
@@ -375,11 +408,15 @@ export class BillingController {
 
             const mailService = new TransactionalEmailService();
             const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+            const amountDue = (invoice.amount_due || 0) / 100;
             await mailService.sendMail({
               to: admin.email,
-              subject: `Urgent: Action Required - Payment Failed for CampaignRaven`,
-              text: `Hi ${admin.first_name || 'Admin'},\n\nWe were unable to process the payment for your subscription. Please update your billing information to prevent account suspension.\n\nUpdate billing info here: ${billingPageUrl}`,
-              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>We were unable to process the payment for your subscription. Please update your billing information to prevent account suspension.</p><p><a href="${billingPageUrl}">Update Billing Information</a></p>`,
+              subject: `[WARNING] Action Required: Payment Failed for CampaignRaven`,
+              text: `Hi ${admin.first_name || 'Admin'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\n[WARNING] Please update your payment card immediately to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
+              html: `<p>Hi ${admin.first_name || 'Admin'},</p>
+<p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
+<p><strong>[WARNING]</strong> Please update your payment card immediately to prevent suspension of your organization's account.</p>
+<p><a href="${billingPageUrl}">Update Billing/Card Information</a></p>`,
             });
           }
         }
@@ -412,27 +449,9 @@ export class BillingController {
     });
 
     try {
-      const tenant = await tenantsRepo.getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.tenant_id,
-      }) as any;
-      if (tenant) {
-        const admin = await tenantsRepo.db.selectFrom('authusers')
-          .select(['email', 'first_name'])
-          .where('id', '=', tenant.admin_id as any)
-          .executeTakeFirst();
-        if (admin && admin.email) {
-          const mailService = new TransactionalEmailService();
-          await mailService.sendMail({
-            to: admin.email,
-            subject: `[MOCK] Receipt for your CampaignRaven Subscription`,
-            text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a mock receipt confirming your subscription payment for plan: ${plan} was successfully processed.`,
-            html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a mock receipt confirming your subscription payment for plan: <strong>${plan}</strong> was successfully processed.</p>`,
-          });
-        }
-      }
+      await this.handleSubscriptionChange(auth.tenant_id, plan, true);
     } catch (mailErr) {
-      console.error('Failed to send mock receipt email', mailErr);
+      console.error('Failed to send mock subscription update email', mailErr);
     }
 
     return { success: true, plan };
@@ -457,6 +476,63 @@ export class BillingController {
       } as any,
     });
 
+    try {
+      await this.handleSubscriptionChange(auth.tenant_id, 'free', true);
+    } catch (mailErr) {
+      console.error('Failed to send mock subscription cancellation email', mailErr);
+    }
+
     return { success: true };
+  }
+
+  /**
+   * Clears limit alert flags and sends confirmation email to the owner.
+   */
+  private async handleSubscriptionChange(tenantId: string, planName: string, isMock = false): Promise<void> {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: tenantId,
+      value: tenantId,
+    })) as any;
+
+    if (!tenant) return;
+
+    // 1. Reset limit alert settings
+    await tenantsRepo.db
+      .deleteFrom('settings')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'billing.limit_alerts_sent')
+      .execute();
+
+    // 2. Fetch admin user (Organization Owner)
+    if (!tenant.admin_id) return;
+    const admin = await tenantsRepo.db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', BigInt(tenant.admin_id) as any)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      const planLimits = getPlanLimits(planName);
+      const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+      const mockPrefix = isMock ? '[MOCK] ' : '';
+
+      const mailService = new TransactionalEmailService();
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `${mockPrefix}Subscription Updated: Welcome to the ${planName.toUpperCase()} Plan`,
+        text: `Hi ${admin.first_name || 'Owner'},\n\n${mockPrefix}Your subscription has been successfully updated.\n\nNew Plan: ${planName.toUpperCase()}\nPrice: ${planLimits.price}\n\nPlan Limits:\n- Contacts: ${planLimits.contacts.toLocaleString()} contacts\n- User Seats: ${planLimits.seats} seats\n- Monthly Emails: ${planLimits.emails.toLocaleString()} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
+        html: `<p>Hi ${admin.first_name || 'Owner'},</p>
+<p>${mockPrefix}Your subscription has been successfully updated.</p>
+<p><strong>New Plan:</strong> ${planName.toUpperCase()}<br>
+<strong>Price:</strong> ${planLimits.price}</p>
+<p><strong>Active Limits:</strong></p>
+<ul>
+  <li><strong>Contacts:</strong> Up to ${planLimits.contacts.toLocaleString()} contacts</li>
+  <li><strong>User Seats:</strong> Up to ${planLimits.seats} seats</li>
+  <li><strong>Monthly Emails:</strong> Up to ${planLimits.emails.toLocaleString()} outbound emails</li>
+</ul>
+<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`,
+      });
+    }
   }
 }

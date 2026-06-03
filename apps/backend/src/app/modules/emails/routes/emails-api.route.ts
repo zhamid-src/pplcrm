@@ -33,10 +33,10 @@ function buildRawMime(options: {
   if (options.bcc.length > 0) {
     headers.push(`Bcc: ${options.bcc.join(', ')}`);
   }
-  
+
   const base64Subject = Buffer.from(options.subject).toString('base64');
   headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-  
+
   headers.push(`MIME-Version: 1.0`);
   headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
   headers.push('');
@@ -517,6 +517,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
           });
 
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
           return reply.jsendSuccess(finalEmail);
         } catch (err: any) {
           fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
@@ -598,6 +605,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
           });
 
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
           return reply.jsendSuccess(finalEmail);
         } catch (err: any) {
           fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
@@ -644,6 +658,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('id', '=', String(emailRow.id))
             .returningAll()
             .executeTakeFirstOrThrow();
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending SMTP email ${emailRow.id}`);
+          }
 
           return reply.jsendSuccess(finalEmail);
         } catch (err: any) {
@@ -700,7 +721,12 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Attachment not found' });
     }
 
-    const file = await db.selectFrom('files').selectAll().where('tenant_id', '=', tenantId).where('id', '=', attachment.file_id).executeTakeFirst();
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });
@@ -753,7 +779,12 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(404).send({ error: 'Inline attachment not found' });
     }
 
-    const file = await db.selectFrom('files').selectAll().where('tenant_id', '=', tenantId).where('id', '=', attachment.file_id).executeTakeFirst();
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
 
     if (!file) {
       return reply.status(404).send({ error: 'File not found' });
