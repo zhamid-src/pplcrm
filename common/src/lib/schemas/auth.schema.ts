@@ -10,11 +10,17 @@ export const InviteAuthUserObj = z.object({
 
 export const NotificationPreferencesObj = z.object({
   mention_in_comment: z.boolean().default(true),
+  mention_in_comment_in_app: z.boolean().default(true),
   task_assigned: z.boolean().default(true),
+  task_assigned_in_app: z.boolean().default(true),
   task_due: z.boolean().default(true),
+  task_due_in_app: z.boolean().default(true),
   person_assigned: z.boolean().default(true),
+  person_assigned_in_app: z.boolean().default(true),
   export_ready: z.boolean().default(true),
+  export_ready_in_app: z.boolean().default(true),
   import_summary: z.boolean().default(true),
+  import_summary_in_app: z.boolean().default(true),
 });
 
 export const UpdateAuthUserObj = z.object({

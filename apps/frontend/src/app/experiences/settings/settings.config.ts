@@ -161,19 +161,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     description: 'Tenant-wide notification defaults and escalation.',
     icon: 'bell',
     fields: [
-      { key: 'notifications.email_enabled', label: 'Enable Email Alerts', type: 'toggle', defaultValue: true },
-      { key: 'notifications.in_app_enabled', label: 'Enable In-app Alerts', type: 'toggle', defaultValue: true },
-      {
-        key: 'notifications.digest_cadence',
-        label: 'Digest Cadence',
-        type: 'select',
-        defaultValue: 'daily',
-        options: [
-          { label: 'Off', value: 'off' },
-          { label: 'Daily', value: 'daily' },
-          { label: 'Weekly', value: 'weekly' },
-        ],
-      },
       {
         key: 'notifications.task_escalation_hours',
         label: 'Task Escalation (hours)',

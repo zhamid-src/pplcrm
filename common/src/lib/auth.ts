@@ -83,11 +83,17 @@ export interface IAuthUserRecord extends IAuthUser {
   updated_at: Date | null;
   notification_preferences?: {
     mention_in_comment: boolean;
+    mention_in_comment_in_app: boolean;
     task_assigned: boolean;
+    task_assigned_in_app: boolean;
     task_due: boolean;
+    task_due_in_app: boolean;
     person_assigned: boolean;
+    person_assigned_in_app: boolean;
     export_ready: boolean;
+    export_ready_in_app: boolean;
     import_summary: boolean;
+    import_summary_in_app: boolean;
   };
 }
 
