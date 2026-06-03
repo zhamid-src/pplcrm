@@ -1,5 +1,6 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
+import bcrypt from 'bcrypt';
 
 const dialect = new PostgresDialect({
   pool: new Pool({
@@ -15,13 +16,14 @@ const db = new Kysely<any>({ dialect });
 
 async function run() {
   try {
-    const users = await db.selectFrom('authusers')
-      .select(['id', 'email', 'first_name', 'last_name', 'role', 'verified'])
+    const hash = bcrypt.hashSync('StrongPassword123!', 10);
+    const result = await db.updateTable('authusers')
+      .set({ password: hash })
+      .where('email', '=', 'zhamid@gmail.com')
       .execute();
-    console.log('--- USERS IN DATABASE ---');
-    console.log(JSON.stringify(users, null, 2));
+    console.log('Password updated successfully for zhamid@gmail.com:', result);
   } catch (err) {
-    console.error('Error querying users:', err);
+    console.error('Error updating password:', err);
   } finally {
     await db.destroy();
   }

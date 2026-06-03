@@ -4,7 +4,7 @@
 import { UpsertSettingsInputObj } from '@common';
 import { z } from 'zod';
 
-import { authProcedure, publicProcedure, router } from '../../../trpc';
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
 import { SettingsController } from './controller';
 
 const settings = new SettingsController();
@@ -13,17 +13,15 @@ const settings = new SettingsController();
 export const SettingsRouter = router({
   getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
   getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
-  upsert: authProcedure
+  upsert: adminOrOwnerProcedure
     .input(UpsertSettingsInputObj)
     .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
-  requestEmailVerification: authProcedure
+  requestEmailVerification: adminOrOwnerProcedure
     .input(z.object({ email: z.string().email() }))
     .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),
   verifySenderEmail: publicProcedure
     .input(z.object({ token: z.string() }))
     .mutation(({ input }) => settings.verifySenderEmail(input.token)),
-  scheduleTenantDeletion: authProcedure
-    .mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
-  cancelTenantDeletion: authProcedure
-    .mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
+  scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
+  cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
 });

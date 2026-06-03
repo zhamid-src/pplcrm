@@ -498,7 +498,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.advFilterRoot.update((root) => cloneQueryBuilderNode(root) as QueryBuilderGroupNode);
   }
 
-
   private _squelch = false;
   private _initialized = false;
   private _lastPageSize: number | null = null;
@@ -1046,8 +1045,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
    * Immediately commits so the backend is updated without requiring Enter/blur.
    */
   protected async onSelectChange(row: any, col: ColDef, newValue: any) {
+    const resolvedValue = Array.isArray(newValue) ? newValue[0] : newValue;
     // Update the editing value first so commitEdit reads the correct value
-    this.editingValue.set(newValue);
+    this.editingValue.set(resolvedValue);
     await this.commitEdit(row, col);
   }
 
@@ -2048,22 +2048,27 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   private coerceEditingValue(col: ColDef, raw: any): any {
+    const editorCfg = this.selectEditorOptions(col);
+    let val = raw;
+    if (editorCfg && !editorCfg.multiple && Array.isArray(raw)) {
+      val = raw[0];
+    }
     const t = this.inputTypeFor(col);
     if (t === 'number') {
-      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
+      const n = typeof val === 'number' ? val : parseFloat(String(val ?? '').trim());
       return isNaN(n) ? null : n;
     }
     if (t === 'date') {
-      const v = String(raw ?? '').trim();
+      const v = String(val ?? '').trim();
       // normalize to YYYY-MM-DD if possible
       return v.length > 10 ? v.slice(0, 10) : v;
     }
     if (t === 'color') {
-      const v = String(raw ?? '').trim();
+      const v = String(val ?? '').trim();
       const pattern = /^#([0-9a-fA-F]{6})$/;
       return pattern.test(v) ? v.toLowerCase() : null;
     }
-    return raw;
+    return val;
   }
 
   private resolveEditorParams(col: ColDef): any {

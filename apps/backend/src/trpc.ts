@@ -17,13 +17,18 @@ const trpc = initTRPC.context<Context>().create({
     }
     // Path may be on error.path, or on shape.data.path (or absent)
     const errorObj = error as unknown as Record<string, unknown>;
-    const pathStr: string = (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ?? (shape.data?.path as string | undefined) ?? '';
+    const pathStr: string =
+      (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
+      (shape.data?.path as string | undefined) ??
+      '';
 
     const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
 
     // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
     const isZodOrBadRequest =
-      Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']) || error.cause instanceof ZodError || error.code === 'BAD_REQUEST';
+      Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']) ||
+      error.cause instanceof ZodError ||
+      error.code === 'BAD_REQUEST';
 
     // Collapse auth-ish cases
     const isCredsProblem =
@@ -67,16 +72,55 @@ export const router = trpc.router;
  * Checks for required fields (`user_id`, `tenant_id`, `session_id`) in the auth context.
  * Throws a `TRPCError` with `UNAUTHORIZED` code if missing.
  */
+import { BaseRepository } from './app/lib/base.repo';
+
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
 
   if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
-  return opts.next({ ctx: { ...ctx, auth: ctx.auth } });
+
+  let user: { role: string | null } | undefined;
+  if (/^\d+$/.test(ctx.auth.user_id)) {
+    user = await BaseRepository.dbInstance
+      .selectFrom('authusers')
+      .select('role')
+      .where('id', '=', ctx.auth.user_id as any)
+      .where('tenant_id', '=', ctx.auth.tenant_id as any)
+      .executeTakeFirst();
+  } else {
+    user = { role: (ctx.auth as any).role || 'owner' };
+  }
+
+  if (!user) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+
+  const authWithRole = {
+    ...ctx.auth,
+    role: user.role,
+  };
+
+  return opts.next({ ctx: { ...ctx, auth: authWithRole } });
 });
+
 /**
  * Procedure requiring authentication.
  * Use this for all endpoints that must be protected.
  */
 export const authProcedure = publicProcedure.use(isAuthed);
+
+/**
+ * Procedure requiring admin or owner privileges.
+ */
+export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
+  const { ctx } = opts;
+  if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only admins or owners can perform this action.',
+    });
+  }
+  return opts.next({ ctx });
+});

@@ -8,6 +8,7 @@ import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -26,6 +27,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
  */
 export class Sidebar {
   private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
 
   protected readonly router = inject(Router);
 
@@ -37,7 +39,22 @@ export class Sidebar {
    * @returns Array of configured sidebar items.
    */
   protected get items() {
-    return this.sidebarSvc.getItems();
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter(
+              (child) => child.name !== 'Users' && child.name !== 'Configuration' && child.name !== 'Billing',
+            ),
+          };
+        }
+        return item;
+      });
+    }
+    return allItems;
   }
 
   /**

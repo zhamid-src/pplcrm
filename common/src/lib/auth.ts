@@ -24,6 +24,11 @@ export interface IAuthKeyPayload {
    * The user ID of the current user
    */
   user_id: string;
+
+  /**
+   * The role of the current user
+   */
+  role?: string | null;
 }
 
 /**
@@ -49,6 +54,11 @@ export interface IAuthUser {
    * The unique ID that is also used as the primary key in the database.
    */
   id: string;
+
+  /**
+   * The role of the user (owner, admin, user)
+   */
+  role?: string | null;
 }
 
 export interface IUserStatsSnapshot {

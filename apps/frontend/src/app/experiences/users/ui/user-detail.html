@@ -52,13 +52,13 @@
 
         <div class="space-y-1">
           <label for="role" class="text-sm font-medium text-base-content/80">Role</label>
-          <input
-            id="role"
-            type="text"
-            class="input input-bordered w-full"
-            [formField]="form.role"
-            placeholder="e.g. admin"
-          />
+          <select id="role" class="select select-bordered w-full bg-base-100" [formField]="form.role">
+            @if (currentUserRole() !== 'admin') {
+            <option value="owner">Owner</option>
+            }
+            <option value="admin">Admin</option>
+            <option value="user">User</option>
+          </select>
         </div>
 
         <div class="space-y-1">

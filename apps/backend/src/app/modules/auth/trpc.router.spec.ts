@@ -10,10 +10,12 @@ describe('AuthRouter', () => {
   it('should call currentUser on the controller', async () => {
     const mockUser = { id: '123', email: 'test@example.com' };
     const spy = vi.spyOn(AuthController.prototype, 'currentUser').mockResolvedValue(mockUser as any);
-    
-    const caller = AuthRouter.createCaller({ auth: { tenant_id: 't1', user_id: 'u1', session_id: 's1' } as any } as any);
+
+    const caller = AuthRouter.createCaller({
+      auth: { tenant_id: 't1', user_id: 'u1', session_id: 's1' } as any,
+    } as any);
     const result = await caller.currentUser();
-    
+
     expect(spy).toHaveBeenCalled();
     expect(result).toEqual(mockUser);
   });
@@ -21,10 +23,10 @@ describe('AuthRouter', () => {
   it('should call signIn on the controller', async () => {
     const mockTokens = { auth_token: 'abc', refresh_token: 'def' };
     const spy = vi.spyOn(AuthController.prototype, 'signIn').mockResolvedValue(mockTokens as any);
-    
+
     const caller = AuthRouter.createCaller({} as any);
     const result = await caller.signIn({ email: 'test@example.com', password: 'password123' });
-    
+
     expect(spy).toHaveBeenCalled();
     expect(result).toEqual(mockTokens);
   });
@@ -45,7 +47,6 @@ describe('AuthRouter', () => {
     expect(spy).toHaveBeenCalledWith(signUpData);
     expect(result).toEqual(mockTokens);
   });
-
 });
 
 describe('AuthController Integration', () => {
@@ -90,12 +91,16 @@ describe('AuthController Integration', () => {
         email,
         password: 'StrongPassword123!',
         first_name: 'Integration',
-      })
+      }),
     ).rejects.toThrow(ConflictError);
 
     // Clean up
     if (user) {
-      await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+      await db
+        .updateTable('tenants')
+        .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+        .where('admin_id', '=', user.id)
+        .execute();
       await db.deleteFrom('tags').where('createdby_id', '=', user.id).execute();
       await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
       await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -147,7 +152,11 @@ describe('AuthController Integration', () => {
     // Clean up
     await db.deleteFrom('profiles').where('auth_id', '=', result.id).execute();
     await db.deleteFrom('authusers').where('id', '=', result.id).execute();
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', creator.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', creator.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', creator.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', creator.tenant_id).execute();
@@ -184,18 +193,22 @@ describe('AuthController Integration', () => {
     const result = await controller.updateUser(authPayload, user.id, {
       first_name: 'Baba',
       last_name: 'Ganoush',
-      role: 'admin',
+      role: 'owner',
       verified: true,
     });
 
     expect(result).toBeDefined();
     expect(result.first_name).toBe('Baba');
     expect(result.last_name).toBe('Ganoush');
-    expect(result.role).toBe('admin');
+    expect(result.role).toBe('owner');
     expect(result.verified).toBe(true);
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -227,7 +240,7 @@ describe('AuthController Integration', () => {
     expect(token).toBeDefined();
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
-    
+
     // 1. Verify default campaign was created
     const campaign = await db
       .selectFrom('campaigns')
@@ -241,28 +254,28 @@ describe('AuthController Integration', () => {
     expect(campaign?.createdby_id).toBe(user.id);
 
     // 2. Verify settings were created
-    const settings = await db
-      .selectFrom('settings')
-      .selectAll()
-      .where('tenant_id', '=', user.tenant_id)
-      .execute();
+    const settings = await db.selectFrom('settings').selectAll().where('tenant_id', '=', user.tenant_id).execute();
 
     expect(settings).toHaveLength(2);
-    
-    const currentCampaignSetting = settings.find(s => s.key === 'current_campaign');
+
+    const currentCampaignSetting = settings.find((s) => s.key === 'current_campaign');
     expect(currentCampaignSetting).toBeDefined();
     expect(currentCampaignSetting?.value).toEqual({ id: Number(campaign?.id) });
     expect(currentCampaignSetting?.createdby_id).toBe(user.id);
     expect(currentCampaignSetting?.updatedby_id).toBe(user.id);
 
-    const notificationsSetting = settings.find(s => s.key === 'notifications');
+    const notificationsSetting = settings.find((s) => s.key === 'notifications');
     expect(notificationsSetting).toBeDefined();
     expect(notificationsSetting?.value).toBe(false);
     expect(notificationsSetting?.createdby_id).toBe(user.id);
     expect(notificationsSetting?.updatedby_id).toBe(user.id);
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -300,7 +313,11 @@ describe('AuthController Integration', () => {
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -350,7 +367,11 @@ describe('AuthController Integration', () => {
     expect(payload.subject).toContain('Welcome to CampaignRaven');
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -389,37 +410,60 @@ describe('AuthController Integration', () => {
     expect(schedResult.success).toBe(true);
     expect(schedResult.deletion_scheduled_at).toBeDefined();
 
-    const scheduledUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const scheduledUser = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
     expect(scheduledUser.deletion_scheduled_at).not.toBeNull();
 
     // 2. Cancel Deletion
     const cancelResult = await controller.cancelAccountDeletion(authPayload);
     expect(cancelResult.success).toBe(true);
 
-    const cancelledUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const cancelledUser = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
     expect(cancelledUser.deletion_scheduled_at).toBeNull();
 
     // 3. Re-schedule and verify sign-in clears it
     await controller.scheduleAccountDeletion(authPayload);
-    const reScheduled = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const reScheduled = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
     expect(reScheduled.deletion_scheduled_at).not.toBeNull();
 
     // Sign in (mocking matching UA/IP to bypass 2FA check)
-    await db.insertInto('sessions').values({
-      user_id: user.id,
-      tenant_id: user.tenant_id,
-      ip_address: '127.0.0.1',
-      user_agent: 'Vitest',
-      status: 'active',
-    }).execute();
+    await db
+      .insertInto('sessions')
+      .values({
+        user_id: user.id,
+        tenant_id: user.tenant_id,
+        ip_address: '127.0.0.1',
+        user_agent: 'Vitest',
+        status: 'active',
+      })
+      .execute();
 
     await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest');
 
-    const signedInUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const signedInUser = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
     expect(signedInUser.deletion_scheduled_at).toBeNull();
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -451,10 +495,18 @@ describe('AuthController Integration', () => {
     await db.updateTable('authusers').set({ two_factor_enabled: true }).where('id', '=', user.id).execute();
 
     // Attempt sign-in
-    const signInResult = await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest') as any;
+    const signInResult = (await controller.signIn(
+      { email, password: 'StrongPassword123!' },
+      '127.0.0.1',
+      'Vitest',
+    )) as any;
     expect(signInResult).toEqual({ requires2FA: true, email });
 
-    const userWithOtp = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const userWithOtp = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
     expect(userWithOtp.two_factor_code).toBeTypeOf('string');
     expect(userWithOtp.two_factor_code).toHaveLength(6);
 
@@ -464,7 +516,11 @@ describe('AuthController Integration', () => {
     expect(verifyResult.refresh_token).toBeTypeOf('string');
 
     // Clean up
-    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', user.id)
+      .execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
@@ -475,5 +531,131 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
+
+  it('should enforce role rules and owner constraints', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const { ForbiddenError, BadRequestError } = await import('../../errors/app-errors');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+
+    // 1. Sign up Owner
+    const emailOwner = `owner-${Date.now()}@example.com`;
+    const tokensOwner = await controller.signUp({
+      organization: `RoleOrg-${Date.now()}`,
+      email: emailOwner,
+      password: 'StrongPassword123!',
+      first_name: 'OwnerUser',
+    });
+
+    const owner = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', emailOwner)
+      .executeTakeFirstOrThrow();
+    // Creator must be owner
+    expect(owner.role).toBe('owner');
+
+    const authOwner = {
+      tenant_id: owner.tenant_id,
+      user_id: owner.id,
+      session_id: 's-owner',
+      role: 'owner',
+      name: owner.first_name,
+    };
+
+    // 2. Invite Admin
+    const emailAdmin = `admin-${Date.now()}@example.com`;
+    await controller.inviteUser(authOwner, {
+      email: emailAdmin,
+      first_name: 'AdminUser',
+      role: 'admin',
+    });
+
+    const admin = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('email', '=', emailAdmin)
+      .executeTakeFirstOrThrow();
+    const authAdmin = {
+      tenant_id: owner.tenant_id,
+      user_id: admin.id,
+      session_id: 's-admin',
+      role: 'admin',
+      name: admin.first_name,
+    };
+
+    // 3. Invite User
+    const emailUser = `user-${Date.now()}@example.com`;
+    await controller.inviteUser(authOwner, {
+      email: emailUser,
+      first_name: 'NormalUser',
+      role: 'user',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', emailUser).executeTakeFirstOrThrow();
+    const authUser = {
+      tenant_id: owner.tenant_id,
+      user_id: user.id,
+      session_id: 's-user',
+      role: 'user',
+      name: user.first_name,
+    };
+
+    // Rule: User cannot update another user
+    await expect(controller.updateUser(authUser, admin.id, { first_name: 'Hacked' })).rejects.toThrow(ForbiddenError);
+
+    // Rule: User cannot change their own role or verified status
+    await expect(controller.updateUser(authUser, user.id, { role: 'owner' })).rejects.toThrow(ForbiddenError);
+
+    // Rule: Admin cannot demote owner
+    await expect(controller.updateUser(authAdmin, owner.id, { role: 'user' })).rejects.toThrow(ForbiddenError);
+
+    // Rule: Admin cannot remove access of owner
+    await expect(controller.updateUser(authAdmin, owner.id, { verified: false })).rejects.toThrow(ForbiddenError);
+
+    // Rule: Admin cannot promote non-owner to owner
+    await expect(controller.updateUser(authAdmin, user.id, { role: 'owner' })).rejects.toThrow(ForbiddenError);
+
+    // Rule: Admin cannot trigger password reset for owner
+    await expect(controller.adminTriggerPasswordReset(authAdmin, owner.id)).rejects.toThrow(ForbiddenError);
+
+    // Rule: Owner leaving -> oldest remaining user becomes owner
+    // Since Owner leaves (demotes themselves to admin), and we have two other users:
+    // Admin (invited first, created earlier) and User (invited second, created later).
+    // Admin should become Owner, and Owner should become Admin.
+    await controller.updateUser(authOwner, owner.id, { role: 'admin' });
+
+    const ownerAfterLeave = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', owner.id)
+      .executeTakeFirstOrThrow();
+    const adminAfterLeave = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', admin.id)
+      .executeTakeFirstOrThrow();
+
+    expect(ownerAfterLeave.role).toBe('admin');
+    expect(adminAfterLeave.role).toBe('owner'); // Oldest user got promoted to owner!
+
+    // Clean up
+    await db.deleteFrom('profiles').where('tenant_id', '=', owner.tenant_id).execute();
+    await db
+      .updateTable('tenants')
+      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+      .where('admin_id', '=', owner.id)
+      .execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('sessions').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', owner.tenant_id).execute();
+    await db.deleteFrom('authusers').where('tenant_id', '=', owner.tenant_id).execute();
   });
 });

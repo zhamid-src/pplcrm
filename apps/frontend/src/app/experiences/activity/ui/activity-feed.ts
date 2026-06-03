@@ -18,9 +18,14 @@ import { IAuthUser } from '@common';
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
             <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
-            <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading">User Activity Feed</ng-container>
+            <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
+              >User Activity Feed</ng-container
+            >
           </h1>
-          <p class="text-sm text-base-content/60 mt-1" i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle">
+          <p
+            class="text-sm text-base-content/60 mt-1"
+            i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
+          >
             Real-time audit log of changes made to contacts, emails, tasks, and system settings.
           </p>
         </div>
@@ -45,7 +50,10 @@ import { IAuthUser } from '@common';
             title="Refresh the activity feed"
           >
             <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            <ng-container i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label">Refresh Feed</ng-container>
+            <ng-container
+              i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label"
+              >Refresh Feed</ng-container
+            >
           </button>
         </div>
       </div>
@@ -55,7 +63,9 @@ import { IAuthUser } from '@common';
         <div class="card-body p-4 flex flex-col md:flex-row gap-4 items-end">
           <!-- Search input -->
           <div class="flex-1 w-full">
-            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Search Feed</span></label>
+            <label class="label py-1"
+              ><span class="label-text font-semibold text-xs text-base-content/70">Search Feed</span></label
+            >
             <div class="relative w-full">
               <input
                 type="text"
@@ -72,7 +82,9 @@ import { IAuthUser } from '@common';
 
           <!-- User filter -->
           <div class="w-full md:w-44">
-            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">User</span></label>
+            <label class="label py-1"
+              ><span class="label-text font-semibold text-xs text-base-content/70">User</span></label
+            >
             <select
               class="select select-bordered select-sm w-full font-medium"
               [value]="selectedUser()"
@@ -80,16 +92,16 @@ import { IAuthUser } from '@common';
             >
               <option value="">All Users</option>
               @for (u of users(); track u.id) {
-              <option [value]="u.id">
-                {{ u.first_name }} {{ u.last_name || '' }}
-              </option>
+                <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
               }
             </select>
           </div>
 
           <!-- Item Type filter -->
           <div class="w-full md:w-44">
-            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Item Type</span></label>
+            <label class="label py-1"
+              ><span class="label-text font-semibold text-xs text-base-content/70">Item Type</span></label
+            >
             <select
               class="select select-bordered select-sm w-full font-medium"
               [value]="selectedEntity()"
@@ -112,7 +124,9 @@ import { IAuthUser } from '@common';
 
           <!-- Action filter -->
           <div class="w-full md:w-44">
-            <label class="label py-1"><span class="label-text font-semibold text-xs text-base-content/70">Action</span></label>
+            <label class="label py-1"
+              ><span class="label-text font-semibold text-xs text-base-content/70">Action</span></label
+            >
             <select
               class="select select-bordered select-sm w-full font-medium"
               [value]="selectedActivity()"
@@ -134,119 +148,147 @@ import { IAuthUser } from '@common';
 
           <!-- Reset Button -->
           @if (hasActiveFilters()) {
-          <button
-            class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
-            (click)="clearFilters()"
-            title="Clear all filters"
-          >
-            <pc-icon name="x-mark" [size]="4"></pc-icon>
-            Clear
-          </button>
+            <button
+              class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
+              (click)="clearFilters()"
+              title="Clear all filters"
+            >
+              <pc-icon name="x-mark" [size]="4"></pc-icon>
+              Clear
+            </button>
           }
         </div>
       </div>
 
       <!-- Loading State -->
       @if (isLoading() && activities().length === 0) {
-      <div class="flex flex-col items-center justify-center py-20">
-        <span
-          class="loading loading-spinner loading-lg text-primary"
-          i18n-aria-label="@@activityFeed.loading.ariaLabel"
-          aria-label="Loading activity logs"
-        ></span>
-        <p class="text-base-content/60 mt-4" i18n="Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message">Loading system logs...</p>
-      </div>
+        <div class="flex flex-col items-center justify-center py-20">
+          <span
+            class="loading loading-spinner loading-lg text-primary"
+            i18n-aria-label="@@activityFeed.loading.ariaLabel"
+            aria-label="Loading activity logs"
+          ></span>
+          <p
+            class="text-base-content/60 mt-4"
+            i18n="
+              Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message"
+          >
+            Loading system logs...
+          </p>
+        </div>
       }
 
       <!-- Empty State -->
       @if (!isLoading() && activities().length === 0) {
-      <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
-        <div class="card-body items-center text-center py-12">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-          <h2 class="card-title text-base-content/70" i18n="Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading">No activity logged</h2>
-          <p class="text-sm text-base-content/50 mt-1" i18n="Activity feed empty state|Description text when no activity has been logged yet@@activityFeed.emptyState.description">
-            Activity logs will appear here once actions are performed in the system.
-          </p>
+        <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
+          <div class="card-body items-center text-center py-12">
+            <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+            <h2
+              class="card-title text-base-content/70"
+              i18n="
+                Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading"
+            >
+              No activity logged
+            </h2>
+            <p
+              class="text-sm text-base-content/50 mt-1"
+              i18n="
+                Activity feed empty state|Description text when no activity has been logged
+                yet@@activityFeed.emptyState.description"
+            >
+              Activity logs will appear here once actions are performed in the system.
+            </p>
+          </div>
         </div>
-      </div>
       }
 
       <!-- Feed Timeline -->
       @if (activities().length > 0) {
-      <div class="space-y-4">
-        <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
-          @for (act of activities(); track act.id) {
-          <div class="relative group">
-            <!-- Icon Indicator -->
-            <div
-              [class]="'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' + getActivityClass(act.activity)"
-            >
-              <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
-            </div>
-
-            <!-- Activity Card -->
-            <div class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200">
-              <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
-                <!-- User Avatar -->
-                <div class="avatar placeholder hidden sm:flex">
-                  <div class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs font-semibold">
-                    {{ getUserInitials(act) }}
-                  </div>
+        <div class="space-y-4">
+          <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
+            @for (act of activities(); track act.id) {
+              <div class="relative group">
+                <!-- Icon Indicator -->
+                <div
+                  [class]="
+                    'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' +
+                    getActivityClass(act.activity)
+                  "
+                >
+                  <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
                 </div>
 
-                <!-- Event Details -->
-                <div class="flex-1 min-w-0">
-                  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                    <p class="text-sm font-medium text-base-content">
-                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                      {{ getActivityPrefix(act) }}
-                      @if (getEntityLink(act); as link) {
-                        <a
-                          [routerLink]="link.path"
-                          [queryParams]="link.params"
-                          class="text-primary hover:underline font-semibold"
-                        >
-                          {{ getEntityLabelText(act) }}
-                        </a>
-                      } @else {
-                        <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
-                      }
-                      {{ getActivitySuffix(act) }}
-                    </p>
-                    <span class="text-[11px] text-base-content/40 whitespace-nowrap">{{ act.created_at | date:'short' }}</span>
+                <!-- Activity Card -->
+                <div
+                  class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200"
+                >
+                  <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
+                    <!-- User Avatar -->
+                    <div class="avatar placeholder hidden sm:flex">
+                      <div
+                        class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs flex items-center justify-center font-semibold"
+                      >
+                        {{ getUserInitials(act) }}
+                      </div>
+                    </div>
+
+                    <!-- Event Details -->
+                    <div class="flex-1 min-w-0">
+                      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <p class="text-sm font-medium text-base-content">
+                          <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
+                          {{ getActivityPrefix(act) }}
+                          @if (getEntityLink(act); as link) {
+                            <a
+                              [routerLink]="link.path"
+                              [queryParams]="link.params"
+                              class="text-primary hover:underline font-semibold"
+                            >
+                              {{ getEntityLabelText(act) }}
+                            </a>
+                          } @else {
+                            <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
+                          }
+                          {{ getActivitySuffix(act) }}
+                        </p>
+                        <span class="text-[11px] text-base-content/40 whitespace-nowrap">{{
+                          act.created_at | date: 'short'
+                        }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            }
           </div>
+
+          <!-- Load More Button -->
+          @if (hasMore()) {
+            <div class="flex justify-center pt-4">
+              <button class="btn btn-outline btn-primary gap-2" [disabled]="isLoading()" (click)="loadMore()">
+                @if (isLoading()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                }
+                <ng-container
+                  i18n="
+                    Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label"
+                  >Load More Activity</ng-container
+                >
+              </button>
+            </div>
           }
         </div>
-
-        <!-- Load More Button -->
-        @if (hasMore()) {
-        <div class="flex justify-center pt-4">
-          <button
-            class="btn btn-outline btn-primary gap-2"
-            [disabled]="isLoading()"
-            (click)="loadMore()"
-          >
-            @if (isLoading()) {
-            <span class="loading loading-spinner loading-xs"></span>
-            }
-            <ng-container i18n="Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label">Load More Activity</ng-container>
-          </button>
-        </div>
-        }
-      </div>
       }
     </div>
   `,
-  styles: [`
-    :host {
-      display: block;
-      min-height: 100%;
-    }
-  `]
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
 })
 export class ActivityFeed implements OnInit {
   private readonly activitySvc = inject(ActivityService);
@@ -362,33 +404,55 @@ export class ActivityFeed implements OnInit {
 
   protected getActivityIcon(activity: string): PcIconNameType {
     switch (activity) {
-      case 'create':   return 'plus';
-      case 'update':   return 'pencil-square';
-      case 'delete':   return 'trash';
-      case 'merge':    return 'merge';
-      case 'import':   return 'arrow-up-tray';
-      case 'export':   return 'arrow-down-tray';
-      case 'assign':   return 'user-plus';
-      case 'unassign': return 'user-circle';
-      case 'close':    return 'check-circle';
-      case 'reopen':   return 'arrow-path';
-      default:         return 'information-circle';
+      case 'create':
+        return 'plus';
+      case 'update':
+        return 'pencil-square';
+      case 'delete':
+        return 'trash';
+      case 'merge':
+        return 'merge';
+      case 'import':
+        return 'arrow-up-tray';
+      case 'export':
+        return 'arrow-down-tray';
+      case 'assign':
+        return 'user-plus';
+      case 'unassign':
+        return 'user-circle';
+      case 'close':
+        return 'check-circle';
+      case 'reopen':
+        return 'arrow-path';
+      default:
+        return 'information-circle';
     }
   }
 
   protected getActivityClass(activity: string): string {
     switch (activity) {
-      case 'create':   return 'border-success text-success';
-      case 'update':   return 'border-info text-info';
-      case 'delete':   return 'border-error text-error';
-      case 'merge':    return 'border-warning text-warning';
-      case 'import':   return 'border-secondary text-secondary';
-      case 'export':   return 'border-primary text-primary';
-      case 'assign':   return 'border-accent text-accent';
-      case 'unassign': return 'border-base-content/40 text-base-content/60';
-      case 'close':    return 'border-success text-success';
-      case 'reopen':   return 'border-warning text-warning';
-      default:         return 'border-base-content/40 text-base-content/60';
+      case 'create':
+        return 'border-success text-success';
+      case 'update':
+        return 'border-info text-info';
+      case 'delete':
+        return 'border-error text-error';
+      case 'merge':
+        return 'border-warning text-warning';
+      case 'import':
+        return 'border-secondary text-secondary';
+      case 'export':
+        return 'border-primary text-primary';
+      case 'assign':
+        return 'border-accent text-accent';
+      case 'unassign':
+        return 'border-base-content/40 text-base-content/60';
+      case 'close':
+        return 'border-success text-success';
+      case 'reopen':
+        return 'border-warning text-warning';
+      default:
+        return 'border-base-content/40 text-base-content/60';
     }
   }
 
@@ -411,17 +475,28 @@ export class ActivityFeed implements OnInit {
       case 'create':
         if (act.activity === 'submission') return ' submitted ';
         return ' created a new ';
-      case 'delete':   return ' deleted ';
-      case 'merge':    return ' merged duplicate ';
-      case 'import':   return ' imported ';
-      case 'export':   return ' exported ';
-      case 'assign':   return ' assigned ';
-      case 'unassign': return ' unassigned ';
-      case 'close':    return ' closed ';
-      case 'reopen':   return ' reopened ';
-      case 'submission': return ' submitted ';
-      case 'signup':   return ' signed up for ';
-      case 'send':     return ' sent ';
+      case 'delete':
+        return ' deleted ';
+      case 'merge':
+        return ' merged duplicate ';
+      case 'import':
+        return ' imported ';
+      case 'export':
+        return ' exported ';
+      case 'assign':
+        return ' assigned ';
+      case 'unassign':
+        return ' unassigned ';
+      case 'close':
+        return ' closed ';
+      case 'reopen':
+        return ' reopened ';
+      case 'submission':
+        return ' submitted ';
+      case 'signup':
+        return ' signed up for ';
+      case 'send':
+        return ' sent ';
       case 'update': {
         if (meta['action'] === 'add_comment') {
           return ' added a comment to ';
@@ -444,7 +519,11 @@ export class ActivityFeed implements OnInit {
               const month = parseInt(parts[1], 10) - 1;
               const day = parseInt(parts[2], 10);
               const dateVal = new Date(year, month, day);
-              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+              formattedDate = dateVal.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
             }
             return ` changed the due date to ${formattedDate} on `;
           }
@@ -459,18 +538,29 @@ export class ActivityFeed implements OnInit {
         if (meta['action'] === 'status_update') {
           return ' updated the status of ';
         }
-        
+
         // Household address check
         const entLower = ent.toLowerCase();
         if (entLower === 'households' || entLower === 'household') {
-          const addressFields = ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'formatted_address'];
-          if (meta.changes && Object.keys(meta.changes).some(k => addressFields.includes(k))) {
+          const addressFields = [
+            'apt',
+            'street_num',
+            'street1',
+            'street2',
+            'city',
+            'state',
+            'zip',
+            'country',
+            'formatted_address',
+          ];
+          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
             return ' updated the address of ';
           }
         }
         return ' updated ';
       }
-      default:         return ` performed ${act.activity} on `;
+      default:
+        return ` performed ${act.activity} on `;
     }
   }
 
@@ -488,7 +578,8 @@ export class ActivityFeed implements OnInit {
     else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') typePrefix = 'task ';
     else if (entLower === 'teams' || entLower === 'team') typePrefix = 'team ';
     else if (entLower === 'tags' || entLower === 'tag') typePrefix = 'tag ';
-    else if (entLower === 'web_forms' || entLower === 'web_form' || entLower === 'forms' || entLower === 'form') typePrefix = 'form ';
+    else if (entLower === 'web_forms' || entLower === 'web_form' || entLower === 'forms' || entLower === 'form')
+      typePrefix = 'form ';
     else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') typePrefix = 'volunteer event ';
     else if (entLower === 'volunteer_shifts' || entLower === 'volunteer_shift') typePrefix = 'volunteer shift ';
     else if (entLower === 'newsletters' || entLower === 'newsletter') typePrefix = 'newsletter ';
@@ -497,7 +588,10 @@ export class ActivityFeed implements OnInit {
     if (meta.entity_label) {
       label = meta.entity_label;
     } else if (entLower === 'persons' || entLower === 'person' || entLower === 'people') {
-      const name = meta.person_name || meta.name || (act.first_name && act.last_name ? `${act.first_name} ${act.last_name}` : null);
+      const name =
+        meta.person_name ||
+        meta.name ||
+        (act.first_name && act.last_name ? `${act.first_name} ${act.last_name}` : null);
       label = name || 'person #' + (act.entity_id || meta.id);
     } else if (entLower === 'households' || entLower === 'household') {
       label = meta.household_name || meta.address || 'household #' + (act.entity_id || meta.id);
@@ -512,7 +606,7 @@ export class ActivityFeed implements OnInit {
     } else if (entLower === 'tags' || entLower === 'tag') {
       label = meta.tag_name || meta.name || 'tag #' + (act.entity_id || meta.id);
     } else {
-      label = meta.name || meta.subject || meta.title || meta.task_name || ('#' + (act.entity_id || meta.id));
+      label = meta.name || meta.subject || meta.title || meta.task_name || '#' + (act.entity_id || meta.id);
     }
 
     const normLabel = label.trim().toLowerCase();
