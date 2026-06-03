@@ -250,6 +250,67 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     } catch (storageErr) {
       console.error(`Failed to clean up storage key ${payload.storage_key}:`, storageErr);
     }
+
+    try {
+      const user = await db
+        .selectFrom('authusers')
+        .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+        .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+        .where('authusers.id', '=', Number(payload.user_id) as any)
+        .executeTakeFirst();
+
+      if (user && user.email) {
+        let optedIn = true;
+        if (user.profile_json) {
+          try {
+            const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
+            if (json?.notifications?.import_summary === false) {
+              optedIn = false;
+            }
+          } catch (e) {
+            console.error('Failed to parse profile json for import summary check', e);
+          }
+        }
+
+        if (optedIn) {
+          const importRecord = (await importsRepo.getOneBy('id', {
+            tenant_id: payload.tenant_id,
+            value: payload.import_id,
+          })) as any;
+
+          if (importRecord) {
+            const inserted = importRecord.inserted_count || 0;
+            const errors = importRecord.error_count || 0;
+            const skipped = importRecord.skipped_count || 0;
+
+            const mailService = new TransactionalEmailService();
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: http://localhost:4200/imports/${payload.import_id}`,
+              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="http://localhost:4200/imports/${payload.import_id}">View Imported Rows</a></p>`,
+            });
+          }
+        }
+      }
+    } catch (mailErr) {
+      console.error('Failed to send import completion summary email', mailErr);
+    }
+  } else if (payload.type === 'check_due_tasks') {
+    await checkDueTasks(db);
+
+    // Schedule next check_due_tasks job 24 hours later
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({ type: 'check_due_tasks' }),
+        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
+        max_attempts: 3,
+      })
+      .execute();
   } else if (payload.type === 'send-newsletter') {
     const newsletterMailSvc = new NewsletterEmailService();
     const recipients = payload.recipients || [];
@@ -752,5 +813,83 @@ async function queueUserSyncJobs(db: any): Promise<void> {
     }
   } catch (err) {
     console.error('Failed to queue user sync jobs:', err);
+  }
+}
+
+export async function checkDueTasks(db: any): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.json as profile_json',
+      ])
+      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, any[]>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      if (!userTasksMap.has(userId)) {
+        userTasksMap.set(userId, []);
+      }
+      userTasksMap.get(userId)!.push(row);
+    }
+
+    const mailService = new TransactionalEmailService();
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const profileJson = firstRow.profile_json;
+
+      let optedIn = true;
+      if (profileJson) {
+        try {
+          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+          if (json?.notifications?.task_due === false) {
+            optedIn = false;
+          }
+        } catch (e) {
+          console.error('Failed to parse profile json in checkDueTasks', e);
+        }
+      }
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: http://localhost:4200/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="http://localhost:4200/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to check and notify due tasks:', err);
   }
 }

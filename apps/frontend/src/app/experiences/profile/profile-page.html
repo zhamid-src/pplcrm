@@ -1,31 +1,34 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <!-- Loading State -->
   @if (loading()) {
-  <div class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md">
+  <div
+    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
+  >
     <div class="flex flex-col items-center gap-3 text-base-content/50">
       <span class="loading loading-spinner loading-lg text-primary"></span>
       <p class="font-medium text-sm">Loading your profile…</p>
     </div>
   </div>
   } @else {
-  
+
   <!-- Main Grid Layout -->
   <div class="space-y-8">
-    
     <!-- Profile Header Card -->
     <div class="relative overflow-hidden rounded-2xl border border-base-200/60 bg-base-100 shadow-sm">
       <!-- Decorative Gradient Banner -->
       <div class="h-32 w-full bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-      
+
       <!-- User Summary Section -->
       <div class="flex flex-col gap-6 px-6 pb-6 md:flex-row md:items-end md:px-8 md:pb-8 -mt-10">
         <!-- Initials Avatar -->
         <div class="avatar placeholder">
-          <div class="w-24 h-24 rounded-full ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md">
+          <div
+            class="w-24 h-24 rounded-full ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md"
+          >
             <span>{{ initials() }}</span>
           </div>
         </div>
-        
+
         <!-- User Identity Info -->
         <div class="flex-1 space-y-1">
           <div class="flex flex-wrap items-center gap-2">
@@ -35,8 +38,7 @@
               <span class="badge badge-primary badge-outline font-medium capitalize text-xs px-2.5 py-1.5">
                 {{ detail()?.role }}
               </span>
-              }
-              @if (detail()?.verified) {
+              } @if (detail()?.verified) {
               <span class="badge badge-success gap-1 text-xs font-semibold px-2.5 py-1.5">
                 <pc-icon name="check-circle" class="w-3.5 h-3.5"></pc-icon>
                 Verified
@@ -58,7 +60,6 @@
 
     <!-- Content Sections -->
     <div class="grid gap-8 lg:grid-cols-3">
-      
       <!-- Edit Profile Card (takes 2 cols on lg) -->
       <div class="lg:col-span-2 space-y-6 rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
         <header class="border-b border-base-200 pb-5">
@@ -117,6 +118,120 @@
             </div>
           </div>
 
+          <!-- Notification Preferences Section -->
+          <div class="border-t border-base-200 pt-5 mt-6">
+            <h3 class="text-lg font-semibold tracking-tight text-base-content/85">Notification Preferences</h3>
+            <p class="text-xs text-base-content/50 mt-0.5 mb-4">
+              Choose which email notifications you would like to receive.
+            </p>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <!-- Mentioned in Comment -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.mention_in_comment"
+                  id="pref_mention_in_comment"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Mentioned in Comment</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Alerts when someone mentions you in a thread</span
+                  >
+                </div>
+              </label>
+
+              <!-- Task Assigned -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.task_assigned"
+                  id="pref_task_assigned"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Task Assigned</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5">Alerts when a task is assigned to you</span>
+                </div>
+              </label>
+
+              <!-- Task Overdue / Due Today -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.task_due"
+                  id="pref_task_due"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Task Due Today / Overdue</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5">Daily reminder check of active tasks due</span>
+                </div>
+              </label>
+
+              <!-- Person Assigned -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.person_assigned"
+                  id="pref_person_assigned"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Person Assigned</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Alerts when a contact ownership is assigned to you</span
+                  >
+                </div>
+              </label>
+
+              <!-- Export Ready -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.export_ready"
+                  id="pref_export_ready"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Export Ready</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Receive download link when CSV export finishes</span
+                  >
+                </div>
+              </label>
+
+              <!-- Import Summary -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="form.import_summary"
+                  id="pref_import_summary"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Import Summary</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Spreadsheet import completion stats report</span
+                  >
+                </div>
+              </label>
+            </div>
+          </div>
+
           <!-- Form Action Footer -->
           <div class="border-t border-base-200 pt-5 flex items-center justify-end gap-3">
             <button
@@ -151,15 +266,15 @@
           <div class="space-y-5">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">User ID</p>
-              <p class="text-sm font-mono text-base-content/80 mt-1 select-all break-all bg-base-200/40 p-2 rounded-lg border border-base-200/50">
+              <p
+                class="text-sm font-mono text-base-content/80 mt-1 select-all break-all bg-base-200/40 p-2 rounded-lg border border-base-200/50"
+              >
                 {{ detail()?.id }}
               </p>
             </div>
             <div>
               <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Assigned Role</p>
-              <p class="text-sm font-semibold text-base-content/80 mt-1 capitalize">
-                {{ detail()?.role || 'User' }}
-              </p>
+              <p class="text-sm font-semibold text-base-content/80 mt-1 capitalize">{{ detail()?.role || 'User' }}</p>
             </div>
             <div>
               <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Member Since</p>
@@ -203,7 +318,6 @@
       </div>
     </div>
     }
-
   </div>
   }
 </div>

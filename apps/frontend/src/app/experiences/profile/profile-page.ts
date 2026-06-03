@@ -25,6 +25,12 @@ export class ProfilePage implements OnInit {
     email: '',
     first_name: '',
     last_name: '',
+    mention_in_comment: true,
+    task_assigned: true,
+    task_due: true,
+    person_assigned: true,
+    export_ready: true,
+    import_summary: true,
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -159,7 +165,7 @@ export class ProfilePage implements OnInit {
       if (!currentUser) {
         throw new Error('Not logged in');
       }
-      
+
       const user = await this.auth.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);
@@ -175,10 +181,24 @@ export class ProfilePage implements OnInit {
   }
 
   private setForm(user: IAuthUserDetail) {
+    const prefs = user.notification_preferences || {
+      mention_in_comment: true,
+      task_assigned: true,
+      task_due: true,
+      person_assigned: true,
+      export_ready: true,
+      import_summary: true,
+    };
     this.payload.set({
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name ?? '',
+      mention_in_comment: prefs.mention_in_comment ?? true,
+      task_assigned: prefs.task_assigned ?? true,
+      task_due: prefs.task_due ?? true,
+      person_assigned: prefs.person_assigned ?? true,
+      export_ready: prefs.export_ready ?? true,
+      import_summary: prefs.import_summary ?? true,
     });
   }
 
@@ -192,6 +212,14 @@ export class ProfilePage implements OnInit {
       email: raw.email?.trim() ?? '',
       first_name: raw.first_name?.trim() ?? '',
       last_name: normalize(raw.last_name),
+      notification_preferences: {
+        mention_in_comment: raw.mention_in_comment,
+        task_assigned: raw.task_assigned,
+        task_due: raw.task_due,
+        person_assigned: raw.person_assigned,
+        export_ready: raw.export_ready,
+        import_summary: raw.import_summary,
+      },
     } as UpdateAuthUserType;
   }
 }

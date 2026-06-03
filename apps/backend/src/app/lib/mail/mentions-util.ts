@@ -5,7 +5,7 @@ export async function processMentions(
   tenantId: string,
   commentText: string,
   commentLink: string,
-  authorId: string
+  authorId: string,
 ): Promise<void> {
   if (!commentText || !commentText.trim()) return;
 
@@ -15,9 +15,11 @@ export async function processMentions(
 
   try {
     // Retrieve all users in the tenant
-    const users = await db.selectFrom('authusers')
-      .select(['id', 'email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
+    const users = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .where('authusers.tenant_id', '=', tenantId)
       .execute();
 
     const mailService = new TransactionalEmailService();
@@ -34,12 +36,27 @@ export async function processMentions(
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
 
       if (isMentioned && user.email) {
-        await mailService.sendMail({
-          to: user.email,
-          subject: 'You were mentioned in CampaignRaven',
-          text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
-          html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
-        });
+        let optedIn = true;
+        const profileJson = user.profile_json;
+        if (profileJson) {
+          try {
+            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+            if (json?.notifications?.mention_in_comment === false) {
+              optedIn = false;
+            }
+          } catch (e) {
+            console.error('Failed to parse profile json in processMentions', e);
+          }
+        }
+
+        if (optedIn) {
+          await mailService.sendMail({
+            to: user.email,
+            subject: 'You were mentioned in CampaignRaven',
+            text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
+          });
+        }
       }
     }
   } catch (error) {

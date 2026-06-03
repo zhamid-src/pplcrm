@@ -34,6 +34,9 @@ export class BackgroundJobWorker {
     this.ensureUsageLimitChecksScheduled().catch((err) =>
       console.error('Failed to ensure usage limit checks scheduled:', err),
     );
+    this.ensureDueTasksCheckScheduled().catch((err) =>
+      console.error('Failed to ensure due tasks check scheduled:', err),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
@@ -471,6 +474,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       console.error('Failed to ensure usage limit checks scheduled:', err);
+    }
+  }
+
+  private async ensureDueTasksCheckScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily due tasks check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_due_tasks' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure due tasks check scheduled:', err);
     }
   }
 
