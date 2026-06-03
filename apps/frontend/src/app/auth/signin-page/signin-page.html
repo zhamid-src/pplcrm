@@ -1,5 +1,6 @@
 <!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
+  @if (!requires2FA()) {
   <label class="label text-neutral-100">Enter your email and password to sign in</label>
   <form (submit)="signIn($event)" novalidate>
     <div class="space-y-3">
@@ -41,7 +42,38 @@
   <div class="py-3 text-center">
     <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
   </div>
-  <div class="text-neutral-200 text-center text-xs">
+  } @else {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="cancel2FA()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  }
+  <div class="text-neutral-200 text-center text-xs pt-4">
     <span>
       Copyright © 2024
       <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a></span

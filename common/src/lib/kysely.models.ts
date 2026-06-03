@@ -163,6 +163,10 @@ interface AuthUsers extends RecordType {
   password_reset_code_created_at: Timestamp | null;
   role: string | null;
   verified: boolean;
+  two_factor_enabled: boolean;
+  two_factor_code: string | null;
+  two_factor_expires_at: Timestamp | null;
+  deletion_scheduled_at: Timestamp | null;
 }
 
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
@@ -337,6 +341,7 @@ interface Tenants extends RecordType, AddressType {
   subscription_plan: string | null;
   subscription_status: string | null;
   subscription_ends_at: Timestamp | null;
+  deletion_scheduled_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {

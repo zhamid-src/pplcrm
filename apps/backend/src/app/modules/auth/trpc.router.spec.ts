@@ -362,4 +362,118 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });
+
+  it('should schedule and cancel account deletion, and automatically cancel on login', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const email = `del-${Date.now()}@example.com`;
+    await controller.signUp({
+      organization: `Org-Del-${Date.now()}`,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'DeleteUser',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    const authPayload = {
+      tenant_id: String(user.tenant_id),
+      user_id: String(user.id),
+      session_id: 'dummy-del-session',
+      name: user.first_name,
+    };
+
+    // 1. Schedule Deletion
+    const schedResult = await controller.scheduleAccountDeletion(authPayload);
+    expect(schedResult.success).toBe(true);
+    expect(schedResult.deletion_scheduled_at).toBeDefined();
+
+    const scheduledUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(scheduledUser.deletion_scheduled_at).not.toBeNull();
+
+    // 2. Cancel Deletion
+    const cancelResult = await controller.cancelAccountDeletion(authPayload);
+    expect(cancelResult.success).toBe(true);
+
+    const cancelledUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(cancelledUser.deletion_scheduled_at).toBeNull();
+
+    // 3. Re-schedule and verify sign-in clears it
+    await controller.scheduleAccountDeletion(authPayload);
+    const reScheduled = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(reScheduled.deletion_scheduled_at).not.toBeNull();
+
+    // Sign in (mocking matching UA/IP to bypass 2FA check)
+    await db.insertInto('sessions').values({
+      user_id: user.id,
+      tenant_id: user.tenant_id,
+      ip_address: '127.0.0.1',
+      user_agent: 'Vitest',
+      status: 'active',
+    }).execute();
+
+    await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest');
+
+    const signedInUser = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(signedInUser.deletion_scheduled_at).toBeNull();
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
+
+  it('should trigger 2FA login verification code and verify successfully', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const email = `2fa-${Date.now()}@example.com`;
+    await controller.signUp({
+      organization: `Org-2fa-${Date.now()}`,
+      email,
+      password: 'StrongPassword123!',
+      first_name: '2faUser',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+
+    // Enable 2FA on the user
+    await db.updateTable('authusers').set({ two_factor_enabled: true }).where('id', '=', user.id).execute();
+
+    // Attempt sign-in
+    const signInResult = await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest') as any;
+    expect(signInResult).toEqual({ requires2FA: true, email });
+
+    const userWithOtp = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(userWithOtp.two_factor_code).toBeTypeOf('string');
+    expect(userWithOtp.two_factor_code).toHaveLength(6);
+
+    // Verify OTP
+    const verifyResult = await controller.verify2FA(email, userWithOtp.two_factor_code!, '127.0.0.1', 'Vitest');
+    expect(verifyResult.auth_token).toBeTypeOf('string');
+    expect(verifyResult.refresh_token).toBeTypeOf('string');
+
+    // Clean up
+    await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('admin_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+  });
 });

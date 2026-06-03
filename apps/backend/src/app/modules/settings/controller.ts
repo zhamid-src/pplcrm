@@ -213,4 +213,98 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
   }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo().db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can schedule deletion.',
+      });
+    }
+
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this.getRepo().db.updateTable('tenants')
+      .set({ deletion_scheduled_at: deletionDate })
+      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .execute();
+
+    const admin = await this.getRepo().db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', BigInt(auth.user_id) as any)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Security Alert: Organization Scheduled for Deletion',
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, please trigger a cancel restoration request in your dashboard settings.`,
+        html: `<h2>Organization Scheduled for Deletion</h2>
+<p>Hi ${admin.first_name || 'Admin'},</p>
+<p>The organization <strong>${tenant.name}</strong> (Tenant ID: ${auth.tenant_id}) has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All data including campaigns, contacts, lists, workflows, and user accounts under this tenant will be permanently deleted. If you did not make this request or wish to cancel it, please click the button below to cancel the deletion:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/settings" class="btn">Manage Organization Settings</a>
+</div>
+<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
+      });
+    }
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo().db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can cancel deletion.',
+      });
+    }
+
+    await this.getRepo().db.updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .execute();
+
+    const admin = await this.getRepo().db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', BigInt(auth.user_id) as any)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'CampaignRaven - Organization Deletion Canceled',
+        text: `Your request to delete organization ${tenant.name} has been successfully canceled, and your organization is fully restored.`,
+        html: `<h2>Organization Deletion Canceled</h2>
+<p>Your request to delete organization <strong>${tenant.name}</strong> has been successfully canceled. Your organization and all associated campaign data are fully restored.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
 }

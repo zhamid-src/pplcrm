@@ -2,7 +2,7 @@
  * tRPC router defining authentication-related procedures such as
  * sign-up, sign-in, token renewal, and password reset flows.
  */
-import { InviteAuthUserObj, UpdateAuthUserObj, getAllOptions, signInInputObj, signUpInputObj, idSchema } from '@common';
+import { InviteAuthUserObj, UpdateAuthUserObj, Verify2FAObj, getAllOptions, signInInputObj, signUpInputObj, idSchema } from '@common';
 
 import z from 'zod';
 
@@ -94,7 +94,35 @@ function sendPasswordResetEmail() {
  * @returns Access and refresh tokens upon successful login.
  */
 function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(({ input }) => controller.signIn(input));
+  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip;
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.signIn(input, ip, ua);
+  });
+}
+
+function verify2FA() {
+  return publicProcedure
+    .input(Verify2FAObj)
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip;
+      const ua = ctx.req?.headers?.['user-agent'] || '';
+      return controller.verify2FA(input.email, input.code, ip, ua);
+    });
+}
+
+function scheduleAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
+}
+
+function cancelAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
+}
+
+function adminTriggerPasswordReset() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
 }
 
 /**
@@ -173,5 +201,9 @@ export const AuthRouter = router({
   sendPasswordResetEmail: sendPasswordResetEmail(),
   verifyEmail: verifyEmail(),
   resendVerificationEmail: resendVerificationEmail(),
+  verify2FA: verify2FA(),
+  scheduleAccountDeletion: scheduleAccountDeletion(),
+  cancelAccountDeletion: cancelAccountDeletion(),
+  adminTriggerPasswordReset: adminTriggerPasswordReset(),
 });
 

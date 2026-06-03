@@ -30,6 +30,9 @@ export class BackgroundJobWorker {
     this.ensureWorkflowsJobScheduled().catch((err) =>
       console.error('Failed to ensure workflows job scheduled:', err),
     );
+    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
@@ -235,6 +238,8 @@ export class BackgroundJobWorker {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'process_drip_workflows') {
       delayMs = 10 * 60 * 1000;
+    } else if (type === 'perform_scheduled_deletions') {
+      delayMs = 24 * 60 * 60 * 1000;
     }
 
 
@@ -407,6 +412,35 @@ export class BackgroundJobWorker {
     }
   }
 
+  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily scheduled deletions background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
+    }
+  }
 
   private async recoverStaleJobs(): Promise<void> {
     try {
