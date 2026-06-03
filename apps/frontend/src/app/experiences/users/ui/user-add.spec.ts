@@ -53,7 +53,7 @@ describe('UserAddComponent', () => {
       email: '',
       first_name: '',
       last_name: '',
-      role: ''
+      role: 'user'
     });
     expect(component['form']().invalid()).toBe(true);
   });

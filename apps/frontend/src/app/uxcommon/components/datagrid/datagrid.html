@@ -355,20 +355,32 @@
               </div>
             </div>
             } @else if (editorCfg) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="!editorCfg.multiple ? onSelectChange(r.original, col, $event) : editingValue.set($event)"
-              [multiple]="editorCfg.multiple"
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              [class.select-xs]="!editorCfg.multiple"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
+              @if (editorCfg.multiple) {
+                <select
+                  class="select select-bordered w-full"
+                  [ngModel]="editingValue()"
+                  (ngModelChange)="editingValue.set($event)"
+                  multiple
+                  [attr.size]="editorCfg.size ?? null"
+                  [style.height]="multiSelectHeight(editorCfg)"
+                  autofocus
+                >
+                  @for (opt of editorCfg.choices; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+              } @else {
+                <select
+                  class="select select-bordered w-full select-xs"
+                  [ngModel]="editingValue()"
+                  (ngModelChange)="onSelectChange(r.original, col, $event)"
+                  autofocus
+                >
+                  @for (opt of editorCfg.choices; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
               }
-            </select>
             } @else if (textCfg.textarea) {
             <textarea
               class="textarea textarea-bordered textarea-sm w-full"

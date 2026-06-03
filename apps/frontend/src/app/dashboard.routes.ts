@@ -1,4 +1,5 @@
 import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
 
 export const dashboardRoutes: Routes = [
   { path: '', redirectTo: 'summary', pathMatch: 'full' },
@@ -231,6 +232,7 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'users',
+    canActivate: [roleGuard],
     children: [
       {
         path: '',
@@ -271,10 +273,12 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'configuration',
+    canActivate: [roleGuard],
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
   {
     path: 'billing',
+    canActivate: [roleGuard],
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
   {

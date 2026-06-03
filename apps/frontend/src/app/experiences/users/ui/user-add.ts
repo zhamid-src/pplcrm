@@ -1,9 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { AuthUsersService } from '../services/authusers-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-add',
@@ -59,13 +60,13 @@ import { AuthUsersService } from '../services/authusers-service';
 
         <div class="space-y-1">
           <label class="block text-sm font-medium" for="role">Role</label>
-          <input
-            id="role"
-            type="text"
-            class="w-full rounded border border-border px-3 py-2"
-            [formField]="form.role"
-            placeholder="e.g. admin"
-          />
+          <select id="role" class="w-full rounded border border-border px-3 py-2 bg-base-100" [formField]="form.role">
+            @if (currentUserRole() !== 'admin') {
+              <option value="owner">Owner</option>
+            }
+            <option value="admin">Admin</option>
+            <option value="user">User</option>
+          </select>
         </div>
 
         @if (error()) {
@@ -93,14 +94,17 @@ export class UserAddComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
+  private readonly auth = inject(AuthService);
 
   protected readonly error = signal<string | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
 
   protected readonly payload = signal({
     email: '',
     first_name: '',
     last_name: '',
-    role: '',
+    role: 'user',
   });
 
   protected readonly form = form(this.payload, (p) => {

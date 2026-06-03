@@ -1,12 +1,13 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { form, required, email, FormField } from '@angular/forms/signals';
+import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { AuthUsersService } from '../services/authusers-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
@@ -18,12 +19,16 @@ export class UserDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
+  private readonly auth = inject(AuthService);
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
 
   protected readonly payload = signal({
     email: '',
@@ -37,6 +42,8 @@ export class UserDetailComponent implements OnInit {
     required(p.email);
     email(p.email);
     required(p.first_name);
+    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
+    disabled(p.verified, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
   });
 
   protected readonly displayName = computed(() => {
@@ -111,6 +118,7 @@ export class UserDetailComponent implements OnInit {
     try {
       await this.users.update(this.id, payload);
       this.alerts.showSuccess('User updated');
+      this.users.triggerRefresh();
       await this.load();
       this.form().reset();
     } catch (err: any) {

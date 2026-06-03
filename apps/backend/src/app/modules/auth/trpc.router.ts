@@ -2,11 +2,19 @@
  * tRPC router defining authentication-related procedures such as
  * sign-up, sign-in, token renewal, and password reset flows.
  */
-import { InviteAuthUserObj, UpdateAuthUserObj, Verify2FAObj, getAllOptions, signInInputObj, signUpInputObj, idSchema } from '@common';
+import {
+  InviteAuthUserObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  getAllOptions,
+  signInInputObj,
+  signUpInputObj,
+  idSchema,
+} from '@common';
 
 import z from 'zod';
 
-import { authProcedure, publicProcedure, router } from '../../../trpc';
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
 import { AuthController } from './controller';
 
 /**
@@ -22,7 +30,7 @@ function currentUser() {
  * Count total auth users for the current tenant.
  */
 function count() {
-  return authProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
 }
 
 /**
@@ -30,8 +38,8 @@ function count() {
  * Only minimal fields are returned.
  */
 function getUsers() {
-  return authProcedure.query(
-    ({ ctx }) => controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] }),
+  return authProcedure.query(({ ctx }) =>
+    controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] }),
   );
 }
 
@@ -39,9 +47,7 @@ function getUsers() {
  * Retrieve auth users with extended counts data.
  */
 function getAllWithCounts() {
-  return authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
+  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
 }
 
 /**
@@ -101,26 +107,36 @@ function signIn() {
   });
 }
 
+/**
+ * Verify 2FA code.
+ */
 function verify2FA() {
-  return publicProcedure
-    .input(Verify2FAObj)
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip;
-      const ua = ctx.req?.headers?.['user-agent'] || '';
-      return controller.verify2FA(input.email, input.code, ip, ua);
-    });
+  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip;
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.verify2FA(input.email, input.code, ip, ua);
+  });
 }
 
+/**
+ * Schedule account deletion.
+ */
 function scheduleAccountDeletion() {
   return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
 }
 
+/**
+ * Cancel account deletion.
+ */
 function cancelAccountDeletion() {
   return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
 }
 
+/**
+ * Trigger password reset by administrator.
+ */
 function adminTriggerPasswordReset() {
-  return authProcedure
+  return adminOrOwnerProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
 }
@@ -129,7 +145,7 @@ function adminTriggerPasswordReset() {
  * Invite a new auth user for the tenant.
  */
 function invite() {
-  return authProcedure
+  return adminOrOwnerProcedure
     .input(InviteAuthUserObj)
     .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
 }
@@ -206,4 +222,3 @@ export const AuthRouter = router({
   cancelAccountDeletion: cancelAccountDeletion(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
 });
-

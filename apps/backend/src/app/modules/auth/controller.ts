@@ -20,6 +20,7 @@ import {
   AppError,
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   InternalError,
   NotFoundError,
   PreconditionFailedError,
@@ -72,7 +73,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     const options = {
-      columns: ['id', 'email', 'first_name'],
+      columns: ['id', 'email', 'first_name', 'role'],
     } as QueryParams<'authusers'>;
 
     try {
@@ -100,6 +101,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async getUserById(auth: IAuthKeyPayload, id: string) {
+    const callerRole = auth.role;
+    if (callerRole === 'user' && auth.user_id !== String(id)) {
+      throw new ForbiddenError('You do not have permission to view this user.');
+    }
+
     const record = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
     if (!record) throw new NotFoundError('User not found');
     const authUser = record as AuthUsersType;
@@ -110,6 +116,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
+    const callerRole = auth.role;
+    if (callerRole === 'user') {
+      throw new ForbiddenError('You do not have permission to invite users.');
+    }
+    if (callerRole === 'admin' && input.role === 'owner') {
+      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
+    }
+
     const email = input.email.toLowerCase();
     await this.verifyUserDoesNotExist(email);
 
@@ -449,16 +463,21 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
-    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
     if (!user) throw new NotFoundError('User not found');
     const authUser = user as AuthUsersType;
     const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    await this.getRepo()
-      .db.updateTable('authusers')
-      .set({ deletion_scheduled_at: deletionDate })
-      .where('id', '=', authUser.id)
-      .execute();
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', authUser.id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
+    });
 
     await this.mailService.sendMail({
       to: authUser.email,
@@ -499,9 +518,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole === 'user') {
+      throw new ForbiddenError('You do not have permission to trigger password resets.');
+    }
+
     const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
     if (!user) throw new NotFoundError('User not found');
     const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot trigger password resets for owners.');
+    }
 
     return await this.getRepo()
       .transaction()
@@ -668,9 +696,39 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   public async updateUser(auth: IAuthKeyPayload, id: string, data: UpdateAuthUserType) {
     const userId = String(id);
+    const callerRole = auth.role;
+
+    if (callerRole === 'user' && userId !== auth.user_id) {
+      throw new ForbiddenError('You do not have permission to update other users.');
+    }
+
     const existing = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
     if (!existing) throw new NotFoundError('User not found');
     const existingUser = existing as AuthUsersType;
+
+    if (callerRole === 'user') {
+      if (data.role !== undefined && data.role !== existingUser.role) {
+        throw new ForbiddenError('You do not have permission to change roles.');
+      }
+      if (data.verified !== undefined && Boolean(data.verified) !== Boolean(existingUser.verified)) {
+        throw new ForbiddenError('You do not have permission to change verification status.');
+      }
+    }
+
+    if (callerRole === 'admin') {
+      if (existingUser.role === 'owner') {
+        if (data.role !== undefined && data.role !== 'owner') {
+          throw new ForbiddenError('Admins cannot demote an owner.');
+        }
+        if (data.verified !== undefined && !data.verified) {
+          throw new ForbiddenError('Admins cannot remove access of an owner.');
+        }
+      } else {
+        if (data.role === 'owner') {
+          throw new ForbiddenError('Admins cannot promote a non-owner to an owner.');
+        }
+      }
+    }
 
     const row: Record<string, any> = {};
 
@@ -710,6 +768,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           );
           if (!result) throw new InternalError('Update failed');
           const updatedUser = result as unknown as AuthUsersType;
+
+          await this.ensureAtLeastOneOwner(auth.tenant_id, trx, true, userId);
 
           if (row['email']) {
             const oldEmail = existingUser.email;
@@ -895,6 +955,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       password,
       email,
       first_name: input.first_name,
+      role: 'owner',
       verified: false,
     } as OperationDataType<'authusers', 'insert'>;
     try {
@@ -1134,6 +1195,44 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const exists = await this.getRepo().existsByEmail(email);
     if (exists) {
       throw new ConflictError('This email already exists. Did you want to sign in?');
+    }
+  }
+
+  public async ensureAtLeastOneOwner(
+    tenantId: string,
+    trx: Transaction<Models>,
+    isRoleChange = false,
+    excludeUserId?: string,
+  ) {
+    const activeOwners = await trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where('role', '=', 'owner')
+      .where('deletion_scheduled_at', 'is', null)
+      .execute();
+
+    if (activeOwners.length > 0) {
+      return;
+    }
+
+    // Find the oldest active user to promote
+    let query = trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where('deletion_scheduled_at', 'is', null);
+
+    if (excludeUserId) {
+      query = query.where('id', '!=', excludeUserId as any);
+    }
+
+    const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
+
+    if (oldestUser) {
+      await trx.updateTable('authusers').set({ role: 'owner' }).where('id', '=', oldestUser.id).execute();
+    } else if (isRoleChange) {
+      throw new BadRequestError('The system must have at least one owner.');
     }
   }
 }
