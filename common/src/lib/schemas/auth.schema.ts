@@ -14,4 +14,11 @@ export const UpdateAuthUserObj = z.object({
   last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
   verified: z.boolean().optional(),
+  two_factor_enabled: z.boolean().optional(),
 });
+
+export const Verify2FAObj = z.object({
+  email: emailSchema,
+  code: z.string().length(6),
+});
+

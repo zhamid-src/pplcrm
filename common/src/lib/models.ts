@@ -31,6 +31,7 @@ import type {
   sortModelItem,
   InviteAuthUserObj,
   UpdateAuthUserObj,
+  Verify2FAObj,
   ImportListItemObj,
   AddVolunteerEventObj,
   VolunteerEventsObj,
@@ -112,6 +113,8 @@ export type AddListType = z.infer<typeof AddListObj>;
 export type AddTeamType = z.infer<typeof AddTeamObj>;
 
 export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
 
 export type ListsType = z.infer<typeof ListsObj>;
 

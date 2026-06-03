@@ -66,6 +66,10 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
   }
 
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('User export is not available'));
   }

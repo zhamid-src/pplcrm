@@ -146,9 +146,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.enqueueMail({
         to: email,
         tenant_id: auth.tenant_id,
-        subject: `Invitation to join campaign on CampaignRaven`,
-        text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nSet up your password and log in at: http://localhost:4200/new-password?code=${code}`,
-        html: `<p>Hi ${input.first_name},</p><p>You have been invited to join the campaign by <strong>${auth.name}</strong>.</p><p>Your temporary password is: <code>${tempPassword}</code></p><p><a href="http://localhost:4200/new-password?code=${code}">Click here to set up your password and activate your account</a></p>`,
+        subject: `You've been invited to join ${auth.name} on CampaignRaven`,
+        text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: http://localhost:4200/new-password?code=${code}`,
+        html: `<h2>You've Been Invited!</h2>
+<p>Hi ${input.first_name},</p>
+<p>You have been invited to join the campaign team by <strong>${auth.name}</strong>.</p>
+<p>To join the team, activate your account, and set up your password, click the button below:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Activate Account</a>
+</div>
+<p>Your temporary password is: <code>${tempPassword}</code></p>
+<p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
       }, trx);
 
       return user;
@@ -257,7 +265,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
         subject: 'Verify Your Email - CampaignRaven',
         text: `Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${code}`,
-        html: `<h3>Verify Your Email</h3><p>Please click the link below to verify your email:</p><p><a href="http://localhost:4200/verify-email?code=${code}">http://localhost:4200/verify-email?code=${code}</a></p>`,
+        html: `<h2>Verify Your Email</h2>
+<p>To verify your email address and activate your login, please click the button below:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/verify-email?code=${code}" class="btn">Verify Email Address</a>
+</div>
+<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
       }, trx);
       return { success: true };
     });
@@ -279,9 +292,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.enqueueMail({
         to: email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'Your password reset link',
+        subject: 'Reset Your Password',
         text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
-        html: `<b>Hey there! </b><br> please click this link to reset your password: <a href='http://localhost:4200/new-password?code=${code}'>http://localhost:4200/new-password?code=${code}</a>`,
+        html: `<h2>Reset Your Password</h2>
+<p>We received a request to reset the password for your CampaignRaven account. Click the button below to choose a new password:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Reset Password</a>
+</div>
+<p>If you did not request a password reset, no further action is required.</p>
+<p class="warning">This reset link is single-use and will expire in 15 minutes.</p>`,
       }, trx);
     });
     return false;
@@ -293,18 +312,197 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Newly generated auth and refresh tokens.
    * @throws If credentials are invalid.
    */
-  public async signIn(input: signInInputType) {
+  public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
     if (!bcrypt.compareSync(input.password, user.password)) {
       throw new UnauthorizedError();
     }
 
+    const requires2FA = user.two_factor_enabled || await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent);
+
+    if (requires2FA) {
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      await this.getRepo().db.updateTable('authusers')
+        .set({
+          two_factor_code: otpCode,
+          two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+        })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'Login Verification (2FA) Code',
+        text: `Your login verification code is ${otpCode}. It expires in 5 minutes.`,
+        html: `<h2>Login Verification Code</h2>
+<p>Use the 6-digit one-time passcode (OTP) below to verify your login attempt. This passcode is valid for 5 minutes.</p>
+<div class="otp-container">
+  <span class="otp-code">${otpCode}</span>
+</div>
+<p class="warning">If you did not attempt to log in, please secure your account immediately.</p>`,
+      });
+
+      return { requires2FA: true, email: user.email };
+    }
+
+    if (user.deletion_scheduled_at) {
+      await this.getRepo().db.updateTable('authusers')
+        .set({ deletion_scheduled_at: null })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'CampaignRaven - Account Restored',
+        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+        html: `<h2>Account Restored</h2>
+<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
+      });
+    }
+
     return this.createTokens({
-      user_id: user.id,
-      tenant_id: user.tenant_id,
+      user_id: String(user.id),
+      tenant_id: String(user.tenant_id),
       name: user.first_name,
+      ipAddress,
+      userAgent,
     });
+  }
+
+  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string) {
+    const user = await this.getUserByEmail(email.toLowerCase());
+
+    if (!user.two_factor_code || user.two_factor_code !== code) {
+      throw new BadRequestError('Invalid verification code.');
+    }
+
+    if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
+      throw new BadRequestError('Verification code has expired. Please log in again.');
+    }
+
+    await this.getRepo().db.updateTable('authusers')
+      .set({
+        two_factor_code: null,
+        two_factor_expires_at: null,
+      })
+      .where('id', '=', user.id)
+      .execute();
+
+    if (user.deletion_scheduled_at) {
+      await this.getRepo().db.updateTable('authusers')
+        .set({ deletion_scheduled_at: null })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'CampaignRaven - Account Restored',
+        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+        html: `<h2>Account Restored</h2>
+<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
+      });
+    }
+
+    return this.createTokens({
+      user_id: String(user.id),
+      tenant_id: String(user.tenant_id),
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+    });
+  }
+
+  public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this.getRepo().db.updateTable('authusers')
+      .set({ deletion_scheduled_at: deletionDate })
+      .where('id', '=', authUser.id)
+      .execute();
+
+    await this.mailService.sendMail({
+      to: authUser.email,
+      tenant_id: auth.tenant_id,
+      subject: 'Security Alert: Account Scheduled for Deletion',
+      text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
+      html: `<h2>Account Scheduled for Deletion</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
+<p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
+    });
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async cancelAccountDeletion(auth: IAuthKeyPayload) {
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    await this.getRepo().db.updateTable('authusers')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', authUser.id)
+      .execute();
+
+    await this.mailService.sendMail({
+      to: authUser.email,
+      tenant_id: auth.tenant_id,
+      subject: 'CampaignRaven - Account Deletion Canceled',
+      text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+      html: `<h2>Account Deletion Canceled</h2>
+<p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
+    });
+
+    return { success: true };
+  }
+
+  public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    return await this.getRepo().transaction().execute(async (trx) => {
+      const codeObj = await this.getRepo().addPasswordResetCode(authUser.id, trx);
+      const code = codeObj?.password_reset_code;
+
+      await this.mailService.enqueueMail({
+        to: authUser.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Password Reset Request',
+        text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\nhttp://localhost:4200/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
+        html: `<h2>Password Reset Request</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>An administrator has initiated a password reset for your account.</p>
+<p>Please click the button below to reset your password and select a new one:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Reset Password</a>
+</div>
+<p class="warning">For security reasons, this reset link is single-use and will expire in 15 minutes.</p>`,
+      }, trx);
+
+      return { success: true };
+    });
+  }
+
+  private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
+    if (!ipAddress) return false;
+    const existing = await this.sessions.db
+      .selectFrom('sessions')
+      .select('id')
+      .where('user_id', '=', BigInt(userId) as any)
+      .where('ip_address', '=', ipAddress)
+      .where('user_agent', '=', userAgent || '')
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    return !existing;
   }
 
   /**
@@ -401,7 +599,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           tenant_id,
           subject: 'Welcome to CampaignRaven - Verify Your Email',
           text: `Welcome to CampaignRaven! Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${verificationCode}`,
-          html: `<h3>Welcome to CampaignRaven!</h3><p>Please verify your email by clicking the link below:</p><p><a href="http://localhost:4200/verify-email?code=${verificationCode}">http://localhost:4200/verify-email?code=${verificationCode}</a></p>`,
+          html: `<h2>Verify Your Email</h2>
+<p>Welcome to CampaignRaven! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
+</div>
+<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
         }, trx);
 
         token = await this.createTokens(
@@ -444,6 +647,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (data.last_name !== undefined) row['last_name'] = (data.last_name ?? '') as any;
     if (data.role !== undefined) row['role'] = (data.role ?? null) as any;
     if (data.verified !== undefined) row['verified'] = data.verified as any;
+    if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled as any;
     if (Object.keys(row).length > 0) {
       row['updated_at'] = new Date() as any;
       row['updatedby_id'] = auth.user_id as any;
@@ -463,19 +667,35 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (row['email']) {
           const oldEmail = existingUser.email;
           const nextEmail = row['email'];
-          await this.mailService.enqueueMail({
-            to: oldEmail,
-            tenant_id: auth.tenant_id,
-            subject: 'Security Alert: Email Address Updated',
-            text: `Hi ${existingUser.first_name},\n\nThe email address for your CampaignRaven account was updated to ${nextEmail}. If you did not make this change, please contact support.`,
-            html: `<p>Hi ${existingUser.first_name},</p><p>The email address for your CampaignRaven account was updated to <strong>${nextEmail}</strong>.</p><p>If you did not make this change, please contact support.</p>`,
-          }, trx);
+
+          const codeObj = await this.getRepo().addPasswordResetCode(userId, trx);
+          const code = codeObj?.password_reset_code;
+
+          row['verified'] = false;
+
           await this.mailService.enqueueMail({
             to: nextEmail,
             tenant_id: auth.tenant_id,
-            subject: 'CampaignRaven - Email Address Linked',
-            text: `Hi ${existingUser.first_name},\n\nThis email address has been successfully linked to your CampaignRaven account.`,
-            html: `<p>Hi ${existingUser.first_name},</p><p>This email address has been successfully linked to your CampaignRaven account.</p>`,
+            subject: 'Verify Your New Email Address - CampaignRaven',
+            text: `Please verify your new email address by clicking this link: http://localhost:4200/verify-email?code=${code}`,
+            html: `<h2>Verify Your New Email</h2>
+<p>Please verify your new email address to complete the update and activate your login:</p>
+<div class="btn-container">
+  <a href="http://localhost:4200/verify-email?code=${code}" class="btn">Verify Email Address</a>
+</div>
+<p class="warning">This verification link will expire in 24 hours.</p>`,
+          }, trx);
+
+          await this.mailService.enqueueMail({
+            to: oldEmail,
+            tenant_id: auth.tenant_id,
+            subject: 'Security Alert: Email Address Update Initiated',
+            text: `Hi ${existingUser.first_name},\n\nThe email address for your CampaignRaven account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
+            html: `<h2>Security Alert: Email Change</h2>
+<p>Hi ${existingUser.first_name},</p>
+<p>The email address for your CampaignRaven account was recently changed to <strong>${nextEmail}</strong>.</p>
+<p>We have sent a verification link to the new address. Until it is verified, login under that address is inactive.</p>
+<p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
           }, trx);
         }
         return updatedUser;
@@ -543,7 +763,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * @returns Auth token and refresh token pair.
    */
   private async createTokens(
-    input: { user_id: string; tenant_id: string; name: string; oldSession?: string },
+    input: { user_id: string; tenant_id: string; name: string; oldSession?: string; ipAddress?: string; userAgent?: string },
     trx?: Transaction<Models>,
   ) {
     // Delete the old session
@@ -552,8 +772,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const row = {
       user_id: input.user_id,
       tenant_id: input.tenant_id,
-      ip_address: '',
-      user_agent: '',
+      ip_address: input.ipAddress || '',
+      user_agent: input.userAgent || '',
       status: 'active',
     } as OperationDataType<'sessions', 'insert'>;
 
@@ -695,6 +915,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       last_name: lastName ?? '',
       role: record.role != null ? String(record.role) : null,
       verified: this.coerceBoolean(record.verified),
+      two_factor_enabled: this.coerceBoolean(record.two_factor_enabled),
+      deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
       created_at: this.coerceDate(record.created_at),
       updated_at: this.coerceDate(record.updated_at),
     };

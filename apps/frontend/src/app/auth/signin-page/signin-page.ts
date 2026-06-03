@@ -1,7 +1,7 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
+import { form, submit, required, email, minLength, pattern, FormField } from '@angular/forms/signals';
 import { JSendFailError } from '@common';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../services/api/token-service';
@@ -21,13 +21,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
  * - Token persistence options (localStorage vs sessionStorage)
  * - Loading states and error handling
  * - Automatic redirection for already authenticated users
- *
- * **Features:**
- * - Email format validation
- * - Password minimum length validation (8 characters)
- * - Real-time form validation feedback
- * - Secure password input with show/hide toggle
- * - Configurable token persistence for "Remember me" functionality
+ * - 2FA verification flow with OTP passcode
  *
  * @example
  * ```html
@@ -54,6 +48,12 @@ export class SignInPage {
   /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
 
+  /** Signal indicating whether 2FA verification is currently required */
+  protected readonly requires2FA = signal<boolean>(false);
+
+  /** Email address for the pending 2FA verification */
+  protected readonly emailFor2FA = signal<string>('');
+
   /** Model capturing credentials */
   protected readonly credentials = signal({
     email: '',
@@ -68,13 +68,24 @@ export class SignInPage {
     minLength(p.password, 8);
   });
 
+  /** Model capturing OTP data */
+  protected readonly otpData = signal({
+    code: '',
+  });
+
+  /** Signal-based OTP form with validations */
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
+
   /**
    * Redirects to the dashboard if an authenticated user revisits the sign-in page.
    */
   constructor() {
     effect(() => {
       const user = this.authService.getUserSignal();
-      if (user()) this.router.navigate(['summary']);
+      if (user()) void this.router.navigate(['summary']);
     });
   }
 
@@ -84,6 +95,10 @@ export class SignInPage {
 
   public get password() {
     return this.form.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
   }
 
   /**
@@ -113,7 +128,12 @@ export class SignInPage {
       action: async () => {
         const end = this._loading.begin();
         try {
-          await this.authService.signIn({ email: emailVal, password: passwordVal });
+          const res = await this.authService.signIn({ email: emailVal, password: passwordVal });
+          if (res.requires2FA) {
+            this.requires2FA.set(true);
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          }
         } catch (err) {
           if (err instanceof JSendFailError) {
             const message = err.data['message'] ?? 'Unable to sign in.';
@@ -131,10 +151,10 @@ export class SignInPage {
       onInvalid: () => {
         const emailField = this.form.email();
         const passwordField = this.form.password();
-        
-        const hasEmailRequired = emailField.errors().some(e => e.kind === 'required');
-        const hasEmailFormat = emailField.errors().some(e => e.kind === 'email');
-        const hasPasswordMinLength = passwordField.errors().some(e => e.kind === 'minLength');
+
+        const hasEmailRequired = emailField.errors().some((e) => e.kind === 'required');
+        const hasEmailFormat = emailField.errors().some((e) => e.kind === 'email');
+        const hasPasswordMinLength = passwordField.errors().some((e) => e.kind === 'minLength');
 
         const msg = hasEmailRequired
           ? 'Email is required.'
@@ -144,8 +164,61 @@ export class SignInPage {
               ? 'Password must be at least 8 characters.'
               : 'Please enter a valid email and password.';
         this.alertSvc.showError(msg);
-      }
+      },
     });
+  }
+
+  /**
+   * Submits the 2FA verification code.
+   */
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({ email: emailVal, code: codeVal });
+        } catch (err) {
+          if (err instanceof JSendFailError) {
+            const message = err.data['message'] ?? 'Verification failed.';
+            this.alertSvc.showError(message);
+          } else if (err instanceof TRPCClientError) {
+            this.alertSvc.showError(err.message);
+          } else {
+            this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+          }
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const codeField = this.otpForm.code();
+        const hasCodeRequired = codeField.errors().some((e) => e.kind === 'required');
+        const hasCodePattern = codeField.errors().some((e) => e.kind === 'pattern');
+
+        const msg = hasCodeRequired
+          ? 'Verification code is required.'
+          : hasCodePattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  /**
+   * Cancels the 2FA flow and goes back to standard credentials sign-in.
+   */
+  public cancel2FA() {
+    this.requires2FA.set(false);
+    this.emailFor2FA.set('');
+    this.otpData.update((o) => ({ ...o, code: '' }));
   }
 
   /**

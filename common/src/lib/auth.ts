@@ -77,6 +77,8 @@ export interface IAuthUserRecord extends IAuthUser {
   last_name: string;
   role: string | null;
   verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
 }

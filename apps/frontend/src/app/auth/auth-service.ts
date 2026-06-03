@@ -125,11 +125,32 @@ export class AuthService extends TRPCService<'authusers'> {
    * Signs the user in using provided credentials and stores the received token.
    *
    * @param input - The sign-in credentials.
-   * @returns The authenticated user after token storage and user fetch.
+   * @returns The authenticated user after token storage and user fetch, or a 2FA requirement indicator.
    * @throws `TRPCError` if authentication fails.
    */
-  public async signIn(input: signInInputType) {
-    const token = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+  public async signIn(
+    input: signInInputType,
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      meta: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    return { requires2FA: false, user };
+  }
+
+  /**
+   * Verifies the 2FA code and stores the received token.
+   *
+   * @param input - The verification credentials (email and code).
+   * @returns The authenticated user after token storage and user fetch.
+   */
+  public async verify2FA(input: { email: string; code: string }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
       meta: { skipErrorHandler: true },
     });
     return this.updateTokensAndGetCurrentUser(token);

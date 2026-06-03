@@ -133,6 +133,22 @@ export class UserDetailComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
+  protected readonly resettingPassword = signal(false);
+
+  protected async triggerPasswordReset() {
+    if (!this.id) return;
+    this.resettingPassword.set(true);
+    try {
+      await this.users.adminTriggerPasswordReset(this.id);
+      this.alerts.showSuccess('Password reset email sent to user');
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to trigger password reset';
+      this.alerts.showError(message);
+    } finally {
+      this.resettingPassword.set(false);
+    }
+  }
+
   protected formatAsOf(date: Date | null): string {
     if (!date) return '—';
     try {

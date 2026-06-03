@@ -22,4 +22,8 @@ export const SettingsRouter = router({
   verifySenderEmail: publicProcedure
     .input(z.object({ token: z.string() }))
     .mutation(({ input }) => settings.verifySenderEmail(input.token)),
+  scheduleTenantDeletion: authProcedure
+    .mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
+  cancelTenantDeletion: authProcedure
+    .mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
 });

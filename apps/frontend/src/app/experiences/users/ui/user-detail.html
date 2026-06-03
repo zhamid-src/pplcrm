@@ -14,6 +14,17 @@
         <p class="text-sm text-base-content/70">{{ detail()?.email }}</p>
       </div>
     </div>
+    <div>
+      <button
+        class="btn btn-outline btn-warning btn-sm"
+        type="button"
+        (click)="triggerPasswordReset()"
+        [disabled]="resettingPassword() || saving()"
+      >
+        <pc-icon name="lock-closed"></pc-icon>
+        {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
+      </button>
+    </div>
   </div>
 
   @if (error()) {

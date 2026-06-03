@@ -515,6 +515,58 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         max_attempts: 3,
       })
       .execute();
+  } else if (payload.type === 'perform_scheduled_deletions') {
+    const now = new Date();
+
+    const expiredUsers = await db
+      .selectFrom('authusers')
+      .select('id')
+      .where('deletion_scheduled_at', '<=', now)
+      .execute();
+
+    for (const user of expiredUsers) {
+      const userId = String(user.id);
+      await db.transaction().execute(async (trx: any) => {
+        await trx.deleteFrom('sessions').where('user_id', '=', BigInt(userId) as any).execute();
+        await trx.deleteFrom('profiles').where('auth_id', '=', BigInt(userId) as any).execute();
+        await trx.deleteFrom('authusers').where('id', '=', BigInt(userId) as any).execute();
+      });
+    }
+
+    const expiredTenants = await db
+      .selectFrom('tenants')
+      .select('id')
+      .where('deletion_scheduled_at', '<=', now)
+      .execute();
+
+    for (const tenant of expiredTenants) {
+      const tenantId = String(tenant.id);
+      await db.transaction().execute(async (trx: any) => {
+        await trx.deleteFrom('sessions').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('profiles').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('authusers').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('campaigns').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('map_households_tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('persons').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('households').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('tags').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('settings').where('tenant_id', '=', BigInt(tenantId) as any).execute();
+        await trx.deleteFrom('tenants').where('id', '=', BigInt(tenantId) as any).execute();
+      });
+    }
+
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        max_attempts: 3,
+      })
+      .execute();
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }
