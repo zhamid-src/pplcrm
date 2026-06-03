@@ -45,7 +45,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
     return;
   }
 
-  const planName = tenant.subscription_plan || 'free';
+  const planName = (tenant['subscription_plan'] as string) || 'free';
   const planLimits = getPlanLimits(planName);
 
   // 1. Count Contacts (Persons)
@@ -66,7 +66,9 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   const currentSeats = Number(seatsCountRow?.cnt || 0);
 
   // 3. Count Outbound Emails within Current Billing Cycle
-  const endsAt = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null;
+  const endsAt = tenant['subscription_ends_at']
+    ? new Date(tenant['subscription_ends_at'] as string | number | Date)
+    : null;
   let billingCycleStart = new Date();
   billingCycleStart.setDate(billingCycleStart.getDate() - 30); // fallback: last 30 days
   if (endsAt) {
@@ -151,7 +153,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
         alertSettings[flag100] = true;
         alertSettings[flag90] = true; // Auto-set 90% if we skipped directly to 100%
         settingsChanged = true;
-        await sendLimitEmail(tenantId, tenant.name, planName, resource, 100, adminsList, db);
+        await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 100, adminsList, db);
       }
     } else {
       // Reset 100% flag if usage drops below 100%
@@ -165,7 +167,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
         if (!alertSettings[flag90]) {
           alertSettings[flag90] = true;
           settingsChanged = true;
-          await sendLimitEmail(tenantId, tenant.name, planName, resource, 90, adminsList, db);
+          await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 90, adminsList, db);
         }
       } else {
         // Reset 90% flag if usage drops below 90%
@@ -178,7 +180,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   }
 
   if (settingsChanged) {
-    const adminUserId = tenant.admin_id ? String(tenant.admin_id) : '1';
+    const adminUserId = tenant['admin_id'] ? String(tenant['admin_id']) : '1';
     await settingsRepo.upsertMany({
       tenant_id: tenantId,
       user_id: adminUserId,
@@ -278,9 +280,9 @@ export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
   const tenants = await db.selectFrom('tenants').select('id').execute();
   for (const tenant of tenants) {
     try {
-      await checkTenantUsage(String(tenant.id), db);
+      await checkTenantUsage(String(tenant['id']), db);
     } catch (err) {
-      console.error(`Failed to check usage limits for tenant ${tenant.id}:`, err);
+      console.error(`Failed to check usage limits for tenant ${tenant['id']}:`, err);
     }
   }
 }
