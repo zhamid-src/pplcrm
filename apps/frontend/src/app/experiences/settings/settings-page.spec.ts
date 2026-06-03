@@ -23,7 +23,6 @@ describe('SettingsPage', () => {
       'organization.address': '456 Oak Ave, Metropolis',
       'campaign.reporting_period': 'monthly',
       'campaign.primary_goal': 'Knock doors',
-      'notifications.email_enabled': true,
       'notifications.task_escalation_hours': 24,
       'integrations.webhook_url': 'https://acme.com/webhook',
     });
@@ -50,7 +49,7 @@ describe('SettingsPage', () => {
     mockAlertSvc = {
       showSuccess: vi.fn(),
       showError: vi.fn(),
-      show: vi.fn()
+      show: vi.fn(),
     };
 
     const mockAuthUser = {
@@ -60,11 +59,17 @@ describe('SettingsPage', () => {
       last_name: 'Doe',
       notification_preferences: {
         mention_in_comment: true,
+        mention_in_comment_in_app: true,
         task_assigned: true,
+        task_assigned_in_app: true,
         task_due: true,
+        task_due_in_app: true,
         person_assigned: true,
+        person_assigned_in_app: true,
         export_ready: true,
+        export_ready_in_app: true,
         import_summary: true,
+        import_summary_in_app: true,
       },
     };
 
@@ -88,8 +93,8 @@ describe('SettingsPage', () => {
         { provide: SettingsService, useValue: mockSettingsSvc },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: AlertService, useValue: mockAlertSvc },
-        { provide: AuthService, useValue: mockAuthSvc }
-      ]
+        { provide: AuthService, useValue: mockAuthSvc },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SettingsPage);
@@ -105,7 +110,7 @@ describe('SettingsPage', () => {
     expect(component['sectionStates'].length).toBeGreaterThan(0);
 
     // Verify first section form is populated
-    const orgSection = component['sectionStates'].find(s => s.config.id === 'organization');
+    const orgSection = component['sectionStates'].find((s) => s.config.id === 'organization');
     expect(orgSection).toBeTruthy();
     expect(orgSection?.payload()['organization_name']).toBe('Acme Corp');
     expect(orgSection?.payload()['organization_contact_email']).toBe('hello@acme.com');
@@ -113,7 +118,7 @@ describe('SettingsPage', () => {
 
   it('should allow switching between sections', () => {
     expect(component['selectedSectionId']()).toBe('organization');
-    
+
     component['selectSection']('notifications');
     expect(component['selectedSectionId']()).toBe('notifications');
     expect(component['isSelected']('notifications')).toBe(true);
@@ -121,7 +126,7 @@ describe('SettingsPage', () => {
   });
 
   it('should mark form as dirty when field value changes', () => {
-    const orgSection = component['sectionStates'].find(s => s.config.id === 'organization');
+    const orgSection = component['sectionStates'].find((s) => s.config.id === 'organization');
     expect(orgSection).toBeTruthy();
     expect(component['isSectionDirty'](orgSection!)).toBe(false);
 
@@ -136,7 +141,7 @@ describe('SettingsPage', () => {
   });
 
   it('should validate email field and set invalid state', () => {
-    const orgSection = component['sectionStates'].find(s => s.config.id === 'organization');
+    const orgSection = component['sectionStates'].find((s) => s.config.id === 'organization');
     expect(orgSection).toBeTruthy();
     expect(component['isSectionInvalid'](orgSection!)).toBe(false);
 
@@ -151,7 +156,7 @@ describe('SettingsPage', () => {
   });
 
   it('should reset section fields back to original settings', () => {
-    const orgSection = component['sectionStates'].find(s => s.config.id === 'organization');
+    const orgSection = component['sectionStates'].find((s) => s.config.id === 'organization');
     expect(orgSection).toBeTruthy();
 
     const input = fixture.nativeElement.querySelector('#organization_name');
@@ -168,7 +173,7 @@ describe('SettingsPage', () => {
   });
 
   it('should save modified fields via SettingsService.upsert', async () => {
-    const orgSection = component['sectionStates'].find(s => s.config.id === 'organization');
+    const orgSection = component['sectionStates'].find((s) => s.config.id === 'organization');
     expect(orgSection).toBeTruthy();
 
     const nameInput = fixture.nativeElement.querySelector('#organization_name');
@@ -186,7 +191,7 @@ describe('SettingsPage', () => {
 
     expect(mockSettingsSvc.upsert).toHaveBeenCalledWith([
       { key: 'organization.name', value: 'Acme Corp V2' },
-      { key: 'organization.phone', value: '(555) 123-4567' }
+      { key: 'organization.phone', value: '(555) 123-4567' },
     ]);
     expect(component['isSectionDirty'](orgSection!)).toBe(false);
     expect(snapshotSignalValue()['organization.name']).toBe('Acme Corp V2');

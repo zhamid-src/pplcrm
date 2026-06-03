@@ -971,11 +971,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     let notificationPreferences = {
       mention_in_comment: true,
+      mention_in_comment_in_app: true,
       task_assigned: true,
+      task_assigned_in_app: true,
       task_due: true,
+      task_due_in_app: true,
       person_assigned: true,
+      person_assigned_in_app: true,
       export_ready: true,
+      export_ready_in_app: true,
       import_summary: true,
+      import_summary_in_app: true,
     };
 
     const profileJson = record.profile?.json ?? record.json;

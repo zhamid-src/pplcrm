@@ -40,18 +40,6 @@ export class SettingsPage implements OnInit {
   private readonly auth = inject(AuthService);
 
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly savingUserPrefs = signal(false);
-
-  protected readonly userPrefsPayload = signal({
-    mention_in_comment: true,
-    task_assigned: true,
-    task_due: true,
-    person_assigned: true,
-    export_ready: true,
-    import_summary: true,
-  });
-
-  protected readonly userPrefsForm = form(this.userPrefsPayload, () => {});
 
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
@@ -116,15 +104,42 @@ export class SettingsPage implements OnInit {
       entries.push({ key: field.config.key, value });
     }
 
-    if (!entries.length) {
-      section.form().reset();
-      return;
-    }
-
     this.savingSectionId.set(section.config.id);
     try {
-      const snapshot = await this.settingsSvc.upsert(entries);
-      this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['task_assigned']),
+              task_assigned_in_app: parseBool(raw['task_assigned_in_app']),
+              task_due: parseBool(raw['task_due']),
+              task_due_in_app: parseBool(raw['task_due_in_app']),
+              person_assigned: parseBool(raw['person_assigned']),
+              person_assigned_in_app: parseBool(raw['person_assigned_in_app']),
+              export_ready: parseBool(raw['export_ready']),
+              export_ready_in_app: parseBool(raw['export_ready_in_app']),
+              import_summary: parseBool(raw['import_summary']),
+              import_summary_in_app: parseBool(raw['import_summary_in_app']),
+            },
+          };
+          await this.auth.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Failed to save settings';
+      this.alerts.showError(message);
     } finally {
       this.savingSectionId.set(null);
     }
@@ -132,6 +147,9 @@ export class SettingsPage implements OnInit {
 
   protected resetSection(section: SectionState) {
     this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
   }
 
   private buildSectionState(section: SettingsSectionConfig): SectionState {
@@ -145,6 +163,21 @@ export class SettingsPage implements OnInit {
         this.settingsSvc.getValue(field.key, field.defaultValue),
       );
       fieldStates.push({ config: field, controlName });
+    }
+
+    if (section.id === 'notifications') {
+      initialPayload['mention_in_comment'] = true;
+      initialPayload['mention_in_comment_in_app'] = true;
+      initialPayload['task_assigned'] = true;
+      initialPayload['task_assigned_in_app'] = true;
+      initialPayload['task_due'] = true;
+      initialPayload['task_due_in_app'] = true;
+      initialPayload['person_assigned'] = true;
+      initialPayload['person_assigned_in_app'] = true;
+      initialPayload['export_ready'] = true;
+      initialPayload['export_ready_in_app'] = true;
+      initialPayload['import_summary'] = true;
+      initialPayload['import_summary_in_app'] = true;
     }
 
     const payload = signal(initialPayload);
@@ -360,52 +393,40 @@ export class SettingsPage implements OnInit {
         this.currentUserDetail.set(user);
         const prefs = user.notification_preferences || {
           mention_in_comment: true,
+          mention_in_comment_in_app: true,
           task_assigned: true,
+          task_assigned_in_app: true,
           task_due: true,
+          task_due_in_app: true,
           person_assigned: true,
+          person_assigned_in_app: true,
           export_ready: true,
+          export_ready_in_app: true,
           import_summary: true,
+          import_summary_in_app: true,
         };
-        this.userPrefsPayload.set({
-          mention_in_comment: prefs.mention_in_comment ?? true,
-          task_assigned: prefs.task_assigned ?? true,
-          task_due: prefs.task_due ?? true,
-          person_assigned: prefs.person_assigned ?? true,
-          export_ready: prefs.export_ready ?? true,
-          import_summary: prefs.import_summary ?? true,
-        });
-        this.userPrefsForm().reset();
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            mention_in_comment: prefs.mention_in_comment ?? true,
+            mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            task_assigned: prefs.task_assigned ?? true,
+            task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            task_due: prefs.task_due ?? true,
+            task_due_in_app: prefs.task_due_in_app ?? true,
+            person_assigned: prefs.person_assigned ?? true,
+            person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            export_ready: prefs.export_ready ?? true,
+            export_ready_in_app: prefs.export_ready_in_app ?? true,
+            import_summary: prefs.import_summary ?? true,
+            import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
       }
     } catch (err: any) {
       console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async saveUserPrefs() {
-    const user = this.currentUserDetail();
-    if (!user) return;
-
-    this.savingUserPrefs.set(true);
-    try {
-      const raw = this.userPrefsPayload();
-      const payload: UpdateAuthUserType = {
-        notification_preferences: {
-          mention_in_comment: raw.mention_in_comment,
-          task_assigned: raw.task_assigned,
-          task_due: raw.task_due,
-          person_assigned: raw.person_assigned,
-          export_ready: raw.export_ready,
-          import_summary: raw.import_summary,
-        },
-      };
-      await this.auth.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Personal notification preferences updated successfully');
-      await this.loadUserPrefs();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to update preferences';
-      this.alerts.showError(message);
-    } finally {
-      this.savingUserPrefs.set(false);
     }
   }
 }
