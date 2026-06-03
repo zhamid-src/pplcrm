@@ -1,7 +1,14 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <header class="mb-8 space-y-2">
-    <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
-    <p class="text-base-content/70">Control tenant-wide defaults for PeopleCRM.</p>
+    <h1 class="text-3xl font-bold tracking-tight">
+      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Configuration } @case
+      ('billing') { Billing } }
+    </h1>
+    <p class="text-base-content/70">
+      @switch (currentMode) { @case ('settings') { Control user-specific preferences for PeopleCRM. } @case
+      ('configuration') { Control tenant-wide defaults for PeopleCRM. } @case ('billing') { Manage your subscription
+      plans and payment methods. } }
+    </p>
   </header>
 
   @if (hasLoaded()) {
@@ -9,7 +16,7 @@
     <!-- Sidebar Navigation -->
     <aside class="w-48 md:sticky md:top-8 shrink-0">
       <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
-        @for (section of sectionStates; track trackSection($index, section)) {
+        @for (section of visibleSections; track trackSection($index, section)) {
         <button
           type="button"
           class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
@@ -26,7 +33,7 @@
           />
           {{ section.config.title }}
         </button>
-        }
+        } @if (currentMode === 'settings') {
         <!-- Email Sync custom section -->
         <button
           id="settings-nav-email-sync"
@@ -39,6 +46,7 @@
           <pc-icon name="envelope" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" />
           Email Sync
         </button>
+        } @if (currentMode === 'configuration') {
         <!-- Domains custom section -->
         <button
           id="settings-nav-domains"
@@ -51,6 +59,7 @@
           <pc-icon name="globe-americas" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('domains')" />
           Domain Verification
         </button>
+        } @if (currentMode === 'billing') {
         <!-- Billing custom section -->
         <button
           id="settings-nav-billing"
@@ -61,24 +70,50 @@
           (click)="selectSection('billing')"
         >
           <pc-icon name="credit-card" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('billing')" />
-          Billing & Subscription
+          Billing
         </button>
+        }
       </nav>
     </aside>
 
     <!-- Main Content Area -->
     <main class="flex-1 w-full max-w-4xl">
-      @for (section of sectionStates; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        @if (section.config.id !== 'notifications') {
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
           <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
         </header>
+        }
 
         <!-- (form content) -->
         <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
+          @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
+
           <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) {
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
             <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
               <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90">
                 {{ field.config.label }}
@@ -166,7 +201,7 @@
               </p>
               }
             </div>
-            }
+            } }
           </div>
 
           <!-- Custom extensions for specific sections -->
@@ -271,31 +306,11 @@
               </button>
             </div>
           </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate Credentials
-              </button>
-            </div>
-          </div>
           } @if (section.config.id === 'notifications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-4">
-            <div class="space-y-1">
-              <h3 class="text-lg font-semibold text-base-content/90">My Notification Preferences</h3>
-              <p class="text-xs text-base-content/50">
+          <div class="space-y-6">
+            <div class="border-b border-base-200 pb-5 space-y-1">
+              <h2 class="text-2xl font-semibold tracking-tight">My Notification Preferences</h2>
+              <p class="text-sm text-base-content/60">
                 Customize which email and in-app notifications you would like to receive for your own account.
               </p>
             </div>
@@ -310,147 +325,34 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <!-- Mentioned in Comment -->
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
                   <tr class="hover:bg-base-200/20">
                     <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Mentioned in Comment</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">
-                        Alerts when someone mentions you in a thread
-                      </div>
+                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
                     </td>
                     <td class="align-middle text-center">
                       <input
+                        [id]="group.emailField.controlName"
                         type="checkbox"
                         class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.mention_in_comment"
+                        [formField]="section.form[group.emailField.controlName]"
                       />
                     </td>
                     <td class="align-middle text-center">
+                      @if (group.inAppField) {
                       <input
+                        [id]="group.inAppField.controlName"
                         type="checkbox"
                         class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.mention_in_comment_in_app"
+                        [formField]="section.form[group.inAppField.controlName]"
                       />
+                      }
                     </td>
                   </tr>
-
-                  <!-- Task Assigned -->
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Task Assigned</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">Alerts when a task is assigned to you</div>
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.task_assigned"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.task_assigned_in_app"
-                      />
-                    </td>
-                  </tr>
-
-                  <!-- Task Overdue / Due Today -->
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Task Due Today / Overdue</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">
-                        Daily reminder check of active tasks due
-                      </div>
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.task_due"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.task_due_in_app"
-                      />
-                    </td>
-                  </tr>
-
-                  <!-- Person Assigned -->
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Person Assigned</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">
-                        Alerts when a contact ownership is assigned to you
-                      </div>
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.person_assigned"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.person_assigned_in_app"
-                      />
-                    </td>
-                  </tr>
-
-                  <!-- Export Ready -->
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Export Ready</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">
-                        Receive download link when CSV export finishes
-                      </div>
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.export_ready"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.export_ready_in_app"
-                      />
-                    </td>
-                  </tr>
-
-                  <!-- Import Summary -->
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">Import Summary</div>
-                      <div class="text-[11px] text-base-content/60 mt-0.5">
-                        Spreadsheet import completion stats report
-                      </div>
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.import_summary"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form.import_summary_in_app"
-                      />
-                    </td>
-                  </tr>
+                  }
                 </tbody>
               </table>
             </div>
@@ -495,7 +397,7 @@
       } }
 
       <!-- Email Sync custom section -->
-      @if (isSelected('email-sync')) {
+      @if (currentMode === 'settings' && isSelected('email-sync')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
@@ -550,7 +452,7 @@
       }
 
       <!-- Domains custom section -->
-      @if (isSelected('domains')) {
+      @if (currentMode === 'configuration' && isSelected('domains')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Domain Verification</h2>
@@ -563,10 +465,10 @@
       }
 
       <!-- Billing custom section -->
-      @if (isSelected('billing')) {
+      @if (currentMode === 'billing' && isSelected('billing')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Billing & Subscription</h2>
+          <h2 class="text-2xl font-semibold tracking-tight">Billing</h2>
           <p class="mt-1 text-sm text-base-content/60">
             Manage your subscription plans, view invoice details, and update payment methods.
           </p>

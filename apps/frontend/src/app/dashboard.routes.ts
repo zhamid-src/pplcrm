@@ -135,8 +135,7 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () =>
-          import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
         pathMatch: 'full',
         data: { shouldReuse: true, key: 'workflowsgridroot' },
       },
@@ -152,7 +151,6 @@ export const dashboardRoutes: Routes = [
       },
     ],
   },
-
 
   {
     path: 'schedule',
@@ -269,6 +267,14 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'settings',
+    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+  },
+  {
+    path: 'configuration',
+    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+  },
+  {
+    path: 'billing',
     loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
   },
   {
