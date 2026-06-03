@@ -2,8 +2,9 @@ import { Component, OnInit, effect, inject, signal, WritableSignal } from '@angu
 import { ActivatedRoute } from '@angular/router';
 import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
-import { SettingsEntryType } from '@common';
+import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AuthService } from '../../auth/auth-service';
 
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
@@ -36,6 +37,21 @@ export class SettingsPage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
   protected readonly householdsSvc = inject(HouseholdsService);
+  private readonly auth = inject(AuthService);
+
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly savingUserPrefs = signal(false);
+
+  protected readonly userPrefsPayload = signal({
+    mention_in_comment: true,
+    task_assigned: true,
+    task_due: true,
+    person_assigned: true,
+    export_ready: true,
+    import_summary: true,
+  });
+
+  protected readonly userPrefsForm = form(this.userPrefsPayload, () => {});
 
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
@@ -58,6 +74,7 @@ export class SettingsPage implements OnInit {
     await this.settingsSvc.load();
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
 
     const tab = this.route.snapshot.queryParamMap.get('tab');
     if (tab) {
@@ -332,6 +349,63 @@ export class SettingsPage implements OnInit {
       this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
     } finally {
       this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.auth.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          task_assigned: true,
+          task_due: true,
+          person_assigned: true,
+          export_ready: true,
+          import_summary: true,
+        };
+        this.userPrefsPayload.set({
+          mention_in_comment: prefs.mention_in_comment ?? true,
+          task_assigned: prefs.task_assigned ?? true,
+          task_due: prefs.task_due ?? true,
+          person_assigned: prefs.person_assigned ?? true,
+          export_ready: prefs.export_ready ?? true,
+          import_summary: prefs.import_summary ?? true,
+        });
+        this.userPrefsForm().reset();
+      }
+    } catch (err: any) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async saveUserPrefs() {
+    const user = this.currentUserDetail();
+    if (!user) return;
+
+    this.savingUserPrefs.set(true);
+    try {
+      const raw = this.userPrefsPayload();
+      const payload: UpdateAuthUserType = {
+        notification_preferences: {
+          mention_in_comment: raw.mention_in_comment,
+          task_assigned: raw.task_assigned,
+          task_due: raw.task_due,
+          person_assigned: raw.person_assigned,
+          export_ready: raw.export_ready,
+          import_summary: raw.import_summary,
+        },
+      };
+      await this.auth.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Personal notification preferences updated successfully');
+      await this.loadUserPrefs();
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Failed to update preferences';
+      this.alerts.showError(message);
+    } finally {
+      this.savingUserPrefs.set(false);
     }
   }
 }

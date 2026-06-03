@@ -14,17 +14,16 @@
         <p class="text-sm text-base-content/70">{{ detail()?.email }}</p>
       </div>
     </div>
-    <div>
-      <button
-        class="btn btn-outline btn-warning btn-sm"
-        type="button"
-        (click)="triggerPasswordReset()"
-        [disabled]="resettingPassword() || saving()"
-      >
-        <pc-icon name="lock-closed"></pc-icon>
-        {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
-      </button>
-    </div>
+
+    <button
+      class="btn btn-outline btn-accent btn-sm"
+      type="button"
+      (click)="triggerPasswordReset()"
+      [disabled]="resettingPassword() || saving()"
+    >
+      <pc-icon name="lock-closed"></pc-icon>
+      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
+    </button>
   </div>
 
   @if (error()) {
@@ -53,12 +52,24 @@
 
         <div class="space-y-1">
           <label for="role" class="text-sm font-medium text-base-content/80">Role</label>
-          <input id="role" type="text" class="input input-bordered w-full" [formField]="form.role" placeholder="e.g. admin" />
+          <input
+            id="role"
+            type="text"
+            class="input input-bordered w-full"
+            [formField]="form.role"
+            placeholder="e.g. admin"
+          />
         </div>
 
         <div class="space-y-1">
           <label for="first_name" class="text-sm font-medium text-base-content/80">First name</label>
-          <input id="first_name" type="text" class="input input-bordered w-full" [formField]="form.first_name" autocomplete="given-name" />
+          <input
+            id="first_name"
+            type="text"
+            class="input input-bordered w-full"
+            [formField]="form.first_name"
+            autocomplete="given-name"
+          />
           @if (form.first_name().invalid() && (form.first_name().dirty() || form.first_name().touched())) {
           <p class="text-sm text-error">First name is required.</p>
           }
@@ -66,7 +77,13 @@
 
         <div class="space-y-1">
           <label for="last_name" class="text-sm font-medium text-base-content/80">Last name</label>
-          <input id="last_name" type="text" class="input input-bordered w-full" [formField]="form.last_name" autocomplete="family-name" />
+          <input
+            id="last_name"
+            type="text"
+            class="input input-bordered w-full"
+            [formField]="form.last_name"
+            autocomplete="family-name"
+          />
         </div>
       </div>
 
@@ -76,12 +93,7 @@
           Verified account
         </label>
         <div class="flex gap-2">
-          <button
-            class="btn btn-ghost"
-            type="button"
-            (click)="resetForm()"
-            [disabled]="saving() || !form().dirty()"
-          >
+          <button class="btn btn-ghost" type="button" (click)="resetForm()" [disabled]="saving() || !form().dirty()">
             Reset
           </button>
           <button
@@ -104,8 +116,7 @@
         <div class="stat-title text-sm text-base-content/70">{{ card.title }}</div>
         <div class="stat-value text-2xl font-semibold">{{ card.value }}</div>
         <div class="stat-desc text-xs text-base-content/60">
-          {{ card.subtitle }}
-          @if (card.asOf) {
+          {{ card.subtitle }} @if (card.asOf) {
           <span class="block">As of {{ formatAsOf(card.asOf) }}</span>
           }
         </div>
