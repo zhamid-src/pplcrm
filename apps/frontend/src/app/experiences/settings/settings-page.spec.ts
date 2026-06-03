@@ -6,6 +6,7 @@ import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
+import { of } from 'rxjs';
 
 describe('SettingsPage', () => {
   let component: SettingsPage;
@@ -23,8 +24,6 @@ describe('SettingsPage', () => {
       'organization.address': '456 Oak Ave, Metropolis',
       'campaign.reporting_period': 'monthly',
       'campaign.primary_goal': 'Knock doors',
-      'notifications.task_escalation_hours': 24,
-      'integrations.webhook_url': 'https://acme.com/webhook',
     });
 
     mockSettingsSvc = {
@@ -80,7 +79,11 @@ describe('SettingsPage', () => {
     };
 
     const mockActivatedRoute = {
+      queryParams: of({}),
       snapshot: {
+        routeConfig: {
+          path: 'configuration',
+        },
         queryParamMap: {
           get: vi.fn().mockReturnValue(null),
         },
@@ -195,5 +198,48 @@ describe('SettingsPage', () => {
     ]);
     expect(component['isSectionDirty'](orgSection!)).toBe(false);
     expect(snapshotSignalValue()['organization.name']).toBe('Acme Corp V2');
+  });
+
+  it('should build notification section state with fields from config', () => {
+    const notifSection = component['sectionStates'].find((s) => s.config.id === 'notifications');
+    expect(notifSection).toBeTruthy();
+    expect(notifSection?.fields.length).toBeGreaterThan(1);
+
+    const groups = component['getNotificationGroups'](notifSection!);
+    expect(groups.length).toBe(6); // 6 categories of notification preferences
+    expect(groups[0].emailField).toBeTruthy();
+    expect(groups[0].inAppField).toBeTruthy();
+  });
+
+  it('should initialize correctly under settings mode', async () => {
+    const mockRoute = TestBed.inject(ActivatedRoute);
+    mockRoute.snapshot.routeConfig = { path: 'settings' };
+
+    const newFixture = TestBed.createComponent(SettingsPage);
+    const newComponent = newFixture.componentInstance;
+    newFixture.detectChanges();
+    await newFixture.whenStable();
+    newFixture.detectChanges();
+
+    expect(newComponent['currentMode']).toBe('settings');
+    expect(newComponent['visibleSections'].length).toBe(2);
+    expect(newComponent['visibleSections'][0].config.id).toBe('notifications');
+    expect(newComponent['visibleSections'][1].config.id).toBe('appearance');
+    expect(newComponent['selectedSectionId']()).toBe('notifications');
+  });
+
+  it('should initialize correctly under billing mode', async () => {
+    const mockRoute = TestBed.inject(ActivatedRoute);
+    mockRoute.snapshot.routeConfig = { path: 'billing' };
+
+    const newFixture = TestBed.createComponent(SettingsPage);
+    const newComponent = newFixture.componentInstance;
+    newFixture.detectChanges();
+    await newFixture.whenStable();
+    newFixture.detectChanges();
+
+    expect(newComponent['currentMode']).toBe('billing');
+    expect(newComponent['visibleSections'].length).toBe(0);
+    expect(newComponent['selectedSectionId']()).toBe('billing');
   });
 });

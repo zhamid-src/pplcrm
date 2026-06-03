@@ -41,21 +41,41 @@ export class SettingsPage implements OnInit {
 
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
 
+  protected readonly currentMode: 'settings' | 'configuration' | 'billing';
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
-  protected readonly selectedSectionId = signal<string>(this.sections[0]?.id ?? '');
+  protected readonly selectedSectionId = signal<string>('');
   protected readonly savingSectionId = signal<string | null>(null);
   protected readonly hasLoaded = signal(false);
   protected readonly verifyingEmail = signal<string | null>(null);
   protected readonly recomputingFingerprints = signal(false);
 
   constructor() {
+    this.currentMode = (this.route.snapshot.routeConfig?.path as any) || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    if (this.currentMode === 'settings') {
+      this.selectedSectionId.set('notifications');
+    } else if (this.currentMode === 'configuration') {
+      this.selectedSectionId.set('organization');
+    } else if (this.currentMode === 'billing') {
+      this.selectedSectionId.set('billing');
+    }
 
     effect(() => {
       const snapshot = this.snapshotSignal();
       this.applySnapshot(snapshot, false);
     });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'configuration') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
   }
 
   public async ngOnInit() {
@@ -100,6 +120,12 @@ export class SettingsPage implements OnInit {
     for (const field of section.fields) {
       const fieldSignal = (section.form as any)[field.controlName]();
       if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
       const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
       entries.push({ key: field.config.key, value });
     }
@@ -118,18 +144,18 @@ export class SettingsPage implements OnInit {
           const parseBool = (val: any) => val === true || val === 'true';
           const payload: UpdateAuthUserType = {
             notification_preferences: {
-              mention_in_comment: parseBool(raw['mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['task_assigned']),
-              task_assigned_in_app: parseBool(raw['task_assigned_in_app']),
-              task_due: parseBool(raw['task_due']),
-              task_due_in_app: parseBool(raw['task_due_in_app']),
-              person_assigned: parseBool(raw['person_assigned']),
-              person_assigned_in_app: parseBool(raw['person_assigned_in_app']),
-              export_ready: parseBool(raw['export_ready']),
-              export_ready_in_app: parseBool(raw['export_ready_in_app']),
-              import_summary: parseBool(raw['import_summary']),
-              import_summary_in_app: parseBool(raw['import_summary_in_app']),
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
             },
           };
           await this.auth.updateUserProfile(user.id, payload);
@@ -152,6 +178,26 @@ export class SettingsPage implements OnInit {
     }
   }
 
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
   private buildSectionState(section: SettingsSectionConfig): SectionState {
     const initialPayload: Record<string, any> = {};
     const fieldStates: SectionFieldState[] = [];
@@ -163,21 +209,6 @@ export class SettingsPage implements OnInit {
         this.settingsSvc.getValue(field.key, field.defaultValue),
       );
       fieldStates.push({ config: field, controlName });
-    }
-
-    if (section.id === 'notifications') {
-      initialPayload['mention_in_comment'] = true;
-      initialPayload['mention_in_comment_in_app'] = true;
-      initialPayload['task_assigned'] = true;
-      initialPayload['task_assigned_in_app'] = true;
-      initialPayload['task_due'] = true;
-      initialPayload['task_due_in_app'] = true;
-      initialPayload['person_assigned'] = true;
-      initialPayload['person_assigned_in_app'] = true;
-      initialPayload['export_ready'] = true;
-      initialPayload['export_ready_in_app'] = true;
-      initialPayload['import_summary'] = true;
-      initialPayload['import_summary_in_app'] = true;
     }
 
     const payload = signal(initialPayload);
@@ -217,6 +248,11 @@ export class SettingsPage implements OnInit {
       for (const field of state.fields) {
         const fieldSignal = (state.form as any)[field.controlName]();
         if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
 
         const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
         if (nextPayload[field.controlName] !== incoming) {
