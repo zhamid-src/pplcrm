@@ -291,6 +291,142 @@
               </button>
             </div>
           </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-4">
+            <div class="space-y-1">
+              <h3 class="text-lg font-semibold text-base-content/90">My Notification Preferences</h3>
+              <p class="text-xs text-base-content/50">
+                Customize which email notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <!-- Mentioned in Comment -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.mention_in_comment"
+                  id="settings_pref_mention_in_comment"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Mentioned in Comment</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Alerts when someone mentions you in a thread</span
+                  >
+                </div>
+              </label>
+
+              <!-- Task Assigned -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.task_assigned"
+                  id="settings_pref_task_assigned"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Task Assigned</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5">Alerts when a task is assigned to you</span>
+                </div>
+              </label>
+
+              <!-- Task Overdue / Due Today -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.task_due"
+                  id="settings_pref_task_due"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Task Due Today / Overdue</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5">Daily reminder check of active tasks due</span>
+                </div>
+              </label>
+
+              <!-- Person Assigned -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.person_assigned"
+                  id="settings_pref_person_assigned"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Person Assigned</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Alerts when a contact ownership is assigned to you</span
+                  >
+                </div>
+              </label>
+
+              <!-- Export Ready -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.export_ready"
+                  id="settings_pref_export_ready"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Export Ready</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Receive download link when CSV export finishes</span
+                  >
+                </div>
+              </label>
+
+              <!-- Import Summary -->
+              <label
+                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary mt-0.5 shrink-0"
+                  [formField]="userPrefsForm.import_summary"
+                  id="settings_pref_import_summary"
+                />
+                <div class="flex flex-col">
+                  <span class="font-semibold text-xs text-base-content">Import Summary</span>
+                  <span class="text-[11px] text-base-content/60 mt-0.5"
+                    >Spreadsheet import completion stats report</span
+                  >
+                </div>
+              </label>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-4">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                (click)="loadUserPrefs()"
+                [disabled]="!userPrefsForm().dirty() || savingUserPrefs()"
+              >
+                Reset Preferences
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm min-w-[120px]"
+                (click)="saveUserPrefs()"
+                [disabled]="!userPrefsForm().dirty() || savingUserPrefs()"
+              >
+                @if (savingUserPrefs()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Save Preferences
+              </button>
+            </div>
+          </div>
           }
 
           <!-- Sticky Action Footer inside the card -->

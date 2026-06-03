@@ -4,7 +4,7 @@
  * and session management through tRPC communication with the backend.
  */
 import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
+import { IAuthUser, IToken, signInInputType, signUpInputType, UpdateAuthUserType } from '@common';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
 
@@ -89,7 +89,7 @@ export class AuthService extends TRPCService<'authusers'> {
   /**
    * Updates an existing user's profile details.
    */
-  public async updateUserProfile(id: string, data: { first_name?: string; last_name?: string | null; email?: string }) {
+  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
     const updated = await this.api.auth.update.mutate({ id, data });
     // If the updated user is the current user, update our local signal
     const current = this.user();

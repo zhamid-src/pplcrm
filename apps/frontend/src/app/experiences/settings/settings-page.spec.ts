@@ -5,12 +5,14 @@ import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AuthService } from '../../auth/auth-service';
 
 describe('SettingsPage', () => {
   let component: SettingsPage;
   let fixture: ComponentFixture<SettingsPage>;
   let mockSettingsSvc: any;
   let mockAlertSvc: any;
+  let mockAuthSvc: any;
   let snapshotSignalValue: any;
 
   beforeEach(async () => {
@@ -51,6 +53,27 @@ describe('SettingsPage', () => {
       show: vi.fn()
     };
 
+    const mockAuthUser = {
+      id: '123',
+      email: 'john@example.com',
+      first_name: 'John',
+      last_name: 'Doe',
+      notification_preferences: {
+        mention_in_comment: true,
+        task_assigned: true,
+        task_due: true,
+        person_assigned: true,
+        export_ready: true,
+        import_summary: true,
+      },
+    };
+
+    mockAuthSvc = {
+      getCurrentUser: vi.fn().mockResolvedValue(mockAuthUser),
+      getProfileById: vi.fn().mockResolvedValue(mockAuthUser),
+      updateUserProfile: vi.fn().mockResolvedValue(mockAuthUser),
+    };
+
     const mockActivatedRoute = {
       snapshot: {
         queryParamMap: {
@@ -64,7 +87,8 @@ describe('SettingsPage', () => {
       providers: [
         { provide: SettingsService, useValue: mockSettingsSvc },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
-        { provide: AlertService, useValue: mockAlertSvc }
+        { provide: AlertService, useValue: mockAlertSvc },
+        { provide: AuthService, useValue: mockAuthSvc }
       ]
     }).compileComponents();
 
