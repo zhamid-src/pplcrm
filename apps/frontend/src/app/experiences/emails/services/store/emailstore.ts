@@ -239,7 +239,7 @@ export class EmailsStore {
           OKBtn: 'Go to Settings',
           btn2: 'Cancel',
           OKBtnCallback: () => {
-            void this.router.navigate(['/settings'], { queryParams: { tab: 'email-sync' } });
+            void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
           },
           duration: 0,
         });

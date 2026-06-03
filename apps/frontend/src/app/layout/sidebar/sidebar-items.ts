@@ -216,7 +216,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Configuration',
         route: '/configuration',
-        icon: 'cog',
+        icon: 'cog-6-tooth',
       },
       {
         name: 'Billing',

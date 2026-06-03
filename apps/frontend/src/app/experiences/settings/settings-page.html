@@ -33,7 +33,7 @@
           />
           {{ section.config.title }}
         </button>
-        } @if (currentMode === 'settings') {
+        } @if (currentMode === 'configuration') {
         <!-- Email Sync custom section -->
         <button
           id="settings-nav-email-sync"
@@ -46,7 +46,7 @@
           <pc-icon name="envelope" class="h-5 w-5 mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" />
           Email Sync
         </button>
-        } @if (currentMode === 'configuration') {
+
         <!-- Domains custom section -->
         <button
           id="settings-nav-domains"
@@ -397,7 +397,7 @@
       } }
 
       <!-- Email Sync custom section -->
-      @if (currentMode === 'settings' && isSelected('email-sync')) {
+      @if (currentMode === 'configuration' && isSelected('email-sync')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
