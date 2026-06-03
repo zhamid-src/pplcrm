@@ -1,6 +1,6 @@
 import { Component, OnInit, effect, inject, signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { form, email, pattern, FormField } from '@angular/forms/signals';
+import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -140,6 +140,17 @@ export class SettingsPage implements OnInit {
         if (field.type === 'url') {
           pattern(p[controlName], /^https?:\/\//i);
         }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
       }
     });
 
@@ -264,17 +275,13 @@ export class SettingsPage implements OnInit {
     const normalized = email.toLowerCase().trim();
     this.verifyingEmail.set(normalized);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
     try {
-      const current = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-      if (!current.includes(normalized)) {
-        const updated = [...current, normalized];
-        await this.settingsSvc.upsert([{ key: 'communications.verified_emails', value: updated }]);
-      }
-      this.alerts.showSuccess(`Verification successful. Email ${email} is now verified!`);
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox and click the verification link.`,
+      );
     } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to verify email address.');
+      this.alerts.showError(err.message || 'Failed to send verification email.');
     } finally {
       this.verifyingEmail.set(null);
     }
