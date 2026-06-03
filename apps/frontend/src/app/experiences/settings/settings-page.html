@@ -162,7 +162,7 @@
               } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
               <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
                 <pc-icon name="exclamation-circle"></pc-icon>
-                Please provide a valid value.
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
               </p>
               }
             </div>

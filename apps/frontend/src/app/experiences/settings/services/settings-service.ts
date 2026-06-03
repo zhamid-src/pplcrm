@@ -11,7 +11,6 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
   public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
   private readonly isPendingSignal = signal<boolean>(false);
 
-    
   public async load(force = false) {
     if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
 
@@ -41,6 +40,14 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
     } finally {
       this.isPendingSignal.set(false);
     }
+  }
+
+  public async requestEmailVerification(email: string) {
+    return this.api.settings.requestEmailVerification.mutate({ email });
+  }
+
+  public async verifySenderEmail(token: string) {
+    return this.api.settings.verifySenderEmail.mutate({ token });
   }
 
   public snapshot(): TenantSettingsSnapshot {

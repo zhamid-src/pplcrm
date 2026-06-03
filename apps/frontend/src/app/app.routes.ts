@@ -25,6 +25,11 @@ export const appRoutes = [
     path: 'newpassword',
     loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
   },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
 
   // Main dashboard shell + children (protected)
   {
