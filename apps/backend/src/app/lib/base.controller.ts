@@ -2,11 +2,7 @@ import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptio
 
 import { ReferenceExpression, Transaction } from 'kysely';
 
-import {
-  Models,
-  OperationDataType,
-  TypeTenantId,
-} from 'common/src/lib/kysely.models';
+import { Models, OperationDataType, TypeTenantId } from 'common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
 import { UserActivityRepo } from './user-activity.repo';
@@ -86,15 +82,18 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
           metadata['task_name'] = String(resultObj['name']);
         }
-        await this.userActivity.log({
-          tenant_id: String(tenant),
-          user_id: String(actor),
-          activity: 'create',
-          entity: String(this.repo.getTableName()),
-          entity_id: resultId,
-          quantity: 1,
-          metadata,
-        }, trx);
+        await this.userActivity.log(
+          {
+            tenant_id: String(tenant),
+            user_id: String(actor),
+            activity: 'create',
+            entity: String(this.repo.getTableName()),
+            entity_id: resultId,
+            quantity: 1,
+            metadata,
+          },
+          trx,
+        );
       }
     } catch (e) {
       console.error('Failed to log create activity', e);
@@ -118,14 +117,17 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const actor = rowObj['createdby_id'];
         const tenant = rowObj['tenant_id'];
         if (actor != null && tenant != null) {
-          await this.userActivity.log({
-            tenant_id: String(tenant),
-            user_id: String(actor),
-            activity: 'create',
-            entity: String(this.repo.getTableName()),
-            quantity: rows.length,
-            metadata: { count: rows.length },
-          }, trx);
+          await this.userActivity.log(
+            {
+              tenant_id: String(tenant),
+              user_id: String(actor),
+              activity: 'create',
+              entity: String(this.repo.getTableName()),
+              quantity: rows.length,
+              metadata: { count: rows.length },
+            },
+            trx,
+          );
         }
       }
     } catch (e) {
@@ -300,7 +302,8 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           } else {
             activity = 'assign';
             try {
-              const assignee = await this.repo.db.selectFrom('authusers')
+              const assignee = await this.repo.db
+                .selectFrom('authusers')
                 .select(['first_name', 'last_name'])
                 .where('id', '=', Number(assigneeId) as any)
                 .executeTakeFirst();
@@ -362,18 +365,35 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           },
         });
 
-        const user = await this.repo.db.selectFrom('authusers')
-          .select(['email'])
-          .where('id', '=', auth.user_id as any)
+        const user = await this.repo.db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'profiles.json as profile_json'])
+          .where('authusers.id', '=', auth.user_id as any)
           .executeTakeFirst();
         if (user && user.email) {
-          const mailService = new TransactionalEmailService();
-          await mailService.sendMail({
-            to: user.email,
-            subject: `Your Export is Ready: ${response.fileName}`,
-            text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: http://localhost:4200/downloads/${response.fileName}`,
-            html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="http://localhost:4200/downloads/${response.fileName}">Download CSV</a></p>`,
-          });
+          let optedIn = true;
+          const profileJson = user.profile_json;
+          if (profileJson) {
+            try {
+              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+              if (json?.notifications?.export_ready === false) {
+                optedIn = false;
+              }
+            } catch (e) {
+              console.error('Failed to parse profile json in exportCsv', e);
+            }
+          }
+
+          if (optedIn) {
+            const mailService = new TransactionalEmailService();
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your Export is Ready: ${response.fileName}`,
+              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: http://localhost:4200/downloads/${response.fileName}`,
+              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="http://localhost:4200/downloads/${response.fileName}">Download CSV</a></p>`,
+            });
+          }
         }
       } catch (err) {
         // Logging failures should never break export flow; swallow silently

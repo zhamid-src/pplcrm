@@ -81,6 +81,14 @@ export interface IAuthUserRecord extends IAuthUser {
   deletion_scheduled_at: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
+  notification_preferences?: {
+    mention_in_comment: boolean;
+    task_assigned: boolean;
+    task_due: boolean;
+    person_assigned: boolean;
+    export_ready: boolean;
+    import_summary: boolean;
+  };
 }
 
 export interface IAuthUserDetail extends IAuthUserRecord {

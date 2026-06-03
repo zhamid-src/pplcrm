@@ -262,6 +262,7 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   twitter: string | null;
   facebook: string | null;
   instagram: string | null;
+  assigned_to: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {

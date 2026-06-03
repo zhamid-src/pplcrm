@@ -8,6 +8,15 @@ export const InviteAuthUserObj = z.object({
   role: z.string().max(100).nullable().optional(),
 });
 
+export const NotificationPreferencesObj = z.object({
+  mention_in_comment: z.boolean().default(true),
+  task_assigned: z.boolean().default(true),
+  task_due: z.boolean().default(true),
+  person_assigned: z.boolean().default(true),
+  export_ready: z.boolean().default(true),
+  import_summary: z.boolean().default(true),
+});
+
 export const UpdateAuthUserObj = z.object({
   email: emailSchema.optional(),
   first_name: nameSchema('First name').optional(),
@@ -15,10 +24,10 @@ export const UpdateAuthUserObj = z.object({
   role: z.string().max(100).nullable().optional(),
   verified: z.boolean().optional(),
   two_factor_enabled: z.boolean().optional(),
+  notification_preferences: NotificationPreferencesObj.optional(),
 });
 
 export const Verify2FAObj = z.object({
   email: emailSchema,
   code: z.string().length(6),
 });
-

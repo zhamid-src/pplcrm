@@ -968,6 +968,31 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private sanitizeUser(record: any) {
     const lastName =
       record.last_name ?? record.profile_last_name ?? record.effective_last_name ?? record.profile?.last_name ?? '';
+
+    let notificationPreferences = {
+      mention_in_comment: true,
+      task_assigned: true,
+      task_due: true,
+      person_assigned: true,
+      export_ready: true,
+      import_summary: true,
+    };
+
+    const profileJson = record.profile?.json ?? record.json;
+    if (profileJson) {
+      try {
+        const parsed = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+        if (parsed && typeof parsed === 'object' && parsed.notifications) {
+          notificationPreferences = {
+            ...notificationPreferences,
+            ...parsed.notifications,
+          };
+        }
+      } catch (e) {
+        console.error('Failed to parse profile json for preferences', e);
+      }
+    }
+
     return {
       id: record.id != null ? String(record.id) : '',
       email: record.email ?? '',
@@ -979,6 +1004,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
       created_at: this.coerceDate(record.created_at),
       updated_at: this.coerceDate(record.updated_at),
+      notification_preferences: notificationPreferences,
     };
   }
 
@@ -1021,17 +1047,43 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {
-    if (data.last_name === undefined) return;
-    const lastName = data.last_name ?? null;
     const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
+    const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
+
+    let finalJson: any = null;
+    if (existingProfile?.json) {
+      try {
+        finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
+      } catch (e) {
+        console.error('Failed to parse existing profile json', e);
+      }
+    }
+
+    if (data.notification_preferences) {
+      finalJson = {
+        ...(finalJson || {}),
+        notifications: {
+          ...((finalJson || {}).notifications || {}),
+          ...data.notification_preferences,
+        },
+      };
+    }
+
     if (existingProfile) {
-      const profileId = existingProfile.id != null ? String(existingProfile.id) : authUserId;
-      const row = {
-        last_name: lastName,
+      const row: any = {
         updatedby_id: auth.user_id,
         updated_at: new Date(),
-      } as OperationDataType<'profiles', 'update'>;
-      await this.profiles.update({ tenant_id: auth.tenant_id as any, id: profileId as any, row });
+      };
+      if (data.last_name !== undefined) {
+        row.last_name = data.last_name ?? null;
+      }
+      if (finalJson !== null) {
+        row.json = JSON.stringify(finalJson);
+      }
+
+      if (data.last_name !== undefined || data.notification_preferences !== undefined) {
+        await this.profiles.update({ tenant_id: auth.tenant_id as any, id: profileId as any, row });
+      }
       return;
     }
 
@@ -1039,7 +1091,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       id: authUserId,
       tenant_id: auth.tenant_id,
       auth_id: authUserId,
-      last_name: lastName,
+      last_name: data.last_name ?? null,
+      json: finalJson ? JSON.stringify(finalJson) : null,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     } as OperationDataType<'profiles', 'insert'>;

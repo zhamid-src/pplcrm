@@ -86,6 +86,7 @@ export {
   UpdateListObj,
   UpdateTeamObj,
   UpdateAuthUserObj,
+  NotificationPreferencesObj,
   UpdateMarketingEmailObj,
   UpdateTaskObj,
   sortModelItem,

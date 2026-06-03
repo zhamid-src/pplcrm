@@ -14,6 +14,7 @@ import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
+import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
 
 export class PersonsService {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -87,6 +88,42 @@ export class PersonsService {
       } catch (err) {
         console.error('Failed to trigger contact_created workflow in add:', err);
       }
+
+      if (payload.assigned_to) {
+        try {
+          const assignee = await this.personsRepo.db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', Number(payload.assigned_to) as any)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            let optedIn = true;
+            if (assignee.profile_json) {
+              const json =
+                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
+              if (json?.notifications?.person_assigned === false) {
+                optedIn = false;
+              }
+            }
+            if (optedIn) {
+              const createdPerson = result as any;
+              const personName =
+                `${createdPerson.first_name || ''} ${createdPerson.last_name || ''}`.trim() || 'unnamed contact';
+              const link = `http://localhost:4200/persons/${createdPerson.id}`;
+              const mailService = new TransactionalEmailService();
+              await mailService.sendMail({
+                to: assignee.email,
+                subject: `Contact Assigned to You: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson.email || 'None'}\nPhone: ${createdPerson.mobile || createdPerson.home_phone || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson.email || 'None'}<br>Phone: ${createdPerson.mobile || createdPerson.home_phone || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+              });
+            }
+          }
+        } catch (mailErr) {
+          console.error('Failed to send contact assignment email in addPerson', mailErr);
+        }
+      }
     }
     try {
       await this.userActivity.log({
@@ -136,6 +173,46 @@ export class PersonsService {
     });
     if (result && typeof result === 'object') {
       await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
+
+      const updatedPerson = result as any;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original.assigned_to)) {
+        const newAssigneeId = data.assigned_to;
+        if (newAssigneeId) {
+          try {
+            const assignee = await this.personsRepo.db
+              .selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+              .where('authusers.id', '=', Number(newAssigneeId) as any)
+              .executeTakeFirst();
+
+            if (assignee && assignee.email) {
+              let optedIn = true;
+              if (assignee.profile_json) {
+                const json =
+                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
+                if (json?.notifications?.person_assigned === false) {
+                  optedIn = false;
+                }
+              }
+              if (optedIn) {
+                const personName =
+                  `${updatedPerson.first_name || ''} ${updatedPerson.last_name || ''}`.trim() || 'unnamed contact';
+                const link = `http://localhost:4200/persons/${updatedPerson.id}`;
+                const mailService = new TransactionalEmailService();
+                await mailService.sendMail({
+                  to: assignee.email,
+                  subject: `Contact Assigned to You: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson.email || 'None'}\nPhone: ${updatedPerson.mobile || updatedPerson.home_phone || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson.email || 'None'}<br>Phone: ${updatedPerson.mobile || updatedPerson.home_phone || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                });
+              }
+            }
+          } catch (mailErr) {
+            console.error('Failed to send contact assignment email in updatePerson', mailErr);
+          }
+        }
+      }
     }
     try {
       const changes: Record<string, any> = {};
@@ -504,6 +581,7 @@ export class PersonsService {
           campaign_id,
           tenant_id: auth.tenant_id,
           user_id: auth.user_id,
+          file_name: baseFileName,
         }),
         run_at: new Date(),
       } as any)

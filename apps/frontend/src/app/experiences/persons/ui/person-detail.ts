@@ -109,6 +109,7 @@ export class PersonDetail implements OnInit {
     twitter: '',
     facebook: '',
     instagram: '',
+    assigned_to: '',
   });
 
   /** Signal form for person data validation and status tracking */
@@ -182,6 +183,7 @@ export class PersonDetail implements OnInit {
           twitter: data.twitter ?? '',
           facebook: data.facebook ?? '',
           instagram: data.instagram ?? '',
+          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
         });
         if (data.household_id) {
           this.pendingHouseholdId.set(data.household_id);
@@ -608,6 +610,7 @@ export class PersonDetail implements OnInit {
       twitter: (person as any).twitter ?? '',
       facebook: (person as any).facebook ?? '',
       instagram: (person as any).instagram ?? '',
+      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
     });
   }
 

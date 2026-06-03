@@ -1,4 +1,10 @@
-import type { AddTaskType, ExportCsvInputType, ExportCsvResponseType, UpdateTaskType, getAllOptionsType } from '@common';
+import type {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '@common';
 
 import type { IAuthKeyPayload } from 'common/src/lib/auth';
 import { BaseController } from '../../lib/base.controller';
@@ -44,17 +50,34 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
 
         const assignedToNum = Number(payload.assigned_to);
         if (!isNaN(assignedToNum)) {
-          const assignee = await this.getRepo().db.selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', assignedToNum as any)
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', assignedToNum as any)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            await this.mailService.sendMail({
-              to: assignee.email,
-              subject: `New Task Assigned: ${payload.name}`,
-              text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: http://localhost:4200/tasks/${task.id}`,
-              html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="http://localhost:4200/tasks/${task.id}">View Task Details</a></p>`,
-            });
+            let optedIn = true;
+            const profileJson = assignee.profile_json;
+            if (profileJson) {
+              try {
+                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+                if (json?.notifications?.task_assigned === false) {
+                  optedIn = false;
+                }
+              } catch (e) {
+                console.error('Failed to parse profile json in addTask', e);
+              }
+            }
+
+            if (optedIn) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New Task Assigned: ${payload.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: http://localhost:4200/tasks/${task.id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="http://localhost:4200/tasks/${task.id}">View Task Details</a></p>`,
+              });
+            }
           }
         }
       } catch (nErr) {
@@ -73,7 +96,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
   }
 
   public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = await this.getOneById({ tenant_id: auth.tenant_id, id }) as any;
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
     const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
     const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
 
@@ -91,17 +114,34 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
 
         const assignedToNum = Number(row.assigned_to);
         if (!isNaN(assignedToNum)) {
-          const assignee = await this.getRepo().db.selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', assignedToNum as any)
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', assignedToNum as any)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            await this.mailService.sendMail({
-              to: assignee.email,
-              subject: `Task Assigned: ${updated.name}`,
-              text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: http://localhost:4200/tasks/${id}`,
-              html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="http://localhost:4200/tasks/${id}">View Task Details</a></p>`,
-            });
+            let optedIn = true;
+            const profileJson = assignee.profile_json;
+            if (profileJson) {
+              try {
+                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+                if (json?.notifications?.task_assigned === false) {
+                  optedIn = false;
+                }
+              } catch (e) {
+                console.error('Failed to parse profile json in updateTask', e);
+              }
+            }
+
+            if (optedIn) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `Task Assigned: ${updated.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: http://localhost:4200/tasks/${id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="http://localhost:4200/tasks/${id}">View Task Details</a></p>`,
+              });
+            }
           }
         }
       } catch (nErr) {
