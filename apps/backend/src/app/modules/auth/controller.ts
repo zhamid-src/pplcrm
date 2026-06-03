@@ -167,7 +167,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const db = repo.db;
     try {
-      const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+      const { queueUsageLimitCheck } = await import('../billing/usage-limits');
       await queueUsageLimitCheck(auth.tenant_id, db);
     } catch (err) {
       console.error('Failed to trigger usage check in inviteUser:', err);
