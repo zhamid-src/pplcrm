@@ -103,7 +103,14 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
     tenant_id: tenantId,
     key: 'billing.limit_alerts_sent',
   });
-  const alertSettings = { ...(alertSettingsRow?.value || {}) } as Record<string, boolean>;
+  let alertSettings: Record<string, boolean> = {};
+  if (alertSettingsRow?.value) {
+    const val = alertSettingsRow.value;
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+    if (parsed && typeof parsed === 'object') {
+      alertSettings = { ...parsed };
+    }
+  }
 
   let settingsChanged = false;
 
