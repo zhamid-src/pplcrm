@@ -23,7 +23,7 @@
         <!-- Initials Avatar -->
         <div class="avatar placeholder">
           <div
-            class="w-24 h-24 rounded-full ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md"
+            class="w-24 h-24 rounded-full grid place-items-center ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md"
           >
             <span>{{ initials() }}</span>
           </div>
@@ -40,7 +40,7 @@
               </span>
               } @if (detail()?.verified) {
               <span class="badge badge-success gap-1 text-xs font-semibold px-2.5 py-1.5">
-                <pc-icon name="check-circle" class="w-3.5 h-3.5"></pc-icon>
+                <pc-icon name="check-circle" [size]="3"></pc-icon>
                 Verified
               </span>
               }
@@ -53,7 +53,7 @@
 
     @if (error()) {
     <div class="alert alert-error shadow-sm rounded-xl">
-      <pc-icon name="exclamation-circle" class="w-5 h-5"></pc-icon>
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
       <span>{{ error() }}</span>
     </div>
     }
@@ -81,7 +81,7 @@
               />
               @if (form.first_name().invalid() && (form.first_name().dirty() || form.first_name().touched())) {
               <p class="text-xs text-error font-medium flex items-center gap-1 mt-1">
-                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
                 First name is required.
               </p>
               }
@@ -111,7 +111,7 @@
               />
               @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) {
               <p class="text-xs text-error font-medium flex items-center gap-1 mt-1">
-                <pc-icon name="exclamation-circle" class="w-4 h-4"></pc-icon>
+                <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
                 Please enter a valid email address.
               </p>
               }
@@ -302,7 +302,7 @@
         <div class="card bg-base-100 border border-base-200/60 shadow-sm hover:shadow-md transition-all duration-300">
           <div class="card-body p-6 flex flex-row items-center gap-4">
             <div class="p-3 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-              <pc-icon [name]="card.icon" class="w-6 h-6"></pc-icon>
+              <pc-icon [name]="card.icon" [size]="6"></pc-icon>
             </div>
             <div class="flex-1 space-y-0.5">
               <p class="text-xs font-medium text-base-content/50 uppercase tracking-wide">{{ card.title }}</p>
