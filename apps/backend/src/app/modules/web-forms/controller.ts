@@ -224,7 +224,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
           const mapExists = await trx
             .selectFrom('map_peoples_tags')
-            .select('id')
+            .select('person_id')
             .where('tenant_id', '=', tenantId as any)
             .where('person_id', '=', personId as any)
             .where('tag_id', '=', tag.id as any)
@@ -268,7 +268,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
           const inList = await trx
             .selectFrom('map_lists_persons')
-            .select('id')
+            .select('person_id')
             .where('tenant_id', '=', tenantId as any)
             .where('person_id', '=', personId as any)
             .where('list_id', '=', listId as any)

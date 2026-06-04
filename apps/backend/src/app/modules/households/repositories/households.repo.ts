@@ -546,7 +546,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
       const sourceTags = await trx
         .selectFrom('map_households_tags')
-        .select(['id', 'tag_id'])
+        .select(['tag_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
         .execute();

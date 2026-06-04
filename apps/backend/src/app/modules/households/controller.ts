@@ -284,10 +284,7 @@ export class HouseholdsController extends BaseController<'households', Household
 
     const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
     if (tag?.id) {
-      const mapId = await this.mapHouseholdsTagRepo.getId(tenant_id, household_id, tag.id);
-      if (mapId) {
-        await this.mapHouseholdsTagRepo.delete({ tenant_id, id: mapId });
-      }
+      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
     }
 
     try {

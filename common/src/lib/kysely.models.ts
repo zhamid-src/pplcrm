@@ -151,6 +151,13 @@ interface RecordType {
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
+interface JunctionRecordType {
+  tenant_id: string;
+  createdby_id: string;
+  updatedby_id: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
 export type AddressType = z.infer<typeof addressSchema>;
 
 interface AuthUsers extends RecordType {
@@ -196,22 +203,22 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   geocoding_status: string | null;
 }
 
-interface MapCampaignsUsers extends RecordType {
+interface MapCampaignsUsers extends JunctionRecordType {
   campaign_id: string;
   user_id: string;
 }
 
-interface MapHouseholdsTags extends RecordType {
+interface MapHouseholdsTags extends JunctionRecordType {
   household_id: string;
   tag_id: string;
 }
 
-export interface MapPeoplesTags extends RecordType {
+export interface MapPeoplesTags extends JunctionRecordType {
   person_id: string;
   tag_id: string;
 }
 
-interface MapRolesUsers extends RecordType {
+interface MapRolesUsers extends JunctionRecordType {
   role_id: string;
   user_id: string;
 }
@@ -223,22 +230,22 @@ interface Teams extends RecordType {
   team_lead_user_id: string | null;
 }
 
-interface MapTeamsPersons extends RecordType {
+interface MapTeamsPersons extends JunctionRecordType {
   team_id: string;
   person_id: string;
 }
 
-interface MapTeamsLists extends RecordType {
+interface MapTeamsLists extends JunctionRecordType {
   team_id: string;
   list_id: string;
 }
 
-export interface MapListsPersons extends RecordType {
+export interface MapListsPersons extends JunctionRecordType {
   list_id: string;
   person_id: string;
 }
 
-interface MapListsHouseholds extends RecordType {
+interface MapListsHouseholds extends JunctionRecordType {
   list_id: string;
   household_id: string;
 }

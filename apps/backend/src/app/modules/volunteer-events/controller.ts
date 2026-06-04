@@ -730,7 +730,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         }
 
         const mapExists = await trx.selectFrom('map_peoples_tags')
-          .select('id')
+          .select('person_id')
           .where('tenant_id', '=', tenantId as any)
           .where('person_id', '=', personId as any)
           .where('tag_id', '=', tag.id as any)
