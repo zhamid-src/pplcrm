@@ -30,14 +30,10 @@ export class TeamsRepo extends BaseRepository<'teams'> {
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .leftJoin('map_teams_persons', (join) =>
-          join
-            .onRef('map_teams_persons.team_id', '=', 'teams.id')
-            .on('map_teams_persons.tenant_id', '=', tenantId),
+          join.onRef('map_teams_persons.team_id', '=', 'teams.id').on('map_teams_persons.tenant_id', '=', tenantId),
         )
         .leftJoin('map_peoples_tags as mtp', (join) =>
-          join
-            .onRef('mtp.person_id', '=', 'map_teams_persons.person_id')
-            .on('mtp.tenant_id', '=', tenantId),
+          join.onRef('mtp.person_id', '=', 'map_teams_persons.person_id').on('mtp.tenant_id', '=', tenantId),
         )
         .leftJoin('tags as volunteer_tag', 'volunteer_tag.id', 'mtp.tag_id')
         .leftJoin('persons as captain', 'captain.id', 'teams.team_captain_id')
@@ -79,8 +75,9 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'teams.updated_at',
         sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`.as('captain_name'),
         sql`COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')`.as('lead_user_name'),
-        sql<number>`COUNT(DISTINCT CASE WHEN LOWER(volunteer_tag.name) = ${this.volunteerTag} THEN map_teams_persons.person_id END)`.
-          as('volunteer_count'),
+        sql<number>`COUNT(DISTINCT CASE WHEN LOWER(volunteer_tag.name) = ${this.volunteerTag} THEN map_teams_persons.person_id END)`.as(
+          'volunteer_count',
+        ),
       ])
       .groupBy([
         'teams.id',
@@ -103,8 +100,28 @@ export class TeamsRepo extends BaseRepository<'teams'> {
               return acc.orderBy(sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`, sort.sort);
             case 'team_lead_user_name':
               return acc.orderBy(sql`COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')`, sort.sort);
-            default:
-              return acc.orderBy(sort.colId as any, sort.sort);
+            default: {
+              let col = sort.colId;
+              if (typeof col === 'string' && !col.includes('.')) {
+                if (
+                  [
+                    'id',
+                    'name',
+                    'description',
+                    'team_captain_id',
+                    'team_lead_user_id',
+                    'tenant_id',
+                    'created_at',
+                    'updated_at',
+                    'createdby_id',
+                    'updatedby_id',
+                  ].includes(col)
+                ) {
+                  col = `teams.${col}`;
+                }
+              }
+              return acc.orderBy(col as any, sort.sort);
+            }
           }
         }, builder as any);
       })

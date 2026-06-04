@@ -28,7 +28,8 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
-    const endRowCandidate = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
+    const endRowCandidate =
+      typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
     const pageSize = Math.max(1, endRowCandidate - startRow);
 
     const applyFilters = <QB extends SelectQueryBuilder<Models, any, any>>(qb: QB) =>
@@ -87,6 +88,8 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         return sorts.reduce((acc, sort) => {
           const dir = sort.sort;
           switch (sort.colId) {
+            case 'id':
+              return acc.orderBy('authusers.id', dir);
             case 'email':
               return acc.orderBy('authusers.email', dir);
             case 'first_name':
@@ -237,7 +240,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       .where('password_reset_code', '=', code)
       .executeTakeFirst() as unknown as UpdateResult;
   }
-
 }
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
