@@ -346,7 +346,7 @@ export class BaseRepository<T extends keyof Models> {
             return c;
           }) as SelectExpression<Models, T>[],
         )
-      : query.selectAll();
+      : query.selectAll(this.table);
 
     // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
     const hasLimit = typeof options?.limit === 'number';
