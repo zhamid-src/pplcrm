@@ -16,7 +16,15 @@ export class ImportsService extends TRPCService<unknown> {
       );
   }
 
-  public delete(id: string, deleteContacts: boolean) {
-    return this.api.imports.delete.mutate({ id, deleteContacts });
+  public delete(
+    id: string,
+    options?: {
+      deletePeople?: boolean;
+      deleteHouseholds?: boolean;
+      deleteCompanies?: boolean;
+      deleteTasks?: boolean;
+    },
+  ) {
+    return this.api.imports.delete.mutate({ id, ...options });
   }
 }

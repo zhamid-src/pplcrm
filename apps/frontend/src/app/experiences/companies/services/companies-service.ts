@@ -54,6 +54,10 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.update.mutate({ id, data });
   }
 
+  public import(rows: any[], skipped: number, file_name?: string) {
+    return this.api.companies.import.mutate({ rows, skipped, file_name });
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.companies.exportCsv.mutate(input);
   }

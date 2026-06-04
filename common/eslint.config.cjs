@@ -22,7 +22,10 @@ module.exports = [
         'plugin:@typescript-eslint/stylistic',
       ],
       parserOptions: {
-        project: ['./tsconfig.lib.json'], // Adjust if you use a different tsconfig here
+        project: [
+          require('path').resolve(__dirname, 'tsconfig.lib.json'),
+          require('path').resolve(__dirname, '../tsconfig.base.json'),
+        ],
         sourceType: 'module',
       },
     })

@@ -2,13 +2,14 @@ import { IAuthKeyPayload, ImportListItem } from '@common';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
-import { Models } from 'common/src/lib/kysely.models';
-import { Transaction } from 'kysely';
+import { sql } from 'kysely';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 import { MapHouseholdsTagsRepo } from '../households/repositories/map-households-tags.repo';
 import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
+import { CompaniesRepo } from '../companies/repositories/companies.repo';
+import { TasksRepo } from '../tasks/repositories/tasks.repo';
 import { ImportsRepo, DataImportWithStats } from './repositories/imports.repo';
 
 export class ImportsController extends BaseController<'data_imports', ImportsRepo> {
@@ -17,6 +18,8 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
   private readonly mapListsPersonsRepo = new MapListsPersonsRepo();
   private readonly householdsRepo = new HouseholdRepo();
   private readonly mapHouseholdsTagsRepo = new MapHouseholdsTagsRepo();
+  private readonly companiesRepo = new CompaniesRepo();
+  private readonly tasksRepo = new TasksRepo();
 
   constructor() {
     super(new ImportsRepo());
@@ -28,7 +31,14 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
   }
 
   public async deleteImport(
-    input: { id: string; deleteContacts?: boolean },
+    input: {
+      id: string;
+      deleteContacts?: boolean;
+      deletePeople?: boolean;
+      deleteHouseholds?: boolean;
+      deleteCompanies?: boolean;
+      deleteTasks?: boolean;
+    },
     auth: IAuthKeyPayload,
   ): Promise<{ deleted: boolean; contactsRemoved: boolean }> {
     const stats = await this.getRepo().getOneWithStats({ tenant_id: auth.tenant_id, id: input.id });
@@ -38,79 +48,108 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       throw new BadRequestError('Cannot delete an import that is still processing.');
     }
 
-    const wantsContactDeletion = Boolean(input.deleteContacts);
-    const canDeleteContacts =
-      stats.contact_count > 0 && stats.tag_exists && stats.tag_assignment_count > 0;
-
-    if (wantsContactDeletion && !canDeleteContacts) {
-      throw new BadRequestError('Contacts for this import can no longer be identified.');
-    }
-
-    let contactsRemoved = false;
+    const wantsPeopleDeletion = Boolean(input.deletePeople || input.deleteContacts);
+    const wantsHouseholdDeletion = Boolean(input.deleteHouseholds);
+    const wantsCompanyDeletion = Boolean(input.deleteCompanies);
+    const wantsTaskDeletion = Boolean(input.deleteTasks);
 
     await this.getRepo()
       .transaction()
       .execute(async (trx) => {
-        if (wantsContactDeletion && canDeleteContacts) {
-          contactsRemoved = await this.deleteContactsForImport(stats.id, auth, trx);
+        // 1. Delete people
+        if (wantsPeopleDeletion) {
+          const personIds = await this.personsRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (personIds.length > 0) {
+            await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
+            await this.mapListsPersonsRepo.deleteByPersonIds(
+              { tenant_id: auth.tenant_id, person_ids: personIds },
+              trx,
+            );
+            await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
+          }
         } else {
-          await this.clearAssociations(stats.id, auth, trx);
+          await this.personsRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 2. Delete households
+        if (wantsHouseholdDeletion) {
+          const householdIds = await this.householdsRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (householdIds.length > 0) {
+            await this.mapHouseholdsTagsRepo.deleteByHouseholdIds(
+              { tenant_id: auth.tenant_id, household_ids: householdIds },
+              trx,
+            );
+            await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
+          }
+        } else {
+          await this.householdsRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 3. Delete companies
+        if (wantsCompanyDeletion) {
+          const companyIds = await this.companiesRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (companyIds.length > 0) {
+            await trx.updateTable('persons')
+              .set({ company_id: null, updated_at: sql`now()` as any, updatedby_id: auth.user_id })
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('company_id', 'in', companyIds)
+              .execute();
+            await this.companiesRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: companyIds as any }, trx);
+          }
+        } else {
+          await this.companiesRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 4. Delete tasks
+        if (wantsTaskDeletion) {
+          const taskIds = await this.tasksRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (taskIds.length > 0) {
+            await trx.deleteFrom('task_subtasks')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await trx.deleteFrom('task_comments')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await trx.deleteFrom('task_attachments')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await this.tasksRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: taskIds as any }, trx);
+          }
+        } else {
+          await this.tasksRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
         }
 
         await this.getRepo().delete({ tenant_id: auth.tenant_id as any, id: stats.id as any }, trx);
       });
 
-    return { deleted: true, contactsRemoved };
-  }
-
-  private async deleteContactsForImport(
-    importId: string,
-    auth: IAuthKeyPayload,
-    trx: Transaction<Models>,
-  ) {
-    const personIds = await this.personsRepo.getIdsByFileId(
-      { tenant_id: auth.tenant_id, file_id: importId },
-      trx,
-    );
-
-    if (personIds.length > 0) {
-      await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
-      await this.mapListsPersonsRepo.deleteByPersonIds(
-        { tenant_id: auth.tenant_id, person_ids: personIds },
-        trx,
-      );
-      await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
-    }
-
-    const householdIds = await this.householdsRepo.getIdsByFileId(
-      { tenant_id: auth.tenant_id, file_id: importId, onlyEmpty: true },
-      trx,
-    );
-
-    if (householdIds.length > 0) {
-      await this.mapHouseholdsTagsRepo.deleteByHouseholdIds(
-        { tenant_id: auth.tenant_id, household_ids: householdIds },
-        trx,
-      );
-      await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
-    }
-
-    return personIds.length > 0;
-  }
-
-  private async clearAssociations(
-    importId: string,
-    auth: IAuthKeyPayload,
-    trx: Transaction<Models>,
-  ) {
-    await this.personsRepo.clearFileIdForImport(
-      { tenant_id: auth.tenant_id, import_id: importId, user_id: auth.user_id },
-      trx,
-    );
-    await this.householdsRepo.clearFileIdForImport(
-      { tenant_id: auth.tenant_id, import_id: importId, user_id: auth.user_id },
-      trx,
-    );
+    return { deleted: true, contactsRemoved: wantsPeopleDeletion };
   }
 
   private mapToListItem(row: DataImportWithStats): ImportListItem {
@@ -139,6 +178,8 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       householdsCreated: row.households_created,
       contactCount: row.contact_count,
       householdCount: row.household_count,
+      companyCount: row.company_count,
+      taskCount: row.task_count,
       status: row.status,
       errorMessage: row.error_message,
       canDeleteContacts,

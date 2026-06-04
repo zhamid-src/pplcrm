@@ -1,9 +1,11 @@
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
+import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { QueryParams } from '../../lib/base.repo';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
+import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
 
 /**
  * Controller for managing persons and their associated tags.
@@ -11,6 +13,7 @@ import { PersonsRepo } from './repositories/persons.repo';
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
   private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
 
   constructor() {
     super(new PersonsRepo());
@@ -68,19 +71,55 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /** Override deleteMany to clear dependent mappings before deleting persons */
-  public override async deleteMany(tenant_id: string, idsToDelete: string[]): Promise<boolean> {
+  public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
     if (!idsToDelete?.length) return false;
     return await this.getRepo()
       .transaction()
       .execute(async (trx) => {
+        // Check if any person is a team captain
+        const captainedTeams = await trx
+          .selectFrom('teams')
+          .select(['id', 'name', 'team_captain_id'])
+          .where('tenant_id', '=', tenant_id)
+          .where('team_captain_id', 'in', idsToDelete)
+          .execute();
+
+        if (captainedTeams.length > 0 && !force) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+          });
+        }
+
         // Fetch active duplicate group keys for these persons before they are deleted
-        const activeGroupKeys = await trx.selectFrom('potential_duplicates')
+        const activeGroupKeys = await trx
+          .selectFrom('potential_duplicates')
           .select('group_key')
           .where('tenant_id', '=', tenant_id)
           .where('person_id', 'in', idsToDelete)
           .execute();
         const groupKeysToMaintenance = Array.from(new Set(activeGroupKeys.map((k) => k.group_key)));
 
+        // Unlink captaincy if forced and captained teams exist
+        if (captainedTeams.length > 0) {
+          await trx
+            .updateTable('teams')
+            .set({ team_captain_id: null })
+            .where('tenant_id', '=', tenant_id)
+            .where('team_captain_id', 'in', idsToDelete)
+            .execute();
+        }
+
+        // Delete volunteer shifts
+        await trx
+          .deleteFrom('volunteer_shifts')
+          .where('tenant_id', '=', tenant_id)
+          .where('person_id', 'in', idsToDelete)
+          .execute();
+
+        // Delete team mappings
+        await this.mapTeamsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete tag mappings
         await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete list mappings
@@ -98,8 +137,13 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /** Override delete to reuse deleteMany path */
-  public override async delete(tenant_id: string, idToDelete: string, userId?: string): Promise<boolean> {
-    const result = await this.deleteMany(tenant_id, [idToDelete]);
+  public override async delete(
+    tenant_id: string,
+    idToDelete: string,
+    userId?: string,
+    force?: boolean,
+  ): Promise<boolean> {
+    const result = await this.deleteMany(tenant_id, [idToDelete], force);
     try {
       if (userId) {
         await this.userActivity.log({

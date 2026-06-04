@@ -35,7 +35,7 @@
                     <th class="px-4 py-3 text-left font-medium">Imported</th>
                     <th class="px-4 py-3 text-left font-medium">Errors</th>
                     <th class="px-4 py-3 text-left font-medium">Skipped</th>
-                    <th class="px-4 py-3 text-left font-medium">Contacts</th>
+                    <th class="px-4 py-3 text-left font-medium">Active Records</th>
                     <th class="px-4 py-3 text-left font-medium">Tag</th>
                     <th class="px-4 py-3 text-left font-medium">Processed</th>
                     <th class="px-4 py-3"></th>
@@ -95,8 +95,14 @@
                         <span class="text-slate-900">{{ item.skippedCount }}</span>
                       </td>
                       <td class="px-4 py-3">
-                        <div class="text-slate-900 font-medium">{{ item.contactCount }}</div>
+                        <div class="text-slate-900 font-medium">People: {{ item.contactCount }}</div>
                         <div class="text-xs text-slate-500">Households: {{ item.householdCount }}</div>
+                        @if (item.companyCount > 0) {
+                          <div class="text-xs text-slate-500">Companies: {{ item.companyCount }}</div>
+                        }
+                        @if (item.taskCount > 0) {
+                          <div class="text-xs text-slate-500">Tasks: {{ item.taskCount }}</div>
+                        }
                       </td>
                       <td class="px-4 py-3">
                         <div class="text-slate-900">{{ item.tagName || '—' }}</div>
@@ -155,28 +161,66 @@
       @if (pendingDelete(); as item) {
         <p class="text-sm text-slate-600">
           This removes <strong>{{ item.fileName }}</strong> from the import history.
-          @if (item.canDeleteContacts) {
-            You can also delete the contacts created by this import.
-          }
+          You can choose to delete associated records created by this import:
         </p>
-        @if (!item.canDeleteContacts) {
-          <p class="mt-2 text-sm text-amber-600">
-            The automatic tag for this import is no longer available, so contacts cannot be identified for removal.
-          </p>
-        }
 
-        <label class="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm mt-1"
-            [disabled]="!item.canDeleteContacts"
-            [checked]="item.canDeleteContacts && deleteContacts()"
-            (change)="deleteContacts.set($any($event.target).checked)"
-          />
-          <span>
-            Also delete contacts that came from this import
-          </span>
-        </label>
+        <div class="space-y-2 mt-4">
+          @if (item.contactCount > 0) {
+            <label class="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary mt-0.5"
+                [checked]="deletePeople()"
+                (change)="deletePeople.set($any($event.target).checked)"
+              />
+              <span>
+                Also delete people ({{ item.contactCount }} found)
+              </span>
+            </label>
+          }
+
+          @if (item.householdCount > 0) {
+            <label class="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary mt-0.5"
+                [checked]="deleteHouseholds()"
+                (change)="deleteHouseholds.set($any($event.target).checked)"
+              />
+              <span>
+                Also delete households ({{ item.householdCount }} found)
+              </span>
+            </label>
+          }
+
+          @if (item.companyCount > 0) {
+            <label class="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary mt-0.5"
+                [checked]="deleteCompanies()"
+                (change)="deleteCompanies.set($any($event.target).checked)"
+              />
+              <span>
+                Also delete companies ({{ item.companyCount }} found)
+              </span>
+            </label>
+          }
+
+          @if (item.taskCount > 0) {
+            <label class="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary mt-0.5"
+                [checked]="deleteTasks()"
+                (change)="deleteTasks.set($any($event.target).checked)"
+              />
+              <span>
+                Also delete tasks ({{ item.taskCount }} found)
+              </span>
+            </label>
+          }
+        </div>
       }
 
       <div class="modal-action flex gap-2">

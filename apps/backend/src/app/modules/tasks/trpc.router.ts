@@ -11,6 +11,29 @@ const tasks = new TasksController();
 
 export const TasksRouter = router({
   add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
+  
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
+            details: z.string().trim().max(10000).optional().nullable(),
+            status: z.string().trim().max(50).optional().nullable(),
+            priority: z.string().trim().max(50).optional().nullable(),
+            due_at: z.string().trim().max(50).optional().nullable(),
+            assigned_to: z.string().trim().max(50).optional().nullable(),
+          })
+        ),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return tasks.importRows(input, ctx.auth);
+    }),
+
   count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
   delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
   deleteMany: authProcedure

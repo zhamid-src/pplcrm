@@ -87,15 +87,15 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
   ],
 })
 export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
-  private readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly dialogs = inject(ConfirmDialogService);
+  protected readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  protected readonly dialogs = inject(ConfirmDialogService);
   private readonly route = inject(ActivatedRoute);
   private readonly searchSvc = inject(SearchService);
 
   // Header resize handled by ResizingController
 
   //private readonly themeSvc = inject(ThemeService);
-  private _loading = createLoadingGate();
+  protected _loading = createLoadingGate();
 
   // Persistence
   private _persistKey = 'pcdg';

@@ -22,7 +22,7 @@ function attachTag() {
         id: idSchema,
         tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
         type: z.enum(['tag', 'issue']).default('tag').optional(),
-      })
+      }),
     )
     .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
 }
@@ -31,14 +31,36 @@ function count() {
   return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
 }
 
-function deleteMany() {
-  return authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => persons.deleteMany(ctx.auth.tenant_id, input));
-}
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
 
 function deleteOne() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => persons.delete(ctx.auth.tenant_id, input, ctx.auth.user_id));
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
 }
 
 function detachTag() {
@@ -48,7 +70,7 @@ function detachTag() {
         id: idSchema,
         tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
         type: z.enum(['tag', 'issue']).default('tag').optional(),
-      })
+      }),
     )
     .mutation(({ input, ctx }) =>
       personsService.detachTag({
@@ -88,9 +110,7 @@ function getById() {
 }
 
 function getActivity() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
 }
 
 // Distinct tags
@@ -104,9 +124,7 @@ function exportCsv() {
   return authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
-    .mutation(({ input, ctx }) =>
-      persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
-    );
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
 }
 
 function getTags() {
@@ -120,9 +138,9 @@ function getTags() {
 }
 
 function update() {
-  return authProcedure.input(z.object({ id: idSchema, data: UpdatePersonsObj })).mutation(({ input, ctx }) =>
-    personsService.updatePerson(input.id, input.data as any, ctx.auth),
-  );
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
 }
 
 function removeHousehold() {

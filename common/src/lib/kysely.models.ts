@@ -332,6 +332,7 @@ export interface Tasks extends RecordType {
   position: number | null;
   assigned_to: string | null;
   team_id: string | null;
+  file_id: string | null;
 }
 
 interface Tenants extends RecordType, AddressType {
@@ -607,6 +608,7 @@ export interface Companies extends RecordType {
   industry: string | null;
   notes: string | null;
   json: Json | null;
+  file_id: string | null;
 }
 
 export interface Files {
