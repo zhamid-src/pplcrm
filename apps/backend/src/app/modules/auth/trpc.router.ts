@@ -133,6 +133,13 @@ function cancelAccountDeletion() {
 }
 
 /**
+ * Revert a pending email change back to the original email and role.
+ */
+function cancelEmailChange() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
+}
+
+/**
  * Trigger password reset by administrator.
  */
 function adminTriggerPasswordReset() {
@@ -220,5 +227,6 @@ export const AuthRouter = router({
   verify2FA: verify2FA(),
   scheduleAccountDeletion: scheduleAccountDeletion(),
   cancelAccountDeletion: cancelAccountDeletion(),
+  cancelEmailChange: cancelEmailChange(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
 });

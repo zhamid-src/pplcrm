@@ -51,7 +51,26 @@
       </div>
     </div>
 
-    @if (error()) {
+    @if (detail()?.previous_email) {
+    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center mb-4">
+      <div class="flex items-center gap-3">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <div>
+          <h3 i18n class="font-bold text-warning-content">Verification Pending</h3>
+          <div i18n class="text-xs text-warning-content/80">
+            A verification link was sent to your new email. You will not be able to make changes until verified.
+          </div>
+        </div>
+      </div>
+      <button
+        i18n
+        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
+        (click)="cancelEmailChange()"
+      >
+        Undo Change
+      </button>
+    </div>
+    } @if (error()) {
     <div class="alert alert-error shadow-sm rounded-xl">
       <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
       <span>{{ error() }}</span>
@@ -245,7 +264,7 @@
             <button
               class="btn btn-primary min-w-[120px]"
               type="submit"
-              [disabled]="saving() || loading() || form().invalid() || !form().dirty()"
+              [disabled]="saving() || loading() || form().invalid() || !form().dirty() || isViewer()"
             >
               @if (saving()) {
               <span class="loading loading-spinner loading-xs mr-2"></span>

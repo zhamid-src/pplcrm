@@ -94,12 +94,6 @@ export class AuthService extends TRPCService<'authusers'> {
     // If the updated user is the current user, update our local signal
     const current = this.user();
     if (current && current.id === id) {
-      if (data.email && data.email.toLowerCase().trim() !== current.email.toLowerCase().trim()) {
-        this.user.set(null);
-        this.tokenService.clearAll();
-        void this.router.navigate(['/signin'], { queryParams: { emailChanged: 'true', email: data.email } });
-        return updated;
-      }
       this.user.set({
         ...current,
         first_name: updated.first_name ?? current.first_name,
@@ -107,6 +101,15 @@ export class AuthService extends TRPCService<'authusers'> {
       });
     }
     return updated;
+  }
+
+  /**
+   * Cancels a pending email change and reverts to previous email and role.
+   */
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
   }
 
   /**

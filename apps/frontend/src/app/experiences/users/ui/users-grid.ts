@@ -46,6 +46,7 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
         }
         values.push({ value: 'admin', label: 'Admin' });
         values.push({ value: 'user', label: 'User' });
+        values.push({ value: 'viewer', label: 'Viewer' });
         return { values };
       },
       valueFormatter: (p: any) => {
@@ -53,6 +54,7 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
         if (val === 'owner') return 'Owner';
         if (val === 'admin') return 'Admin';
         if (val === 'user') return 'User';
+        if (val === 'viewer') return 'Viewer';
         return val || '';
       },
     },
