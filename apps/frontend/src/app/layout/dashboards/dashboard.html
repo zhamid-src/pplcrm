@@ -11,16 +11,14 @@
   <div class="drawer-content flex flex-col h-screen overflow-hidden">
     <pc-navbar></pc-navbar>
     @if (isViewer()) {
-    <div class="bg-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner">
+    <div
+      class="alert alert-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
+    >
       <div class="flex items-center gap-2">
         <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
         <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
       </div>
-      <a
-        href="/profile"
-        class="underline hover:text-amber-100 transition-colors text-xs font-semibold whitespace-nowrap"
-        >Manage Profile</a
-      >
+      <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
     </div>
     }
     <pc-breadcrumb class="invisible sm:visible"></pc-breadcrumb>
