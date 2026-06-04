@@ -1,5 +1,5 @@
-import { Component, effect, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Component, effect, inject, signal, OnInit } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { form, submit, required, email, minLength, pattern, FormField } from '@angular/forms/signals';
 import { JSendFailError } from '@common';
@@ -34,14 +34,19 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
   templateUrl: './signin-page.html',
 })
-export class SignInPage {
+export class SignInPage implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly tokenService = inject(TokenService);
+  private readonly route = inject(ActivatedRoute);
 
   /** Signal indicating whether login loading is in progress */
   private _loading = createLoadingGate();
+
+  protected readonly verificationPending = signal<boolean>(false);
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly resending = signal<boolean>(false);
 
   protected isLoading = this._loading.visible;
 
@@ -89,6 +94,15 @@ export class SignInPage {
     });
   }
 
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    if (params.get('emailChanged') === 'true') {
+      const emailVal = params.get('email') || '';
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+    }
+  }
+
   public get email() {
     return this.form.email();
   }
@@ -121,6 +135,9 @@ export class SignInPage {
       this.form.email().value.set(emailVal);
     }
 
+    // clear previous pending states
+    this.verificationPending.set(false);
+
     // force validation messages to appear
     this.form().markAsTouched();
 
@@ -135,13 +152,18 @@ export class SignInPage {
             this.otpData.update((o) => ({ ...o, code: '' }));
           }
         } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (message.toLowerCase().includes('not verified')) {
+            this.verificationPending.set(true);
+            this.pendingEmail.set(emailVal);
+          }
           if (err instanceof JSendFailError) {
-            const message = err.data['message'] ?? 'Unable to sign in.';
-            this.alertSvc.showError(message);
+            const msg = err.data['message'] ?? 'Unable to sign in.';
+            this.alertSvc.showError(msg);
           } else if (err instanceof TRPCClientError) {
             this.alertSvc.showError(err.message);
           } else {
-            this.alertSvc.showError(err instanceof Error ? err.message : String(err));
+            this.alertSvc.showError(message);
           }
         } finally {
           end();
@@ -219,6 +241,20 @@ export class SignInPage {
     this.requires2FA.set(false);
     this.emailFor2FA.set('');
     this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+    } finally {
+      this.resending.set(false);
+    }
   }
 
   /**

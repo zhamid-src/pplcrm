@@ -94,6 +94,12 @@ export class AuthService extends TRPCService<'authusers'> {
     // If the updated user is the current user, update our local signal
     const current = this.user();
     if (current && current.id === id) {
+      if (data.email && data.email.toLowerCase().trim() !== current.email.toLowerCase().trim()) {
+        this.user.set(null);
+        this.tokenService.clearAll();
+        void this.router.navigate(['/signin'], { queryParams: { emailChanged: 'true', email: data.email } });
+        return updated;
+      }
       this.user.set({
         ...current,
         first_name: updated.first_name ?? current.first_name,
@@ -186,6 +192,14 @@ export class AuthService extends TRPCService<'authusers'> {
   public async signUp(input: signUpInputType) {
     const token = await this.api.auth.signUp.mutate(input);
     return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
   }
 
   /**

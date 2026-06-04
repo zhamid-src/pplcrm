@@ -81,20 +81,33 @@ const isAuthed = middleware(async (opts) => {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
 
-  let user: { role: string | null } | undefined;
+  let user: { role: string | null; verified: boolean } | undefined;
   if (/^\d+$/.test(ctx.auth.user_id)) {
-    user = await BaseRepository.dbInstance
+    const record = await BaseRepository.dbInstance
       .selectFrom('authusers')
-      .select('role')
+      .select(['role', 'verified'])
       .where('id', '=', ctx.auth.user_id as any)
       .where('tenant_id', '=', ctx.auth.tenant_id as any)
       .executeTakeFirst();
+    if (record) {
+      user = {
+        role: record.role,
+        verified: record.verified === true || String(record.verified) === 'true',
+      };
+    }
   } else {
-    user = { role: (ctx.auth as any).role || 'owner' };
+    user = { role: (ctx.auth as any).role || 'owner', verified: true };
   }
 
   if (!user) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+
+  if (!user.verified) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Your email address is not verified yet. Please check your inbox for a verification link.',
+    });
   }
 
   const authWithRole = {

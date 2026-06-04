@@ -6,28 +6,49 @@
 
 # Test info
 
-- Name: signin.spec.ts >> Authentication >> Authentication Guards >> should redirect authenticated users away from sign-in
-- Location: apps/frontend-e2e/src/signin.spec.ts:92:5
+- Name: signin.spec.ts >> Authentication >> Sign-in Page >> should show validation error for invalid email
+- Location: apps/frontend-e2e/src/signin.spec.ts:33:5
 
 # Error details
 
 ```
-Error: expect(page).not.toHaveURL(expected) failed
+Test timeout of 30000ms exceeded.
+```
 
-Expected pattern: not /\/signin/
-Received string: "http://localhost:4200/signin"
-Timeout: 5000ms
-
+```
+Error: locator.click: Test timeout of 30000ms exceeded.
 Call log:
-  - Expect "not toHaveURL" with timeout 5000ms
-    9 × unexpected value "http://localhost:4200/signin"
+  - waiting for locator('button[type="submit"], button:has-text("Sign in")')
+    - locator resolved to <button type="submit" class="btn btn-primary w-full">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <vite-error-overlay></vite-error-overlay> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <vite-error-overlay></vite-error-overlay> intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    57 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <vite-error-overlay></vite-error-overlay> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
 
 ```
 
 # Page snapshot
 
 ```yaml
-- generic [active] [ref=e1]:
+- generic [ref=e1]:
   - generic [ref=e7]:
     - img [ref=e9]
     - generic [ref=e10]:
@@ -37,10 +58,12 @@ Call log:
           - img [ref=e18]
           - textbox "Email" [ref=e20]:
             - /placeholder: Enter your email
+            - text: invalid-email
         - generic [ref=e21]:
           - img [ref=e25]
-          - textbox "Password" [ref=e27]:
+          - textbox "Password" [active] [ref=e27]:
             - /placeholder: Enter your password
+            - text: password123
         - generic [ref=e28]:
           - generic [ref=e29]:
             - checkbox "Remember me" [ref=e30] [cursor=pointer]
@@ -63,6 +86,16 @@ Call log:
 # Test source
 
 ```ts
+  1   | /**
+  2   |  * @fileoverview E2E tests for authentication flow.
+  3   |  * Tests sign-in, sign-up, and authentication guard functionality.
+  4   |  */
+  5   | import { expect, test } from '@playwright/test';
+  6   | 
+  7   | test.describe('Authentication', () => {
+  8   |   test.describe('Sign-in Page', () => {
+  9   |     test('should load sign-in page', async ({ page }) => {
+  10  |       await page.goto('/signin');
   11  |       await expect(page.getByText('Enter your email and password to sign in')).toBeVisible();
   12  |     });
   13  | 
@@ -93,7 +126,8 @@ Call log:
   38  |       await page.locator('input[type="password"], input[placeholder*="password" i]').fill('password123');
   39  | 
   40  |       // Try to submit
-  41  |       await page.locator('button[type="submit"], button:has-text("Sign in")').click();
+> 41  |       await page.locator('button[type="submit"], button:has-text("Sign in")').click();
+      |                                                                               ^ Error: locator.click: Test timeout of 30000ms exceeded.
   42  | 
   43  |       // Should show email validation error
   44  |       await expect(page.locator('.error, .invalid')).toBeVisible();
@@ -163,8 +197,7 @@ Call log:
   108 |       await page.goto('/signin');
   109 | 
   110 |       // Should redirect to dashboard or main app
-> 111 |       await expect(page).not.toHaveURL(/\/signin/);
-      |                              ^ Error: expect(page).not.toHaveURL(expected) failed
+  111 |       await expect(page).not.toHaveURL(/\/signin/);
   112 |     });
   113 |   });
   114 | 
@@ -195,74 +228,4 @@ Call log:
   139 |     });
   140 |   });
   141 | 
-  142 |   test.describe('Error Handling', () => {
-  143 |     test('should handle network errors during sign-in', async ({ page }) => {
-  144 |       await page.goto('/signin');
-  145 | 
-  146 |       // Mock network failure on the tRPC signIn mutation
-  147 |       await page.route(/\/auth\.signIn/, (route) => route.abort());
-  148 | 
-  149 |       // Fill form and submit
-  150 |       await page.locator('input[type="email"], input[placeholder*="email" i]').fill('test@example.com');
-  151 |       await page.locator('input[type="password"], input[placeholder*="password" i]').fill('password123');
-  152 |       await page.locator('button[type="submit"], button:has-text("Sign in")').click();
-  153 | 
-  154 |       // Should show error message
-  155 |       await expect(page.locator('.error, .alert, [role="alert"]')).toBeVisible();
-  156 |     });
-  157 | 
-  158 |     test('should handle invalid credentials', async ({ page }) => {
-  159 |       await page.goto('/signin');
-  160 | 
-  161 |       // Mock 401 response on the tRPC signIn mutation
-  162 |       await page.route(/\/auth\.signIn/, (route) =>
-  163 |         route.fulfill({
-  164 |           status: 401,
-  165 |           contentType: 'application/json',
-  166 |           body: JSON.stringify([{ error: { json: { message: 'Invalid credentials' } } }]),
-  167 |         }),
-  168 |       );
-  169 | 
-  170 |       // Fill form and submit
-  171 |       await page.locator('input[type="email"], input[placeholder*="email" i]').fill('wrong@example.com');
-  172 |       await page.locator('input[type="password"], input[placeholder*="password" i]').fill('wrongpassword');
-  173 |       await page.locator('button[type="submit"], button:has-text("Sign in")').click();
-  174 | 
-  175 |       // Should show error message
-  176 |       await expect(page.locator('.error, .alert, [role="alert"]')).toBeVisible();
-  177 |     });
-  178 |   });
-  179 | 
-  180 |   test.describe('Accessibility', () => {
-  181 |     test('should have proper form labels and ARIA attributes', async ({ page }) => {
-  182 |       await page.goto('/signin');
-  183 | 
-  184 |       // Check for proper labeling
-  185 |       const emailInput = page.locator('input[type="email"], input[placeholder*="email" i]');
-  186 |       const passwordInput = page.locator('input[type="password"], input[placeholder*="password" i]');
-  187 | 
-  188 |       // Should have labels or aria-label
-  189 |       await expect(emailInput).toHaveAttribute('aria-label');
-  190 |       await expect(passwordInput).toHaveAttribute('aria-label');
-  191 |     });
-  192 | 
-  193 |     test('should be keyboard navigable', async ({ page }) => {
-  194 |       await page.goto('/signin');
-  195 | 
-  196 |       // Focus email input first
-  197 |       const emailInput = page.locator('input[type="email"], input[placeholder*="email" i]');
-  198 |       await emailInput.focus();
-  199 |       await expect(emailInput).toBeFocused();
-  200 | 
-  201 |       // Tab to password
-  202 |       await page.keyboard.press('Tab');
-  203 |       await expect(page.locator('input[type="password"], input[placeholder*="password" i]')).toBeFocused();
-  204 | 
-  205 |       // Tab to remember_me checkbox
-  206 |       await page.keyboard.press('Tab');
-  207 |       await expect(page.locator('input[type="checkbox"]')).toBeFocused();
-  208 | 
-  209 |       // Tab to forgot password link
-  210 |       await page.keyboard.press('Tab');
-  211 |       await expect(page.locator('a:has-text("Forgot your password?")')).toBeFocused();
 ```

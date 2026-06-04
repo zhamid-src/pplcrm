@@ -1,6 +1,22 @@
 <!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
   @if (!requires2FA()) {
+    @if (verificationPending()) {
+      <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex items-center gap-2 font-semibold">
+            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+            <span>Verification Pending</span>
+          </div>
+          <p class="text-xs text-amber-200/80">
+            A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your inbox.
+          </p>
+          <button class="btn btn-xs btn-outline btn-warning mt-1 w-fit" type="button" (click)="resendVerification()" [disabled]="resending()">
+            {{ resending() ? 'Sending...' : 'Resend Verification Email' }}
+          </button>
+        </div>
+      </div>
+    }
   <label class="label text-neutral-100">Enter your email and password to sign in</label>
   <form (submit)="signIn($event)" novalidate>
     <div class="space-y-3">
