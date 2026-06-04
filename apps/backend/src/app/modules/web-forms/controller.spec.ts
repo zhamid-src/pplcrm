@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { WebFormsController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
+import { sql } from 'kysely';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -73,6 +74,7 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('web_forms').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
 }
 
@@ -135,6 +137,16 @@ describe('WebFormsController Integration', () => {
 
     const res = await controller.submitFormPublic(formId, payload, '127.0.0.1');
     expect(res.redirect_url).toBe('https://example.com/thankyou');
+
+    // Verify background job was queued
+    const job = await db.selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'send-webform-notifications')
+      .where(sql`payload->>'formId'`, '=', formId)
+      .executeTakeFirst();
+    expect(job).toBeDefined();
+    expect(job.status).toBe('pending');
 
     // 4. Verify Contact Creation
     const person = await db.selectFrom('persons')

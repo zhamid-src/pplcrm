@@ -95,30 +95,84 @@
 
               <div class="divider my-1"></div>
 
+              <!-- Send Confirmation Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal"
+                      >Send Form Submission Confirmation</span
+                    >
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send a thank-you confirmation email to constituents when they submit the form.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    formControlName="send_confirmation"
+                    class="toggle toggle-primary mt-1 shrink-0"
+                  />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Lead Notification Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send New Lead Notification</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send email alert notifications to organization admins when a new submission is received.
+                    </p>
+                  </div>
+                  <input type="checkbox" formControlName="send_alert" class="toggle toggle-primary mt-1 shrink-0" />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
               <!-- Form Fields Toggles -->
               <div class="form-control">
-                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">
-                  Form Fields
-                </h2>
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
                 <div class="space-y-1 bg-base-200/30 rounded-xl p-4 border border-base-200">
                   <label class="label cursor-pointer justify-start gap-3 py-1.5">
                     <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
                     <span class="label-text font-medium">Email Address (Required)</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 py-1.5">
-                    <input type="checkbox" [checked]="showFirstName()" (change)="toggleField('first_name')" class="checkbox checkbox-sm checkbox-primary" />
+                    <input
+                      type="checkbox"
+                      [checked]="showFirstName()"
+                      (change)="toggleField('first_name')"
+                      class="checkbox checkbox-sm checkbox-primary"
+                    />
                     <span class="label-text">First Name</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 py-1.5">
-                    <input type="checkbox" [checked]="showLastName()" (change)="toggleField('last_name')" class="checkbox checkbox-sm checkbox-primary" />
+                    <input
+                      type="checkbox"
+                      [checked]="showLastName()"
+                      (change)="toggleField('last_name')"
+                      class="checkbox checkbox-sm checkbox-primary"
+                    />
                     <span class="label-text">Last Name</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 py-1.5">
-                    <input type="checkbox" [checked]="showMobile()" (change)="toggleField('mobile')" class="checkbox checkbox-sm checkbox-primary" />
+                    <input
+                      type="checkbox"
+                      [checked]="showMobile()"
+                      (change)="toggleField('mobile')"
+                      class="checkbox checkbox-sm checkbox-primary"
+                    />
                     <span class="label-text">Mobile / Phone</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 py-1.5">
-                    <input type="checkbox" [checked]="showNotes()" (change)="toggleField('notes')" class="checkbox checkbox-sm checkbox-primary" />
+                    <input
+                      type="checkbox"
+                      [checked]="showNotes()"
+                      (change)="toggleField('notes')"
+                      class="checkbox checkbox-sm checkbox-primary"
+                    />
                     <span class="label-text">Notes / Message</span>
                   </label>
                 </div>
@@ -185,8 +239,10 @@
         <div class="space-y-6 md:col-span-5">
           <!-- Live Form Preview Panel -->
           <div class="card bg-base-100 border border-base-200 shadow-sm overflow-hidden relative">
-            <div class="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-primary to-transparent"></div>
-            
+            <div
+              class="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-primary to-transparent"
+            ></div>
+
             <div class="card-body gap-4 p-6">
               <div>
                 <h3 class="font-bold text-base flex items-center gap-2">
@@ -200,7 +256,9 @@
               <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
                 <!-- Inner Form Header -->
                 <div class="text-center mb-6">
-                  <h4 class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent">
+                  <h4
+                    class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
+                  >
                     {{ formGroup.get('name')?.value || 'Untitled Web Form' }}
                   </h4>
                   <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
@@ -211,36 +269,47 @@
                 <!-- Form Fields -->
                 <div class="space-y-4">
                   @if (showFirstName()) {
-                    <div class="form-control">
-                      <label class="label text-[11px] font-semibold py-0.5">First Name</label>
-                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
-                    </div>
-                  }
-
-                  @if (showLastName()) {
-                    <div class="form-control">
-                      <label class="label text-[11px] font-semibold py-0.5">Last Name</label>
-                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
-                    </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">First Name</label>
+                    <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                  </div>
+                  } @if (showLastName()) {
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Last Name</label>
+                    <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                  </div>
                   }
 
                   <div class="form-control">
                     <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
-                    <input type="email" class="input input-bordered input-sm w-full" placeholder="john@example.com" disabled />
+                    <input
+                      type="email"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="john@example.com"
+                      disabled
+                    />
                   </div>
 
                   @if (showMobile()) {
-                    <div class="form-control">
-                      <label class="label text-[11px] font-semibold py-0.5">Mobile / Phone</label>
-                      <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. 555-0199" disabled />
-                    </div>
-                  }
-
-                  @if (showNotes()) {
-                    <div class="form-control">
-                      <label class="label text-[11px] font-semibold py-0.5">Notes / Message</label>
-                      <textarea class="textarea textarea-bordered textarea-sm w-full" rows="2" placeholder="How can we help you?" disabled></textarea>
-                    </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Mobile / Phone</label>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="E.g. 555-0199"
+                      disabled
+                    />
+                  </div>
+                  } @if (showNotes()) {
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Notes / Message</label>
+                    <textarea
+                      class="textarea textarea-bordered textarea-sm w-full"
+                      rows="2"
+                      placeholder="How can we help you?"
+                      disabled
+                    ></textarea>
+                  </div>
                   }
 
                   <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>Submit</button>

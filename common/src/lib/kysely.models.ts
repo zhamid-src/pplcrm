@@ -407,6 +407,8 @@ interface WebForms extends RecordType {
   target_lists: Json | null;
   status: 'active' | 'archived';
   fields: Json | null;
+  send_confirmation: boolean;
+  send_alert: boolean;
 }
 
 interface EmailComments extends RecordType {
@@ -638,6 +640,8 @@ export interface VolunteerEvents extends RecordType {
   is_private: boolean;
   send_reminder: boolean;
   slug: string;
+  send_signup_confirmation: boolean;
+  send_volunteer_alert: boolean;
 }
 
 export interface VolunteerShifts extends RecordType {

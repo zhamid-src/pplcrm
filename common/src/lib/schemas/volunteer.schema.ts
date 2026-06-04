@@ -12,6 +12,8 @@ export const AddVolunteerEventObj = z.object({
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().default(false).optional(),
   send_reminder: z.boolean().default(true).optional(),
+  send_signup_confirmation: z.boolean().default(true).optional(),
+  send_volunteer_alert: z.boolean().default(true).optional(),
   slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens'),
 });
 
@@ -28,6 +30,8 @@ export const VolunteerEventsObj = z.object({
   contact_phone: z.string().nullable().optional(),
   is_private: z.boolean(),
   send_reminder: z.boolean(),
+  send_signup_confirmation: z.boolean().default(true),
+  send_volunteer_alert: z.boolean().default(true),
   slug: z.string(),
 });
 
@@ -42,6 +46,8 @@ export const UpdateVolunteerEventObj = z.object({
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().optional(),
   send_reminder: z.boolean().optional(),
+  send_signup_confirmation: z.boolean().optional(),
+  send_volunteer_alert: z.boolean().optional(),
   slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens').optional(),
 });
 

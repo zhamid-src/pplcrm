@@ -58,6 +58,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       contact_phone: payload.contact_phone ?? null,
       is_private: payload.is_private ?? false,
       send_reminder: payload.send_reminder ?? true,
+      send_signup_confirmation: payload.send_signup_confirmation ?? true,
+      send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
