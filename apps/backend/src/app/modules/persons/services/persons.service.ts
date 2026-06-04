@@ -394,14 +394,11 @@ export class PersonsService {
     });
 
     if (tag?.id) {
-      const id = await this.mapPersonsTagRepo.getId({
+      await this.mapPersonsTagRepo.deleteMapping({
         tenant_id: input.tenant_id,
         person_id: input.person_id,
         tag_id: tag.id,
       });
-      if (id) {
-        await this.mapPersonsTagRepo.delete({ tenant_id: input.tenant_id, id });
-      }
     }
 
     try {

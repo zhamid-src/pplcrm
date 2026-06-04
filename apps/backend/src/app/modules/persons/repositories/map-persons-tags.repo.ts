@@ -17,19 +17,28 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
   }
 
   /**
-   * Get the ID of the mapping entry for a given person and tag.
-   *
-   * @param input - An object containing tenant_id, person_id, and tag_id.
-   * @returns The ID of the matching mapping entry, or undefined if not found.
+   * Checks if a mapping exists.
    */
-  public async getId(input: { tenant_id: string; person_id: string; tag_id: string }, trx?: Transaction<Models>) {
+  public async hasMapping(input: { tenant_id: string; person_id: string; tag_id: string }, trx?: Transaction<Models>) {
     const payload = await this.getSelect(trx)
-      .select('id')
+      .select('person_id')
       .where('person_id', '=', input.person_id)
       .where('tag_id', '=', input.tag_id)
       .where('tenant_id', '=', input.tenant_id)
       .executeTakeFirst();
-    return payload?.id;
+    return !!payload;
+  }
+
+  /**
+   * Deletes a mapping.
+   */
+  public async deleteMapping(input: { tenant_id: string; person_id: string; tag_id: string }, trx?: Transaction<Models>) {
+    const res = await this.getDelete(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .where('tag_id', '=', input.tag_id)
+      .executeTakeFirst();
+    return Number(res?.numDeletedRows ?? 0) > 0;
   }
 
   /** Delete all mappings for the given person IDs within a tenant. */

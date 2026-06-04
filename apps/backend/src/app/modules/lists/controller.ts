@@ -485,9 +485,10 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             name: 'System Worker',
             session_id: 'lazy-refresh',
           };
-          this.refreshList(mockAuth, input.id).catch((err) =>
+          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
             console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
           );
+          (this as any)._lastLazyRefreshPromise = promise;
         }
       }
     }

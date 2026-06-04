@@ -515,7 +515,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
       const sourceTags = await trx
         .selectFrom('map_peoples_tags')
-        .select(['id', 'tag_id'])
+        .select(['tag_id'])
         .where('tenant_id', '=', input.tenant_id)
         .where('person_id', '=', input.source_id)
         .execute();

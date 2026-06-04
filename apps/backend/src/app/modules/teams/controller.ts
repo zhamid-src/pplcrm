@@ -363,7 +363,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const tagId = String(tag.id);
 
     for (const personId of ids) {
-      const existing = await this.personsTagRepo.getId({ tenant_id, person_id: personId, tag_id: tagId }, trx);
+      const existing = await this.personsTagRepo.hasMapping({ tenant_id, person_id: personId, tag_id: tagId }, trx);
       if (existing) continue;
       const row = {
         tenant_id,
