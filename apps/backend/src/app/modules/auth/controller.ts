@@ -360,6 +360,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
 
+    if (!user.verified) {
+      throw new ForbiddenError('Your email address is not verified yet. Please check your inbox for a verification link.');
+    }
+
     const requires2FA =
       user.two_factor_enabled || (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
 
@@ -421,6 +425,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!user.two_factor_code || user.two_factor_code !== code) {
       throw new BadRequestError('Invalid verification code.');
+    }
+
+    if (!user.verified) {
+      throw new ForbiddenError('Your email address is not verified yet. Please check your inbox for a verification link.');
     }
 
     if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
@@ -710,9 +718,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       if (data.role !== undefined && data.role !== existingUser.role) {
         throw new ForbiddenError('You do not have permission to change roles.');
       }
-      if (data.verified !== undefined && Boolean(data.verified) !== Boolean(existingUser.verified)) {
-        throw new ForbiddenError('You do not have permission to change verification status.');
-      }
     }
 
     if (callerRole === 'admin') {
@@ -720,14 +725,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (data.role !== undefined && data.role !== 'owner') {
           throw new ForbiddenError('Admins cannot demote an owner.');
         }
-        if (data.verified !== undefined && !data.verified) {
-          throw new ForbiddenError('Admins cannot remove access of an owner.');
-        }
       } else {
         if (data.role === 'owner') {
           throw new ForbiddenError('Admins cannot promote a non-owner to an owner.');
         }
       }
+    }
+
+    if (data.verified !== undefined && Boolean(data.verified) !== Boolean(existingUser.verified)) {
+      throw new ForbiddenError('Verification status cannot be changed manually.');
     }
 
     const row: Record<string, any> = {};
@@ -741,6 +747,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           throw new ConflictError('Email already exists');
         }
         row['email'] = nextEmail as any;
+        row['verified'] = false;
       }
     }
     if (data.first_name !== undefined) row['first_name'] = data.first_name as any;
@@ -778,7 +785,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             const codeObj = await this.getRepo().addPasswordResetCode(userId, trx);
             const code = codeObj?.password_reset_code;
 
-            row['verified'] = false;
+            await this.sessions.deleteByUserId(userId, auth.tenant_id, trx);
 
             await this.mailService.enqueueMail(
               {

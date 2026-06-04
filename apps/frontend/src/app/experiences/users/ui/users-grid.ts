@@ -59,11 +59,9 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
     {
       field: 'verified',
       headerName: 'Verified',
-      editable: true,
+      editable: false,
       valueFormatter: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
       cellRenderer: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-      cellEditorParams: { values: ['Yes', 'No'] },
-      valueSetter: (p: any) => this.verifiedValueSetter(p),
     },
     {
       field: 'updated_at',
@@ -116,12 +114,5 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
       if (['no', 'false', '0'].includes(normalized)) return false;
     }
     return false;
-  }
-
-  private verifiedValueSetter(p: any) {
-    const bool = this.coerceBoolean(p.newValue ?? p.value);
-    if ((p.data as Record<string, any>)['verified'] === bool) return false;
-    (p.data as Record<string, any>)['verified'] = bool;
-    return true;
   }
 }

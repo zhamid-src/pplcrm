@@ -30,6 +30,11 @@ export const appRoutes = [
     loadComponent: () =>
       import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
   },
+  {
+    path: 'verify-email',
+    loadComponent: () =>
+      import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
 
   // Main dashboard shell + children (protected)
   {

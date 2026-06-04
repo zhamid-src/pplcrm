@@ -194,14 +194,13 @@ describe('AuthController Integration', () => {
       first_name: 'Baba',
       last_name: 'Ganoush',
       role: 'owner',
-      verified: true,
     });
 
     expect(result).toBeDefined();
     expect(result.first_name).toBe('Baba');
     expect(result.last_name).toBe('Ganoush');
     expect(result.role).toBe('owner');
-    expect(result.verified).toBe(true);
+    expect(result.verified).toBe(false);
 
     // Clean up
     await db
@@ -398,6 +397,7 @@ describe('AuthController Integration', () => {
     });
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
     const authPayload = {
       tenant_id: String(user.tenant_id),
       user_id: String(user.id),
@@ -490,6 +490,7 @@ describe('AuthController Integration', () => {
     });
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
 
     // Enable 2FA on the user
     await db.updateTable('authusers').set({ two_factor_enabled: true }).where('id', '=', user.id).execute();
@@ -556,6 +557,9 @@ describe('AuthController Integration', () => {
       .executeTakeFirstOrThrow();
     // Creator must be owner
     expect(owner.role).toBe('owner');
+
+    // Force verify the owner
+    await db.updateTable('authusers').set({ verified: true }).where('id', '=', owner.id).execute();
 
     const authOwner = {
       tenant_id: owner.tenant_id,
@@ -657,5 +661,72 @@ describe('AuthController Integration', () => {
     await db.deleteFrom('background_jobs').where('tenant_id', '=', owner.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', owner.tenant_id).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', owner.tenant_id).execute();
+  });
+
+  it('should enforce verification logic: block sign-in for unverified, reject manual changes, set verified false on email change, and clear sessions', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const { ForbiddenError } = await import('../../errors/app-errors');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const email = `test-verif-${Date.now()}@example.com`;
+
+    // 1. Sign up (creates as unverified by default)
+    await controller.signUp({
+      organization: `VerifOrg-${Date.now()}`,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'VerifUser',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    expect(user.verified).toBe(false);
+
+    // 2. Try to sign in while unverified -> should throw ForbiddenError
+    await expect(
+      controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest')
+    ).rejects.toThrow(ForbiddenError);
+
+    // 3. Manually trying to set verified: true via updateUser -> should throw ForbiddenError
+    const authPayload = {
+      tenant_id: String(user.tenant_id),
+      user_id: String(user.id),
+      session_id: 'verif-session',
+      role: 'owner',
+    };
+    await expect(
+      controller.updateUser(authPayload, user.id, { verified: true })
+    ).rejects.toThrow(ForbiddenError);
+
+    // 4. Force verify in database to simulate clicking verification link
+    await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
+
+    // Now sign in should work
+    const signInResult = await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest');
+    expect(signInResult).toBeDefined();
+
+    // 5. Change email via updateUser -> should set verified: false and clear sessions
+    const nextEmail = `next-${Date.now()}@example.com`;
+    const updateResult = await controller.updateUser(authPayload, user.id, { email: nextEmail });
+    expect(updateResult.verified).toBe(false);
+
+    const userAfterUpdate = await db.selectFrom('authusers').selectAll().where('id', '=', user.id).executeTakeFirstOrThrow();
+    expect(userAfterUpdate.email).toBe(nextEmail);
+    expect(userAfterUpdate.verified).toBe(false);
+
+    // Verify session was deleted
+    const session = await db.selectFrom('sessions').selectAll().where('user_id', '=', user.id).executeTakeFirst();
+    expect(session).toBeUndefined();
+
+    // Clean up
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
   });
 });

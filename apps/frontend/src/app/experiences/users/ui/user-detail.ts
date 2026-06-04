@@ -43,7 +43,7 @@ export class UserDetailComponent implements OnInit {
     email(p.email);
     required(p.first_name);
     disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-    disabled(p.verified, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
+    disabled(p.verified, () => true);
   });
 
   protected readonly displayName = computed(() => {
