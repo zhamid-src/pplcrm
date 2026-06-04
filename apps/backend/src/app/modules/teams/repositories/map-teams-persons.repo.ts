@@ -48,6 +48,14 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
       .executeTakeFirst();
   }
 
+  public async deleteByPersonIds(input: { tenant_id: string; person_ids: string[] }, trx?: Transaction<Models>) {
+    if (!input.person_ids.length) return;
+    await this.getDelete(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', 'in', input.person_ids)
+      .executeTakeFirst();
+  }
+
   public async replaceVolunteers(
     input: { tenant_id: string; team_id: string; person_ids: string[]; user_id: string },
     trx?: Transaction<Models>,
@@ -75,14 +83,15 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
       }
 
       if (toAdd.length > 0) {
-        const rowsToInsert = toAdd.map((person_id) =>
-          ({
-            tenant_id: input.tenant_id,
-            team_id: input.team_id,
-            person_id,
-            createdby_id: input.user_id,
-            updatedby_id: input.user_id,
-          }) as OperationDataType<'map_teams_persons', 'insert'>,
+        const rowsToInsert = toAdd.map(
+          (person_id) =>
+            ({
+              tenant_id: input.tenant_id,
+              team_id: input.team_id,
+              person_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            }) as OperationDataType<'map_teams_persons', 'insert'>,
         );
         await this.addMany({ rows: rowsToInsert }, innerTrx);
       }

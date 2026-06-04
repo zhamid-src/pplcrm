@@ -59,6 +59,10 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
     return this.api.tasks.update.mutate({ id, data });
   }
 
+  public import(rows: any[], skipped: number, file_name?: string) {
+    return this.api.tasks.import.mutate({ rows, skipped, file_name });
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.tasks.exportCsv.mutate(input);
   }

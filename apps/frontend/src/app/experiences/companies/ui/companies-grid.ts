@@ -1,21 +1,34 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { CompaniesService } from '../services/companies-service';
 
 @Component({
   selector: 'pc-companies-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, CsvImportComponent],
   template: `
     <pc-datagrid
       [colDefs]="col"
       [disableDelete]="false"
       [disableView]="false"
       [disableExport]="true"
-      [disableImport]="true"
+      [disableImport]="false"
       [addRoute]="'add'"
+      (importCSV)="openImportDialog()"
       plusIcon="add-company"
     ></pc-datagrid>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Companies from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
   `,
   providers: [{ provide: AbstractAPIService, useExisting: CompaniesService }],
 })
@@ -24,6 +37,10 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+
+  protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
+  protected readonly importerOpen = signal(false);
+  protected readonly importSummary = signal<CsvImportSummary | null>(null);
 
   protected col = [
     { field: 'name', headerName: 'Company Name', editable: true },
@@ -41,6 +58,67 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
 
   constructor() {
     super();
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      name: 'name',
+      companyname: 'name',
+      description: 'description',
+      desc: 'description',
+      website: 'website',
+      web: 'website',
+      email: 'email',
+      phone: 'phone',
+      tel: 'phone',
+      telephone: 'phone',
+      industry: 'industry',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await (this.gridSvc as unknown as CompaniesService).import(
+        rows,
+        skippedReported,
+        fileName || undefined,
+      );
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.refresh();
+    } catch (e: any) {
+      const msg = e?.message || e?.data?.message || 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
   }
 
   private formatDate(value: unknown): string {

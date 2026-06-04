@@ -24,6 +24,8 @@ export type DataImportWithStats = {
   created_by_name: string | null;
   contact_count: number;
   household_count: number;
+  company_count: number;
+  task_count: number;
   tag_assignment_count: number;
   tag_exists: boolean;
   status: string;
@@ -61,6 +63,20 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
       FROM households
       WHERE households.tenant_id = ${input.tenant_id}
         AND households.file_id = data_imports.id
+    )`;
+
+    const companyCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM companies
+      WHERE companies.tenant_id = ${input.tenant_id}
+        AND companies.file_id = data_imports.id
+    )`;
+
+    const taskCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM tasks
+      WHERE tasks.tenant_id = ${input.tenant_id}
+        AND tasks.file_id = data_imports.id
     )`;
 
     const tagAssignmentExpr = sql<number>`(
@@ -108,6 +124,8 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
         nameExpr.as('creator_name'),
         contactCountExpr.as('contact_count'),
         householdCountExpr.as('household_count'),
+        companyCountExpr.as('company_count'),
+        taskCountExpr.as('task_count'),
         tagAssignmentExpr.as('tag_assignment_count'),
         tagExistsExpr.as('tag_exists'),
       ])
@@ -149,6 +167,8 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
       created_by_name: cast(row['creator_name']),
       contact_count: toNumber(row['contact_count']),
       household_count: toNumber(row['household_count']),
+      company_count: toNumber(row['company_count']),
+      task_count: toNumber(row['task_count']),
       tag_assignment_count: toNumber(row['tag_assignment_count']),
       tag_exists: toBool(row['tag_exists']),
       status: cast(row['status']) ?? 'completed',

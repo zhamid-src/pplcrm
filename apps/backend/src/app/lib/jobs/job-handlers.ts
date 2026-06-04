@@ -2,6 +2,8 @@ import { StorageService } from '../storage.service';
 import { PersonsService } from '../../modules/persons/services/persons.service';
 import { DuplicateMaintenanceService } from '../../modules/persons/services/duplicate-maintenance.service';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { CompaniesController } from '../../modules/companies/controller';
+import { TasksController } from '../../modules/tasks/controller';
 import { ListsController } from '../../modules/lists/controller';
 import { ActivityController } from '../../modules/activity/controller';
 import { GoogleOAuthService } from '../../modules/google-sync/google-oauth.service';
@@ -313,16 +315,36 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const rows = JSON.parse(buffer.toString('utf8'));
 
     // 3. Process the import rows in chunks
-    const personsService = new PersonsService();
-    await personsService.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      payload.campaign_id,
-      payload.tags || [],
-      Number(payload.skipped || 0),
-      rows,
-    );
+    if (payload.source === 'companies') {
+      const companiesController = new CompaniesController();
+      await companiesController.processImportRows(
+        payload.import_id,
+        payload.tenant_id,
+        payload.user_id,
+        Number(payload.skipped || 0),
+        rows,
+      );
+    } else if (payload.source === 'tasks') {
+      const tasksController = new TasksController();
+      await tasksController.processImportRows(
+        payload.import_id,
+        payload.tenant_id,
+        payload.user_id,
+        Number(payload.skipped || 0),
+        rows,
+      );
+    } else {
+      const personsService = new PersonsService();
+      await personsService.processImportRows(
+        payload.import_id,
+        payload.tenant_id,
+        payload.user_id,
+        payload.campaign_id,
+        payload.tags || [],
+        Number(payload.skipped || 0),
+        rows,
+      );
+    }
 
     // 4. Update import status to 'completed'
     await importsRepo.update({

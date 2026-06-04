@@ -2,6 +2,7 @@
 <pc-datagrid
   [colDefs]="col"
   [disableDelete]="false"
+  [confirmDeleteOverride]="onConfirmDeleteBind"
   addRoute="/people/add"
   viewRoute="/people"
   [disableView]="false"

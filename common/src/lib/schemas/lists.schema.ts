@@ -62,6 +62,8 @@ export const ImportListItemObj = z.object({
   householdsCreated: z.number().int().nonnegative(),
   contactCount: z.number().int().nonnegative(),
   householdCount: z.number().int().nonnegative(),
+  companyCount: z.number().int().nonnegative(),
+  taskCount: z.number().int().nonnegative(),
   status: z.string(),
   errorMessage: z.string().nullable().optional(),
   canDeleteContacts: z.boolean(),

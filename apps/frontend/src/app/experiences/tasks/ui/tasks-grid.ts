@@ -144,15 +144,39 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     return map[key] || '';
   };
 
-  protected onImportSubmit(payload: {
+  protected async onImportSubmit(payload: {
     rows: Array<Record<string, string>>;
     skipped: number;
     fileName?: string | null;
-  }) {
-    // No backend support yet; report helpful message
-    const msg = 'Tasks import is not available yet.';
-    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: msg });
-    this.importerOpen.set(false);
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await (this.gridSvc as unknown as TasksService).import(
+        rows,
+        skippedReported,
+        fileName || undefined,
+      );
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.refresh();
+    } catch (e: any) {
+      const msg = e?.message || e?.data?.message || 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
   }
 
   protected openImportDialog() {

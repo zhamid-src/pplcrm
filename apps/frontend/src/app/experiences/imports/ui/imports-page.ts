@@ -22,7 +22,10 @@ export class ImportsPage {
   protected readonly items = signal<ImportListItem[]>([]);
   protected readonly itemCount = computed(() => this.items().length);
   protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deleteContacts = signal(false);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
   protected readonly error = signal<string | null>(null);
 
   private pollInterval: any;
@@ -34,9 +37,10 @@ export class ImportsPage {
     effect(() => {
       const item = this.pendingDelete();
       if (!item) {
-        this.deleteContacts.set(false);
-      } else if (!item.canDeleteContacts) {
-        this.deleteContacts.set(false);
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
       }
     });
 
@@ -100,7 +104,12 @@ export class ImportsPage {
 
     this.deleting.set(true);
     try {
-      await this.imports.delete(item.id, this.deleteContacts() && item.canDeleteContacts);
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
       this.alerts.showSuccess('Import deleted');
       await this.load();
       this.closeDeleteDialog(dialog);

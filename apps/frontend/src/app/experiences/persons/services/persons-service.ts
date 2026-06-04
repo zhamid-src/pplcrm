@@ -109,20 +109,32 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * Delete a person by ID.
    *
    * @param id - Person ID
+   * @param force - Force deletion cascadingly
+   * @param skipAlert - Skip global error alerts
    * @returns True if deleted, false otherwise
    */
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.persons.delete.mutate(id)) !== null;
+  public async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await (this.api.persons.delete.mutate as any)({ id, force }, opts)) !== null;
+    }
+    return (await (this.api.persons.delete.mutate as any)(id, opts)) !== null;
   }
 
   /**
    * Delete multiple people by their IDs.
    *
    * @param ids - Array of person IDs
+   * @param force - Force deletion cascadingly
+   * @param skipAlert - Skip global error alerts
    * @returns True if deletion was successful
    */
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return await this.api.persons.deleteMany.mutate(ids);
+  public async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await (this.api.persons.deleteMany.mutate as any)({ ids, force }, opts);
+    }
+    return await (this.api.persons.deleteMany.mutate as any)(ids, opts);
   }
 
   /**

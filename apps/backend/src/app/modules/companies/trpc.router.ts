@@ -20,6 +20,19 @@ export const CompaniesRouter = router({
     .input(CompanyInputSchema)
     .mutation(({ input, ctx }) => companies.addCompany(input, ctx.auth)),
   
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
   delete: authProcedure
     .input(idSchema)
     .mutation(({ input, ctx }) => companies.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),

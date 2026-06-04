@@ -73,6 +73,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
   /**
    * Stores the household ID when a user tries to change an address,
    * so it can be used in the confirmation dialog logic.
@@ -435,5 +437,71 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private confirmAddressChange(): void {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.showModal();
+  }
+
+  /**
+   * Overridden delete handler to detect and confirm team captain deletions cascadingly.
+   */
+  protected override async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.getSelectedRows();
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await (this.gridSvc as PersonsService).deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err: any) {
+      // Check if it's the captain error message
+      const errMsg = err?.message || err?.data?.message || '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await (this.gridSvc as PersonsService).deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr: any) {
+            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.clearAllSelection();
+      await this.refresh();
+    }
+    return true;
   }
 }

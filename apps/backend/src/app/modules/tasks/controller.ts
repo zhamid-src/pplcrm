@@ -12,6 +12,9 @@ import { TasksRepo } from './repositories/tasks.repo';
 import type { OperationDataType } from 'common/src/lib/kysely.models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
 
 export class TasksController extends BaseController<'tasks', TasksRepo> {
   private mailService = new TransactionalEmailService();
@@ -178,5 +181,232 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       return response;
     }
     return super.exportCsv(input, auth);
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        details?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        due_at?: string | null;
+        assigned_to?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'tasks',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      console.error('Failed to upload import payload to storage', err);
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id as any,
+      id: importRecordId as any,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'tasks',
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    } as any;
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: any[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    // Parse status and priority to validate choices
+    const normalize = (v?: string) => (v || '').toLowerCase().trim().replace(/[_\s-]+/g, '');
+    const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+    // Map names to users for assigned_to
+    const users = await this.getRepo().db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name', 'email'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      const idStr = String(u.id);
+      userMap.set(idStr, idStr);
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
+      if (u.first_name) {
+        userMap.set(u.first_name.toLowerCase().trim(), idStr);
+        if (u.last_name) {
+          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
+        }
+      }
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      for (const raw of chunk) {
+        if (!raw.name || !raw.name.trim()) {
+          results.skipped += 1;
+          continue;
+        }
+
+        try {
+          await this.getRepo().transaction().execute(async (rowTrx) => {
+            // Validate status
+            let status: any = 'todo';
+            if (raw.status) {
+              const normStatus = normalize(raw.status);
+              const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
+              if (matchedStatus) status = matchedStatus;
+            }
+
+            // Validate priority
+            let priority: any = null;
+            if (raw.priority) {
+              const normPriority = normalize(raw.priority);
+              const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
+              if (matchedPriority) priority = matchedPriority;
+            }
+
+            // Resolve assigned_to
+            let assigned_to: string | null = null;
+            if (raw.assigned_to) {
+              const normAssigned = raw.assigned_to.toLowerCase().trim();
+              assigned_to = userMap.get(normAssigned) ?? null;
+            }
+
+            // Resolve due_at date
+            let due_at: Date | null = null;
+            if (raw.due_at) {
+              const parsedDate = new Date(raw.due_at);
+              if (!isNaN(parsedDate.getTime())) {
+                due_at = parsedDate;
+              }
+            }
+
+            const taskRow = {
+              tenant_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              name: raw.name.trim(),
+              details: raw.details ?? null,
+              status,
+              priority,
+              assigned_to,
+              due_at,
+              file_id: import_id,
+            } as any;
+
+            await this.getRepo().add({ row: taskRow }, rowTrx);
+          });
+          results.inserted += 1;
+        } catch (err: any) {
+          results.errors += 1;
+          errorMessages.push(err?.message || String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id as any,
+        id: import_id as any,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
   }
 }

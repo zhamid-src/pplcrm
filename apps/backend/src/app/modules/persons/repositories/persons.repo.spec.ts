@@ -4,6 +4,7 @@ import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { CompaniesRepo } from '../../companies/repositories/companies.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import { DuplicateMaintenanceService } from '../services/duplicate-maintenance.service';
+import { PersonsController } from '../controller';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -78,6 +79,10 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('teams').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('volunteer_shifts').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('volunteer_events').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companies').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
@@ -651,7 +656,6 @@ describe('PersonsRepo Integration', () => {
   });
 });
 
-
 describe('HouseholdRepo Duplicates', () => {
   const householdsRepo = new HouseholdRepo();
   const db = (BaseRepository as any)._db;
@@ -943,5 +947,194 @@ describe('CompaniesRepo Duplicates', () => {
     // Check source deleted
     const checkSource = await companiesRepo.getOneBy('id', { tenant_id: tenantId, value: sourceCompId });
     expect(checkSource).toBeUndefined();
+  });
+
+  describe('Team Captain and Team Deletions', () => {
+    const personsController = new PersonsController();
+
+    it('should delete a person who is a regular team member without error', async () => {
+      // 1. Create a person
+      const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db
+        .insertInto('persons')
+        .values({
+          id: personId,
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: 'Regular',
+          last_name: 'Member',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 2. Create a team
+      const teamId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db
+        .insertInto('teams')
+        .values({
+          id: teamId,
+          tenant_id: tenantId,
+          name: 'Regular Team',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 3. Map person to team
+      await db
+        .insertInto('map_teams_persons')
+        .values({
+          tenant_id: tenantId,
+          team_id: teamId,
+          person_id: personId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 4. Try deleting the person
+      const deleteResult = await personsController.deleteMany(tenantId, [personId]);
+      expect(deleteResult).toBe(true);
+
+      // Verify person is deleted
+      const checkPerson = await db.selectFrom('persons').selectAll().where('id', '=', personId).executeTakeFirst();
+      expect(checkPerson).toBeUndefined();
+
+      // Verify mapping is deleted
+      const checkMapping = await db
+        .selectFrom('map_teams_persons')
+        .selectAll()
+        .where('person_id', '=', personId)
+        .executeTakeFirst();
+      expect(checkMapping).toBeUndefined();
+    });
+
+    it('should throw validation error if person is a team captain and force is false', async () => {
+      // 1. Create a person
+      const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db
+        .insertInto('persons')
+        .values({
+          id: personId,
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: 'Captain',
+          last_name: 'Jack',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 2. Create a team with this person as captain
+      const teamId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db
+        .insertInto('teams')
+        .values({
+          id: teamId,
+          tenant_id: tenantId,
+          name: 'Pirates',
+          team_captain_id: personId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 3. Map person to team
+      await db
+        .insertInto('map_teams_persons')
+        .values({
+          tenant_id: tenantId,
+          team_id: teamId,
+          person_id: personId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 4. Deleting without force should fail
+      await expect(personsController.deleteMany(tenantId, [personId], false)).rejects.toThrow(
+        'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+      );
+
+      // 5. Deleting with force should succeed, unlink captaincy, and delete person
+      const deleteResult = await personsController.deleteMany(tenantId, [personId], true);
+      expect(deleteResult).toBe(true);
+
+      // Verify captaincy is nullified
+      const checkTeam = await db.selectFrom('teams').selectAll().where('id', '=', teamId).executeTakeFirst();
+      expect(checkTeam?.team_captain_id).toBeNull();
+
+      // Verify mapping is deleted
+      const checkMapping = await db
+        .selectFrom('map_teams_persons')
+        .selectAll()
+        .where('person_id', '=', personId)
+        .executeTakeFirst();
+      expect(checkMapping).toBeUndefined();
+
+      // Verify person is deleted
+      const checkPerson = await db.selectFrom('persons').selectAll().where('id', '=', personId).executeTakeFirst();
+      expect(checkPerson).toBeUndefined();
+    });
+
+    it('should delete a person who has volunteer shifts and cascade delete those shifts', async () => {
+      // 1. Create a person
+      const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db.insertInto('persons')
+        .values({
+          id: personId,
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: 'Volunteer',
+          last_name: 'Worker',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 2. Create a volunteer event
+      const eventId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db.insertInto('volunteer_events')
+        .values({
+          id: eventId,
+          tenant_id: tenantId,
+          name: 'Food Drive',
+          slug: `food-drive-${eventId}`,
+          start_time: new Date(),
+          end_time: new Date(Date.now() + 3600000),
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 3. Create a volunteer shift linked to the person
+      const shiftId = String(Math.floor(Math.random() * 100000000) + 10000000);
+      await db.insertInto('volunteer_shifts')
+        .values({
+          id: shiftId,
+          tenant_id: tenantId,
+          event_id: eventId,
+          person_id: personId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      // 4. Delete the person
+      const deleteResult = await personsController.deleteMany(tenantId, [personId]);
+      expect(deleteResult).toBe(true);
+
+      // Verify person is deleted
+      const checkPerson = await db.selectFrom('persons').selectAll().where('id', '=', personId).executeTakeFirst();
+      expect(checkPerson).toBeUndefined();
+
+      // Verify volunteer shift is deleted cascadingly
+      const checkShift = await db.selectFrom('volunteer_shifts').selectAll().where('id', '=', shiftId).executeTakeFirst();
+      expect(checkShift).toBeUndefined();
+    });
   });
 });

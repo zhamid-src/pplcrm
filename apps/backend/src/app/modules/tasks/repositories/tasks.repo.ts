@@ -1,6 +1,7 @@
-import { sql } from 'kysely';
+import { sql, Transaction } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
+import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 
 export class TasksRepo extends BaseRepository<'tasks'> {
   constructor() {
@@ -161,5 +162,33 @@ export class TasksRepo extends BaseRepository<'tasks'> {
     const count = Number((rows as any)?.[0]?.total ?? 0);
     rows?.forEach?.((r) => delete (r as any).total);
     return { rows, count };
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()` as any,
+        updatedby_id: input.user_id,
+      } as OperationDataType<'tasks', 'update'>)
+      .where('tenant_id', '=', input.tenant_id as any)
+      .where('file_id', '=', input.import_id as any)
+      .executeTakeFirst();
   }
 }

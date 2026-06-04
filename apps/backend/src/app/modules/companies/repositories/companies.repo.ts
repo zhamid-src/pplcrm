@@ -1,5 +1,6 @@
-import { sql } from 'kysely';
+import { sql, Transaction } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
+import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 
 export class CompaniesRepo extends BaseRepository<'companies'> {
   constructor() {
@@ -153,5 +154,33 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
 
       return { success: true };
     });
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()` as any,
+        updatedby_id: input.user_id,
+      } as OperationDataType<'companies', 'update'>)
+      .where('tenant_id', '=', input.tenant_id as any)
+      .where('file_id', '=', input.import_id as any)
+      .executeTakeFirst();
   }
 }
