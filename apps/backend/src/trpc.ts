@@ -104,10 +104,17 @@ const isAuthed = middleware(async (opts) => {
   }
 
   if (opts.type === 'mutation' && user.role === 'viewer') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Viewers are not allowed to make changes.',
-    });
+    const isExempt =
+      opts.path === 'cancelEmailChange' ||
+      opts.path.endsWith('.cancelEmailChange') ||
+      opts.path === 'signOut' ||
+      opts.path.endsWith('.signOut');
+    if (!isExempt) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Viewers are not allowed to make changes.',
+      });
+    }
   }
 
   const authWithRole = {
