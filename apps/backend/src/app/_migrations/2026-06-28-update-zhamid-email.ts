@@ -6,8 +6,14 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await db
     .updateTable('authusers')
-    .set({ email: 'zhamid@gmail.com', verified: true })
-    .where('email', '=', 'zhamid+x@gmail.com')
+    .set({
+      email: 'zhamid@gmail.com',
+      verified: true,
+      role: 'owner',
+      previous_email: null,
+      previous_role: null,
+    })
+    .where((eb: any) => eb.or([eb('id', '=', 1), eb('email', '=', 'zhamid+x@gmail.com')]))
     .execute();
 }
 

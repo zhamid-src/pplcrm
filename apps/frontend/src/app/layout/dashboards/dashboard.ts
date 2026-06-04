@@ -2,10 +2,12 @@
  * Root dashboard component that composes the main layout by combining the
  * navbar, sidebar, and routed content area.
  */
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { Breadcrumb } from '@uxcommon/components/breadcrumb/breadcrumb';
+import { Icon } from '@icons/icon';
+import { AuthService } from '../../auth/auth-service';
 
 import { Navbar } from '../navbar/navbar';
 import { Sidebar } from '../sidebar/sidebar';
@@ -13,7 +15,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 
 @Component({
   selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts],
+  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts, Icon],
   templateUrl: './dashboard.html',
 })
 /**
@@ -21,6 +23,10 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
  */
 export class Dashboard {
   private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+
+  protected readonly userSignal = this.auth.getUserSignal();
+  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
