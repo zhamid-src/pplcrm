@@ -51,6 +51,8 @@ export class FormDetailComponent implements OnInit {
     description: ['', [Validators.maxLength(500)]],
     redirect_url: ['', [Validators.pattern(/^https?:\/\/.+/) || Validators.required]],
     status: ['active', [Validators.required]],
+    send_confirmation: [true],
+    send_alert: [true],
   });
 
   protected readonly embedSnippet = computed(() => {
@@ -62,31 +64,47 @@ export class FormDetailComponent implements OnInit {
 <form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <!-- Visually hidden honeypot field to prevent spam bots -->
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${fields.includes('first_name') ? `
+${
+  fields.includes('first_name')
+    ? `
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name</label>
     <input type="text" name="first_name" placeholder="First Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>` : ''}${fields.includes('last_name') ? `
+  </div>`
+    : ''
+}${
+      fields.includes('last_name')
+        ? `
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name</label>
     <input type="text" name="last_name" placeholder="Last Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>` : ''}
+  </div>`
+        : ''
+    }
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
     <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${fields.includes('mobile') ? `
+  </div>${
+    fields.includes('mobile')
+      ? `
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
     <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>` : ''}${fields.includes('notes') ? `
+  </div>`
+      : ''
+  }${
+    fields.includes('notes')
+      ? `
 
   <div style="margin-bottom: 16px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
     <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>` : ''}
+  </div>`
+      : ''
+  }
 
   <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Subscribe</button>
 </form>`;
@@ -170,6 +188,8 @@ ${fields.includes('first_name') ? `
       target_lists: this.selectedLists().length ? this.selectedLists() : null,
       status: (values.status as 'active' | 'archived') ?? 'active',
       fields: this.selectedFields(),
+      send_confirmation: !!values.send_confirmation,
+      send_alert: !!values.send_alert,
     };
 
     try {
@@ -226,10 +246,12 @@ ${fields.includes('first_name') ? `
           description: form.description ?? '',
           redirect_url: form.redirect_url ?? '',
           status: form.status ?? 'active',
+          send_confirmation: form.send_confirmation !== false,
+          send_alert: form.send_alert !== false,
         });
         this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);
         this.selectedLists.set(Array.isArray(form.target_lists) ? form.target_lists : []);
-        
+
         // Load fields configuration
         if (form.fields) {
           const fields = Array.isArray(form.fields) ? form.fields : JSON.parse(form.fields);

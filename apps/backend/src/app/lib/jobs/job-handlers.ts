@@ -101,40 +101,71 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
   } else if (payload.type === 'send-form-notifications') {
     const event = await db
       .selectFrom('volunteer_events')
-      .select(['name', 'start_time', 'end_time', 'location_address'])
+      .select([
+        'name',
+        'start_time',
+        'end_time',
+        'location_address',
+        'contact_email',
+        'contact_phone',
+        'send_signup_confirmation',
+        'send_volunteer_alert',
+      ])
       .where('id', '=', payload.eventId as any)
       .executeTakeFirst();
 
     if (!event) {
-      throw new Error(`Event not found: ${payload.eventId}`);
+      console.log(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+      return;
     }
 
     const startFormatted = new Date(event.start_time).toLocaleString();
     const endFormatted = new Date(event.end_time).toLocaleString();
 
-    // 1. Send Confirmation Email to the Constituent
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Volunteer Signup Confirmation: ${event.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p>We look forward to seeing you there!</p>`,
-    });
+    // 1. Send Confirmation Email to the Constituent (if enabled)
+    if (event.send_signup_confirmation !== false) {
+      const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+      const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+      const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
 
-    // 2. Send Alert Email to the Tenant Admin
-    const admin = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', payload.tenantId as any)
-      .limit(1)
-      .executeTakeFirst();
+      const coordEmailHtml = event.contact_email
+        ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+        : '';
+      const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+      const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
 
-    if (admin && admin.email) {
       await mailService.sendMail({
-        to: admin.email,
-        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-        text: `Hi ${admin.first_name || 'Admin'},\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}</p>`,
+        to: payload.email,
+        subject: `Volunteer Signup Confirmation: ${event.name}`,
+        text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+        html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
       });
+    }
+
+    // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+    if (event.send_volunteer_alert !== false) {
+      let alertRecipient = event.contact_email || null;
+
+      if (!alertRecipient) {
+        const admin = await db
+          .selectFrom('authusers')
+          .select('email')
+          .where('tenant_id', '=', payload.tenantId as any)
+          .limit(1)
+          .executeTakeFirst();
+        if (admin && admin.email) {
+          alertRecipient = admin.email;
+        }
+      }
+
+      if (alertRecipient) {
+        await mailService.sendMail({
+          to: alertRecipient,
+          subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+          text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+          html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
+        });
+      }
     }
   } else if (payload.type === 'send-shift-reminder') {
     const shift = (await db
@@ -188,9 +219,28 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const startFormatted = new Date(event.start_time).toLocaleString();
     const endFormatted = new Date(event.end_time).toLocaleString();
 
+    const mapsUrl = event.location_address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+      : null;
+
+    const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
     const subject = `Volunteer Shift Reminder: ${event.name}`;
-    const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-    const html = `<p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p>Thank you for volunteering, and we look forward to seeing you there!</p>`;
+    const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+    const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
 
     await mailService.sendMail({
       to: person.email,
@@ -200,6 +250,46 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     });
 
     console.log(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+  } else if (payload.type === 'send-webform-notifications') {
+    const form = await db
+      .selectFrom('web_forms')
+      .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+      .where('id', '=', payload.formId as any)
+      .executeTakeFirst();
+
+    if (!form) {
+      console.log(`Skipping web form notifications: form ${payload.formId} not found.`);
+      return;
+    }
+
+    // 1. Send Confirmation Email to the Constituent (if enabled)
+    if (form.send_confirmation !== false) {
+      await mailService.sendMail({
+        to: payload.email,
+        subject: `Thank you for your submission to ${form.name}`,
+        text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+        html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+      });
+    }
+
+    // 2. Send Alert Email to the Tenant Admin (if enabled)
+    if (form.send_alert !== false) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select(['email', 'first_name'])
+        .where('tenant_id', '=', form.tenant_id as any)
+        .limit(1)
+        .executeTakeFirst();
+
+      if (admin && admin.email) {
+        await mailService.sendMail({
+          to: admin.email,
+          subject: `[ALERT] New Lead Submission on ${form.name}`,
+          text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+          html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+        });
+      }
+    }
   } else if (payload.type === 'send-transactional-email') {
     await mailService.sendMail({
       to: payload.to,

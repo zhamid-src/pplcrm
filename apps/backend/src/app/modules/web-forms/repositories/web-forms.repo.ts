@@ -67,6 +67,8 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
         'web_forms.updatedby_id',
         'web_forms.created_at',
         'web_forms.updated_at',
+        'web_forms.send_confirmation',
+        'web_forms.send_alert',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),

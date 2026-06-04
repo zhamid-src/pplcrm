@@ -190,6 +190,7 @@ export class BackgroundJobWorker {
         const isMail =
           payload.type === 'send-transactional-email' ||
           payload.type === 'send-form-notifications' ||
+          payload.type === 'send-webform-notifications' ||
           payload.type === 'send-shift-reminder' ||
           payload.type === 'send-newsletter';
         const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;

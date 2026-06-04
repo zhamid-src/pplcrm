@@ -25,58 +25,64 @@ export class EventDetailComponent implements OnInit {
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
- 
+
   protected id: string | null = null;
   protected slugManuallyEdited = false;
   protected readonly slugChecking = signal(false);
   protected readonly slugUnique = signal<boolean | null>(null);
   private slugTimeoutId: any = null;
- 
+
   constructor() {
-    effect(() => {
-      const name = this.payload().name;
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        this.payload.update((p) => ({
-          ...p,
-          slug: suggested,
-        }));
-      }
-    }, { allowSignalWrites: true });
+    effect(
+      () => {
+        const name = this.payload().name;
+        if (this.isNew() && !this.slugManuallyEdited) {
+          const suggested = this.slugify(name);
+          this.payload.update((p) => ({
+            ...p,
+            slug: suggested,
+          }));
+        }
+      },
+      { allowSignalWrites: true },
+    );
 
-    effect(() => {
-      const slug = this.payload().slug;
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
+    effect(
+      () => {
+        const slug = this.payload().slug;
+        if (this.slugTimeoutId) {
+          clearTimeout(this.slugTimeoutId);
+          this.slugTimeoutId = null;
+        }
 
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
+        if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+          this.slugUnique.set(null);
+          this.slugChecking.set(false);
+          return;
+        }
 
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : this.id);
-            if (this.payload().slug === slug) {
-              this.slugUnique.set(res.unique);
+        this.slugChecking.set(true);
+        this.slugTimeoutId = setTimeout(() => {
+          void (async () => {
+            try {
+              const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : this.id);
+              if (this.payload().slug === slug) {
+                this.slugUnique.set(res.unique);
+              }
+            } catch (err) {
+              console.error('Failed to check slug uniqueness', err);
+            } finally {
+              if (this.payload().slug === slug) {
+                this.slugChecking.set(false);
+              }
             }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (this.payload().slug === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
-    }, { allowSignalWrites: true });
+          })();
+        }, 300);
+      },
+      { allowSignalWrites: true },
+    );
   }
- 
+
   protected slugify(text: string): string {
     return text
       .toLowerCase()
@@ -84,7 +90,7 @@ export class EventDetailComponent implements OnInit {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
   }
- 
+
   protected onSlugInput() {
     this.slugManuallyEdited = true;
   }
@@ -119,6 +125,8 @@ export class EventDetailComponent implements OnInit {
     contact_phone: '',
     is_private: false,
     send_reminder: true,
+    send_signup_confirmation: true,
+    send_volunteer_alert: true,
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -194,6 +202,8 @@ export class EventDetailComponent implements OnInit {
           contact_phone: event.contact_phone ?? '',
           is_private: !!event.is_private,
           send_reminder: event.send_reminder !== false,
+          send_signup_confirmation: event.send_signup_confirmation !== false,
+          send_volunteer_alert: event.send_volunteer_alert !== false,
         });
       }
       this.loading.set(false);
@@ -215,6 +225,8 @@ export class EventDetailComponent implements OnInit {
         contact_phone: event.contact_phone ?? '',
         is_private: !!event.is_private,
         send_reminder: event.send_reminder !== false,
+        send_signup_confirmation: event.send_signup_confirmation !== false,
+        send_volunteer_alert: event.send_volunteer_alert !== false,
       });
 
       await this.loadRoster();
@@ -262,6 +274,8 @@ export class EventDetailComponent implements OnInit {
       contact_phone: raw.contact_phone?.trim() || null,
       is_private: !!raw.is_private,
       send_reminder: !!raw.send_reminder,
+      send_signup_confirmation: !!raw.send_signup_confirmation,
+      send_volunteer_alert: !!raw.send_volunteer_alert,
     };
 
     try {
@@ -365,7 +379,8 @@ export class EventDetailComponent implements OnInit {
   }
 
   protected copyToClipboard(url: string) {
-    navigator.clipboard.writeText(url)
+    navigator.clipboard
+      .writeText(url)
       .then(() => this.alerts.showSuccess('Link copied to clipboard'))
       .catch((err) => console.error('Failed to copy', err));
   }
