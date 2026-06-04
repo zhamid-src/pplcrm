@@ -91,6 +91,8 @@ export interface IAuthUserRecord extends IAuthUser {
   deletion_scheduled_at: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
+  previous_email?: string | null;
+  previous_role?: string | null;
   notification_preferences?: {
     mention_in_comment: boolean;
     mention_in_comment_in_app: boolean;

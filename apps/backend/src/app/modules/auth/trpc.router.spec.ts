@@ -683,9 +683,9 @@ describe('AuthController Integration', () => {
     expect(user.verified).toBe(false);
 
     // 2. Try to sign in while unverified -> should throw ForbiddenError
-    await expect(
-      controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest')
-    ).rejects.toThrow(ForbiddenError);
+    await expect(controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest')).rejects.toThrow(
+      ForbiddenError,
+    );
 
     // 3. Manually trying to set verified: true via updateUser -> should throw ForbiddenError
     const authPayload = {
@@ -694,9 +694,7 @@ describe('AuthController Integration', () => {
       session_id: 'verif-session',
       role: 'owner',
     };
-    await expect(
-      controller.updateUser(authPayload, user.id, { verified: true })
-    ).rejects.toThrow(ForbiddenError);
+    await expect(controller.updateUser(authPayload, user.id, { verified: true })).rejects.toThrow(ForbiddenError);
 
     // 4. Force verify in database to simulate clicking verification link
     await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
@@ -705,12 +703,30 @@ describe('AuthController Integration', () => {
     const signInResult = await controller.signIn({ email, password: 'StrongPassword123!' }, '127.0.0.1', 'Vitest');
     expect(signInResult).toBeDefined();
 
+    // Invite an admin to act as the other user
+    const invitedUser = await controller.inviteUser(authPayload, {
+      email: `invited-admin-${Date.now()}@example.com`,
+      first_name: 'OtherAdmin',
+      last_name: 'User',
+      role: 'admin',
+    });
+
     // 5. Change email via updateUser -> should set verified: false and clear sessions
     const nextEmail = `next-${Date.now()}@example.com`;
-    const updateResult = await controller.updateUser(authPayload, user.id, { email: nextEmail });
+    const otherAuthPayload = {
+      tenant_id: String(user.tenant_id),
+      user_id: String(invitedUser.id),
+      session_id: 'verif-session',
+      role: 'admin',
+    };
+    const updateResult = await controller.updateUser(otherAuthPayload, user.id, { email: nextEmail });
     expect(updateResult.verified).toBe(false);
 
-    const userAfterUpdate = await db.selectFrom('authusers').selectAll().where('id', '=', user.id).executeTakeFirstOrThrow();
+    const userAfterUpdate = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
     expect(userAfterUpdate.email).toBe(nextEmail);
     expect(userAfterUpdate.verified).toBe(false);
 
@@ -719,12 +735,135 @@ describe('AuthController Integration', () => {
     expect(session).toBeUndefined();
 
     // Clean up
+    await db
+      .updateTable('authusers')
+      .set({ updatedby_id: null, createdby_id: null })
+      .where('id', '=', user.id)
+      .execute();
+    await db
+      .updateTable('authusers')
+      .set({ updatedby_id: null, createdby_id: null })
+      .where('id', '=', invitedUser.id)
+      .execute();
+    await db.deleteFrom('profiles').where('auth_id', '=', invitedUser.id).execute();
     await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
     await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
+    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await db.deleteFrom('authusers').where('id', '=', invitedUser.id).execute();
+  });
+
+  it('should handle self-email changes, role-shifting to viewer, cancel/undo, and email verification restoration', async () => {
+    const { BaseRepository } = await import('../../lib/base.repo');
+    const db = (BaseRepository as any)._db;
+
+    const controller = new AuthController();
+    const email = `self-change-${Date.now()}@example.com`;
+
+    // 1. Sign up a user
+    await controller.signUp({
+      organization: `SelfChangeOrg-${Date.now()}`,
+      email,
+      password: 'StrongPassword123!',
+      first_name: 'SelfUser',
+    });
+
+    const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
+    // Verify initially
+    await db.updateTable('authusers').set({ verified: true, role: 'owner' }).where('id', '=', user.id).execute();
+
+    const testSessionId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    // Clean up any stray session from previous failures
+    await db.deleteFrom('sessions').where('session_id', '=', testSessionId).execute();
+    // Create a mock active session
+    await db
+      .insertInto('sessions')
+      .values({
+        session_id: testSessionId,
+        user_id: user.id,
+        tenant_id: user.tenant_id,
+        ip_address: '127.0.0.1',
+        user_agent: 'Vitest',
+        status: 'active',
+      })
+      .execute();
+
+    const authPayload = {
+      tenant_id: String(user.tenant_id),
+      user_id: String(user.id),
+      session_id: testSessionId,
+      role: 'owner',
+    };
+
+    // 2. Change own email
+    const newEmail = `self-new-${Date.now()}@example.com`;
+    const updateResult = await controller.updateUser(authPayload, user.id, { email: newEmail });
+
+    expect(updateResult.email).toBe(newEmail);
+    expect(updateResult.role).toBe('viewer');
+    expect(updateResult.previous_email).toBe(email);
+    expect(updateResult.previous_role).toBe('owner');
+    expect(updateResult.verified).toBe(false);
+
+    // Verify session was NOT deleted
+    const session = await db.selectFrom('sessions').selectAll().where('user_id', '=', user.id).executeTakeFirst();
+    expect(session).toBeDefined();
+
+    // 3. Test cancel/undo
+    const cancelResult = await controller.cancelEmailChange(authPayload);
+    expect(cancelResult.success).toBe(true);
+
+    const userAfterCancel = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
+    expect(userAfterCancel.email).toBe(email);
+    expect(userAfterCancel.role).toBe('owner');
+    expect(userAfterCancel.verified).toBe(true);
+    expect(userAfterCancel.previous_email).toBeNull();
+    expect(userAfterCancel.previous_role).toBeNull();
+
+    // 4. Set email to new email again to test verification
+    const newEmail2 = `self-new2-${Date.now()}@example.com`;
+    await controller.updateUser(authPayload, user.id, { email: newEmail2 });
+
+    const userBeforeVerify = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
+    expect(userBeforeVerify.password_reset_code).toBeDefined();
+    const code = userBeforeVerify.password_reset_code!;
+
+    // Verify code
+    const verifyResult = await controller.verifyEmail(code);
+    expect(verifyResult.success).toBe(true);
+
+    const userAfterVerify = await db
+      .selectFrom('authusers')
+      .selectAll()
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
+    expect(userAfterVerify.email).toBe(newEmail2);
+    expect(userAfterVerify.role).toBe('owner'); // role is restored to owner!
+    expect(userAfterVerify.verified).toBe(true);
+    expect(userAfterVerify.previous_email).toBeNull();
+    expect(userAfterVerify.previous_role).toBeNull();
+
+    // Clean up
+    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
+    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
+    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
     await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
     await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
     await db.deleteFrom('authusers').where('id', '=', user.id).execute();

@@ -272,10 +272,33 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new BadRequestError('The verification link has expired. Please request a new one.');
     }
 
-    const result = await this.getRepo().verifyEmailByCode(code);
-    if (result.numUpdatedRows === BigInt(0)) {
+    const repo = this.getRepo();
+    const user = await repo.db
+      .selectFrom('authusers')
+      .select(['id', 'previous_email', 'previous_role'])
+      .where('password_reset_code', '=', code)
+      .executeTakeFirst();
+
+    if (!user) {
       throw new BadRequestError('Invalid or expired verification link.');
     }
+
+    await repo.transaction().execute(async (trx) => {
+      const updateData: Record<string, any> = {
+        verified: true,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      };
+
+      if (user.previous_email) {
+        updateData['role'] = user.previous_role;
+        updateData['previous_email'] = null;
+        updateData['previous_role'] = null;
+      }
+
+      await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
+    });
+
     return { success: true };
   }
 
@@ -361,7 +384,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     if (!user.verified) {
-      throw new ForbiddenError('Your email address is not verified yet. Please check your inbox for a verification link.');
+      throw new ForbiddenError(
+        'Your email address is not verified yet. Please check your inbox for a verification link.',
+      );
     }
 
     const requires2FA =
@@ -428,7 +453,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     if (!user.verified) {
-      throw new ForbiddenError('Your email address is not verified yet. Please check your inbox for a verification link.');
+      throw new ForbiddenError(
+        'Your email address is not verified yet. Please check your inbox for a verification link.',
+      );
     }
 
     if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
@@ -520,6 +547,43 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
       html: `<h2>Account Deletion Canceled</h2>
 <p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
+    });
+
+    return { success: true };
+  }
+
+  public async cancelEmailChange(auth: IAuthKeyPayload) {
+    if (!auth?.user_id) {
+      throw new UnauthorizedError();
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    const authUser = user as AuthUsersType;
+
+    if (!authUser.previous_email) {
+      throw new BadRequestError('No email change in progress.');
+    }
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({
+          email: authUser.previous_email!,
+          role: authUser.previous_role,
+          verified: true,
+          previous_email: null,
+          previous_role: null,
+          password_reset_code: null,
+          password_reset_code_created_at: null,
+          updated_at: new Date(),
+          updatedby_id: auth.user_id,
+        })
+        .where('id', '=', authUser.id)
+        .execute();
     });
 
     return { success: true };
@@ -738,6 +802,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const row: Record<string, any> = {};
 
+    const isOwnEmailChange =
+      data.email && data.email.toLowerCase() !== existingUser.email.toLowerCase() && userId === auth.user_id;
+
     if (data.email) {
       const nextEmail = data.email.toLowerCase();
       if (nextEmail !== existingUser.email.toLowerCase()) {
@@ -748,6 +815,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
         row['email'] = nextEmail as any;
         row['verified'] = false;
+
+        if (isOwnEmailChange) {
+          row['previous_email'] = existingUser.email;
+          row['previous_role'] = existingUser.role;
+          row['role'] = 'viewer';
+        }
       }
     }
     if (data.first_name !== undefined) row['first_name'] = data.first_name as any;
@@ -785,7 +858,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             const codeObj = await this.getRepo().addPasswordResetCode(userId, trx);
             const code = codeObj?.password_reset_code;
 
-            await this.sessions.deleteByUserId(userId, auth.tenant_id, trx);
+            if (!isOwnEmailChange) {
+              await this.sessions.deleteByUserId(userId, auth.tenant_id, trx);
+            }
 
             await this.mailService.enqueueMail(
               {
@@ -1078,6 +1153,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
       created_at: this.coerceDate(record.created_at),
       updated_at: this.coerceDate(record.updated_at),
+      previous_email: record.previous_email ?? null,
+      previous_role: record.previous_role ?? null,
       notification_preferences: notificationPreferences,
     };
   }
@@ -1215,7 +1292,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .selectFrom('authusers')
       .select(['id'])
       .where('tenant_id', '=', tenantId)
-      .where('role', '=', 'owner')
+      .where((eb) =>
+        eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
+      )
       .where('deletion_scheduled_at', 'is', null)
       .execute();
 

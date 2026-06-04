@@ -28,17 +28,12 @@ Call log:
 # Page snapshot
 
 ```yaml
-- generic [active] [ref=e1]:
-  - generic [ref=e7]:
-    - generic [ref=e8]:
-      - paragraph [ref=e9]: "404"
-      - paragraph [ref=e10]: Please check the URL in the address bar and try again.
-    - link "Home →" [ref=e12] [cursor=pointer]:
-      - /url: /
-  - generic [ref=e15]:
-    - generic [ref=e16]: "TS2307: Cannot find module './auth/verify-email-page/verify-email-page' or its corresponding type declarations."
-    - generic [ref=e17]: apps/frontend/src/app/app.routes.ts:36:13
-    - generic [ref=e18]: Click outside, press Esc key, or fix the code to dismiss.
+- generic [ref=e7]:
+  - generic [ref=e8]:
+    - paragraph [ref=e9]: "404"
+    - paragraph [ref=e10]: Please check the URL in the address bar and try again.
+  - link "Home →" [ref=e12] [cursor=pointer]:
+    - /url: /
 ```
 
 # Test source

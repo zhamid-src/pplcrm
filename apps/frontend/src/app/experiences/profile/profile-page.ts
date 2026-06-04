@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { form, required, email, FormField } from '@angular/forms/signals';
+import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -37,7 +37,18 @@ export class ProfilePage implements OnInit {
     required(p.email);
     email(p.email);
     required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+    disabled(p.mention_in_comment, () => this.isViewer() || this.saving());
+    disabled(p.task_assigned, () => this.isViewer() || this.saving());
+    disabled(p.task_due, () => this.isViewer() || this.saving());
+    disabled(p.person_assigned, () => this.isViewer() || this.saving());
+    disabled(p.export_ready, () => this.isViewer() || this.saving());
+    disabled(p.import_summary, () => this.isViewer() || this.saving());
   });
+
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
 
   protected readonly displayName = computed(() => {
     const user = this.detail();
@@ -130,6 +141,22 @@ export class ProfilePage implements OnInit {
       this.form().reset();
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to cancel email change';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {

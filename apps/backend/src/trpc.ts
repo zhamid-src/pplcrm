@@ -103,10 +103,10 @@ const isAuthed = middleware(async (opts) => {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
 
-  if (!user.verified) {
+  if (opts.type === 'mutation' && user.role === 'viewer') {
     throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Your email address is not verified yet. Please check your inbox for a verification link.',
+      code: 'FORBIDDEN',
+      message: 'Viewers are not allowed to make changes.',
     });
   }
 

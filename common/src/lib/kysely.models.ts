@@ -174,6 +174,8 @@ interface AuthUsers extends RecordType {
   two_factor_code: string | null;
   two_factor_expires_at: Timestamp | null;
   deletion_scheduled_at: Timestamp | null;
+  previous_email: string | null;
+  previous_role: string | null;
 }
 
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
