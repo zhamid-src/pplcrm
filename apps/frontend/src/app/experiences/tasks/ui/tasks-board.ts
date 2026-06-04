@@ -41,8 +41,12 @@ import { TasksService } from '../services/tasks-service';
                     <div class="card-body p-3">
                       <div class="flex items-center gap-2 mb-1 pr-6 w-full">
                         <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
-                        <button (click)="openTask(t); $event.stopPropagation();" class="btn btn-ghost btn-xs btn-circle ml-auto" title="View Details">
-                          <pc-icon name="arrow-top-right-on-square" [size]="3.5"></pc-icon>
+                        <button
+                          (click)="openTask(t); $event.stopPropagation()"
+                          class="btn btn-ghost btn-xs btn-circle ml-auto"
+                          title="View Details"
+                        >
+                          <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
                         </button>
                       </div>
                       <span class="badge badge-xs absolute top-2 right-2" [class]="priorityBadgeClass(t.priority)">
@@ -82,7 +86,10 @@ export class TasksBoard implements OnInit {
   });
 
   public async ngOnInit() {
-    const res = await this.svc.getAll({ limit: 1000, columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'] });
+    const res = await this.svc.getAll({
+      limit: 1000,
+      columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'],
+    });
     const rows = (res.rows || []) as unknown as any[];
     const items: Task[] = rows.map((r) => ({
       id: String(r.id),
@@ -139,7 +146,13 @@ export class TasksBoard implements OnInit {
 
   protected priorityBadgeClass(p?: string | null) {
     const v = (p || '').toLowerCase();
-    return v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-ghost';
+    return v === 'urgent'
+      ? 'badge-error'
+      : v === 'high'
+        ? 'badge-warning'
+        : v === 'medium'
+          ? 'badge-info'
+          : 'badge-ghost';
   }
 
   protected dateLabel(v?: string | null) {

@@ -301,7 +301,43 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+        options.sortModel!.reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const hhCols = [
+              'id',
+              'campaign_id',
+              'createdby_id',
+              'file_id',
+              'home_phone',
+              'json',
+              'notes',
+              'address_fp_street',
+              'address_fp_full',
+              'is_placeholder',
+              'district',
+              'precinct',
+              'ward',
+              'geocoding_status',
+              'tenant_id',
+              'updatedby_id',
+              'created_at',
+              'updated_at',
+              'country',
+              'zip',
+              'state',
+              'city',
+              'street1',
+              'street2',
+              'street_num',
+              'apt',
+            ];
+            if (hhCols.includes(col)) {
+              col = `households.${col}`;
+            }
+          }
+          return acc.orderBy(col as any, sort.sort);
+        }, qb),
       )
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
         qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),

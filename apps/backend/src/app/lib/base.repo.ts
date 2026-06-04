@@ -30,13 +30,7 @@ import {
 } from 'kysely';
 import path from 'path';
 
-import {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTableColumns,
-  TypeTenantId,
-} from 'common/src/lib/kysely.models';
+import { Models, OperationDataType, TypeId, TypeTableColumns, TypeTenantId } from 'common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
 const dialect = new PostgresDialect({
@@ -97,7 +91,6 @@ export class BaseRepository<T extends keyof Models> {
     return BaseRepository._db;
   }
 
-
   /**
    * Insert a single row.
    */
@@ -137,18 +130,16 @@ export class BaseRepository<T extends keyof Models> {
     }
 
     const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
-    return this.getSelect(trx).selectAll().where(lhs, '=', matchValue).executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
+    return this.getSelect(trx).selectAll().where(lhs, '=', matchValue).executeTakeFirst() as unknown as
+      | Selectable<Models[T]>
+      | undefined;
   }
 
   /**
    * Count number of rows for the given tenant.
    */
-  public async count(
-    tenant_id: TypeTenantId<T>,
-    trx?: Transaction<Models>,
-  ): Promise<number> {
-    let query = this.getSelect(trx)
-      .select(({ fn }) => [fn.countAll<number>().as('count')]);
+  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
+    let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
     if (this.table !== 'tenants') {
       query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id);
     }
@@ -212,8 +203,7 @@ export class BaseRepository<T extends keyof Models> {
       return Promise.resolve([]);
     }
 
-    let query = this.getSelectWithColumns(options, trx)
-      .where(input.column, 'ilike', input.key + '%');
+    let query = this.getSelectWithColumns(options, trx).where(input.column, 'ilike', input.key + '%');
     if (this.table !== 'tenants') {
       query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
     }
@@ -270,8 +260,11 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ) {
-    let query = this.getSelectWithColumns(input.options, trx)
-      .where(column as ReferenceExpression<Models, T>, '=', input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>);
+    let query = this.getSelectWithColumns(input.options, trx).where(
+      column as ReferenceExpression<Models, T>,
+      '=',
+      input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>,
+    );
     if (this.table !== 'tenants') {
       query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
     }
@@ -344,7 +337,16 @@ export class BaseRepository<T extends keyof Models> {
    */
   protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
     const opts: any = options ?? {};
-    query = options?.columns ? query.select(options.columns as SelectExpression<Models, T>[]) : query.selectAll();
+    query = options?.columns
+      ? query.select(
+          options.columns.map((c) => {
+            if (typeof c === 'string' && !c.includes('.')) {
+              return `${String(this.table)}.${c}` as any;
+            }
+            return c;
+          }) as SelectExpression<Models, T>[],
+        )
+      : query.selectAll();
 
     // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
     const hasLimit = typeof options?.limit === 'number';
@@ -362,10 +364,57 @@ export class BaseRepository<T extends keyof Models> {
 
     // Map generic sortModel (from UI) to orderBy clauses when provided
     if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
-      query = opts.sortModel.reduce(
-        (acc: any, sort: any) => acc.orderBy(sort.colId as ReferenceExpression<Models, T>, sort.sort),
-        query,
-      );
+      query = opts.sortModel.reduce((acc: any, sort: any) => {
+        let col = sort.colId;
+        if (typeof col === 'string' && !col.includes('.')) {
+          // Check standard columns first
+          const standardCols = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+          if (standardCols.includes(col)) {
+            col = `${String(this.table)}.${col}`;
+          } else {
+            // Custom table columns checks
+            const tableColsMap: Record<string, string[]> = {
+              tasks: [
+                'name',
+                'details',
+                'due_at',
+                'status',
+                'priority',
+                'completed_at',
+                'position',
+                'assigned_to',
+                'team_id',
+                'file_id',
+              ],
+              persons: [
+                'campaign_id',
+                'household_id',
+                'first_name',
+                'middle_names',
+                'last_name',
+                'email',
+                'email2',
+                'mobile',
+                'home_phone',
+                'file_id',
+                'company_id',
+                'json',
+                'notes',
+                'linkedin',
+                'twitter',
+                'facebook',
+                'instagram',
+                'assigned_to',
+              ],
+            };
+            const cols = tableColsMap[this.table as string];
+            if (cols && cols.includes(col)) {
+              col = `${String(this.table)}.${col}`;
+            }
+          }
+        }
+        return acc.orderBy(col as ReferenceExpression<Models, T>, sort.sort);
+      }, query);
     }
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
     query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
@@ -375,11 +424,7 @@ export class BaseRepository<T extends keyof Models> {
   /**
    * Helper to dynamically apply query operators to a where clause based on the filter model.
    */
-  protected applyColumnFilter(
-    query: any,
-    column: string,
-    filter: { op?: string; value?: any }
-  ) {
+  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: any }) {
     if (!filter) {
       return query;
     }
@@ -404,19 +449,9 @@ export class BaseRepository<T extends keyof Models> {
       case 'notEquals':
         return query.where(column, 'not ilike', val);
       case 'isEmpty':
-        return query.where((eb: any) =>
-          eb.or([
-            eb(column, 'is', null),
-            eb(column, '=', '')
-          ])
-        );
+        return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
       case 'isNotEmpty':
-        return query.where((eb: any) =>
-          eb.and([
-            eb(column, 'is not', null),
-            eb(column, '!=', '')
-          ])
-        );
+        return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
       case 'contains':
       default:
         return query.where(column, 'ilike', `%${val}%`);
@@ -426,11 +461,7 @@ export class BaseRepository<T extends keyof Models> {
   /**
    * Helper to dynamically apply query operators to a custom SQL expression based on the filter model.
    */
-  protected applyCastColumnFilter(
-    query: any,
-    sqlExpression: any,
-    filter: { op?: string; value?: any }
-  ) {
+  protected applyCastColumnFilter(query: any, sqlExpression: any, filter: { op?: string; value?: any }) {
     if (!filter) {
       return query;
     }
@@ -468,7 +499,9 @@ export class BaseRepository<T extends keyof Models> {
    * Get delete query builder for this table.
    */
   protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
-    return (trx ? trx.deleteFrom(this.table) : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
+    return (trx
+      ? trx.deleteFrom(this.table)
+      : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
   }
 
   /**
@@ -534,8 +567,11 @@ export class BaseRepository<T extends keyof Models> {
 
   protected applyAdvancedFilters(
     query: any,
-    advancedFilterModel: QueryBuilderGroupNode | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] } | undefined,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>
+    advancedFilterModel:
+      | QueryBuilderGroupNode
+      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] }
+      | undefined,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
   ) {
     if (!advancedFilterModel) {
       return query;
@@ -545,7 +581,10 @@ export class BaseRepository<T extends keyof Models> {
     let rootGroup: QueryBuilderGroupNode;
 
     if (isLegacy) {
-      const legacyModel = advancedFilterModel as { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] };
+      const legacyModel = advancedFilterModel as {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: any }[];
+      };
       if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
         return query;
       }
@@ -574,7 +613,7 @@ export class BaseRepository<T extends keyof Models> {
   private buildGroupExpression(
     eb: any,
     group: QueryBuilderGroupNode,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
   ): any {
     if (!group.rules || group.rules.length === 0) {
       return null;
@@ -625,10 +664,12 @@ export type JoinedQueryParams = {
   limit?: number;
   offset?: number;
   orderBy?: OrderByExpression<Models, keyof Models, object>[];
-  advancedFilterModel?: QueryBuilderGroupNode | {
-    conjunction: 'AND' | 'OR';
-    rules: { field: string; op: string; value: any }[];
-  };
+  advancedFilterModel?:
+    | QueryBuilderGroupNode
+    | {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: any }[];
+      };
 };
 
 /**
