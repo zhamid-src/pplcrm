@@ -39,7 +39,7 @@ import { TasksService } from '../services/tasks-service';
                     (drop)="onDrop($event, col)"
                   >
                     <div class="card-body p-3">
-                      <div class="flex items-center gap-2 mb-1 pr-6 w-full">
+                      <div class="flex items-center gap-2 mb-1  w-full">
                         <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
                         <button
                           (click)="openTask(t); $event.stopPropagation()"
@@ -49,7 +49,7 @@ import { TasksService } from '../services/tasks-service';
                           <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
                         </button>
                       </div>
-                      <span class="badge badge-xs absolute top-2 right-2" [class]="priorityBadgeClass(t.priority)">
+                      <span class="badge badge-xs absolute bottom-2 right-2" [class]="priorityBadgeClass(t.priority)">
                         {{ t.priority || '' }}
                       </span>
                       <div class="text-sm font-medium break-words overflow-hidden">
