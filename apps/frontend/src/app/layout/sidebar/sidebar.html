@@ -26,14 +26,14 @@
   <!-- Logo: Full or Compact -->
   <div
     [class.hidden]="!this.isDrawerFull()"
-    class="bg-base-200 mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
   >
-    <img src="../../assets/logo.svg" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
   </div>
 
   <div
     [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
-    class="bg-base-200 avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
   >
     <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
   </div>
