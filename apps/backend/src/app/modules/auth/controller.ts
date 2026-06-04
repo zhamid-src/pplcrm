@@ -390,7 +390,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     const requires2FA =
-      user.two_factor_enabled || (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
+      user.two_factor_enabled && (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
 
     if (requires2FA) {
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();

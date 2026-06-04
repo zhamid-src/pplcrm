@@ -47,25 +47,21 @@ export class ErrorService {
   }
 
   /** Perform auth redirects with throttling and returnUrl preservation. */
-  private redirect(code: 'UNAUTHORIZED' | 'FORBIDDEN'): boolean {
+  private redirect(): boolean {
     const now = Date.now();
     if (now - this.lastRedirect < 3000) return false;
     this.lastRedirect = now;
 
-    if (code === 'UNAUTHORIZED') {
-      this.tokenSvc.clearAll();
-      const returnUrl = this.router.url;
-      this.router.navigate(['/signin'], { queryParams: { returnUrl } });
-    } else {
-      this.router.navigate(['/403']);
-    }
+    this.tokenSvc.clearAll();
+    const returnUrl = this.router.url;
+    void this.router.navigate(['/signin'], { queryParams: { returnUrl } });
     return true;
   }
 
   /** Map tRPC error codes to auth redirects. */
   private redirectFromCode(code?: string): boolean {
-    if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') {
-      this.redirect(code);
+    if (code === 'UNAUTHORIZED') {
+      this.redirect();
       return true;
     }
     return false;
@@ -73,8 +69,7 @@ export class ErrorService {
 
   /** Map HTTP status codes to auth redirects. */
   private redirectFromStatus(status?: number): boolean {
-    if (status === 401) return this.redirect('UNAUTHORIZED');
-    if (status === 403) return this.redirect('FORBIDDEN');
+    if (status === 401) return this.redirect();
     return false;
   }
 }
