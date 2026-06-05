@@ -128,6 +128,7 @@ export class TasksBoard implements OnInit {
 
     try {
       await this.svc.update(id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
       const copy = list.slice();
       copy[idx] = { ...curr, status: String(next) };
       this.tasks.set(copy);

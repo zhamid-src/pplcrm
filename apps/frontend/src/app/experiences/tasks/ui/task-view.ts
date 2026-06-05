@@ -30,7 +30,7 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
     SanitizeHtmlPipe,
     MentionifyPipe,
     TimeAgoPipe,
-    RecordActivities
+    RecordActivities,
   ],
   templateUrl: './task-view.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -61,7 +61,8 @@ export class TaskView implements OnInit {
   protected isEditingDueDate = signal(false);
   protected tempName = signal('');
   protected tempDetails = signal('');
-  protected readonly defaultDetails = '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
+  protected readonly defaultDetails =
+    '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
   private readonly activityHistory = viewChild<any>('activityHistory');
 
   private refreshActivities() {
@@ -155,6 +156,7 @@ export class TaskView implements OnInit {
     const id = this.id();
     try {
       await this.tasks.update(id, patch);
+      this.tasks.triggerRefresh();
       this.task.update((t) => ({ ...(t ?? {}), ...patch }));
       if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
         const v = patch.assigned_to;
@@ -229,7 +231,10 @@ export class TaskView implements OnInit {
   protected async toggleSubtask(s: any, isDone: boolean) {
     this.isLoading.set(true);
     try {
-      await (this.tasks as any).api.tasks.updateSubtask.mutate({ id: String(s.id), data: { status: isDone ? 'done' : 'todo' } });
+      await (this.tasks as any).api.tasks.updateSubtask.mutate({
+        id: String(s.id),
+        data: { status: isDone ? 'done' : 'todo' },
+      });
       await this.loadSubtasks();
       this.refreshActivities();
     } finally {
@@ -321,6 +326,7 @@ export class TaskView implements OnInit {
       try {
         const deleted = await this.tasks.delete(this.id());
         if (deleted) {
+          this.tasks.triggerRefresh();
           this.alertSvc.showSuccess('Task deleted successfully');
           void this.router.navigate(['/tasks']);
         } else {
@@ -406,22 +412,32 @@ export class TaskView implements OnInit {
   protected getStatusBadgeClass(status: string): string {
     const s = String(status || '').toLowerCase();
     switch (s) {
-      case 'done': return 'badge-success text-success-content';
-      case 'in_progress': return 'badge-info text-info-content';
-      case 'blocked': return 'badge-error text-error-content';
-      case 'canceled': return 'badge-neutral text-neutral-content';
-      case 'archived': return 'badge-warning text-warning-content';
-      default: return 'badge-ghost';
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'blocked':
+        return 'badge-error text-error-content';
+      case 'canceled':
+        return 'badge-neutral text-neutral-content';
+      case 'archived':
+        return 'badge-warning text-warning-content';
+      default:
+        return 'badge-ghost';
     }
   }
 
   protected getPriorityBadgeClass(priority: string): string {
     const p = String(priority || '').toLowerCase();
     switch (p) {
-      case 'urgent': return 'badge-error text-error-content';
-      case 'high': return 'badge-warning text-warning-content';
-      case 'medium': return 'badge-info text-info-content';
-      default: return 'badge-ghost';
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
     }
   }
 
