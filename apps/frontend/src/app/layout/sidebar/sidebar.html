@@ -54,9 +54,9 @@
       <pc-swap
         class="rotate-90 invisible mr-2"
         [class.visible]="isDrawerFull() || isMobileOpen() || hoveringSidebar()"
-        swapOnIcon="chevron-double-right"
-        swapOffIcon="chevron-double-left"
-        animation="flip"
+        swapOnIcon="chevron-double-left"
+        swapOffIcon="chevron-double-right"
+        animation="rotate"
         [size]="4"
         [checked]="isCollapsed(item.name)"
         (click)="toggleCollapse(item.name)"
@@ -83,11 +83,11 @@
   <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
-      class="hover:text-primary group-hover:visible"
-      swapOffIcon="arrow-menu-open"
-      swapOnIcon="arrow-menu-close"
+      class="hover:text-primary text-gray-400 group-hover:visible"
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
       [checked]="isDrawerFull()"
-      animation="flip"
+      animation="rotate"
       (click)="toggleDrawer()"
       aria-label="Toggle drawer"
       i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
