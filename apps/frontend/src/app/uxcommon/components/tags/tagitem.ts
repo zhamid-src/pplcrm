@@ -59,7 +59,7 @@ export class TagItem {
 
   protected readonly background = computed(() => this.normalizeColor(this.color()));
   protected readonly textColor = computed(() => this.computeTextColor(this.background()));
-  protected readonly borderColor = computed(() => this.background() ?? '#d1d5db');
+  protected readonly borderColor = computed(() => this.background() ?? null);
 
   public emitClick() {
     this.click.emit(this.name());
@@ -79,8 +79,8 @@ export class TagItem {
     return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   }
 
-  private computeTextColor(hex: string | null): string {
-    if (!hex) return '#374151';
+  private computeTextColor(hex: string | null): string | null {
+    if (!hex) return null;
     const rgb = this.hexToRgb(hex);
     if (!rgb) return '#f9fafb';
     const [r, g, b] = rgb.map((v) => v / 255);
