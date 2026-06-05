@@ -21,18 +21,17 @@ import { PcIconNameType } from '@icons/icons.index';
     >
       @if (hasDropdown()) {
         <details class="dropdown" [class.dropdown-end]="dropdownEnd()">
-          <summary
-            class="list-none cursor-pointer flex items-center justify-center"
-            (click)="!enabled() && $event.preventDefault()"
-          >
-            <a role="button" class="relative pointer-events-none">
-              <pc-icon [name]="icon()"></pc-icon>
-              @if (badge() && badge()! > 0) {
-                <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
-                  {{ badge() }}
-                </span>
-              }
-            </a>
+          <summary class="list-none cursor-pointer" (click)="!enabled() && $event.preventDefault()">
+            <div class="flex items-center justify-center">
+              <a role="button" class="relative pointer-events-none">
+                <pc-icon [name]="icon()"></pc-icon>
+                @if (badge() && badge()! > 0) {
+                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+                    {{ badge() }}
+                  </span>
+                }
+              </a>
+            </div>
           </summary>
           <ng-content></ng-content>
         </details>
