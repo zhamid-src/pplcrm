@@ -100,6 +100,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       headerName: 'Created By',
       editable: false,
       valueFormatter: (p: any) => this.userNameForId(p.value),
+      cellRenderer: (p: any) => this.renderCreatedByCell(p.value),
       // Provide filter options using known user labels
       cellEditorParams: () => ({ values: this.userLabels }),
     },
@@ -154,11 +155,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const res = await (this.gridSvc as unknown as TasksService).import(
-        rows,
-        skippedReported,
-        fileName || undefined,
-      );
+      const res = await (this.gridSvc as unknown as TasksService).import(rows, skippedReported, fileName || undefined);
 
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
@@ -185,7 +182,10 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   }
 
   private assignToValueSetter(p: any) {
-    const val = p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel ? null : String(p.newValue);
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
     if ((p.data as Record<string, any>)['assigned_to'] !== val) {
       (p.data as Record<string, any>)['assigned_to'] = val;
       return true;
@@ -273,14 +273,65 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     if (isUnassigned) {
       return `<span class="badge badge-error badge-sm">${label}</span>`;
     }
-    return label;
+    const initial = label.slice(0, 1).toUpperCase() || '?';
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${label}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: string | null | undefined) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const initial = label.slice(0, 1).toUpperCase() || '?';
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${label}</span>
+      </div>
+    `;
   }
 
   private renderPriorityBadge(value: string | null | undefined) {
     if (!value) return '';
     const v = String(value);
     const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-ghost';
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
     const label = this.toTitle(v);
     return `<span class="badge ${cls} badge-sm">${label}</span>`;
   }

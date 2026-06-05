@@ -42,6 +42,13 @@ import { PcIconNameType } from '@icons/icons.index';
     </li>
   `,
   imports: [Icon],
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
 })
 export class GridActionComponent {
   private readonly el = inject(ElementRef);
