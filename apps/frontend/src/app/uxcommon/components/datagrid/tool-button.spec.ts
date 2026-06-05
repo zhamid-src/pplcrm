@@ -54,6 +54,23 @@ describe('GridActionComponent', () => {
     expect(li.classes['cursor-not-allowed']).toBeTruthy();
   });
 
+  it('should NOT emit action on click when spinning', () => {
+    fixture.componentRef.setInput('spinning', true);
+    fixture.detectChanges();
+
+    const actionSpy = vi.spyOn(component.action, 'emit');
+    const li = fixture.debugElement.query(By.css('li'));
+    li.triggerEventHandler('click', null);
+
+    expect(actionSpy).not.toHaveBeenCalled();
+    expect(li.classes['disabled']).toBeTruthy();
+    expect(li.classes['cursor-not-allowed']).toBeTruthy();
+    expect(li.classes['opacity-50']).toBeTruthy();
+
+    const icon = fixture.debugElement.query(By.css('pc-icon'));
+    expect(icon.componentInstance.class()).toContain('animate-spin');
+  });
+
   it('should apply active class when active', () => {
     fixture.componentRef.setInput('active', true);
     fixture.detectChanges();

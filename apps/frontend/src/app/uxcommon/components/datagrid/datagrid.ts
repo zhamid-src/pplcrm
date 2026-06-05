@@ -297,6 +297,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected tagSearch = signal('');
   protected filterValues = this.store.filterValues;
   protected isLoading = this._loading.visible;
+  public readonly isRefreshing = signal(false);
   protected pageIndex = this.store.pageIndex;
   protected panelFilters = this.store.panelFilters;
   protected rowHeight = 36;
@@ -1686,8 +1687,20 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected async refresh(): Promise<void> {
     await this.loadPage(this.pageIndex());
   }
-  public doRefresh() {
-    void this.refresh();
+  public async doRefresh() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    try {
+      await this.refresh();
+    } finally {
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
   }
 
   protected resetAllWidths() {

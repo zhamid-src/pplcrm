@@ -8,7 +8,8 @@
     (action)="onClone()"
   />
   <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh()"
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
     [tip]="'Refresh the grid'"
     icon="arrow-path"
     (action)="onRefresh()"

@@ -12,9 +12,10 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.tooltip-top]="placement() === 'top'"
       [class.tooltip-bottom]="placement() === 'bottom'"
       [class.hidden]="hidden()"
-      [class.disabled]="!enabled()"
-      [class.cursor-not-allowed]="!enabled()"
-      [class.text-neutral-400]="!enabled()"
+      [class.disabled]="!enabled() || spinning()"
+      [class.cursor-not-allowed]="!enabled() || spinning()"
+      [class.text-neutral-400]="!enabled() || spinning()"
+      [class.opacity-50]="spinning()"
       [class.text-primary]="active()"
       [attr.data-tip]="tip()"
       (click)="onLiClick($event)"
@@ -24,7 +25,7 @@ import { PcIconNameType } from '@icons/icons.index';
           <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
             <div class="flex items-center justify-center">
               <a role="button" class="relative pointer-events-none">
-                <pc-icon [name]="icon()"></pc-icon>
+                <pc-icon [name]="icon()" [class]="spinning() ? 'animate-spin inline-block' : ''"></pc-icon>
                 @if (badge() && badge()! > 0) {
                   <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
                     {{ badge() }}
@@ -36,7 +37,7 @@ import { PcIconNameType } from '@icons/icons.index';
           <ng-content></ng-content>
         </details>
       } @else {
-        <a><pc-icon [name]="icon()"></pc-icon></a>
+        <a><pc-icon [name]="icon()" [class]="spinning() ? 'animate-spin inline-block' : ''"></pc-icon></a>
       }
     </li>
   `,
@@ -50,6 +51,7 @@ export class GridActionComponent {
   public enabled = input(true);
   public hidden = input(false);
   public active = input(false);
+  public spinning = input(false);
   public icon = input.required<PcIconNameType>();
   public tip = input.required<string>();
   public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
@@ -65,13 +67,13 @@ export class GridActionComponent {
     if (this.hasDropdown()) {
       return;
     }
-    if (this.enabled()) {
+    if (this.enabled() && !this.spinning()) {
       this.emitClick();
     }
   }
 
   public onSummaryClick(event: MouseEvent) {
-    if (!this.enabled()) {
+    if (!this.enabled() || this.spinning()) {
       event.preventDefault();
     }
   }
