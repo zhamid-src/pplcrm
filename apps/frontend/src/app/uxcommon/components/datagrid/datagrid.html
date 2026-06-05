@@ -320,7 +320,10 @@
               <!-- Scrollable tag list -->
               <div class="flex-1 overflow-y-auto py-1">
                 @for (tag of filteredTagChoices(col); track tag) {
-                <label class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none">
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
                   <input
                     type="checkbox"
                     class="checkbox checkbox-xs checkbox-primary"
@@ -354,34 +357,32 @@
                 </button>
               </div>
             </div>
-            } @else if (editorCfg) {
-              @if (editorCfg.multiple) {
-                <select
-                  class="select select-bordered w-full"
-                  [ngModel]="editingValue()"
-                  (ngModelChange)="editingValue.set($event)"
-                  multiple
-                  [attr.size]="editorCfg.size ?? null"
-                  [style.height]="multiSelectHeight(editorCfg)"
-                  autofocus
-                >
-                  @for (opt of editorCfg.choices; track opt.value) {
-                    <option [value]="opt.value">{{ opt.label }}</option>
-                  }
-                </select>
-              } @else {
-                <select
-                  class="select select-bordered w-full select-xs"
-                  [ngModel]="editingValue()"
-                  (ngModelChange)="onSelectChange(r.original, col, $event)"
-                  autofocus
-                >
-                  @for (opt of editorCfg.choices; track opt.value) {
-                    <option [value]="opt.value">{{ opt.label }}</option>
-                  }
-                </select>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
               }
-            } @else if (textCfg.textarea) {
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
             <textarea
               class="textarea textarea-bordered textarea-sm w-full"
               [rows]="textCfg.rows"
