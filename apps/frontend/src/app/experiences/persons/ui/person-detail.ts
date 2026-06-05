@@ -212,6 +212,7 @@ export class PersonDetail implements OnInit {
     const data = {
       ...raw,
       company_id: raw.company_id || null,
+      assigned_to: raw.assigned_to || null,
     } as any;
     return this.id ? this.update(data, done) : this.add(data, done);
   }
