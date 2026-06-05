@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
@@ -16,21 +16,26 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.cursor-not-allowed]="!enabled()"
       [class.text-neutral-400]="!enabled()"
       [class.text-primary]="active()"
-      [class.dropdown]="hasDropdown()"
-      [class.dropdown-end]="dropdownEnd()"
       [attr.data-tip]="tip()"
       (click)="enabled() && !hasDropdown() && emitClick()"
     >
       @if (hasDropdown()) {
-        <a tabindex="0" role="button" class="relative">
-          <pc-icon [name]="icon()"></pc-icon>
-          @if (badge() && badge()! > 0) {
-            <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
-              {{ badge() }}
-            </span>
-          }
-        </a>
-        <ng-content></ng-content>
+        <details class="dropdown" [class.dropdown-end]="dropdownEnd()">
+          <summary
+            class="list-none cursor-pointer flex items-center justify-center"
+            (click)="!enabled() && $event.preventDefault()"
+          >
+            <a role="button" class="relative pointer-events-none">
+              <pc-icon [name]="icon()"></pc-icon>
+              @if (badge() && badge()! > 0) {
+                <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+                  {{ badge() }}
+                </span>
+              }
+            </a>
+          </summary>
+          <ng-content></ng-content>
+        </details>
       } @else {
         <a><pc-icon [name]="icon()"></pc-icon></a>
       }
@@ -39,6 +44,8 @@ import { PcIconNameType } from '@icons/icons.index';
   imports: [Icon],
 })
 export class GridActionComponent {
+  private readonly el = inject(ElementRef);
+
   public readonly action = output<void>();
 
   public enabled = input(true);
@@ -53,5 +60,14 @@ export class GridActionComponent {
 
   public emitClick() {
     this.action.emit();
+  }
+
+  @HostListener('document:click', ['$event'])
+  public onDocumentClick(event: MouseEvent) {
+    if (!this.hasDropdown()) return;
+    const detailsEl = this.el.nativeElement.querySelector('details');
+    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
+      detailsEl.removeAttribute('open');
+    }
   }
 }
