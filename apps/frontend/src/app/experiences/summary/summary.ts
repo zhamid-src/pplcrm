@@ -15,6 +15,7 @@ export class Summary implements OnInit {
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
 
   // KPIs
   protected readonly totalAssignedCount = signal(0);
@@ -77,10 +78,10 @@ export class Summary implements OnInit {
 
     return slicesData.map((s: any, i: number) => {
       const countVal = s.count;
-      const pct = total > 0 ? (countVal / total) : 0;
+      const pct = total > 0 ? countVal / total : 0;
       const sliceCirc = pct * circ;
       const strokeDash = `${sliceCirc} ${circ}`;
-      const strokeOffset = - (cumulativeCount / total) * circ;
+      const strokeOffset = -(cumulativeCount / total) * circ;
       cumulativeCount += countVal;
       return {
         name: s.name,
@@ -98,16 +99,22 @@ export class Summary implements OnInit {
   protected readonly hoveredSlice = signal<any | null>(null);
 
   public ngOnInit() {
-    this.loadStats();
+    void this.loadStats();
   }
 
   protected async loadStats() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
     const end = this._loading.begin();
     try {
       const stats = await this.dashboardSvc.getStats();
 
       // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.count || 0),
+        0,
+      );
       this.totalAssignedCount.set(totalAssigned);
       this.unassignedOpenCount.set(stats.unassignedCount || 0);
       this.totalOpenCount.set(stats.totalOpenCount || 0);
@@ -118,7 +125,10 @@ export class Summary implements OnInit {
       const closeHours = stats.avgTimeToCloseHours;
       this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
 
-      const totalNewContacts = (stats.contactsGrowth || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.count || 0),
+        0,
+      );
       this.activeContactsCount.set(totalNewContacts);
 
       const totalClosed = (stats.emailsClosed || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
@@ -132,8 +142,14 @@ export class Summary implements OnInit {
       this.unassignedEmailSlaBreaches.set(unassignedEmails);
       this.unassignedTaskSlaBreaches.set(unassignedTasks);
 
-      const assignedEmailSla = (stats.userStats || []).reduce((acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0), 0);
-      const assignedTaskSla = (stats.userStats || []).reduce((acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0), 0);
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
 
       this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
       this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
@@ -210,21 +226,28 @@ export class Summary implements OnInit {
       const closed = stats.emailsClosed || [];
       const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
       const barMaxWidth = 360;
-      this.closedRepBars.set(closed.map((c: any, i: number) => ({
-        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
-        count: c.count,
-        width: (c.count / maxClosed) * barMaxWidth,
-        y: i * 40 + 10,
-      })));
+      this.closedRepBars.set(
+        closed.map((c: any, i: number) => ({
+          name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+          count: c.count,
+          width: (c.count / maxClosed) * barMaxWidth,
+          y: i * 40 + 10,
+        })),
+      );
 
       // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
       this.rawEmailsAssigned.set(stats.emailsAssigned || []);
       this.rawUnassignedCount.set(stats.unassignedCount || 0);
-
     } catch (err: any) {
       this.alertSvc.showError('Failed to load dashboard metrics');
     } finally {
       end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
     }
   }
 
