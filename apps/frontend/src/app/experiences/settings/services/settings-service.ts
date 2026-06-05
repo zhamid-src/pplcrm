@@ -50,6 +50,48 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
     return this.api.settings.verifySenderEmail.mutate({ token });
   }
 
+  public async addVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async verifyVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async deleteVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
   public snapshot(): TenantSettingsSnapshot {
     return this.snapshotSignal();
   }

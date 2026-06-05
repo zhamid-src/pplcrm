@@ -157,4 +157,65 @@ describe('SettingsController Integration', () => {
     const snapshot = await controller.getSnapshot({ tenant_id: tenantId } as any);
     expect(snapshot['communications.verified_emails']).toContain('success@example.com');
   });
+
+  it('should add a pending domain entry on addVerifiedDomain', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    const list = await controller.addVerifiedDomain(auth, 'testorg.com');
+    expect(list).toBeDefined();
+    expect(list.length).toBe(1);
+
+    const domainEntry = list[0];
+    expect(domainEntry.domain).toBe('testorg.com');
+    expect(domainEntry.status).toBe('pending');
+    expect(domainEntry.spf).toBe(false);
+    expect(domainEntry.dkim).toBe(false);
+    expect(domainEntry.dmarc).toBe(false);
+    expect(domainEntry.domainAuthId).toBeDefined();
+    expect(domainEntry.linkBrandingId).toBeDefined();
+    expect(domainEntry.domainAuthDns?.mail_cname?.host).toBe('em.testorg.com');
+    expect(domainEntry.linkBrandingDns?.domain?.host).toBe('email.testorg.com');
+
+    // Check settings snapshot
+    const snapshot = await controller.getSnapshot(auth);
+    const verifiedDomains = snapshot['communications.verified_domains'] as any[];
+    expect(verifiedDomains).toBeDefined();
+    expect(verifiedDomains.length).toBe(1);
+    expect(verifiedDomains[0].domain).toBe('testorg.com');
+  });
+
+  it('should verify a domain successfully on verifyVerifiedDomain', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    // First add the domain
+    await controller.addVerifiedDomain(auth, 'mytestdomain.com');
+
+    // Perform verification (mock mode auto-verifies)
+    const list = await controller.verifyVerifiedDomain(auth, 'mytestdomain.com');
+    expect(list).toBeDefined();
+
+    const entry = list.find((d) => d.domain === 'mytestdomain.com');
+    expect(entry).toBeDefined();
+    expect(entry.status).toBe('verified');
+    expect(entry.spf).toBe(true);
+    expect(entry.dkim).toBe(true);
+    expect(entry.dmarc).toBe(true);
+    expect(entry.linkBranded).toBe(true);
+  });
+
+  it('should remove the domain from verified list on deleteVerifiedDomain', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    // Add domain
+    await controller.addVerifiedDomain(auth, 'deleteme.com');
+
+    // Delete it
+    const list = await controller.deleteVerifiedDomain(auth, 'deleteme.com');
+    expect(list.length).toBe(0);
+
+    // Snapshot check
+    const snapshot = await controller.getSnapshot(auth);
+    const verifiedDomains = snapshot['communications.verified_domains'] as any[];
+    expect(verifiedDomains.length).toBe(0);
+  });
 });

@@ -24,4 +24,13 @@ export const SettingsRouter = router({
     .mutation(({ input }) => settings.verifySenderEmail(input.token)),
   scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
   cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
+  addVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.addVerifiedDomain(ctx.auth, input.domain)),
+  verifyVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.verifyVerifiedDomain(ctx.auth, input.domain)),
+  deleteVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
 });
