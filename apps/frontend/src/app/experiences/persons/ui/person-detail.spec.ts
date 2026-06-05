@@ -132,12 +132,16 @@ describe('PersonDetail', () => {
     component['payload'].set({
       ...component['payload'](),
       first_name: 'Johnny',
+      assigned_to: '',
+      company_id: '',
     });
     await component.save();
 
     expect(mockPersonsSvc.update).toHaveBeenCalled();
     const updateCallArg = mockPersonsSvc.update.mock.calls[0][1];
     expect(updateCallArg.first_name).toBe('Johnny');
+    expect(updateCallArg.assigned_to).toBeNull();
+    expect(updateCallArg.company_id).toBeNull();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Person updated successfully.');
   });
 
