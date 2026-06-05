@@ -337,7 +337,7 @@ body {
 }
 
 /* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not(:focus):not(:focus-within) .dropdown-content {
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
   visibility: hidden !important;
   pointer-events: none !important;
   opacity: 0 !important;
@@ -354,4 +354,9 @@ body {
 .tooltip:before,
 .tooltip::before {
   font-weight: 300 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
 }

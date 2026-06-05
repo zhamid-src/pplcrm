@@ -17,11 +17,11 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.text-neutral-400]="!enabled()"
       [class.text-primary]="active()"
       [attr.data-tip]="tip()"
-      (click)="enabled() && !hasDropdown() && emitClick()"
+      (click)="onLiClick($event)"
     >
       @if (hasDropdown()) {
         <details class="dropdown" [class.dropdown-end]="dropdownEnd()">
-          <summary class="list-none cursor-pointer" (click)="!enabled() && $event.preventDefault()">
+          <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
             <div class="flex items-center justify-center">
               <a role="button" class="relative pointer-events-none">
                 <pc-icon [name]="icon()"></pc-icon>
@@ -59,6 +59,21 @@ export class GridActionComponent {
 
   public emitClick() {
     this.action.emit();
+  }
+
+  public onLiClick(_event: MouseEvent) {
+    if (this.hasDropdown()) {
+      return;
+    }
+    if (this.enabled()) {
+      this.emitClick();
+    }
+  }
+
+  public onSummaryClick(event: MouseEvent) {
+    if (!this.enabled()) {
+      event.preventDefault();
+    }
   }
 
   @HostListener('document:click', ['$event'])
