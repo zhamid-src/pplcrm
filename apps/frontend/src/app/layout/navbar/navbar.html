@@ -76,10 +76,7 @@
       >
         <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
         @if (unreadCount() > 0) {
-        <span
-          class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full"
-          [class.animate-pulse]="isPulsing()"
-        ></span>
+        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
         }
       </div>
 
@@ -162,8 +159,7 @@
               <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
               }
             </div>
-            } }
-            @if (isLoadingMore()) {
+            } } @if (isLoadingMore()) {
             <div class="flex justify-center items-center py-3 border-t border-base-200/10">
               <span class="loading loading-spinner loading-xs text-primary"></span>
             </div>
@@ -177,7 +173,7 @@
     <div class="dropdown dropdown-end">
       <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
         <div
-          class="bg-base-100 border-primary hover:bg-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2"
+          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2"
         >
           <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
         </div>
