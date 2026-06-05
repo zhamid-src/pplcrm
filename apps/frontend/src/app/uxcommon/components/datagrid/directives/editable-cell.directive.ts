@@ -8,12 +8,27 @@ import { EditingController } from '../controllers/editing.controller';
     '(keydown.enter)': 'onEnter()',
     '(keydown.esc)': 'onEsc()',
     '(focusout)': 'onFocusOut($event)',
+    '(mousedown)': 'onMouseDown()',
+    '(document:mouseup)': 'onMouseUp()',
   },
 })
 export class EditableCellDirective {
   private readonly editing = inject(EditingController);
   private readonly host = inject(ElementRef<HTMLElement>);
-  private isEditing = false;
+  private _isEditing = false;
+  private isMouseDownInside = false;
+
+  private get isEditing(): boolean {
+    const p = this.pcEditable();
+    if (p && typeof p.isEditingCell === 'function') {
+      return p.isEditingCell();
+    }
+    return this._isEditing;
+  }
+
+  private set isEditing(val: boolean) {
+    this._isEditing = val;
+  }
 
   public readonly pcEditable = input.required<{
     row: any;
@@ -36,7 +51,16 @@ export class EditableCellDirective {
     undo: () => void;
     customCommit?: (currentValue: any) => Promise<unknown>;
     isEditable?: () => boolean;
+    isEditingCell?: () => boolean;
   }>();
+
+  protected onMouseDown() {
+    this.isMouseDownInside = true;
+  }
+
+  protected onMouseUp() {
+    this.isMouseDownInside = false;
+  }
 
   protected onClick() {
     const p = this.pcEditable();
@@ -70,6 +94,7 @@ export class EditableCellDirective {
   // Commit only when focus leaves the cell subtree
   protected async onFocusOut(ev: FocusEvent) {
     if (!this.isEditing) return;
+    if (this.isMouseDownInside) return;
     const container = this.host.nativeElement;
     const next = ev.relatedTarget as Node | null;
     if (next && container.contains(next)) return;

@@ -371,6 +371,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         }
       : undefined,
     isEditable: () => this.isCellEditable(row, col),
+    isEditingCell: () => {
+      const ec = this.editingCell();
+      return ec !== null && ec.id === this.toIdFn(row) && ec.field === col.field;
+    },
   });
 
   // Inputs & Outputs
@@ -1079,7 +1083,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected isTagColumn(col: ColDef): boolean {
     if (!col) return false;
     if (col.tagColumn) return true;
-    return (col.field ?? '').toLowerCase() === 'tags';
+    const field = (col.field ?? '').toLowerCase();
+    return field === 'tags' || field === 'issues';
   }
 
   protected async commitTagColumn(row: any, col: ColDef) {
