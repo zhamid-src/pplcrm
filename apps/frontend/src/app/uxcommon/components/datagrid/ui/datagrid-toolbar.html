@@ -7,6 +7,9 @@
     [hidden]="!grid.addRoute()"
     (action)="onClone()"
   />
+
+  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
+
   <pc-grid-tool-btn
     [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
     [spinning]="grid.isRefreshing()"
@@ -16,12 +19,17 @@
   />
   <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
   <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
+
   <pc-grid-tool-btn
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
     [tip]="'Deleted selected row(s)'"
     icon="trash"
     (action)="onDeleteSelected()"
   />
+
+  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
 
   <pc-grid-tool-btn
     [enabled]="!grid.disableImport()"
@@ -36,6 +44,8 @@
     icon="arrow-down-tray"
     (action)="onExportCsv()"
   />
+
+  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
 
   <!-- Tag Filter Dropdown -->
   @if (grid.showTagFilter()) {
@@ -182,6 +192,8 @@
     [enabled]="!grid.hasActiveFilters()"
     (action)="grid.openAdvancedFilterBuilder()"
   />
+
+  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
 
   <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">

@@ -408,16 +408,23 @@
               [readonly]="true"
               [canDelete]="false"
               [compact]="true"
+              [limit]="2"
               (tagRemoved)="handleTagRemoved(r.original, col, $event)"
             ></pc-tags>
-            } @else if (col.valueFormatter) { {{ callValueFormatter(r.original, col) }} } @else { @if (col.field ===
-            'address') {
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
             <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue }}</div>
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
             </div>
             } @else {
             <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
               <span class="flex-1 truncate">{{ rawValue }}</span>
+              }
             </span>
             } } }
           </td>

@@ -153,7 +153,7 @@ export class TasksBoard implements OnInit {
         ? 'badge-warning'
         : v === 'medium'
           ? 'badge-info'
-          : 'badge-ghost';
+          : 'badge-neutral';
   }
 
   protected dateLabel(v?: string | null) {

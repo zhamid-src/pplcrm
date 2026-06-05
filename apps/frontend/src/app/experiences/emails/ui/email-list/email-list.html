@@ -32,7 +32,7 @@
       (click)="selectEmail(email)"
       (contextmenu)="onContextMenu($event, email)"
       [class.bg-primary/10]="isSelected(email.id)"
-      class="border-b border-base-200 cursor-pointer px-4 py-2 hover:bg-primary/5"
+      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
     >
       <div
         class="truncate text-xs flex gap-1 items-center"
@@ -52,7 +52,7 @@
           >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
         >
       </div>
-      <div class="truncate flex gap-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
+      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
         @if (email?.subject) {
         <span class="truncate flex-1">{{ email.subject }}</span>
         } @else {
@@ -61,7 +61,7 @@
         <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
-      <div class="truncate font-light text-xs text-base-content/60">{{ email.preview }}</div>
+      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
     </li>
     } @if (isLoadingMore()) {
     <li class="flex justify-center p-3 border-b border-base-200">

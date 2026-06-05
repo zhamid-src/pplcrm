@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, output } from '@angular/core';
+import { Component, OnInit, inject, input, output, signal } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
@@ -39,11 +39,21 @@ interface TagView {
             (close)="closed(tag.name)"
           ></pc-tagitem>
         }
+        @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
+          @let remainingCount = tags().length - limit()!;
+          <span
+            class="badge badge-neutral badge-sm cursor-pointer mb-1 align-middle hover:bg-neutral-focus"
+            (click)="expanded.set(true); $event.stopPropagation()"
+          >
+            +{{ remainingCount }}
+          </span>
+        }
       </div>
     } `,
 })
 export class Tags implements OnInit {
   protected displayedTags: string[] = [];
+  protected expanded = signal(false);
   private readonly paletteSvc = inject(TagPaletteService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
@@ -99,9 +109,12 @@ export class Tags implements OnInit {
   public compact = input<boolean>(false);
   public tagSvc = inject(TagsService);
   public tags = input<string[]>([]);
+  public limit = input<number | undefined>(undefined);
 
   protected displayTags(): TagView[] {
     const raw = this.tags() ?? [];
+    const limitVal = this.limit();
+    const isExpanded = this.expanded();
     const palette = this.paletteSvc.palette();
     const seen = new Set<string>();
     const out: TagView[] = [];
@@ -114,7 +127,7 @@ export class Tags implements OnInit {
       const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
       out.push({ name, color: color ?? null });
     }
-    return out;
+    return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
   }
 
   constructor() {
