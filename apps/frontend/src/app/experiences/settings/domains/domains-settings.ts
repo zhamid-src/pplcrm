@@ -4,12 +4,30 @@ import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
+
 export interface VerifiedDomain {
   domain: string;
   status: 'verified' | 'pending';
   spf: boolean;
   dkim: boolean;
   dmarc: boolean;
+  domainAuthId?: number;
+  linkBrandingId?: number;
+  domainAuthDns?: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+  linkBrandingDns?: {
+    domain?: DNSVerificationRecord;
+  };
+  linkBranded?: boolean;
 }
 
 @Component({
@@ -72,24 +90,13 @@ export class DomainSettingsComponent implements OnInit {
     this.addingDomain.set(true);
 
     try {
-      const newEntry: VerifiedDomain = {
-        domain: domainVal,
-        status: 'pending',
-        spf: false,
-        dkim: false,
-        dmarc: false,
-      };
-
-      const updatedList = [...currentList, newEntry];
-      await this.settingsSvc.upsert([
-        { key: 'communications.verified_domains', value: updatedList },
-      ]);
-
+      await this.settingsSvc.addVerifiedDomain(domainVal);
       this.newDomain.set('');
       this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
-      this.alerts.showSuccess(`Domain ${domainVal} added successfully.`);
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to add domain.');
+      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
+      this.alerts.showError(errMsg);
     } finally {
       this.addingDomain.set(false);
     }
@@ -98,31 +105,18 @@ export class DomainSettingsComponent implements OnInit {
   protected async verifyDomain(domainName: string) {
     this.verifyingDomain.set(domainName);
 
-    // Simulate verification check
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
     try {
-      const currentList = this.domainsList();
-      const updatedList = currentList.map((d) => {
-        if (d.domain === domainName) {
-          return {
-            ...d,
-            status: 'verified' as const,
-            spf: true,
-            dkim: true,
-            dmarc: true,
-          };
-        }
-        return d;
-      });
+      const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
+      const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
 
-      await this.settingsSvc.upsert([
-        { key: 'communications.verified_domains', value: updatedList },
-      ]);
-
-      this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to verify domain.');
+      if (updatedDomain && updatedDomain.status === 'verified') {
+        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
+      } else {
+        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
+      this.alerts.showError(errMsg);
     } finally {
       this.verifyingDomain.set(null);
     }
@@ -132,16 +126,11 @@ export class DomainSettingsComponent implements OnInit {
     if (!confirm(`Are you sure you want to remove the domain ${domainName}?`)) return;
 
     try {
-      const currentList = this.domainsList();
-      const updatedList = currentList.filter((d) => d.domain !== domainName);
-
-      await this.settingsSvc.upsert([
-        { key: 'communications.verified_domains', value: updatedList },
-      ]);
-
+      await this.settingsSvc.deleteVerifiedDomain(domainName);
       this.alerts.showSuccess(`Domain ${domainName} removed.`);
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to remove domain.');
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
+      this.alerts.showError(errMsg);
     }
   }
 }
