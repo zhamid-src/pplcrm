@@ -7,23 +7,20 @@ import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.s
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-lists-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
-      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Lists</h1>
-          <p class="text-sm text-base-content/60 mt-1">
-            Organize contacts into custom static or dynamic lists for targeted outreach and campaigns.
-          </p>
-        </div>
-      </div>
+      <pc-grid-header
+        title="Lists"
+        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+      ></pc-grid-header>
 
       <pc-datagrid
         [colDefs]="col"

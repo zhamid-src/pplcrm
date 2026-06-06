@@ -8,6 +8,7 @@ import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -21,18 +22,14 @@ interface ParamsType {
 
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
+  imports: [DataGrid, CsvImportComponent, FormsModule, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
-      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Households</h1>
-          <p class="text-sm text-base-content/60 mt-1">
-            Manage household groups, track shared addresses, and organize family relationships.
-          </p>
-        </div>
-      </div>
+      <pc-grid-header
+        title="Households"
+        description="Manage household groups, track shared addresses, and organize family relationships."
+      ></pc-grid-header>
 
       <pc-datagrid
         [colDefs]="col"
