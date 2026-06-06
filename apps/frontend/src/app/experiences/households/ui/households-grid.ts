@@ -23,17 +23,29 @@ interface ParamsType {
   selector: 'pc-households-grid',
   imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `
-    <pc-datagrid
-      [colDefs]="col"
-      [disableDelete]="false"
-      [disableView]="false"
-      [disableImport]="false"
-      [confirmDeleteOverride]="onConfirmDeleteBind"
-      [rowCanSelect]="rowCanSelectFn"
-      (importCSV)="openImportDialog()"
-      addRoute="add"
-      plusIcon="add-home"
-    ></pc-datagrid>
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Households</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Manage household groups, track shared addresses, and organize family relationships.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        [rowCanSelect]="rowCanSelectFn"
+        (importCSV)="openImportDialog()"
+        addRoute="add"
+        plusIcon="add-home"
+      ></pc-datagrid>
+    </div>
 
     <!-- Reusable CSV Importer for Households -->
     <pc-csv-importer
