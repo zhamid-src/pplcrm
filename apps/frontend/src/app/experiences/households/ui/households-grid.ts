@@ -158,6 +158,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     {
       field: 'tags',
       headerName: 'Tags',
+      hide: true,
       editable: true,
       tagColumn: true,
       cellDataType: 'object',
@@ -191,6 +192,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     },
     {
       field: 'issues',
+      hide: true,
       headerName: 'Issues',
       editable: true,
       tagColumn: true,

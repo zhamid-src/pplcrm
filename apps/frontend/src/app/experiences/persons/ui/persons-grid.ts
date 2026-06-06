@@ -117,10 +117,12 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       field: 'home_phone',
       headerName: 'Home phone',
       editable: false,
+      hide: true,
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
     },
     {
       field: 'tags',
+      hide: true,
       headerName: 'Tags',
       editable: true,
       tagColumn: true,
@@ -138,6 +140,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     },
     {
       field: 'issues',
+      hide: true,
       headerName: 'Issues',
       editable: true,
       tagColumn: true,
