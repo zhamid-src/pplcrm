@@ -147,7 +147,6 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
     try {
       this.alerts.showSuccess('Refresh job scheduled in background');
       await this.listsSvc.refreshList(id);
-      await this.refresh();
     } catch (e: any) {
       this.alerts.showError(e?.message ?? String(e));
     }
