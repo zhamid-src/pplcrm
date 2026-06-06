@@ -41,11 +41,22 @@ class IssuesService extends TagsService {
 @Component({
   selector: 'pc-issues-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-issue"></pc-datagrid>`,
-  providers: [
-    IssuesService,
-    { provide: AbstractAPIService, useExisting: IssuesService },
-  ],
+  template: `
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Issues</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Manage political or support issues to track contact stances and interests.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-issue"></pc-datagrid>
+    </div>
+  `,
+  providers: [IssuesService, { provide: AbstractAPIService, useExisting: IssuesService }],
 })
 export class IssuesGridComponent extends DataGrid<'tags', AddTagType> {
   protected col = [

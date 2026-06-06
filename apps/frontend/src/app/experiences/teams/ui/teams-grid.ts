@@ -9,15 +9,27 @@ import { TeamsService } from '../services/teams-service';
   selector: 'pc-teams-grid',
   imports: [DataGrid],
   template: `
-    <pc-datagrid
-      [colDefs]="col"
-      [disableDelete]="false"
-      [disableView]="false"
-      [disableExport]="true"
-      [disableImport]="true"
-      [addRoute]="'add'"
-      plusIcon="add-group"
-    ></pc-datagrid>
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Teams</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Organize volunteers and staff into structured teams, assign captains, and coordinate group activities.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [addRoute]="'add'"
+        plusIcon="add-group"
+      ></pc-datagrid>
+    </div>
   `,
   providers: [{ provide: AbstractAPIService, useExisting: TeamsService }],
 })

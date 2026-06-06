@@ -8,16 +8,28 @@ import { CompaniesService } from '../services/companies-service';
   selector: 'pc-companies-grid',
   imports: [DataGrid, CsvImportComponent],
   template: `
-    <pc-datagrid
-      [colDefs]="col"
-      [disableDelete]="false"
-      [disableView]="false"
-      [disableExport]="true"
-      [disableImport]="false"
-      [addRoute]="'add'"
-      (importCSV)="openImportDialog()"
-      plusIcon="add-company"
-    ></pc-datagrid>
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Companies</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Manage corporate contacts, associate people with companies, and track organization profiles.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [addRoute]="'add'"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-company"
+      ></pc-datagrid>
+    </div>
 
     <pc-csv-importer
       [open]="importerOpen()"

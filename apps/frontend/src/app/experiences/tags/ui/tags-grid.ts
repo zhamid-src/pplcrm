@@ -31,7 +31,21 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Component({
   selector: 'pc-tags-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>`,
+  template: `
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Tags</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Manage custom categorization tags used across people and households.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>
+    </div>
+  `,
   providers: [{ provide: AbstractAPIService, useExisting: TagsService }],
 })
 export class TagsGridComponent extends DataGrid<'tags', AddTagType> {

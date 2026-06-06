@@ -15,7 +15,8 @@ import { WorkflowsService } from '../services/workflows-service';
         <div>
           <h1 class="text-2xl font-bold tracking-tight">Automated Workflows</h1>
           <p class="text-sm text-base-content/60 mt-1">
-            Create automated drip email campaigns triggered by volunteer events or manual enrollment.
+            Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list
+            signups, or manual enrollment.
           </p>
         </div>
       </div>

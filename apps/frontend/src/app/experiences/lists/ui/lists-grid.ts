@@ -13,15 +13,29 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 @Component({
   selector: 'pc-lists-grid',
   imports: [DataGrid],
-  template: `<pc-datagrid
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableView]="false"
-    [allowFilter]="false"
-    [disableAdvancedFilter]="true"
-    plusIcon="add-list"
-    addRoute="add"
-  ></pc-datagrid>`,
+  template: `
+    <div class="flex flex-col gap-6">
+      <!-- Title Header -->
+      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Lists</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Organize contacts into custom static or dynamic lists for targeted outreach and campaigns.
+          </p>
+        </div>
+      </div>
+
+      <pc-datagrid
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        [disableAdvancedFilter]="true"
+        plusIcon="add-list"
+        addRoute="add"
+      ></pc-datagrid>
+    </div>
+  `,
   providers: [{ provide: AbstractAPIService, useExisting: ListsService }],
 })
 export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
@@ -51,7 +65,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         if (val === 'people') return 'People';
         if (val === 'households') return 'Households';
         return val ?? '—';
-      }
+      },
     },
     {
       field: 'is_dynamic',
@@ -61,7 +75,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         return isDynamic
           ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
           : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
-      }
+      },
     },
     {
       field: 'list_size',
@@ -72,7 +86,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
           return 'N/A';
         }
         return p?.value ?? 0;
-      }
+      },
     },
     {
       field: 'last_refreshed_at',
@@ -84,7 +98,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         const date = new Date(p.value);
         if (isNaN(date.getTime())) return 'Never';
         return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      }
+      },
     },
     {
       field: 'refresh_action',
@@ -117,7 +131,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         if (isDynamic && !isRefreshing) {
           void this.refreshList(p.data.id);
         }
-      }
+      },
     },
     {
       field: 'updated_at',
@@ -127,11 +141,11 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         const date = new Date(p.value);
         if (isNaN(date.getTime())) return '—';
         return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      }
+      },
     },
     { field: 'created_by', headerName: 'Created By' },
   ];
- 
+
   private async refreshList(id: string) {
     try {
       this.alerts.showSuccess('Refresh job scheduled in background');
