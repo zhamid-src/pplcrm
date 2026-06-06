@@ -1,24 +1,21 @@
 import { Component } from '@angular/core';
 import { UpdateTeamType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { TeamsService } from '../services/teams-service';
 
 @Component({
   selector: 'pc-teams-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
-      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Teams</h1>
-          <p class="text-sm text-base-content/60 mt-1">
-            Organize volunteers and staff into structured teams, assign captains, and coordinate group activities.
-          </p>
-        </div>
-      </div>
+      <pc-grid-header
+        title="Teams"
+        description="Organize volunteers and staff into structured teams, assign captains, and coordinate group activities."
+      ></pc-grid-header>
 
       <pc-datagrid
         [colDefs]="col"

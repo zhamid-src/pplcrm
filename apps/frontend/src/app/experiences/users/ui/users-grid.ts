@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { UpdateAuthUserType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { AuthUsersService } from '../services/authusers-service';
@@ -8,18 +9,14 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-users-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
-      <div class="flex justify-between items-center bg-base-100 p-6 rounded-2xl shadow-sm border border-base-200">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Users</h1>
-          <p class="text-sm text-base-content/60 mt-1">
-            Manage administrator and staff user accounts, assign security roles, and monitor system access.
-          </p>
-        </div>
-      </div>
+      <pc-grid-header
+        title="Users"
+        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+      ></pc-grid-header>
 
       <pc-datagrid
         [colDefs]="col"

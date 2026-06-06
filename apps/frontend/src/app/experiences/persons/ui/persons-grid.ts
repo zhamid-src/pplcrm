@@ -13,6 +13,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
@@ -65,7 +66,7 @@ interface ParamsType {
  */
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent, GridHeaderComponent],
   templateUrl: './persons-grid.html',
   providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
 })
