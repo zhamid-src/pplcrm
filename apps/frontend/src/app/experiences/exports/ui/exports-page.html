@@ -1,10 +1,22 @@
 <div class="mx-5 my-6 sm:mx-10 grid gap-4">
-  <div class="flex items-center gap-2">
-    <pc-icon name="arrow-down-tray"></pc-icon>
-    <h2 class="text-lg font-semibold">Exports</h2>
+  <div class="flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <pc-icon name="arrow-down-tray"></pc-icon>
+      <h2 class="text-lg font-semibold">Exports</h2>
+    </div>
+    <button
+      id="exports-refresh-btn"
+      class="btn btn-sm btn-ghost gap-1"
+      title="Refresh export list"
+      [disabled]="_loading.visible()"
+      (click)="refresh()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Refresh
+    </button>
   </div>
 
-  @if (loading()) {
+  @if (_loading.visible()) {
   <progress class="progress w-full"></progress>
   }
 
@@ -13,27 +25,31 @@
       <thead>
         <tr>
           <th>When</th>
-          <th>Name</th>
+          <th>Entity</th>
+          <th>File</th>
           <th>Status</th>
-          <th>Details</th>
+          <th>Rows</th>
           <th class="text-right">Download</th>
         </tr>
       </thead>
       <tbody>
         @for (j of jobs(); track j.id) {
         <tr>
-          <td>{{ formatDate(j.created_at) }}</td>
-          <td>{{ j.name }}</td>
+          <td class="text-xs text-base-content/70 whitespace-nowrap">{{ formatDate(j.created_at) }}</td>
+          <td class="capitalize">{{ j.entity }}</td>
+          <td class="text-xs text-base-content/70 max-w-[180px] truncate" [title]="j.file_name">{{ j.file_name }}</td>
           <td>
-            @if (j.status === 'in_progress') {
-            <span class="badge badge-info">In Progress</span>
+            @if (j.status === 'pending') {
+            <span class="badge badge-ghost badge-sm">Queued</span>
+            } @else if (j.status === 'processing') {
+            <span class="badge badge-info badge-sm">Processing…</span>
             } @else if (j.status === 'completed') {
-            <span class="badge badge-success">Completed</span>
+            <span class="badge badge-success badge-sm">Completed</span>
             } @else {
-            <span class="badge badge-error">Failed</span>
+            <span class="badge badge-error badge-sm" [title]="j.error ?? ''">Failed</span>
             }
           </td>
-          <td>{{ j.details || '' }}</td>
+          <td class="text-right tabular-nums text-sm">{{ j.row_count ?? '—' }}</td>
           <td class="text-right">
             @if (j.status === 'completed') {
               @if (isExpired(j)) {
@@ -51,10 +67,18 @@
             }
           </td>
         </tr>
+        } @empty {
+        <tr>
+          <td colspan="6" class="text-center py-8 text-base-content/50 text-sm">
+            No exports yet. Use any grid's export button to queue a full export.
+          </td>
+        </tr>
         }
       </tbody>
     </table>
   </div>
 
-  <div class="opacity-60 text-xs">This view lists recent export jobs. Hook it to backend when ready.</div>
+  <div class="opacity-60 text-xs">
+    Exports run in the background. Click <strong>Refresh</strong> to check status. Completed exports are available for 30 days.
+  </div>
 </div>

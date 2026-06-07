@@ -960,7 +960,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       displayedCount: this.displayedCount(),
       totalCount: this.totalCountAll(),
       getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
-      requestFullExport: () => this.requestFullExport(),
+      queueFullExport: () => this.queueFullExport(),
     });
   }
   public doConfirmExport() {
@@ -2136,13 +2136,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
-  private async requestFullExport(): Promise<{ csv: string; fileName?: string; rowCount?: number }> {
-    const totalRows = this.totalCountAll();
-    const endRow = totalRows > 0 ? totalRows : Math.max(this.rows().length, this.pageSize());
+  /** Queue a full background export and return immediately. */
+  private async queueFullExport(): Promise<void> {
+    // Pass a very high endRow so the backend fetches all rows without a limit
     const options = this.dataSvc.buildGetAllOptions({
       searchStr: this.searchSvc.getFilterText(),
       startRow: 0,
-      endRow,
+      endRow: 10_000_000,
       tags: this.selectedTags(),
       issues: this.selectedIssues(),
       filterModel: this.buildFilterModel(),
@@ -2152,7 +2152,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       includeArchived: this.archiveMode(),
       advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
     });
-    return this.gridSvc.exportCsv({
+    await this.gridSvc.queueExport({
+      entity: this.config.messages.exportFileName.replace('.csv', '').replace('-export', '').replace(/-/g, '_'),
       options,
       columns: this.visibleColumnFields(),
       fileName: this.config.messages.exportFileName,

@@ -76,6 +76,7 @@ export interface Models {
   web_forms: WebForms;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
+  data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
@@ -507,6 +508,21 @@ interface DataImports extends RecordType {
   processed_at: Timestamp;
   status: Generated<string>;
   error_message: string | null;
+}
+
+export interface DataExports {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  entity: string;
+  file_name: string;
+  status: Generated<'pending' | 'processing' | 'completed' | 'failed'>;
+  row_count: number | null;
+  storage_key: string | null;
+  columns: ColumnType<string[] | null, string | null, string | null>;
+  error: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface BackgroundJobs {

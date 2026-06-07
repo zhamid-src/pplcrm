@@ -1,121 +1,76 @@
-import { Component, DestroyRef, effect, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { get, del } from 'idb-keyval';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TokenService } from '../../../services/api/token-service';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { DataExportRecordType } from '@common';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-exports-page',
   imports: [Icon],
   templateUrl: './exports-page.html',
 })
-export class ExportsPage {
-  private readonly destroyRef = inject(DestroyRef);
+export class ExportsPage extends TRPCService<any> {
   private readonly alertSvc = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
 
-  protected jobs = signal<ExportJob[]>([]);
-  protected loading = signal(true);
+  protected readonly jobs = signal<DataExportRecordType[]>([]);
+  protected readonly _loading = createLoadingGate();
 
   constructor() {
-    // kick once at construction
+    super();
     this.load();
-
-    // poll every 5s only when:
-    //  - page is visible
-    //  - not currently loading
-    effect(
-      (onCleanup) => {
-        if (document.visibilityState !== 'visible') return;
-        if (this.loading()) return;
-
-        const id = setInterval(() => this.load(), 5000);
-        onCleanup(() => clearInterval(id)); // stop when deps change or cmp destroyed
-      },
-      { allowSignalWrites: true },
-    );
-
-    // optional: re-run the effect when tab visibility changes
-    // (so polling pauses when hidden and resumes when shown)
-    const handleVisibilityChange = () => {
-      // Touch a signal so visibility changes trigger effect re-evaluation
-      void this.loading();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    this.destroyRef.onDestroy(() => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    });
   }
 
-  protected formatDate(ms: number) {
+  /** Manually refresh the list from the backend. */
+  protected refresh() {
+    void this.load();
+  }
+
+  protected formatDate(dateStr: string) {
     try {
-      return new Date(ms).toLocaleString();
+      return new Date(dateStr).toLocaleString();
     } catch {
       return '';
     }
   }
 
-  protected isExpired(job: ExportJob): boolean {
+  protected isExpired(job: DataExportRecordType): boolean {
     const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - job.created_at > EXPIRE_MS;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
   }
 
-  protected async downloadJob(job: ExportJob) {
+  protected downloadJob(job: DataExportRecordType) {
     if (this.isExpired(job)) {
-      this.alertSvc.showError('This export file has expired.');
+      this.alertSvc.showError('This export has expired (30+ days old).');
       return;
     }
-
-    try {
-      const csvContent = await get(`pc_export_file_${job.id}`);
-      if (!csvContent) {
-        this.alertSvc.showError('Export file content not found or expired.');
-        return;
-      }
-
-      const blob = new Blob([csvContent as string], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = job.filename || 'export.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Failed to download export file', e);
-      this.alertSvc.showError('Failed to download export file.');
+    if (job.status !== 'completed') {
+      this.alertSvc.showError('Export is not ready yet.');
+      return;
     }
+    // Stream download via the protected REST endpoint
+    const token = this.tokenSvc.getAuthToken();
+    const url = `${environment.apiUrl}/api/exports/download/${job.id}?token=${encodeURIComponent(token ?? '')}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = job.file_name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   private async load() {
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
-      const list = ((await get('pc_export_jobs')) as ExportJob[]) || [];
-
-      // Clean up/check expired files
-      const now = Date.now();
-      const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-      for (const job of list) {
-        if (now - job.created_at > EXPIRE_MS && job.status === 'completed') {
-          try {
-            await del(`pc_export_file_${job.id}`);
-          } catch {}
-        }
-      }
-
-      // newest first
-      list.sort((a, b) => b.created_at - a.created_at);
-      this.jobs.set(list);
+      const list = await (this.api as any).exports.list.query();
+      this.jobs.set(list ?? []);
+    } catch {
+      this.alertSvc.showError('Failed to load exports. Please try again.');
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 }
-
-type ExportJob = {
-  created_at: number;
-  details?: string;
-  id: string;
-  name: string;
-  status: 'in_progress' | 'completed' | 'failed';
-  filename?: string;
-};

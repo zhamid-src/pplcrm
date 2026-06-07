@@ -3,18 +3,7 @@ import type { ConfirmDialogService } from '../../../../services/shared-dialog.se
 import type { AlertService } from '../../alerts/alert-service';
 import type { loadingGate } from '../../../loading-gate';
 
-import { get, set } from 'idb-keyval';
-
 import { DataGridConfig } from '../datagrid.tokens';
-
-type ExportJob = {
-  id: string;
-  name: string;
-  status: 'in_progress' | 'completed' | 'failed';
-  created_at: number;
-  details?: string;
-  filename?: string;
-};
 
 @Injectable({ providedIn: 'root' })
 export class DataGridActionsService {
@@ -84,7 +73,10 @@ export class DataGridActionsService {
     alertSvc: AlertService;
     config: DataGridConfig;
     getRowsForExport?: () => Array<Record<string, any>>;
+    /** Synchronous full export (legacy, used only for displayed-count path) */
     requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
+    /** Queue a background export job. When provided, used for the "all rows" path. */
+    queueFullExport?: () => Promise<void>;
     displayedCount?: number;
     totalCount?: number;
   }) {
@@ -114,112 +106,57 @@ export class DataGridActionsService {
       exportAllData = wantsAll === true;
     }
 
-    if (!exportAllData && !deps.getRowsForExport) return;
-    if (exportAllData && !deps.requestFullExport) {
-      if (deps.getRowsForExport) {
-        exportAllData = false;
-      } else {
-        deps.alertSvc.showError(messages.exportFailed);
+    // --- "All rows" path: queue background job, return immediately ---
+    if (exportAllData) {
+      if (deps.queueFullExport) {
+        try {
+          await deps.queueFullExport();
+          deps.alertSvc.showSuccess(
+            'Export queued! Visit the Exports page to download when ready.',
+          );
+        } catch {
+          deps.alertSvc.showError(messages.exportFailed);
+        }
         return;
       }
+      // fallback: no queue callback, fall through to synchronous path
     }
 
-    let currentJobId: string | null = null;
-    try {
-      const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
-      const job: ExportJob = {
-        id: crypto.randomUUID(),
-        name: 'Grid CSV Export',
-        status: 'in_progress',
-        created_at: Date.now(),
-      };
-      jobs.push(job);
-      await set('pc_export_jobs', jobs);
-      currentJobId = job.id;
-      let csv = '';
-      let fileName = messages.exportFileName;
-      let rowCount = 0;
-      if (exportAllData && deps.requestFullExport) {
-        deps.alertSvc.showInfo(messages.exportInProgress);
-        const result = await deps.requestFullExport();
-        csv = result?.csv ?? '';
-        fileName = (result?.fileName && result.fileName.trim()) || fileName;
-        rowCount = result?.rowCount ?? 0;
-      } else {
-        const rows = deps.getRowsForExport?.() ?? [];
-        if (!rows.length) {
-          await this.markJobCompleted(job.id, 'completed', 'No rows to export');
-          return;
-        }
-        rowCount = rows.length;
-        const headers = Object.keys(rows[0]);
-        const escape = (v: any) => {
-          const s = v == null ? '' : String(v);
-          return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-        };
-        csv = [headers.join(',')]
-          .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
-          .join('\n');
-      }
+    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
+    if (!deps.getRowsForExport) return;
 
-      if (!csv) {
-        await this.markJobCompleted(job.id, 'failed', 'Export returned no data');
-        deps.alertSvc.showError(messages.exportFailed);
+    try {
+      const rows = deps.getRowsForExport();
+      if (!rows.length) {
+        deps.alertSvc.showInfo('No rows to export.');
         return;
       }
+      const rowCount = rows.length;
+      const headers = Object.keys(rows[0]);
+      const escape = (v: any) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n')
+          ? '"' + s.replace(/"/g, '""') + '"'
+          : s;
+      };
+      const csv = [headers.join(',')]
+        .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
+        .join('\n');
 
-      const finalFileName = fileName || 'grid-export.csv';
-
-      // Save CSV content to IndexedDB
-      await set(`pc_export_file_${job.id}`, csv);
-
+      const fileName = messages.exportFileName || 'export.csv';
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = finalFileName;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      deps.alertSvc.showSuccess(messages.exportReady);
-      const detail = exportAllData
-        ? rowCount ? `All rows (${rowCount})` : 'All rows'
-        : `Displayed rows (${rowCount})`;
-      await this.markJobCompleted(job.id, 'completed', detail, finalFileName);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(e);
+      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
+    } catch {
       deps.alertSvc.showError(messages.exportFailed);
-      if (currentJobId) {
-        await this.markJobCompleted(currentJobId, 'failed', 'Export failed');
-      }
-      try {
-        const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
-        const last = jobs[jobs.length - 1];
-        if (last && last.status === 'in_progress') {
-          last.status = 'failed';
-          last.details = 'Export failed';
-          await set('pc_export_jobs', jobs);
-        }
-      } catch {}
     }
-  }
-
-  private async markJobCompleted(
-    id: string,
-    status: ExportJob['status'],
-    details?: string,
-    filename?: string
-  ): Promise<void> {
-    try {
-      const jobs = ((await get('pc_export_jobs')) as unknown as ExportJob[]) || [];
-      const idx = jobs.findIndex((j) => j.id === id);
-      if (idx >= 0) {
-        jobs[idx] = { ...jobs[idx], status, details, filename };
-        await set('pc_export_jobs', jobs);
-      }
-    } catch {}
   }
 }
 
