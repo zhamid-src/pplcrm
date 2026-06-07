@@ -4,12 +4,13 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TokenService } from '../../../services/api/token-service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import type { DataExportRecordType } from '@common';
 import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-exports-page',
-  imports: [Icon],
+  imports: [Icon, SpinOnClickDirective],
   templateUrl: './exports-page.html',
 })
 export class ExportsPage extends TRPCService<any> {

@@ -6,8 +6,9 @@
     </div>
     <button
       id="exports-refresh-btn"
-      class="btn btn-sm btn-ghost gap-1"
+      class="btn btn-outline btn-sm gap-2 cursor-pointer"
       title="Refresh export list"
+      pcSpinOnClick
       [disabled]="_loading.visible()"
       (click)="refresh()"
     >

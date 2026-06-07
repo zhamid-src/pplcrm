@@ -10,8 +10,8 @@
         Overview of key performance metrics, email response rates, and contact database growth.
       </p>
     </div>
-    <button class="btn btn-outline btn-sm gap-2 cursor-pointer" (click)="loadStats()" [disabled]="isRefreshing()">
-      <pc-icon name="arrow-path" [size]="4" [class]="isRefreshing() ? 'animate-spin inline-block' : ''"></pc-icon>
+    <button class="btn btn-outline btn-sm gap-2 cursor-pointer" pcSpinOnClick (click)="loadStats()" [disabled]="isRefreshing()">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Reload Stats
     </button>
   </div>
