@@ -161,7 +161,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams & { issues?: string[] } = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags;
     const issues = input.issues || options.issues;
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
@@ -178,7 +178,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
         .$if(!!searchStr, (qb) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb.where(
             sql<boolean>`(
             LOWER(persons.first_name) LIKE ${text} OR

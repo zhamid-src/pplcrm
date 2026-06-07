@@ -164,7 +164,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams & { issues?: string[] } = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags;
     const issues = input.issues || options.issues;
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
@@ -185,7 +185,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           ]),
         )
         .$if(!!searchStr, (qb) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb.where(
             sql`(
               LOWER(households.city) LIKE ${text} OR
