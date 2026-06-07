@@ -30,11 +30,13 @@ export interface DataGridConfig {
     exportReady: string;
     exportNavigateWarning: string;
     exportFileName: string;
+    /** Entity key sent to the background export job (e.g. 'persons', 'households'). */
+    exportEntity: string;
   };
   pageSize: number;
 }
 
-export function provideDataGridConfig(overrides?: Partial<DataGridConfig>): Provider {
+export function provideDataGridConfig(overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> }): Provider {
   const merged: DataGridConfig = {
     ...DEFAULT_DATA_GRID_CONFIG,
     ...overrides,
@@ -80,5 +82,6 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     exportReady: 'Export ready. Your download should begin momentarily.',
     exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
     exportFileName: 'grid-export.csv',
+    exportEntity: '',
   },
 };

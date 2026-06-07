@@ -4,6 +4,7 @@ import { FormsService } from '@experiences/forms/services/forms-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-forms-grid',
@@ -25,7 +26,10 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: FormsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: FormsService },
+    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'forms-export.csv' } }),
+  ],
 })
 export class FormsGridComponent extends DataGrid<'web_forms', AddWebFormType> {
   protected col = [

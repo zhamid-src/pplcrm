@@ -4,6 +4,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { TeamsService } from '../services/teams-service';
 
 @Component({
@@ -28,7 +29,10 @@ import { TeamsService } from '../services/teams-service';
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: TeamsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: TeamsService },
+    provideDataGridConfig({ messages: { exportEntity: 'teams', exportFileName: 'teams-export.csv' } }),
+  ],
 })
 export class TeamsGridComponent extends DataGrid<'teams', UpdateTeamType> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {

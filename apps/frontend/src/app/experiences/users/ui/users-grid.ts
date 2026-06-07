@@ -4,6 +4,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -29,7 +30,10 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: AuthUsersService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: AuthUsersService },
+    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
+  ],
 })
 export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
   private readonly auth = inject(AuthService);

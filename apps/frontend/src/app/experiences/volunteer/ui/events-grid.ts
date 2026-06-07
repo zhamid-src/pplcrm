@@ -4,6 +4,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 
 @Component({
@@ -31,7 +32,10 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: VolunteerEventsFrontendService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: VolunteerEventsFrontendService },
+    provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
+  ],
 })
 export class EventsGridComponent extends DataGrid<'volunteer_events', UpdateVolunteerEventType> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {

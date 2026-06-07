@@ -46,7 +46,12 @@
             } @else if (j.status === 'completed') {
             <span class="badge badge-success badge-sm">Completed</span>
             } @else {
-            <span class="badge badge-error badge-sm" [title]="j.error ?? ''">Failed</span>
+            <div class="flex flex-col gap-0.5">
+              <span class="badge badge-error badge-sm">Failed</span>
+              @if (j.error) {
+              <span class="text-xs text-error/80 max-w-[200px] leading-tight">{{ j.error }}</span>
+              }
+            </div>
             }
           </td>
           <td class="text-right tabular-nums text-sm">{{ j.row_count ?? '—' }}</td>

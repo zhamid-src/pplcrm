@@ -3,6 +3,7 @@ import { UpdateMarketingEmailType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { NewslettersService } from '../services/newsletters-service';
 import { NewslettersDashboardComponent } from './newsletters-dashboard';
 
@@ -24,7 +25,10 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: NewslettersService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: NewslettersService },
+    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
+  ],
 })
 export class NewslettersGridComponent extends DataGrid<'newsletters', UpdateMarketingEmailType> {
   private readonly countFormatter = new Intl.NumberFormat(undefined, {
