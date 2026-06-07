@@ -8,6 +8,7 @@ export type CsvImportSummary = {
   errors: number;
   skipped: number;
   failed?: boolean;
+  queued?: boolean;
   message?: string;
   tag?: string;
 };

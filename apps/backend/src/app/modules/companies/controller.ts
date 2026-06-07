@@ -179,33 +179,38 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
 
+      // 1. Filter valid rows upfront
+      const validRows: any[] = [];
       for (const raw of chunk) {
         if (!raw.name || !raw.name.trim()) {
           results.skipped += 1;
-          continue;
+        } else {
+          validRows.push(raw);
         }
+      }
 
+      if (validRows.length > 0) {
         try {
-          await this.getRepo().transaction().execute(async (rowTrx) => {
-            const companyRow = {
-              tenant_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              name: raw.name.trim(),
-              description: raw.description ?? null,
-              website: raw.website ?? null,
-              email: raw.email ?? null,
-              phone: raw.phone ?? null,
-              industry: raw.industry ?? null,
-              notes: raw.notes ?? null,
-              file_id: import_id,
-            } as any;
-
-            await this.getRepo().add({ row: companyRow }, rowTrx);
+          // 2. Batch insert all valid company rows in one statement
+          const companyRows = validRows.map((raw) => ({
+            tenant_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            name: raw.name.trim(),
+            description: raw.description ?? null,
+            website: raw.website ?? null,
+            email: raw.email ?? null,
+            phone: raw.phone ?? null,
+            industry: raw.industry ?? null,
+            notes: raw.notes ?? null,
+            file_id: import_id,
+          }));
+          await this.getRepo().transaction().execute(async (trx) => {
+            await (trx as any).insertInto('companies').values(companyRows).execute();
           });
-          results.inserted += 1;
+          results.inserted += validRows.length;
         } catch (err: any) {
-          results.errors += 1;
+          results.errors += validRows.length;
           errorMessages.push(err?.message || String(err));
         }
       }
