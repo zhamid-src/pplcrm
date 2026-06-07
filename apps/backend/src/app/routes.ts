@@ -46,6 +46,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
   fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
 
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
 
@@ -90,9 +93,6 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
     // Register files download REST route
     protectedFastify.register(filesRoute, { prefix: '/api/files' });
-
-    // Register exports download REST route
-    protectedFastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
 
     protectedDone();
   });
