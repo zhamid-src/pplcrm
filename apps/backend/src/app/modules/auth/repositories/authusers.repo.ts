@@ -24,7 +24,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
     const tenantId = input.tenant_id;
-    const searchStr = typeof options.searchStr === 'string' ? options.searchStr.trim().toLowerCase() : '';
+    const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
@@ -37,7 +37,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
         .where('authusers.tenant_id', '=', tenantId)
         .$if(!!searchStr, (builder) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return builder.where(
             sql`(
               LOWER(authusers.email) LIKE ${text} OR

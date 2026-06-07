@@ -19,14 +19,14 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   ): Promise<{ rows: any[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb
         .where('volunteer_events.tenant_id', '=', tenantId)
         .$if(!!searchStr, (qb2) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb2.where(
             sql`(
               LOWER(volunteer_events.name) LIKE ${text} OR

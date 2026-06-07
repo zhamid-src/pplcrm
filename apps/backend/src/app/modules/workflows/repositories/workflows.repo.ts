@@ -17,7 +17,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
@@ -27,7 +27,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       qb
         .where('workflows.tenant_id', '=', tenantId)
         .$if(!!searchStr, (qb) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb.where(
             sql<boolean>`(
             LOWER(workflows.name) LIKE ${text} OR

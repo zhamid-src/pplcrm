@@ -24,7 +24,7 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
@@ -34,7 +34,7 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
       qb
         .where('web_forms.tenant_id', '=', tenantId)
         .$if(!!searchStr, (qb) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb.where(
             sql<boolean>`(
             LOWER(web_forms.name) LIKE ${text} OR

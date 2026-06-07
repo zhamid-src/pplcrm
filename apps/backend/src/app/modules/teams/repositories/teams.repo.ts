@@ -19,7 +19,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? Math.max(0, options.startRow) : 0;
@@ -40,7 +40,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         .leftJoin('authusers as lead_user', 'lead_user.id', 'teams.team_lead_user_id')
         .where('teams.tenant_id', '=', tenantId)
         .$if(!!searchStr, (builder) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return builder.where(
             sql`(
               LOWER(teams.name) LIKE ${text} OR

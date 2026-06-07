@@ -170,7 +170,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const options: JoinedQueryParams & { type?: 'tag' | 'issue' } = input.options || {};
     const tenantId = input.tenant_id;
-    const searchStr = options.searchStr?.toLowerCase();
+    const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
     const type = options.type;
 
@@ -186,7 +186,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .where('tags.tenant_id', '=', tenantId)
         .$if(!!type, (qb) => qb.where('tags.type', '=', type!))
         .$if(!!searchStr, (qb) => {
-          const text = `%${searchStr}%`;
+          const text = searchStr;
           return qb.where(
             sql<boolean>`(
             LOWER(tags.name) LIKE ${text} OR

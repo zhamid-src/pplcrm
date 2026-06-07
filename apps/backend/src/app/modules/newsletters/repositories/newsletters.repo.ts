@@ -12,7 +12,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     options?: QueryParams<'newsletters'>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const opts: QueryParams<'newsletters'> = options ?? {};
-    const searchStr = opts.searchStr?.toLowerCase?.();
+    const searchStr = this.normalizeSearch(opts.searchStr);
     const filterModel = ((opts as any)?.filterModel ?? {}) as Record<string, any>;
     const startRow =
       typeof opts.startRow === 'number' ? opts.startRow : typeof opts.offset === 'number' ? opts.offset : 0;
@@ -26,7 +26,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     const applyFilters = <QB extends ReturnType<typeof this.getSelect>>(qb: QB) =>
       qb
         .where('newsletters.tenant_id', '=', tenant_id as any)
-        .$if(!!searchStr, (q) => q.where(sql`LOWER(newsletters.name) LIKE ${'%' + searchStr + '%'}` as any))
+        .$if(!!searchStr, (q) => q.where(sql`LOWER(newsletters.name) LIKE ${searchStr}` as any))
         .$if(!!filterModel['name']?.value, (q) =>
           q.where('newsletters.name', 'ilike', `%${filterModel['name'].value}%`),
         )

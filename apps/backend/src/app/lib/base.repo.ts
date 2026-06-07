@@ -437,24 +437,30 @@ export class BaseRepository<T extends keyof Models> {
       }
     }
 
+    // Allow users to type * as a wildcard character; normalize to SQL %.
+    // The operator's own wrapping (startsWith → trailing %, contains → both, etc.)
+    // is always applied on top — Postgres collapses consecutive %% automatically,
+    // so 'zee*' with contains becomes '%zee%%' → effectively '%zee%'.
+    const normalized = String(val).replace(/\*/g, '%');
+
     switch (op) {
       case 'equals':
-        return query.where(column, 'ilike', val);
+        return query.where(column, 'ilike', normalized);
       case 'startsWith':
-        return query.where(column, 'ilike', `${val}%`);
+        return query.where(column, 'ilike', `${normalized}%`);
       case 'endsWith':
-        return query.where(column, 'ilike', `%${val}`);
+        return query.where(column, 'ilike', `%${normalized}`);
       case 'notContains':
-        return query.where(column, 'not ilike', `%${val}%`);
+        return query.where(column, 'not ilike', `%${normalized}%`);
       case 'notEquals':
-        return query.where(column, 'not ilike', val);
+        return query.where(column, 'not ilike', normalized);
       case 'isEmpty':
         return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
       case 'isNotEmpty':
         return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
       case 'contains':
       default:
-        return query.where(column, 'ilike', `%${val}%`);
+        return query.where(column, 'ilike', `%${normalized}%`);
     }
   }
 
@@ -474,25 +480,47 @@ export class BaseRepository<T extends keyof Models> {
       }
     }
 
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val).replace(/\*/g, '%');
+
     switch (op) {
       case 'equals':
-        return query.where(sql`${sqlExpression} ILIKE ${val}` as any);
+        return query.where(sql`${sqlExpression} ILIKE ${normalized}` as any);
       case 'startsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${val + '%'}` as any);
+        return query.where(sql`${sqlExpression} ILIKE ${normalized + '%'}` as any);
       case 'endsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + val}` as any);
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized}` as any);
       case 'notContains':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + val + '%'}` as any);
+        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}` as any);
       case 'notEquals':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${val}` as any);
+        return query.where(sql`${sqlExpression} NOT ILIKE ${normalized}` as any);
       case 'isEmpty':
         return query.where(sql`${sqlExpression} IS NULL OR ${sqlExpression} = ''` as any);
       case 'isNotEmpty':
         return query.where(sql`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''` as any);
       case 'contains':
       default:
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + val + '%'}` as any);
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized + '%'}` as any);
     }
+  }
+
+  /**
+   * Normalize a raw search string for use in an ILIKE pattern.
+   * Converts user-typed * wildcards to SQL % wildcards and always wraps
+   * the result with % on both ends so it behaves as a "contains" search.
+   * User-supplied * adds positional wildcards within the pattern.
+   *
+   * @example
+   *   normalizeSearch('zee')        → '%zee%'
+   *   normalizeSearch('zee*')       → '%zee%%'   (Postgres collapses to '%zee%')
+   *   normalizeSearch('zee*@gmail') → '%zee%@gmail%'
+   *   normalizeSearch('*zee')       → '%%zee%'   (collapses to '%zee%')
+   */
+  protected normalizeSearch(raw: string | null | undefined): string | undefined {
+    if (!raw || !raw.trim()) return undefined;
+    const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
+    return `%${lower}%`;
   }
 
   /**
@@ -537,18 +565,28 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: any) {
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val ?? '').replace(/\*/g, '%');
+
     const pattern = op || 'contains';
     switch (pattern) {
       case 'equals':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${val}` : eb(column, 'ilike', val);
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
       case 'startsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${val + '%'}` : eb(column, 'ilike', `${val}%`);
+        return isCast
+          ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}`
+          : eb(column, 'ilike', `${normalized}%`);
       case 'endsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + val}` : eb(column, 'ilike', `%${val}`);
+        return isCast
+          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}`
+          : eb(column, 'ilike', `%${normalized}`);
       case 'notContains':
-        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${'%' + val + '%'}` : eb(column, 'not ilike', `%${val}%`);
+        return isCast
+          ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'not ilike', `%${normalized}%`);
       case 'notEquals':
-        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${val}` : eb(column, 'not ilike', val);
+        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${normalized}` : eb(column, 'not ilike', normalized);
       case 'isEmpty':
       case 'empty':
         return isCast
@@ -561,7 +599,9 @@ export class BaseRepository<T extends keyof Models> {
           : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
       case 'contains':
       default:
-        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + val + '%'}` : eb(column, 'ilike', `%${val}%`);
+        return isCast
+          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'ilike', `%${normalized}%`);
     }
   }
 

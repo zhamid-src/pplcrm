@@ -29,9 +29,8 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   }
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
-    const searchStr = (options as any)?.searchStr?.toLowerCase?.();
+    const text = this.normalizeSearch((options as any)?.searchStr);
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
-    const text = searchStr ? `%${searchStr}%` : undefined;
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
