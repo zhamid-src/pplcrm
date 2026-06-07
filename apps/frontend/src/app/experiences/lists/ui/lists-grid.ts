@@ -10,6 +10,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-lists-grid',
@@ -33,7 +34,10 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       ></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: ListsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+  ],
 })
 export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
   private readonly refreshSvc = inject(ListsRefreshService);

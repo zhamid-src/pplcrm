@@ -8,12 +8,14 @@ const ENTITY_LABEL_MAP: Record<string, string> = {
   households: 'households',
   companies: 'companies',
   tags: 'tags',
+  issues: 'tags',
   tasks: 'tasks',
   lists: 'lists',
-  newsletters: 'newsletters',
+  newsletters: 'marketing_emails',
   teams: 'teams',
   users: 'authusers',
   volunteer: 'volunteer_events',
+  forms: 'web_forms',
   workflows: 'workflows',
 };
 

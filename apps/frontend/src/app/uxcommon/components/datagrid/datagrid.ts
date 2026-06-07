@@ -2153,7 +2153,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
     });
     await this.gridSvc.queueExport({
-      entity: this.config.messages.exportFileName.replace('.csv', '').replace('-export', '').replace(/-/g, '_'),
+      entity: this.config.messages.exportEntity || this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_'),
       options,
       columns: this.visibleColumnFields(),
       fileName: this.config.messages.exportFileName,

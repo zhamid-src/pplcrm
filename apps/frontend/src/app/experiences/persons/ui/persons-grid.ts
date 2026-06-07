@@ -19,6 +19,7 @@ import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-def
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 interface ParamsType {
   value: string[];
@@ -68,7 +69,10 @@ interface ParamsType {
   selector: 'pc-persons-grid',
   imports: [DataGrid, Icon, FormsModule, CsvImportComponent, GridHeaderComponent],
   templateUrl: './persons-grid.html',
-  providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+  ],
 })
 export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly utils = inject(DataGridUtilsService);

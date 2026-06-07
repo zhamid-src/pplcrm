@@ -819,6 +819,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const table = String(payload.table || payload.entity);
       let query = db.selectFrom(table as any).selectAll().where('tenant_id', '=', tenantId as any);
 
+      // Issues are tags with type='issue'
+      if (payload.entity === 'issues') {
+        query = query.where('type', '=', 'issue') as any;
+      }
+
       // Apply search string if provided
       const opts = payload.options ?? {};
       if (opts.searchStr) {

@@ -8,6 +8,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 /**
  * `TagsGridComponent` displays a data grid of tags with editable fields.
@@ -43,7 +44,10 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>
     </div>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: TagsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: TagsService },
+    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
+  ],
 })
 export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
   protected col = [

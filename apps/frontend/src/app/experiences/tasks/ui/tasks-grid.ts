@@ -8,6 +8,7 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-tasks-grid',
@@ -43,7 +44,10 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
       (closeSummary)="importSummary.set(null)"
     />
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: TasksService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
   private readonly auth = inject(AuthService);

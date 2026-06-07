@@ -3,6 +3,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { CompaniesService } from '../services/companies-service';
 
 @Component({
@@ -39,7 +40,10 @@ import { CompaniesService } from '../services/companies-service';
       (closeSummary)="importSummary.set(null)"
     />
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: CompaniesService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
+  ],
 })
 export class CompaniesGrid extends DataGrid<'companies', any> {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {

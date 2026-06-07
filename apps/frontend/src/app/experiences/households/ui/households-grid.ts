@@ -15,6 +15,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 interface ParamsType {
   value: string[];
@@ -65,7 +66,10 @@ interface ParamsType {
       </div>
     </pc-csv-importer>
   `,
-  providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+  ],
 })
 
 /**

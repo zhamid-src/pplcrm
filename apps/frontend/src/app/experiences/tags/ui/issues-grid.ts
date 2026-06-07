@@ -9,6 +9,7 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 import type { getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 /**
  * A thin wrapper over TagsService that forces `type: 'issue'` on every getAll/getAllWithCounts call.
@@ -53,7 +54,11 @@ class IssuesService extends TagsService {
       <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-issue"></pc-datagrid>
     </div>
   `,
-  providers: [IssuesService, { provide: AbstractAPIService, useExisting: IssuesService }],
+  providers: [
+    IssuesService,
+    { provide: AbstractAPIService, useExisting: IssuesService },
+    provideDataGridConfig({ messages: { exportEntity: 'issues', exportFileName: 'issues-export.csv' } }),
+  ],
 })
 export class IssuesGridComponent extends DataGrid<'tags', AddTagType> {
   protected col = [
