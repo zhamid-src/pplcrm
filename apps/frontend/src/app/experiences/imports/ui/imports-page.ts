@@ -6,10 +6,11 @@ import type { ImportListItem } from '@common';
 
 import { AlertService } from '../../../uxcommon/components/alerts/alert-service';
 import { ImportsService } from '../services/imports-service';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, SpinOnClickDirective],
   templateUrl: './imports-page.html',
   })
 export class ImportsPage {
