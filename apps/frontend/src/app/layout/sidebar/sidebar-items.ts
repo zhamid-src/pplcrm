@@ -214,14 +214,14 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'users',
       },
       {
-        name: 'Configuration',
-        route: '/configuration',
-        icon: 'cog-6-tooth',
-      },
-      {
         name: 'Billing',
         route: '/billing',
         icon: 'credit-card',
+      },
+      {
+        name: 'Configuration',
+        route: '/configuration',
+        icon: 'cog-6-tooth',
       },
     ],
   },
