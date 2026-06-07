@@ -361,6 +361,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         inserted: 0,
         errors: 0,
         skipped,
+        queued: true,
         tag: res?.tag,
         failed: false,
         message: msg,

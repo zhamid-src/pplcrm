@@ -90,9 +90,11 @@
     @if (!!summary() && !summary()!.failed) {
     <h3 class="text-lg font-bold mb-2">Import Summary</h3>
     <ul class="menu bg-base-100 rounded-box p-2">
+      @if (!summary()!.queued) {
       <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
       <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
       <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
+      }
       @if (summary()!.tag) {
       <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
       }

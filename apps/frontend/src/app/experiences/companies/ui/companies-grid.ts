@@ -118,6 +118,7 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
         inserted: 0,
         errors: 0,
         skipped,
+        queued: true,
         failed: false,
         message: msg,
       });

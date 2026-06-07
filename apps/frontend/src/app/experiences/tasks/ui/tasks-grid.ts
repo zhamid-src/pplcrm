@@ -173,6 +173,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
         inserted: 0,
         errors: 0,
         skipped,
+        queued: true,
         failed: false,
         message: msg,
       });
