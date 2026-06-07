@@ -8,6 +8,7 @@ import personsRoute from './modules/persons/routes/persons.route';
 import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
 import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
 import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
@@ -89,6 +90,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
     // Register files download REST route
     protectedFastify.register(filesRoute, { prefix: '/api/files' });
+
+    // Register exports download REST route
+    protectedFastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
 
     protectedDone();
   });

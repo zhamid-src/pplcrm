@@ -107,6 +107,26 @@ export const exportCsvResponse = z.object({
   rowCount: z.number(),
 });
 
+/** Input for queueing a full background export */
+export const queueExportInput = z.object({
+  entity: z.string().min(1),
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Shape of a data_exports record returned to the frontend */
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
 export const uuidSchema = z.string().uuid('Invalid UUID format');
 export const idSchema = dbIdSchema;

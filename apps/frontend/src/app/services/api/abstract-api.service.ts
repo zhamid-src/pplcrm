@@ -1,5 +1,5 @@
 import { signal, Service } from '@angular/core';
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
+import { DataExportRecordType, ExportCsvInputType, ExportCsvResponseType, getAllOptionsType, QueueExportInputType } from '@common';
 import { TRPCService } from './trpc-service';
 
 import { Models } from 'common/src/lib/kysely.models';
@@ -190,4 +190,8 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
   public abstract update(id: string, data: U): Promise<Partial<T>[] | unknown>;
 
   public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
+
+  public queueExport(input: QueueExportInputType): Promise<DataExportRecordType> {
+    return (this.api as any).exports.queue.mutate(input);
+  }
 }

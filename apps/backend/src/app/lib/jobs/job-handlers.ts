@@ -17,6 +17,8 @@ import { UserActivityRepo } from '../user-activity.repo';
 import { NewsletterEmailService } from '../mail/newsletter-mail.service';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { geocodeAndMapHousehold } from '../gis/geocoding';
+import { ExportsRepo } from '../../modules/exports/repositories/exports.repo';
+import { rowsToCsv } from '../csv';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
@@ -805,6 +807,75 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         max_attempts: 3,
       })
       .execute();
+  } else if (payload.type === 'export_csv') {
+    const exportsRepo = new ExportsRepo();
+    const exportId = String(payload.export_id);
+    const tenantId = String(payload.tenant_id);
+    try {
+      // Mark as processing
+      await exportsRepo.updateStatus(exportId, tenantId, 'processing');
+
+      // Fetch all rows for the entity
+      const table = String(payload.table || payload.entity);
+      let query = db.selectFrom(table as any).selectAll().where('tenant_id', '=', tenantId as any);
+
+      // Apply search string if provided
+      const opts = payload.options ?? {};
+      if (opts.searchStr) {
+        const like = `%${opts.searchStr}%`;
+        // Best-effort: try name, first_name/last_name depending on table
+        if (table === 'persons') {
+          query = query.where((eb: any) =>
+            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)])
+          ) as any;
+        } else if (table === 'households') {
+          query = query.where((eb: any) =>
+            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])
+          ) as any;
+        } else {
+          query = query.where('name' as any, 'ilike', like) as any;
+        }
+      }
+
+      // Apply sort
+      if (opts.sortModel?.length) {
+        for (const s of opts.sortModel) {
+          if (s?.colId) {
+            query = query.orderBy(s.colId as any, s.sort === 'desc' ? 'desc' : 'asc') as any;
+          }
+        }
+      } else {
+        query = query.orderBy('created_at' as any, 'desc') as any;
+      }
+
+      const rows = await query.execute();
+      const records = rows.map((r: any) => ({ ...(r as Record<string, unknown>) }));
+
+      // Determine columns
+      const requestedCols: string[] = Array.isArray(payload.columns) && payload.columns.length
+        ? payload.columns
+        : records.length > 0 ? Object.keys(records[0]) : [];
+
+      const csv = requestedCols.length ? rowsToCsv(records, requestedCols) : '';
+      const storageKey = `exports/${tenantId}/${exportId}.csv`;
+
+      if (csv) {
+        await storageService.upload(storageKey, Buffer.from(csv, 'utf8'), 'text/csv');
+      }
+
+      await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
+        rowCount: records.length,
+        storageKey: csv ? storageKey : undefined,
+      });
+
+      console.log(`Export job ${exportId} completed: ${records.length} rows exported.`);
+    } catch (err: any) {
+      console.error(`Export job ${exportId} failed:`, err);
+      await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
+        error: (err?.message || String(err)).substring(0, 500),
+      });
+      throw err;
+    }
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }
