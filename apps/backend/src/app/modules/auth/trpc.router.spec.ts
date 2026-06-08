@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AuthRouter } from './trpc.router';
 import { AuthController } from './controller';
+import { generateToken, hashToken } from '../../lib/token-hash';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -441,6 +442,8 @@ describe('AuthController Integration', () => {
     await db
       .insertInto('sessions')
       .values({
+        session_id: hashToken(generateToken()),
+        refresh_token: hashToken(generateToken()),
         user_id: user.id,
         tenant_id: user.tenant_id,
         ip_address: '127.0.0.1',
@@ -778,13 +781,15 @@ describe('AuthController Integration', () => {
     await db.updateTable('authusers').set({ verified: true, role: 'owner' }).where('id', '=', user.id).execute();
 
     const testSessionId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    const hashedTestSessionId = hashToken(testSessionId);
     // Clean up any stray session from previous failures
-    await db.deleteFrom('sessions').where('session_id', '=', testSessionId).execute();
-    // Create a mock active session
+    await db.deleteFrom('sessions').where('session_id', '=', hashedTestSessionId).execute();
+    // Create a mock active session — store the *hash* in DB, keep plaintext in auth payload
     await db
       .insertInto('sessions')
       .values({
-        session_id: testSessionId,
+        session_id: hashedTestSessionId,
+        refresh_token: hashToken(generateToken()),
         user_id: user.id,
         tenant_id: user.tenant_id,
         ip_address: '127.0.0.1',
@@ -831,15 +836,23 @@ describe('AuthController Integration', () => {
 
     // 4. Set email to new email again to test verification
     const newEmail2 = `self-new2-${Date.now()}@example.com`;
-    await controller.updateUser(authPayload, user.id, { email: newEmail2 });
 
-    const userBeforeVerify = await db
-      .selectFrom('authusers')
-      .selectAll()
-      .where('id', '=', user.id)
-      .executeTakeFirstOrThrow();
-    expect(userBeforeVerify.password_reset_code).toBeDefined();
-    const code = userBeforeVerify.password_reset_code!;
+    // Capture the plaintext reset code before it is hashed for storage.
+    // The DB now stores SHA-256 hashes; the plaintext is only returned once from the method.
+    const { AuthUsersRepo } = await import('./repositories/authusers.repo');
+    let plaintextCode: string | undefined;
+    const origAddCode = AuthUsersRepo.prototype.addPasswordResetCode;
+    const spy = vi.spyOn(AuthUsersRepo.prototype, 'addPasswordResetCode').mockImplementation(async function (this: any, ...args: any[]) {
+      const result = await origAddCode.apply(this, args as any);
+      plaintextCode = result?.password_reset_code;
+      return result;
+    });
+
+    await controller.updateUser(authPayload, user.id, { email: newEmail2 });
+    spy.mockRestore();
+
+    expect(plaintextCode).toBeDefined();
+    const code = plaintextCode!;
 
     // Verify code
     const verifyResult = await controller.verifyEmail(code);

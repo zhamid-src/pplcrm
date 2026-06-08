@@ -15,6 +15,7 @@ import { randomBytes } from 'crypto';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { hashToken, generateToken } from '../../lib/token-hash';
 
 import {
   AppError,
@@ -227,7 +228,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const user = await this.getRepo()
       .db.selectFrom('authusers')
       .select(['email', 'first_name', 'tenant_id'])
-      .where('password_reset_code', '=', code)
+      .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst();
 
     if (!user) {
@@ -276,7 +277,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const user = await repo.db
       .selectFrom('authusers')
       .select(['id', 'previous_email', 'previous_role'])
-      .where('password_reset_code', '=', code)
+      .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst();
 
     if (!user) {
@@ -971,12 +972,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     // Delete the old session
     if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession, trx);
 
+    // Generate plaintext tokens — only their hashes are persisted in the DB.
+    const plainSessionId = generateToken();
+    const plainRefreshToken = generateToken();
+
     const row = {
       user_id: input.user_id,
       tenant_id: input.tenant_id,
       ip_address: input.ipAddress || '',
       user_agent: input.userAgent || '',
       status: 'active',
+      session_id: hashToken(plainSessionId),
+      refresh_token: hashToken(plainRefreshToken),
     } as OperationDataType<'sessions', 'insert'>;
 
     const currentSession = await this.sessions.add({ row }, trx);
@@ -984,8 +991,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (!currentSession) {
       throw new InternalError('Session creation failed');
     }
-
-    const session_id = currentSession.session_id;
 
     const key = process.env['SHARED_SECRET'];
     if (!key) {
@@ -1002,9 +1007,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         user_id: input.user_id,
         tenant_id: input.tenant_id,
         name: input.name,
-        session_id,
+        session_id: plainSessionId,        // plaintext in JWT; hash is in DB
       });
-      return { auth_token, refresh_token: currentSession.refresh_token };
+      return { auth_token, refresh_token: plainRefreshToken }; // plaintext to client
     } catch (err) {
       throw new InternalError('Token creation failed', undefined, { cause: err });
     }
