@@ -1,7 +1,7 @@
 /**
  * Grid component for viewing and editing lists of people or households.
  */
-import { Component, effect, inject, untracked } from '@angular/core';
+import { Component, OnDestroy, effect, inject, untracked } from '@angular/core';
 import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -39,7 +39,7 @@ import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.to
     provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
   ],
 })
-export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
+export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implements OnDestroy {
   private readonly refreshSvc = inject(ListsRefreshService);
   private readonly listsSvc = inject(ListsService);
   private readonly alerts = inject(AlertService);
@@ -107,7 +107,8 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
         const isDynamic = p?.data?.is_dynamic;
         if (!isDynamic) return '—';
         const status = p?.data?.status;
-        if (status === 'refreshing') {
+        const isLocallyRefreshing = this.refreshingIds.has(p?.data?.id);
+        if (status === 'refreshing' || isLocallyRefreshing) {
           return `
            <span class="loading loading-ring loading-lg text-primary"></span>
           `;
@@ -124,9 +125,10 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
       },
       onCellClicked: (p: any) => {
         const isDynamic = p?.data?.is_dynamic;
-        const isRefreshing = p?.data?.status === 'refreshing';
+        const id = p?.data?.id;
+        const isRefreshing = p?.data?.status === 'refreshing' || this.refreshingIds.has(id);
         if (isDynamic && !isRefreshing) {
-          void this.refreshList(p.data.id);
+          void this.refreshList(id, p);
         }
       },
     },
@@ -143,12 +145,60 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> {
     { field: 'created_by', headerName: 'Created By' },
   ];
 
-  private async refreshList(id: string) {
+  /** IDs of lists that the user clicked refresh on but haven't finished yet. */
+  private readonly refreshingIds = new Set<string>();
+
+  /** Poll intervals keyed by list ID. */
+  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  private async refreshList(id: string, cellParams: any) {
     try {
+      this.refreshingIds.add(id);
+      // Re-render the cell immediately to show the loading spinner.
+      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
+
       this.alerts.showSuccess('Refresh job scheduled in background');
       await this.listsSvc.refreshList(id);
+      this.pollRefreshStatus(id);
     } catch (e: any) {
+      this.refreshingIds.delete(id);
+      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
       this.alerts.showError(e?.message ?? String(e));
+    }
+  }
+
+  private pollRefreshStatus(id: string) {
+    const existing = this.pollIntervals.get(id);
+    if (existing) clearInterval(existing);
+
+    const interval = setInterval(async () => {
+      try {
+        const list = await this.listsSvc.getById(id);
+        if ((list as any)?.status !== 'refreshing') {
+          clearInterval(interval);
+          this.pollIntervals.delete(id);
+          this.refreshingIds.delete(id);
+          if ((list as any)?.status === 'failed') {
+            this.alerts.showError('List refresh failed in background');
+          } else {
+            this.alerts.showSuccess('List refreshed successfully');
+          }
+          // Reload the full grid so all columns (size, last_refreshed_at, etc.) update.
+          this.refresh();
+        }
+      } catch {
+        clearInterval(interval);
+        this.pollIntervals.delete(id);
+        this.refreshingIds.delete(id);
+      }
+    }, 1500);
+
+    this.pollIntervals.set(id, interval);
+  }
+
+  public override ngOnDestroy() {
+    for (const interval of this.pollIntervals.values()) {
+      clearInterval(interval);
     }
   }
 }
