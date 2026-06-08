@@ -194,7 +194,6 @@ export class ProfilePage implements OnInit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    // Reset so the same file can be re-selected after removal
     input.value = '';
     await this.uploadAvatar(file);
   }

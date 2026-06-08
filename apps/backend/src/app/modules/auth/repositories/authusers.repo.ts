@@ -84,7 +84,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         'authusers.updated_at',
         sql<string>`COALESCE(authusers.last_name, profiles.last_name)`.as('effective_last_name'),
         sql<string>`profiles.last_name`.as('profile_last_name'),
-        sql<string>`profiles.avatar_file_id`.as('avatar_file_id'),
       ])
       .$if(sorts.length > 0, (qb) => {
         return sorts.reduce((acc, sort) => {
@@ -124,7 +123,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       verified: this.toBoolean(row.verified),
       created_at: row.created_at ?? null,
       updated_at: row.updated_at ?? null,
-      avatar_file_id: row.avatar_file_id ?? null,
     }));
 
     return { rows, count };
@@ -148,7 +146,10 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
    * @param trx - Optional transaction context.
    * @returns The **plaintext** reset code (send this to the user, never store it).
    */
-  public async addPasswordResetCode(id: string, trx?: Transaction<Models>): Promise<{ password_reset_code: string } | undefined> {
+  public async addPasswordResetCode(
+    id: string,
+    trx?: Transaction<Models>,
+  ): Promise<{ password_reset_code: string } | undefined> {
     const plaintext = generateToken();
     const hash = hashToken(plaintext);
     await this.getUpdate(trx)
