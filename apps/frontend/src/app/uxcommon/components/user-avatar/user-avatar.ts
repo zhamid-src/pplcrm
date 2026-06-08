@@ -27,7 +27,7 @@ import { NgClass } from '@angular/common';
             [src]="avatarUrl()!"
             [alt]="name() + ' avatar'"
             class="w-full h-full object-cover"
-            [attr.referrerpolicy]="'no-referrer'"
+            referrerpolicy="no-referrer"
           />
         </div>
       } @else {

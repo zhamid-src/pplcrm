@@ -59,11 +59,6 @@ export interface IAuthUser {
    * The role of the user (owner, admin, user)
    */
   role?: string | null;
-
-  /**
-   * Pre-computed download URL for the user's profile picture, or null.
-   */
-  avatar_url?: string | null;
 }
 
 export interface IUserStatsSnapshot {
@@ -98,7 +93,6 @@ export interface IAuthUserRecord extends IAuthUser {
   updated_at: Date | null;
   previous_email?: string | null;
   previous_role?: string | null;
-  avatar_url?: string | null;
   notification_preferences?: {
     mention_in_comment: boolean;
     mention_in_comment_in_app: boolean;
