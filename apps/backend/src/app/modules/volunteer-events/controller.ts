@@ -35,6 +35,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
     const existing = await this.getRepo().db.selectFrom('volunteer_events')
       .select('id')
+      .where('tenant_id', '=', auth.tenant_id as any)
       .where('slug', '=', payload.slug)
       .executeTakeFirst();
     if (existing) {
@@ -87,6 +88,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     if (payload.slug) {
       const existing = await this.getRepo().db.selectFrom('volunteer_events')
         .select('id')
+        .where('tenant_id', '=', auth.tenant_id as any)
         .where('slug', '=', payload.slug)
         .where('id', '!=', id as any)
         .executeTakeFirst();

@@ -80,7 +80,7 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `STARRED`,
+    name: `SHORTCUTS`,
     type: 'subheading',
     hidden: true,
   },
@@ -116,8 +116,7 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: `COMMUNICATIONS`,
-    short_name: 'COMMS',
+    name: `MESSAGING`,
     type: 'subheading',
     children: [
       {
@@ -143,23 +142,13 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: `TEAMS`,
+    name: `OUTREACH`,
     type: 'subheading',
     children: [
       {
         name: 'Teams',
         route: '/teams',
         icon: 'user-group',
-      },
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'rectangle-stack',
-      },
-      {
-        name: `Board`,
-        route: '/board',
-        icon: 'view-kanban',
       },
       {
         name: 'Volunteers',
@@ -174,10 +163,19 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: `ADMIN`,
+    name: 'TOOLS',
     type: 'subheading',
-    collapsed: true,
     children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'rectangle-stack',
+      },
+      {
+        name: `Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
       {
         name: 'Exports',
         route: '/export',
@@ -208,6 +206,14 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/issues',
         icon: 'shield-exclamation',
       },
+    ],
+  },
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
       {
         name: 'Users',
         route: '/users',
