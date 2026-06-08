@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2020",
+    "strict": false
+  },
+  "include": ["rules/**/*.cjs", "index.cjs"]
+}

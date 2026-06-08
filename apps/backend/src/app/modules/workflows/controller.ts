@@ -285,6 +285,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         const person = await trx
           .selectFrom('persons')
           .select(['first_name', 'last_name'])
+          .where('tenant_id', '=', tenantId as any)
           .where('id', '=', enrollment.person_id)
           .executeTakeFirst();
 
