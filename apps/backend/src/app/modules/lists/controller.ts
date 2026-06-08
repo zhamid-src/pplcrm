@@ -317,18 +317,22 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     // Filter newsletters in JS where their target_lists matches this list
     const targetedNewsletters = newsletters.filter((n) => {
       if (!n.target_lists) return false;
-      try {
-        const parsed = JSON.parse(n.target_lists);
-        if (Array.isArray(parsed)) {
-          return parsed.includes(id);
-        }
-        if (parsed && typeof parsed === 'object') {
-          const include = Array.isArray(parsed.include) ? parsed.include : [];
-          return include.includes(id);
-        }
-      } catch {
-        const parts = n.target_lists.split(',').map((s) => s.trim());
-        return parts.includes(id);
+      // After migration 2026-06-31, target_lists is a jsonb column returned as a parsed object.
+      // Support legacy string values too (pre-migration rows or test data).
+      let parsed: unknown = n.target_lists;
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch { /* fall through */ }
+      }
+      if (Array.isArray(parsed)) {
+        return parsed.includes(id);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+        return include.includes(id);
+      }
+      if (typeof parsed === 'string') {
+        return parsed.split(',').map((s) => s.trim()).includes(id);
       }
       return false;
     });

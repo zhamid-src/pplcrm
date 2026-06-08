@@ -24,6 +24,7 @@ type JsonArray = JsonValue[];
 type JsonObject = { [K in string]?: JsonValue };
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
+/** After migration 2026-06-31 all timestamp columns are timestamptz. */
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 type Generated<T> =
   T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
@@ -183,7 +184,9 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   admin_id: string;
   createdby_id: string;
   description: string | null;
+  /** Stored as `date` in the DB (was `time` prior to migration 2026-06-31). */
   startdate: string | null;
+  /** Stored as `date` in the DB (was `time` prior to migration 2026-06-31). */
   enddate: string | null;
   name: string;
   json: Json | null;
@@ -374,8 +377,10 @@ interface Newsletters extends RecordType {
   subject: string | null;
   preview_text: string | null;
   audience_description: string | null;
-  target_lists: string | null;
-  segments: string | null;
+  /** jsonb after migration 2026-06-31. Shape: { include: string[], exclude: string[] } */
+  target_lists: Json | null;
+  /** jsonb after migration 2026-06-31. Shape: { include: string[], exclude: string[] } */
+  segments: Json | null;
   total_recipients: number;
   delivered_count: number;
   bounce_count: number;

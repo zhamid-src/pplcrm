@@ -49,36 +49,35 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     let includeTags: string[] = [];
     let excludeTags: string[] = [];
 
-    try {
-      if (newsletter.target_lists) {
-        const listsObj = JSON.parse(newsletter.target_lists);
-        if (Array.isArray(listsObj)) {
-          includeListIds = listsObj;
-        } else if (listsObj && typeof listsObj === 'object') {
-          includeListIds = Array.isArray(listsObj.include) ? listsObj.include : [];
-          excludeListIds = Array.isArray(listsObj.exclude) ? listsObj.exclude : [];
-        }
+    // target_lists is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    const parseJsonField = (value: unknown): unknown => {
+      if (value == null) return null;
+      if (typeof value === 'string') {
+        try { return JSON.parse(value); } catch { return value; }
       }
-    } catch (e) {
-      if (newsletter.target_lists) {
-        includeListIds = newsletter.target_lists.split(',').map((s: string) => s.trim()).filter(Boolean);
-      }
+      return value; // already parsed object from jsonb column
+    };
+
+    const listsObj = parseJsonField(newsletter.target_lists);
+    if (Array.isArray(listsObj)) {
+      includeListIds = listsObj as string[];
+    } else if (listsObj && typeof listsObj === 'object') {
+      const obj = listsObj as Record<string, unknown>;
+      includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof listsObj === 'string' && listsObj) {
+      includeListIds = (listsObj as string).split(',').map((s) => s.trim()).filter(Boolean);
     }
 
-    try {
-      if (newsletter.segments) {
-        const segmentsObj = JSON.parse(newsletter.segments);
-        if (Array.isArray(segmentsObj)) {
-          includeTags = segmentsObj;
-        } else if (segmentsObj && typeof segmentsObj === 'object') {
-          includeTags = Array.isArray(segmentsObj.include) ? segmentsObj.include : [];
-          excludeTags = Array.isArray(segmentsObj.exclude) ? segmentsObj.exclude : [];
-        }
-      }
-    } catch (e) {
-      if (newsletter.segments) {
-        includeTags = newsletter.segments.split(',').map((s: string) => s.trim()).filter(Boolean);
-      }
+    const segmentsObj = parseJsonField(newsletter.segments);
+    if (Array.isArray(segmentsObj)) {
+      includeTags = segmentsObj as string[];
+    } else if (segmentsObj && typeof segmentsObj === 'object') {
+      const obj = segmentsObj as Record<string, unknown>;
+      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof segmentsObj === 'string' && segmentsObj) {
+      includeTags = (segmentsObj as string).split(',').map((s) => s.trim()).filter(Boolean);
     }
 
     const db = this.getRepo().db;
