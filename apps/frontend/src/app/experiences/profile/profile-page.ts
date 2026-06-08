@@ -4,22 +4,28 @@ import { form, required, email, FormField, disabled } from '@angular/forms/signa
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { AuthService } from '../../auth/auth-service';
+import { TokenService } from '../../services/api/token-service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, FormField, Icon],
+  imports: [DatePipe, FormField, Icon, UserAvatarComponent],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
+  private readonly tokens = inject(TokenService);
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
 
   protected readonly payload = signal({
     email: '',
@@ -183,6 +189,66 @@ export class ProfilePage implements OnInit {
     }
   }
 
+  /** Triggered when user picks a file via the hidden input. */
+  protected async onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-selected after removal
+    input.value = '';
+    await this.uploadAvatar(file);
+  }
+
+  protected async uploadAvatar(file: File) {
+    const token = this.tokens.getAuthToken();
+    if (!token) return;
+
+    this.uploadingAvatar.set(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const resp = await fetch(`${environment.apiUrl}/api/auth/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error((body as any)?.error || 'Upload failed');
+      }
+
+      const data: any = await resp.json();
+      this.avatarUrl.set(data.avatar_url ?? null);
+      this.alerts.showSuccess('Profile picture updated');
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    const token = this.tokens.getAuthToken();
+    if (!token) return;
+
+    this.uploadingAvatar.set(true);
+    try {
+      const resp = await fetch(`${environment.apiUrl}/api/auth/avatar`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error('Remove failed');
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
   private async load() {
     this.loading.set(true);
     this.error.set(null);
@@ -196,6 +262,7 @@ export class ProfilePage implements OnInit {
       const user = await this.auth.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);
+      this.avatarUrl.set((user as any).avatar_url ?? null);
       this.setForm(user);
       this.form().reset();
     } catch (err: any) {

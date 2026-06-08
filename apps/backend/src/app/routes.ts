@@ -1,6 +1,7 @@
 import { FastifyPluginCallback } from 'fastify';
 
 import authRoute from './modules/auth/routes/auth.route';
+import avatarRoute from './modules/auth/routes/avatar.route';
 import emailsRoute from './modules/emails/routes/emails.route';
 import emailsApiRoute from './modules/emails/routes/emails-api.route';
 import householdsRoute from './modules/households/routes/households.route';
@@ -84,6 +85,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
     // Register authentication routes under /auth
     protectedFastify.register(authRoute, { prefix: '/auth/' });
+
+    // Register avatar upload/delete route
+    protectedFastify.register(avatarRoute, { prefix: '/api/auth/avatar' });
 
     // Register email routes
     protectedFastify.register(emailsRoute, { prefix: '/v1/inbox' });

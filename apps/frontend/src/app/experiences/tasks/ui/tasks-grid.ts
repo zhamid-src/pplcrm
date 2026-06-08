@@ -63,6 +63,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   private userIds: string[] = [];
   private userLabels: string[] = [];
   private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
 
   // Fields we will accept from CSV for future import support
   protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
@@ -131,6 +132,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     try {
       const users = await this.auth.getUsers();
       this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
       this.userIds = users.map((u) => String(u.id));
       this.userLabels = users.map((u) => `${u.first_name}`);
     } catch {
@@ -283,9 +285,18 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   private renderAssignedCell(value: string | null | undefined) {
     const v = value == null ? '' : String(value);
     const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : v;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
     if (isUnassigned) {
       return `<span class="badge badge-error badge-sm">${label}</span>`;
+    }
+    const avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${avatarUrl}" alt="${label}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${label}</span>
+        </div>
+      `;
     }
     const initial = label.slice(0, 1).toUpperCase() || '?';
     const colors = [
@@ -317,7 +328,17 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     if (!label) {
       return `<span class="text-base-content/30">—</span>`;
     }
-    const initial = label.slice(0, 1).toUpperCase() || '?';
+    const resolvedName = this.usersById.get(label) ?? label;
+    const avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${avatarUrl}" alt="${resolvedName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${resolvedName}</span>
+        </div>
+      `;
+    }
+    const initial = resolvedName.slice(0, 1).toUpperCase() || '?';
     const colors = [
       'bg-blue-500/20 text-blue-700 dark:text-blue-300',
       'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
@@ -326,7 +347,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       'bg-pink-500/20 text-pink-700 dark:text-pink-300',
     ];
     let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
     const colorClass = colors[sum % colors.length];
 
     return `
@@ -336,7 +357,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
             <span>${initial}</span>
           </div>
         </div>
-        <span class="text-xs font-medium">${label}</span>
+        <span class="text-xs font-medium">${resolvedName}</span>
       </div>
     `;
   }
