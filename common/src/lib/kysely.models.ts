@@ -280,6 +280,7 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
 
 interface Profiles extends RecordType, AddressType {
   auth_id: string;
+  avatar_file_id: string | null;
   email: string | null;
   email2: string | null;
   mobile: string | null;

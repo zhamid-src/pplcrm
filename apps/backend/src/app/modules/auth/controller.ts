@@ -95,8 +95,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       tenant_id: auth.tenant_id,
       options: sanitizedOptions,
     });
+    const baseUrl = this.buildBaseUrl();
     return {
-      rows: result.rows.map((row) => this.sanitizeUser(row)),
+      rows: result.rows.map((row) => ({
+        ...this.sanitizeUser(row),
+        avatar_url: row['avatar_file_id'] ? `${baseUrl}/api/files/download/${row['avatar_file_id']}` : null,
+      })),
       count: result.count,
     };
   }
@@ -1147,6 +1151,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       }
     }
 
+    const avatarFileId = record.profile?.avatar_file_id ?? record.avatar_file_id ?? null;
+    const baseUrl = this.buildBaseUrl();
+    const avatar_url = avatarFileId ? `${baseUrl}/api/files/download/${avatarFileId}` : null;
+
     return {
       id: record.id != null ? String(record.id) : '',
       email: record.email ?? '',
@@ -1160,8 +1168,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       updated_at: this.coerceDate(record.updated_at),
       previous_email: record.previous_email ?? null,
       previous_role: record.previous_role ?? null,
+      avatar_url,
       notification_preferences: notificationPreferences,
     };
+  }
+
+  private buildBaseUrl(): string {
+    const port = process.env['PORT'] || process.env['API_PORT'] || '3000';
+    const host = process.env['API_HOST'] || 'localhost';
+    return `http://${host}:${port}`;
   }
 
   private async buildUserStats(auth: IAuthKeyPayload, userId: string) {

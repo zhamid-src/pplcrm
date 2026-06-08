@@ -20,17 +20,62 @@
 
       <!-- User Summary Section -->
       <div class="flex flex-col gap-6 px-6 pb-6 md:flex-row md:items-end md:px-8 md:pb-8 -mt-10">
-        <!-- Initials Avatar -->
-        <div class="avatar placeholder">
-          <div
-            class="w-24 h-24 rounded-full grid place-items-center ring ring-base-100 ring-offset-base-100 bg-gradient-to-tr from-primary to-secondary text-primary-content text-3xl font-bold shadow-md"
+        <!-- Avatar (click to upload) -->
+        <div class="relative group shrink-0">
+          <!-- Hidden file input -->
+          <input
+            id="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="sr-only"
+            (change)="onAvatarFileChange($event)"
+          />
+
+          <!-- Avatar display -->
+          <label
+            for="avatar-file-input"
+            class="cursor-pointer block relative"
+            [class.pointer-events-none]="uploadingAvatar()"
           >
-            <span>{{ initials() }}</span>
-          </div>
+            <pc-user-avatar
+              [name]="displayName()"
+              [avatarUrl]="avatarUrl()"
+              [size]="24"
+            />
+
+            <!-- Hover overlay: camera icon -->
+            @if (!uploadingAvatar()) {
+              <div
+                class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              >
+                <pc-icon name="user-circle" [size]="8" class="text-white" />
+              </div>
+            }
+
+            <!-- Upload spinner overlay -->
+            @if (uploadingAvatar()) {
+              <div
+                class="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center"
+              >
+                <span class="loading loading-spinner loading-sm text-white"></span>
+              </div>
+            }
+          </label>
+
+          <!-- Remove photo link -->
+          @if (avatarUrl() && !uploadingAvatar()) {
+            <button
+              type="button"
+              class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
+              (click)="removeAvatar()"
+            >
+              Remove photo
+            </button>
+          }
         </div>
 
         <!-- User Identity Info -->
-        <div class="flex-1 space-y-1">
+        <div class="flex-1 space-y-1 mt-1">
           <div class="flex flex-wrap items-center gap-2">
             <h1 class="text-3xl font-bold tracking-tight">{{ displayName() }}</h1>
             <div class="flex items-center gap-1.5">
@@ -49,6 +94,7 @@
           <p class="text-base-content/60">{{ detail()?.email }}</p>
         </div>
       </div>
+
     </div>
 
     @if (detail()?.previous_email) {
