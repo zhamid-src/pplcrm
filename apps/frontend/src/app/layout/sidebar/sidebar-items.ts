@@ -61,7 +61,7 @@ export interface ISidebarItem {
    * Whether this is a component or a heading. If it's a heading then it's
    * not clickable
    */
-  type?: 'item' | 'subheading';
+  type?: 'item' | 'subheading' | 'bookmark';
 }
 
 /**
@@ -80,12 +80,14 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `SHORTCUTS`,
-    type: 'subheading',
+    name: `BOOKMARKS`,
+    short_name: 'PINS',
+    type: 'bookmark',
     hidden: true,
   },
   {
-    name: `CONTACTS`,
+    name: `CONSTITUENCY`,
+    short_name: 'DATA',
     type: 'subheading',
     children: [
       {
@@ -116,7 +118,7 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: `MESSAGING`,
+    name: `ENGAGE`,
     type: 'subheading',
     children: [
       {
@@ -165,6 +167,7 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: 'TOOLS',
     type: 'subheading',
+    collapsed: true,
     children: [
       {
         name: `Tasks`,

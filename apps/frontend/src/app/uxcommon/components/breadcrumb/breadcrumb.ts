@@ -25,8 +25,11 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
           <pc-icon
             [name]="getIcon()"
             [size]="4"
-            class="cursor-pointer"
+            class="cursor-pointer hover:text-primary"
+            [class.text-primary]="favourite()"
             [class.opacity-40]="!canToggleFavourite()"
+            (mouseenter)="hovered.set(true)"
+            (mouseleave)="hovered.set(false)"
             (click)="toggleFavourite()"
           ></pc-icon>
         </li>
@@ -56,7 +59,8 @@ export class Breadcrumb {
   });
 
   private currentItem?: ISidebarItem;
-  private favourite = signal(false);
+  protected favourite = signal(false);
+  protected hovered = signal(false);
 
   /**
    * Array of current breadcrumb segments based on URL.
@@ -96,7 +100,8 @@ export class Breadcrumb {
   }
 
   protected getIcon() {
-    return this.favourite() ? 'star-filled' : 'star';
+    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
+    return 'bookmark';
   }
 
   private handleNavigationChange(url: string) {
