@@ -5,6 +5,7 @@ import { SelectQueryBuilder, Transaction, UpdateResult, sql } from 'kysely';
 
 import { GetOperandType, Models } from 'common/src/lib/kysely.models';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { generateToken, hashToken } from '../../../lib/token-hash';
 
 /**
  * Repository for managing operations on the `authusers` table.
@@ -135,21 +136,28 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
   }
 
   /**
-   * Generates a new password reset code and timestamp for a user.
+   * Generates a new password reset code for a user.
+   *
+   * A random 32-byte token is generated; its SHA-256 hash is stored in the DB
+   * while the plaintext is returned to the caller for inclusion in the email
+   * link. This way a DB dump cannot be used to hijack reset flows.
    *
    * @param id - The user's ID.
    * @param trx - Optional transaction context.
-   * @returns The newly generated reset code.
+   * @returns The **plaintext** reset code (send this to the user, never store it).
    */
-  public addPasswordResetCode(id: string, trx?: Transaction<Models>) {
-    return this.getUpdate(trx)
+  public async addPasswordResetCode(id: string, trx?: Transaction<Models>): Promise<{ password_reset_code: string } | undefined> {
+    const plaintext = generateToken();
+    const hash = hashToken(plaintext);
+    await this.getUpdate(trx)
       .set({
-        password_reset_code: sql<string>`gen_random_uuid()`,
+        password_reset_code: hash,
         password_reset_code_created_at: sql`now()`,
       })
       .where('id', '=', id)
-      .returning(['password_reset_code'])
-      .executeTakeFirst();
+      .execute();
+    // Return the plaintext so callers can embed it in emails
+    return { password_reset_code: plaintext };
   }
 
   /**
@@ -191,19 +199,19 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
 
   /**
    * Gets the timestamp when a given password reset code was generated.
+   * Hashes the incoming plaintext code before querying.
    *
-   * @param code - The password reset code.
+   * @param code - The **plaintext** password reset code from the URL.
    * @param trx - Optional transaction context.
    * @returns Object with `password_reset_code_created_at` field.
    */
   public getPasswordResetCodeTime(code: string, trx?: Transaction<Models>) {
-    const codeColumn = 'password_reset_code';
-
     const options = {
       columns: ['password_reset_code_created_at'] as (keyof Models['authusers'])[],
     };
-
-    return this.getSelectWithColumns(options, trx).where(codeColumn, '=', code).executeTakeFirstOrThrow();
+    return this.getSelectWithColumns(options, trx)
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirstOrThrow();
   }
 
   /**
@@ -223,7 +231,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         password_reset_code_created_at: null,
         verified: true,
       })
-      .where('password_reset_code', '=', code)
+      .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst() as unknown as UpdateResult;
   }
 
@@ -237,7 +245,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         password_reset_code: null,
         password_reset_code_created_at: null,
       })
-      .where('password_reset_code', '=', code)
+      .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst() as unknown as UpdateResult;
   }
 }

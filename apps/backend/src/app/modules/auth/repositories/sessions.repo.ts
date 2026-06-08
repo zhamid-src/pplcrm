@@ -5,6 +5,7 @@ import { Transaction } from 'kysely';
 
 import { GetOperandType, Models } from 'common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
 
 /**
  * Repository for managing user sessions in the `sessions` table.
@@ -19,13 +20,15 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
 
   /**
    * Delete a session by its session ID.
+   * The incoming `session_id` is the plaintext value from the JWT; the DB
+   * stores its SHA-256 hash, so we hash before querying.
    *
-   * @param session_id - The session ID to delete
+   * @param session_id - The plaintext session ID from the JWT
    * @param trx - Optional Kysely transaction
    * @returns A promise resolving to the deletion result
    */
   public async deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
-    const result = await this.getDelete(trx).where('session_id', '=', session_id).executeTakeFirst();
+    const result = await this.getDelete(trx).where('session_id', '=', hashToken(session_id)).executeTakeFirst();
     return Number(result?.numDeletedRows ?? 0);
   }
 
