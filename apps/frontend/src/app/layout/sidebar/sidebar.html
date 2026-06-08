@@ -41,7 +41,7 @@
   <!-- Sidebar Items -->
   @for (item of items; track item.name) {
   <div class="flex-none pl-2" [class.hidden]="!!item.hidden">
-    @if (item['type'] === 'subheading') {
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <!-- Subheading with collapsible children -->
     <div
       class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"

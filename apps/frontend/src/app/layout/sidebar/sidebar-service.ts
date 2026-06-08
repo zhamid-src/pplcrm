@@ -3,7 +3,6 @@
  */
 import { signal, Service } from '@angular/core';
 
-
 import { ISidebarItem, SidebarItems } from './sidebar-items';
 
 @Service()
@@ -17,10 +16,9 @@ export class SidebarService {
   private readonly drawerStateSubject = signal<DrawerStates>(this.getState());
   private readonly isMobileOpenSubject = signal<boolean>(false);
   private favourites = new Set<string>();
-  private items = SidebarItems;
-
-  
-  
+  private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
+  private get items() { return this.itemsSignal(); }
+  private set items(value: ISidebarItem[]) { this.itemsSignal.set(value); }
 
   constructor() {
     this.initializeCollapsedDefaults(this.items);
@@ -49,7 +47,7 @@ export class SidebarService {
    * @returns Array of sidebar items.
    */
   public getItems() {
-    return this.items;
+    return this.itemsSignal;
   }
 
   /**
@@ -156,7 +154,7 @@ export class SidebarService {
    * Toggles the mobile drawer open or closed.
    */
   public toggleMobile() {
-    this.isMobileOpenSubject.update(v => !v);
+    this.isMobileOpenSubject.update((v) => !v);
   }
 
   private applyFavouritesToItems(items: ISidebarItem[]) {
@@ -262,21 +260,26 @@ export class SidebarService {
   }
 
   private rebuildFavouritesSection() {
-    const favouritesSection = this.items.find((item) => item.type === 'subheading' && item.name === 'STARRED');
+    const currentItems = this.itemsSignal();
+    const favouritesSectionIndex = currentItems.findIndex((item) => item.type === 'bookmark');
 
-    if (!favouritesSection) {
+    if (favouritesSectionIndex === -1) {
       return;
     }
 
+    const favouritesSection = currentItems[favouritesSectionIndex];
     const favouriteRoutes = new Set(this.favourites);
 
-    const favouriteItems = this.flattenItems(this.items)
-      .filter((item) => item !== favouritesSection && item.parent !== favouritesSection)
+    const favouriteItems = this.flattenItems(currentItems)
+      .filter((item) => item.type !== 'bookmark' && item.parent?.type !== 'bookmark')
       .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
       .map((item) => this.cloneForFavourite(item, favouritesSection));
 
-    favouritesSection.children = favouriteItems;
-    favouritesSection.hidden = favouriteItems.length === 0;
+    // Replace the section object (and the array) to trigger signal reactivity.
+    const updatedSection: ISidebarItem = { ...favouritesSection, children: favouriteItems, hidden: favouriteItems.length === 0 };
+    const updatedItems = [...currentItems];
+    updatedItems[favouritesSectionIndex] = updatedSection;
+    this.itemsSignal.set(updatedItems);
   }
 
   /**

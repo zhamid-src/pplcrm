@@ -40,7 +40,7 @@ export class Sidebar {
    */
   protected get items() {
     const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems();
+    const allItems = this.sidebarSvc.getItems()();
     if (role === 'user') {
       return allItems.map((item) => {
         if (item.children) {
