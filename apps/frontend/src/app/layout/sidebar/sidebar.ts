@@ -46,9 +46,7 @@ export class Sidebar {
         if (item.children) {
           return {
             ...item,
-            children: item.children.filter(
-              (child) => child.name !== 'Users' && child.name !== 'Configuration' && child.name !== 'Billing',
-            ),
+            children: item.children.filter((child) => !child.adminOnly),
           };
         }
         return item;
