@@ -1,11 +1,5 @@
 import { Service } from '@angular/core';
-import {
-  AddTeamType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTeamType,
-  getAllOptionsType,
-} from '@common';
+import { AddTeamType, ExportCsvInputType, ExportCsvResponseType, UpdateTeamType, getAllOptionsType } from '@common';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -42,6 +36,8 @@ export interface TeamAssignmentInfo {
 
 @Service()
 export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
+  protected override readonly endpointName = 'teams';
+
   public add(row: AddTeamType) {
     return this.api.teams.add.mutate(row) as Promise<TeamDetail>;
   }
@@ -55,17 +51,7 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   }
 
   public count(): Promise<number> {
-    return this.api.teams.getAll
-      .query({ startRow: 0, endRow: 1 })
-      .then((res: { count: number }) => res.count ?? 0);
-  }
-
-  public delete(id: string): Promise<boolean> {
-    return this.api.teams.delete.mutate(id);
-  }
-
-  public deleteMany(ids: string[]): Promise<boolean> {
-    return Promise.all(ids.map((id) => this.delete(id))).then((results) => results.every(Boolean));
+    return this.api.teams.getAll.query({ startRow: 0, endRow: 1 }).then((res: { count: number }) => res.count ?? 0);
   }
 
   public detachTag(_id: string, _tag_name: string) {

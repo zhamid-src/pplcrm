@@ -1,5 +1,11 @@
 import { signal, Service } from '@angular/core';
-import { DataExportRecordType, ExportCsvInputType, ExportCsvResponseType, getAllOptionsType, QueueExportInputType } from '@common';
+import {
+  DataExportRecordType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  getAllOptionsType,
+  QueueExportInputType,
+} from '@common';
 import { TRPCService } from './trpc-service';
 
 import { Models } from 'common/src/lib/kysely.models';
@@ -38,6 +44,9 @@ import { Models } from 'common/src/lib/kysely.models';
  */
 @Service()
 export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
+  /** The tRPC router endpoint name for this service. */
+  protected abstract readonly endpointName: string;
+
   /** Increments each time a refresh is requested. Consumers can effect() on this. */
   public readonly refreshCount = signal(0);
 
@@ -85,7 +94,13 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param id - The unique identifier of the record to delete
    * @returns Promise resolving to true if deletion was successful, false otherwise
    */
-  public abstract delete(id: string): Promise<boolean>;
+  public async delete(id: string): Promise<boolean> {
+    const endpoint = this.api[this.endpointName];
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${this.endpointName}" not found on tRPC client.`);
+    }
+    return (await endpoint.delete.mutate(id)) !== null;
+  }
 
   /**
    * Deletes multiple records from the database in a batch operation.
@@ -93,7 +108,17 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param ids - Array of unique identifiers of records to delete
    * @returns Promise resolving to true if all deletions were successful, false otherwise
    */
-  public abstract deleteMany(ids: string[]): Promise<boolean>;
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    const endpoint = this.api[this.endpointName];
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${this.endpointName}" not found on tRPC client.`);
+    }
+    if ('deleteMany' in endpoint) {
+      return (await endpoint.deleteMany.mutate(ids)) !== null;
+    }
+    const results = await Promise.all(ids.map((id) => this.delete(id)));
+    return results.every(Boolean);
+  }
 
   /**
    * Detaches a tag from a specific record.
@@ -102,7 +127,11 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param tag_name - The name of the tag to detach
    * @returns Promise resolving to true if detachment was successful, never if operation fails
    */
-  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<boolean | Record<string, unknown>>;
+  public abstract detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<boolean | Record<string, unknown>>;
 
   /**
    * Retrieves all records from the database with optional filtering and pagination.

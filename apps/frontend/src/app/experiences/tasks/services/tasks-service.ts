@@ -5,6 +5,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
+  protected override readonly endpointName = 'tasks';
+
   public add(row: AddTaskType) {
     return this.api.tasks.add.mutate(row);
   }
@@ -19,14 +21,6 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 
   public count(): Promise<number> {
     return this.api.tasks.count.query();
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.tasks.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return (await this.api.tasks.deleteMany.mutate(ids)) !== null;
   }
 
   public detachTag(_id: string, _tag_name: string) {

@@ -4,6 +4,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class CompaniesService extends AbstractAPIService<'companies', any> {
+  protected override readonly endpointName = 'companies';
+
   public add(row: any) {
     return this.api.companies.add.mutate(row);
   }
@@ -18,14 +20,6 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 
   public count(): Promise<number> {
     return Promise.resolve(0);
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.companies.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return await this.api.companies.deleteMany.mutate(ids);
   }
 
   public detachTag(_id: string, _tag_name: string) {

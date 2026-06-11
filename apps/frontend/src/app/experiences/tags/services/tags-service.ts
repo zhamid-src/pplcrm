@@ -12,6 +12,8 @@ import { Tags } from 'common/src/lib/kysely.models';
  */
 @Service()
 export class TagsService extends AbstractAPIService<'tags', AddTagType> {
+  protected override readonly endpointName = 'tags';
+
   /**
    * Adds a new tag to the backend.
    *
@@ -47,8 +49,8 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return this.api.tags.count.query();
   }
 
-  public async delete(id: string): Promise<boolean> {
-    const res = Boolean(await this.api.tags.delete.mutate(id));
+  public override async delete(id: string): Promise<boolean> {
+    const res = await super.delete(id);
     this.triggerRefresh();
     return res;
   }
@@ -59,8 +61,8 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
    * @param ids - The array of tag IDs to delete.
    * @returns `true` if deletion was successful, otherwise `false`.
    */
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    const res = Boolean(await this.api.tags.deleteMany.mutate(ids));
+  public override async deleteMany(ids: string[]): Promise<boolean> {
+    const res = await super.deleteMany(ids);
     this.triggerRefresh();
     return res;
   }

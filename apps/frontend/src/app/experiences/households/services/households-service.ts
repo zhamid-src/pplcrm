@@ -14,6 +14,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
  */
 @Service()
 export class HouseholdsService extends AbstractAPIService<'households', never> {
+  protected override readonly endpointName = 'households';
+
   /**
    * Add a new household to the database.
    * @param household The household data to be added.
@@ -48,24 +50,6 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
    */
   public count(): Promise<number> {
     return this.api.households.count.query();
-  }
-
-  /**
-   * Delete a household by ID.
-   * @param id Household ID.
-   * @returns A promise resolving to true if deletion was successful.
-   */
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.households.delete.mutate(id)) !== null;
-  }
-
-  /**
-   * Delete multiple households by IDs.
-   * @param ids Array of household IDs.
-   * @returns A promise resolving to true if deletion was successful.
-   */
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return (await this.api.households.deleteMany.mutate(ids)) !== null;
   }
 
   /**

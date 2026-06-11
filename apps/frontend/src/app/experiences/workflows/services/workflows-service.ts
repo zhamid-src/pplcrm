@@ -11,6 +11,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWorkflowType> {
+  protected override readonly endpointName = 'workflows';
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Export CSV is not supported for workflows.'));
   }
@@ -29,17 +31,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 
   public count(): Promise<number> {
     return this.api.workflows.count.query();
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return this.api.workflows.delete.mutate(id);
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    for (const id of ids) {
-      await this.delete(id);
-    }
-    return true;
   }
 
   public detachTag(_id: string, _tag_name: string) {
