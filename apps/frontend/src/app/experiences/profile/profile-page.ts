@@ -1,6 +1,7 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
+import { FormsModule } from '@angular/forms';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -9,7 +10,7 @@ import { AuthService } from '../../auth/auth-service';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, FormField, Icon, UserAvatarComponent],
+  imports: [DatePipe, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {
@@ -23,6 +24,19 @@ export class ProfilePage implements OnInit {
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
   protected readonly avatarUrl = signal<string | null>(null);
+
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
+
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
 
   protected readonly payload = signal({
     email: '',
@@ -187,22 +201,112 @@ export class ProfilePage implements OnInit {
   }
 
   /** Triggered when user picks a file via the hidden input. */
-  protected async onAvatarFileChange(event: Event) {
+  protected onAvatarFileChange(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    this.cropFileName = file.name;
     input.value = '';
-    await this.uploadAvatar(file);
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
   }
 
-  protected async uploadAvatar(file: File) {
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  /** Render the cropped image on canvas and upload as WebP */
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
     this.uploadingAvatar.set(true);
+
     try {
-      const data = await this.auth.uploadAvatar(file);
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
       this.avatarUrl.set(data.avatar_url ?? null);
-      this.alerts.showSuccess('Profile picture updated');
+      this.alerts.showSuccess('Profile picture updated successfully');
     } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to upload avatar');
+      this.alerts.showError(err?.message || 'Failed to crop/upload avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }

@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed, } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { Navbar } from './navbar';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { FullScreenService } from '../../services/fullscreen.service';
@@ -24,32 +25,34 @@ describe('Navbar Component', () => {
 
   beforeEach(async () => {
     initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockImplementation(async () => {});
-    
+
     mockAuthSvc = {
       signOut: vi.fn(),
-      currentUser: vi.fn().mockReturnValue({ name: 'Test User' })
+      currentUser: vi.fn().mockReturnValue({ name: 'Test User' }),
+      getUserSignal: vi.fn().mockReturnValue(signal({ name: 'Test User' })),
+      resolveAvatarUrl: vi.fn().mockImplementation((url) => url),
     };
-    
+
     mockFullScreenSvc = {
       isFullScreenMode: vi.fn().mockReturnValue(false),
-      toggleFullScreen: vi.fn()
+      toggleFullScreen: vi.fn(),
     };
-    
+
     mockSearchSvc = {
       clearSearch: vi.fn(),
       doSearchImmediate: vi.fn(),
-      doSearch: vi.fn()
+      doSearch: vi.fn(),
     };
-    
+
     mockSidebarSvc = {
       isMobileOpen: vi.fn().mockReturnValue(false),
-      toggleMobile: vi.fn()
+      toggleMobile: vi.fn(),
     };
-    
+
     mockThemeSvc = {
       theme: vi.fn().mockReturnValue('light'),
       getTheme: vi.fn().mockReturnValue('light'),
-      toggleTheme: vi.fn()
+      toggleTheme: vi.fn(),
     };
 
     mockNotificationsSvc = {
@@ -74,7 +77,7 @@ describe('Navbar Component', () => {
         { provide: ThemeService, useValue: mockThemeSvc },
         { provide: NotificationsService, useValue: mockNotificationsSvc },
         { provide: EmailActionsStore, useValue: mockEmailActionsStore },
-      ]
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Navbar);
@@ -120,9 +123,9 @@ describe('Navbar Component', () => {
   it('should show search bar and set focus', async () => {
     component['showSearchBar']();
     expect(component['searchBarVisible']()).toBe(true);
-    
+
     fixture.detectChanges();
-    await new Promise(r => setTimeout(r, 1 + 20)); // wait for queueMicrotask to execute
+    await new Promise((r) => setTimeout(r, 1 + 20)); // wait for queueMicrotask to execute
     // Checking focus is difficult without mounting to real DOM, but we can verify the signal.
   });
 
@@ -149,7 +152,7 @@ describe('Navbar Component', () => {
   it('should update search string and call search on input', () => {
     const mockEvent = { target: { value: 'query' } } as unknown as Event;
     component['onSearchInput'](mockEvent);
-    
+
     expect(component['searchStr']()).toBe('query');
     expect(mockSearchSvc.doSearch).toHaveBeenCalledWith('query');
   });
@@ -177,9 +180,9 @@ describe('Navbar Component', () => {
   it('should handle Ctrl+K to open search bar', () => {
     const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true });
     vi.spyOn(event, 'preventDefault');
-    
+
     component.handleKeyDown(event);
-    
+
     expect(event.preventDefault).toHaveBeenCalled();
     expect(component['searchBarVisible']()).toBe(true);
   });
@@ -187,10 +190,10 @@ describe('Navbar Component', () => {
   it('should handle Escape to close search bar', () => {
     component['showSearchBar']();
     component['searchStr'].set('test');
-    
+
     const event = new KeyboardEvent('keydown', { key: 'Escape' });
     component.handleKeyDown(event);
-    
+
     expect(component['searchBarVisible']()).toBe(false);
     expect(component['searchStr']()).toBe('');
   });
@@ -215,7 +218,7 @@ describe('Navbar Component', () => {
     mockNotificationsSvc.getUnreadCount.mockResolvedValue(4);
     mockNotificationsSvc.getLatest.mockResolvedValue([
       { id: '1', title: 'New 1' },
-      { id: '2', title: 'New 2' }
+      { id: '2', title: 'New 2' },
     ]);
 
     await component['refreshCount']();
@@ -223,7 +226,7 @@ describe('Navbar Component', () => {
     expect(component.unreadCount()).toBe(4);
     expect(component.notifications()).toEqual([
       { id: '1', title: 'New 1' },
-      { id: '2', title: 'New 2' }
+      { id: '2', title: 'New 2' },
     ]);
   });
 
@@ -234,7 +237,7 @@ describe('Navbar Component', () => {
 
     mockNotificationsSvc.getLatest.mockResolvedValue([
       { id: '1', title: 'Notif 1' },
-      { id: '2', title: 'Notif 2' }
+      { id: '2', title: 'Notif 2' },
     ]);
 
     await component['loadMore']();
@@ -242,7 +245,7 @@ describe('Navbar Component', () => {
     expect(mockNotificationsSvc.getLatest).toHaveBeenCalledWith({ limit: 5, offset: 1 });
     expect(component.notifications()).toEqual([
       { id: '1', title: 'Notif 1' },
-      { id: '2', title: 'Notif 2' }
+      { id: '2', title: 'Notif 2' },
     ]);
     expect(component.hasMore()).toBe(false);
   });
@@ -264,7 +267,7 @@ describe('Navbar Component', () => {
   it('should update local state and mark all as read when markAllAsRead is called', async () => {
     component.notifications.set([
       { id: '1', read: false },
-      { id: '2', read: false }
+      { id: '2', read: false },
     ]);
     component.unreadCount.set(2);
 
@@ -272,7 +275,7 @@ describe('Navbar Component', () => {
     await component['markAllAsRead'](event);
 
     expect(mockNotificationsSvc.markAllRead).toHaveBeenCalled();
-    expect(component.notifications().every(n => n.read)).toBe(true);
+    expect(component.notifications().every((n) => n.read)).toBe(true);
     expect(component.unreadCount()).toBe(0);
   });
 
