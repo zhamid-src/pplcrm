@@ -162,7 +162,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[] } = input.options || {};
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags;
@@ -177,6 +177,15 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('households.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_households')
+              .select('household_id')
+              .where('list_id', '=', options.listId!)
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
         .where('households.tenant_id', '=', tenantId)
         .where((eb) =>
           eb.or([

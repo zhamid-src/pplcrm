@@ -83,6 +83,10 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.getListStats.query(id);
   }
 
+  public getMemberCount(id: string): Promise<number> {
+    return this.api.lists.getMemberCount.query(id);
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.lists.exportCsv.mutate(input);
   }

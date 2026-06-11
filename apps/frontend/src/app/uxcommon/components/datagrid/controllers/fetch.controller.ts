@@ -15,6 +15,7 @@ export class FetchController {
     sortCol: string | null;
     sortDir: 'asc' | 'desc' | null;
     advancedFilterModel?: any;
+    listId?: string | null;
 
     // dependencies
     gridSvc: {
@@ -52,6 +53,7 @@ export class FetchController {
         sortDir: opts.sortDir,
         includeArchived: opts.archiveMode,
         advancedFilterModel: opts.advancedFilterModel,
+        listId: opts.listId,
       });
       const data = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
       const incoming = data.rows ?? [];
@@ -79,6 +81,7 @@ export class FetchController {
     limitToTags: string[];
     limitToIssues?: string[];
     advancedFilterModel?: any;
+    listId?: string | null;
     gridSvc: {
       getAll(o: any): Promise<{ rows: any[]; count: number }>;
       getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
@@ -90,6 +93,7 @@ export class FetchController {
       tags: opts.limitToTags,
       issues: opts.limitToIssues,
       advancedFilterModel: opts.advancedFilterModel,
+      listId: opts.listId ?? undefined,
     };
     const { rows } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
     const filteredRows = opts.rowCanSelect ? (rows ?? []).filter(opts.rowCanSelect) : (rows ?? []);

@@ -48,6 +48,7 @@ import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 import { GridTagFilterService } from './services/grid-tag-filter.service';
 import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { ListsService } from '@experiences/lists/services/lists-service';
 import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
 // Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
@@ -152,6 +153,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
+  private readonly dgListsSvc = inject(ListsService, { optional: true });
   /** Set of row IDs currently showing the green "saved" flash animation */
   protected readonly flashedRowIds = signal<Set<string>>(new Set());
   protected readonly countRowSelected = computed(() =>
@@ -398,6 +400,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
   public showToolbar = input<boolean>(true);
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
+  public listId = input<string | null>(null);
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
@@ -448,6 +451,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
   public clearAllIssuesVisible() {
     this.tagFilter.clearAllIssuesVisible();
+  }
+
+  public selectedListId = signal<string | null>(null);
+  public availableLists = signal<any[]>([]);
+  public activeListId = computed(() => this.listId() || this.selectedListId());
+  public readonly showListFilter = computed(() => {
+    const entity = this.config.messages.exportEntity;
+    return (entity === 'persons' || entity === 'households') && !!this.dgListsSvc;
+  });
+
+  public selectListFilter(id: string) {
+    this.selectedListId.set(id);
+    this.loadPage(0);
+  }
+
+  public clearListFilter() {
+    this.selectedListId.set(null);
+    this.loadPage(0);
   }
 
   // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
@@ -607,6 +628,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         }
       });
     });
+
+    effect(() => {
+      this.listId();
+      untracked(() => {
+        if (this._initialized) {
+          this.doRefresh();
+        }
+      });
+    });
     // Virtualizer count sync handled by controller
     // Pin offsets recompute centralized in PinningController
   }
@@ -656,6 +686,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       tagOptionsSvc: this.dgTagOptionsSvc,
       doRefresh: () => this.doRefresh(),
     });
+    if (this.showListFilter()) {
+      try {
+        const listsResult = await this.dgListsSvc!.getAll();
+        const entity = this.config.messages.exportEntity;
+        const expectedObject = entity === 'persons' ? 'people' : 'households';
+        const rows = listsResult.rows ?? listsResult;
+        const filtered = rows.filter((l: any) => l.object === expectedObject);
+        this.availableLists.set(filtered);
+      } catch (err) {
+        console.error('Failed to load lists for filter:', err);
+      }
+    }
     this.selectionStickyWidth.set(this.selectionColumnWidthPx);
     // Initialize persistence key
     const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
@@ -1773,6 +1815,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         limitToTags: this.selectedTags(),
         limitToIssues: this.selectedIssues(),
         advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
+        listId: this.activeListId(),
         gridSvc: this.gridSvc,
         rowCanSelect: this.rowCanSelect(),
       });
@@ -2115,6 +2158,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortCol: this.sortCol(),
       sortDir: this.sortDir(),
       advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
+      listId: this.activeListId(),
       gridSvc: this.gridSvc,
       dataSvc: this.dataSvc,
       getRows: () => this.rows(),
@@ -2151,9 +2195,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       sortDir: this.sortDir(),
       includeArchived: this.archiveMode(),
       advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
+      listId: this.activeListId(),
     });
     await this.gridSvc.queueExport({
-      entity: this.config.messages.exportEntity || this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_'),
+      entity:
+        this.config.messages.exportEntity || this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_'),
       options,
       columns: this.visibleColumnFields(),
       fileName: this.config.messages.exportFileName,
