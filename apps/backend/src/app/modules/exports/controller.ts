@@ -34,7 +34,7 @@ export class ExportsController {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const fileName = (input.fileName?.trim()) || `${entityKey}-export-${ts}.csv`;
+    const fileName = input.fileName?.trim() || `${entityKey}-export-${ts}.csv`;
     const columns = Array.isArray(input.columns) && input.columns.length ? input.columns : null;
 
     const exportRecord = await this.repo.create({
@@ -78,6 +78,11 @@ export class ExportsController {
       error: null,
       created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
       updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      createdBy: {
+        id: auth.user_id,
+        name: auth.name || null,
+        email: null,
+      },
     };
   }
 
@@ -86,16 +91,26 @@ export class ExportsController {
    */
   public async list(auth: IAuthKeyPayload) {
     const rows = await this.repo.list(auth.tenant_id);
-    return rows.map((r: any) => ({
-      id: String(r.id),
-      entity: String(r.entity),
-      file_name: String(r.file_name),
-      status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
-      row_count: r.row_count != null ? Number(r.row_count) : null,
-      error: r.error ?? null,
-      created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-      updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
-    }));
+    return rows.map((r: any) => {
+      const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
+      return {
+        id: String(r.id),
+        entity: String(r.entity),
+        file_name: String(r.file_name),
+        status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
+        row_count: r.row_count != null ? Number(r.row_count) : null,
+        error: r.error ?? null,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+        createdBy: r.user_id
+          ? {
+              id: r.user_id,
+              name: name || null,
+              email: r.creator_email || null,
+            }
+          : null,
+      };
+    });
   }
 
   /**

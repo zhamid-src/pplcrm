@@ -7,15 +7,15 @@ import crypto from 'crypto';
 const files = new FilesController();
 
 export const FilesRouter = router({
-  getAll: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
 
   getUploadUrl: authProcedure
-    .input(z.object({
-      filename: z.string(),
-      mimeType: z.string().nullable().optional(),
-    }))
+    .input(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string().nullable().optional(),
+      }),
+    )
     .query(async ({ input, ctx }) => {
       const fileUUID = crypto.randomUUID();
       const storageKey = `uploads/${ctx.auth.tenant_id}/${fileUUID}_${input.filename}`;
@@ -24,29 +24,23 @@ export const FilesRouter = router({
     }),
 
   registerFile: authProcedure
-    .input(z.object({
-      filename: z.string(),
-      mimeType: z.string().nullable().optional(),
-      sizeBytes: z.number().nullable().optional(),
-      storageKey: z.string(),
-      sha256Hex: z.string().nullable().optional(),
-    }))
+    .input(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string().nullable().optional(),
+        sizeBytes: z.number().nullable().optional(),
+        storageKey: z.string(),
+        sha256Hex: z.string().nullable().optional(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
-      return files.add({
-        tenant_id: ctx.auth.tenant_id,
-        filename: input.filename,
-        mime_type: input.mimeType || null,
-        size_bytes: input.sizeBytes || null,
-        storage_key: input.storageKey,
-        sha256_hex: input.sha256Hex || null,
-        uploaded_by: ctx.auth.user_id,
-      });
+      return files.registerFile(input, ctx.auth);
     }),
-  
+
   delete: authProcedure
     .input(idSchema)
     .mutation(({ input, ctx }) => files.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  
+
   deleteMany: authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => files.deleteMany(ctx.auth.tenant_id, input, ctx.auth.user_id)),

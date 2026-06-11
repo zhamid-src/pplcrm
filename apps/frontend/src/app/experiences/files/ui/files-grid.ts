@@ -24,17 +24,8 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
           </p>
         </div>
         <div class="flex gap-2 items-center">
-          <input
-            #fileInput
-            type="file"
-            class="hidden"
-            (change)="onFileSelectedForUpload($event)"
-          />
-          <button 
-            class="btn btn-primary btn-sm gap-2" 
-            [disabled]="isUploading()"
-            (click)="fileInput.click()"
-          >
+          <input #fileInput type="file" class="hidden" (change)="onFileSelectedForUpload($event)" />
+          <button class="btn btn-primary btn-sm gap-2" [disabled]="isUploading()" (click)="fileInput.click()">
             @if (isUploading()) {
               <span class="loading loading-spinner loading-xs"></span>
               Uploading...
@@ -58,88 +49,103 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
 
       <!-- Loading State -->
       @if (isLoading()) {
-      <div class="flex flex-col items-center justify-center py-20">
-        <span class="loading loading-spinner loading-lg text-primary"></span>
-        <p class="text-base-content/60 mt-4">Loading files...</p>
-      </div>
+        <div class="flex flex-col items-center justify-center py-20">
+          <span class="loading loading-spinner loading-lg text-primary"></span>
+          <p class="text-base-content/60 mt-4">Loading files...</p>
+        </div>
       }
 
       <!-- Empty State -->
       @if (!isLoading() && filteredFiles().length === 0) {
-      <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
-        <div class="card-body items-center text-center py-12">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-          <h2 class="card-title text-base-content/70">No files found</h2>
-          <p class="text-sm text-base-content/50 mt-1">
-            There are no files uploaded or matching your search criteria.
-          </p>
+        <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
+          <div class="card-body items-center text-center py-12">
+            <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+            <h2 class="card-title text-base-content/70">No files found</h2>
+            <p class="text-sm text-base-content/50 mt-1">
+              There are no files uploaded or matching your search criteria.
+            </p>
+          </div>
         </div>
-      </div>
       }
 
       <!-- Grid / Table View -->
       @if (!isLoading() && filteredFiles().length > 0) {
-      <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-        <table class="table w-full">
-          <thead>
-            <tr class="bg-base-200/50">
-              <th>Filename</th>
-              <th>MIME Type</th>
-              <th>Size</th>
-              <th>Uploaded Date</th>
-              <th class="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (file of filteredFiles(); track file.id) {
-            <tr class="hover:bg-base-200/30 transition-all duration-200">
-              <td>
-                <div class="flex items-center gap-3">
-                  <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="6"></pc-icon>
-                  <span class="font-semibold text-base-content">{{ file.filename }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="badge badge-neutral text-xs font-mono">{{ file.mime_type || 'unknown' }}</span>
-              </td>
-              <td>
-                <span class="text-sm text-base-content/70">{{ formatBytes(file.size_bytes) }}</span>
-              </td>
-              <td>
-                <span class="text-sm text-base-content/70">{{ file.created_at | date:'medium' }}</span>
-              </td>
-              <td class="text-right">
-                <div class="flex justify-end gap-2">
-                  <button 
-                    class="btn btn-sm btn-circle btn-ghost text-primary" 
-                    title="Download file"
-                    (click)="downloadFile(file)"
-                  >
-                    <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                  </button>
-                  <button 
-                    class="btn btn-sm btn-circle btn-ghost text-error" 
-                    title="Delete file"
-                    (click)="deleteFile(file)"
-                  >
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                  </button>
-                </div>
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
+        <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+          <table class="table w-full">
+            <thead>
+              <tr class="bg-base-200/50">
+                <th>Filename</th>
+                <th>MIME Type</th>
+                <th>Size</th>
+                <th>Uploaded By</th>
+                <th>Uploaded Date</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (file of filteredFiles(); track file.id) {
+                <tr class="hover:bg-base-200/30 transition-all duration-200">
+                  <td>
+                    <div class="flex items-center gap-3">
+                      <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="6"></pc-icon>
+                      <span class="font-semibold text-base-content">{{ file.filename }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="badge badge-neutral text-xs font-mono">{{ file.mime_type || 'unknown' }}</span>
+                  </td>
+                  <td>
+                    <span class="text-sm text-base-content/70">{{ formatBytes(file.size_bytes) }}</span>
+                  </td>
+                  <td>
+                    @if (file.createdBy) {
+                      <div class="flex flex-col">
+                        <span class="font-medium text-base-content text-sm">{{
+                          file.createdBy.name || 'Unknown'
+                        }}</span>
+                        <span class="text-xs text-base-content/60">{{ file.createdBy.email }}</span>
+                      </div>
+                    } @else {
+                      <span class="text-sm text-base-content/40">—</span>
+                    }
+                  </td>
+                  <td>
+                    <span class="text-sm text-base-content/70">{{ file.created_at | date: 'medium' }}</span>
+                  </td>
+                  <td class="text-right">
+                    <div class="flex justify-end gap-2">
+                      <button
+                        class="btn btn-sm btn-circle btn-ghost text-primary"
+                        title="Download file"
+                        (click)="downloadFile(file)"
+                      >
+                        <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                      </button>
+                      <button
+                        class="btn btn-sm btn-circle btn-ghost text-error"
+                        title="Delete file"
+                        (click)="deleteFile(file)"
+                      >
+                        <pc-icon name="trash" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </div>
   `,
-  styles: [`
-    :host {
-      display: block;
-      min-height: 100%;
-    }
-  `]
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
 })
 export class FilesGrid implements OnInit {
   private readonly filesSvc = inject(FilesService);
@@ -202,9 +208,7 @@ export class FilesGrid implements OnInit {
     }
 
     const filtered = this.files().filter(
-      (f) =>
-        f.filename?.toLowerCase().includes(q) ||
-        f.mime_type?.toLowerCase().includes(q)
+      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
     );
     this.filteredFiles.set(filtered);
   }
@@ -249,7 +253,7 @@ export class FilesGrid implements OnInit {
         } catch (err) {
           this.alertSvc.showError('Failed to delete file');
         }
-      }
+      },
     });
   }
 }

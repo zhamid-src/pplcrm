@@ -47,9 +47,23 @@ export class ExportsRepo {
   public async list(tenant_id: string) {
     return this.db
       .selectFrom('data_exports' as any)
-      .select(['id', 'entity', 'file_name', 'status', 'row_count', 'error', 'created_at', 'updated_at'])
-      .where('tenant_id', '=', tenant_id as any)
-      .orderBy('created_at', 'desc')
+      .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
+      .select([
+        'data_exports.id',
+        'data_exports.entity',
+        'data_exports.file_name',
+        'data_exports.status',
+        'data_exports.row_count',
+        'data_exports.error',
+        'data_exports.created_at',
+        'data_exports.updated_at',
+        'data_exports.user_id',
+        'creator.email as creator_email',
+        'creator.first_name as creator_first_name',
+        'creator.last_name as creator_last_name',
+      ])
+      .where('data_exports.tenant_id', '=', tenant_id as any)
+      .orderBy('data_exports.created_at', 'desc')
       .limit(50)
       .execute();
   }
