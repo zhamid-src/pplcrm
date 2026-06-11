@@ -43,6 +43,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
       reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
       return reply.send(buffer);
     } catch (err) {
       fastify.log.error(err);
