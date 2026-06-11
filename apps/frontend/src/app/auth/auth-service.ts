@@ -123,18 +123,38 @@ export class AuthService extends TRPCService<'authusers'> {
       reader.readAsDataURL(file);
     });
 
-    return this.api.auth.uploadAvatar.mutate({
+    const res = (await this.api.auth.uploadAvatar.mutate({
       dataBase64,
       mimeType: file.type as any,
       filename: file.name,
-    }) as Promise<{ avatar_url: string }>;
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
   }
 
   /**
    * Remove the current user's profile picture.
    */
-  public deleteAvatar(): Promise<{ success: boolean }> {
-    return this.api.auth.deleteAvatar.mutate() as Promise<{ success: boolean }>;
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
   }
 
   /**

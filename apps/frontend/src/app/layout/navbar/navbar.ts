@@ -1,7 +1,4 @@
-/**
- * Navigation bar component providing search, theme switching, and user actions.
- */
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -35,6 +32,12 @@ export class Navbar implements OnDestroy {
   private readonly sideBarSvc = inject(SidebarService);
   private readonly notificationsSvc = inject(NotificationsService);
   private readonly router = inject(Router);
+
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.auth.resolveAvatarUrl(user.avatar_url) : null;
+  });
 
   private pollInterval?: ReturnType<typeof setInterval>;
 
@@ -146,7 +149,7 @@ export class Navbar implements OnDestroy {
         this.hasMore.set(false);
       }
       if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map(n => n.id));
+        const existingIds = new Set(this.notifications().map((n) => n.id));
         const uniqueNext = nextBatch.filter((n: any) => !existingIds.has(n.id));
         if (uniqueNext.length > 0) {
           this.notifications.set([...this.notifications(), ...uniqueNext]);
@@ -163,10 +166,8 @@ export class Navbar implements OnDestroy {
     if (!notif.read) {
       try {
         await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update(list =>
-          list.map(n => n.id === notif.id ? { ...n, read: true } : n)
-        );
-        this.unreadCount.update(c => Math.max(0, c - 1));
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
       } catch (err) {
         console.error('Failed to mark notification read', err);
       }
@@ -181,9 +182,7 @@ export class Navbar implements OnDestroy {
     event.stopPropagation();
     try {
       await this.notificationsSvc.markAllRead();
-      this.notifications.update(list =>
-        list.map(n => ({ ...n, read: true }))
-      );
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
       this.unreadCount.set(0);
     } catch (err) {
       console.error('Failed to mark all read', err);
