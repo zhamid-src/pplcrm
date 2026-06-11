@@ -68,11 +68,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     super(new AuthUsersRepo());
   }
 
-  /**
-   * Fetches the currently authenticated user with limited fields.
-   * @param auth Auth payload containing tenant and user ID.
-   * @returns Auth user record or null if not found.
-   */
   public async currentUser(auth: IAuthKeyPayload) {
     // There's no user ID, which means that the user is unauthorized
     if (!auth?.user_id) {
@@ -88,7 +83,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         value: auth.user_id,
         options,
       });
-      return user || null;
+      if (!user) return null;
+
+      const profile = (await this.profiles.getOneByAuthId(String((user as any).id))) as Models['profiles'] | undefined;
+      const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+
+      return {
+        ...user,
+        avatar_url,
+      };
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
     }
@@ -1186,16 +1189,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
    * Upload a new avatar for the authenticated user.
    * Accepts base64-encoded image data via tRPC.
    */
-  public async uploadAvatar(
-    auth: IAuthKeyPayload,
-    input: { dataBase64: string; mimeType: string; filename: string },
-  ) {
+  public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
     const { dataBase64, mimeType, filename } = input;
 
     if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
-      throw new BadRequestError(
-        `Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`,
-      );
+      throw new BadRequestError(`Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`);
     }
 
     const buffer = Buffer.from(dataBase64, 'base64');
@@ -1212,60 +1210,64 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     let finalFileId = '';
 
-    await this.getRepo().db.transaction().execute(async (trx) => {
-      const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
 
-      // Clean up old avatar
-      if (existingProfile?.avatar_file_id) {
-        try {
-          const oldFile = await trx
-            .selectFrom('files')
-            .select('storage_key')
-            .where('id', '=', existingProfile.avatar_file_id)
-            .executeTakeFirst();
-          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx.deleteFrom('files').where('id', '=', existingProfile.avatar_file_id).execute();
-        } catch { /* non-critical */ }
-      }
+        // Clean up old avatar
+        if (existingProfile?.avatar_file_id) {
+          try {
+            const oldFile = await trx
+              .selectFrom('files')
+              .select('storage_key')
+              .where('id', '=', existingProfile.avatar_file_id)
+              .executeTakeFirst();
+            if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+            await trx.deleteFrom('files').where('id', '=', existingProfile.avatar_file_id).execute();
+          } catch {
+            /* non-critical */
+          }
+        }
 
-      // Insert new file record
-      const fileResult = await trx
-        .insertInto('files')
-        .values({
-          tenant_id: auth.tenant_id,
-          filename,
-          mime_type: mimeType,
-          size_bytes: buffer.length,
-          storage_key: storageKey,
-          sha256_hex,
-          uploaded_by: auth.user_id,
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-
-      const fileId = String(fileResult.id);
-      finalFileId = fileId;
-
-      // Update or insert profile
-      if (existingProfile) {
-        await trx
-          .updateTable('profiles')
-          .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
-          .where('auth_id', '=', auth.user_id)
-          .execute();
-      } else {
-        await trx
-          .insertInto('profiles')
+        // Insert new file record
+        const fileResult = await trx
+          .insertInto('files')
           .values({
             tenant_id: auth.tenant_id,
-            auth_id: auth.user_id,
-            avatar_file_id: fileId,
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
+            filename,
+            mime_type: mimeType,
+            size_bytes: buffer.length,
+            storage_key: storageKey,
+            sha256_hex,
+            uploaded_by: auth.user_id,
           })
-          .execute();
-      }
-    });
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const fileId = String(fileResult.id);
+        finalFileId = fileId;
+
+        // Update or insert profile
+        if (existingProfile) {
+          await trx
+            .updateTable('profiles')
+            .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
+            .where('auth_id', '=', auth.user_id)
+            .execute();
+        } else {
+          await trx
+            .insertInto('profiles')
+            .values({
+              tenant_id: auth.tenant_id,
+              auth_id: auth.user_id,
+              avatar_file_id: fileId,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            })
+            .execute();
+        }
+      });
 
     return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
   }
@@ -1279,23 +1281,27 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const fileId = existingProfile.avatar_file_id;
 
-    await this.getRepo().db.transaction().execute(async (trx) => {
-      try {
-        const oldFile = await trx
-          .selectFrom('files')
-          .select('storage_key')
-          .where('id', '=', fileId)
-          .executeTakeFirst();
-        if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-        await trx.deleteFrom('files').where('id', '=', fileId).execute();
-      } catch { /* non-critical */ }
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('id', '=', fileId)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx.deleteFrom('files').where('id', '=', fileId).execute();
+        } catch {
+          /* non-critical */
+        }
 
-      await trx
-        .updateTable('profiles')
-        .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
-        .where('auth_id', '=', auth.user_id)
-        .execute();
-    });
+        await trx
+          .updateTable('profiles')
+          .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('auth_id', '=', auth.user_id)
+          .execute();
+      });
 
     return { success: true };
   }
