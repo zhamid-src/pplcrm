@@ -54,6 +54,45 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return Promise.resolve({});
   }
 
+  public async getUploadUrl(filename: string, mimeType?: string | null): Promise<{ uploadUrl: string; storageKey: string }> {
+    return (await this.api.files.getUploadUrl.query({ filename, mimeType })) as { uploadUrl: string; storageKey: string };
+  }
+
+  public async registerFile(data: {
+    filename: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    storageKey: string;
+    sha256Hex?: string | null;
+  }): Promise<any> {
+    return await this.api.files.registerFile.mutate(data);
+  }
+
+  public async uploadFileDirectly(file: File): Promise<any> {
+    const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'x-ms-blob-type': 'BlockBlob',
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Upload to storage failed with status ${res.status}`);
+    }
+
+    return await this.registerFile({
+      filename: file.name,
+      mimeType: file.type || null,
+      sizeBytes: file.size,
+      storageKey,
+      sha256Hex: null,
+    });
+  }
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.resolve({ csv: '', columns: [], fileName: '', rowCount: 0 });
   }

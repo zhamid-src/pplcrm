@@ -23,7 +23,26 @@ import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
             Browse, download, and delete files uploaded across the CRM system.
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 items-center">
+          <input
+            #fileInput
+            type="file"
+            class="hidden"
+            (change)="onFileSelectedForUpload($event)"
+          />
+          <button 
+            class="btn btn-primary btn-sm gap-2" 
+            [disabled]="isUploading()"
+            (click)="fileInput.click()"
+          >
+            @if (isUploading()) {
+              <span class="loading loading-spinner loading-xs"></span>
+              Uploading...
+            } @else {
+              <pc-icon name="plus" [size]="4"></pc-icon>
+              Upload File
+            }
+          </button>
           <input
             type="text"
             class="input input-bordered input-sm max-w-xs"
@@ -130,10 +149,30 @@ export class FilesGrid implements OnInit {
   protected readonly files = signal<any[]>([]);
   protected readonly filteredFiles = signal<any[]>([]);
   protected readonly isLoading = signal(false);
+  protected readonly isUploading = signal(false);
   protected readonly searchQuery = signal('');
 
   public ngOnInit() {
     this.loadFiles();
+  }
+
+  protected async onFileSelectedForUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    this.isUploading.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file);
+      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
+      await this.loadFiles();
+    } catch (err) {
+      console.error(err);
+      this.alertSvc.showError('Failed to upload file');
+    } finally {
+      this.isUploading.set(false);
+      input.value = '';
+    }
   }
 
   protected async loadFiles() {
