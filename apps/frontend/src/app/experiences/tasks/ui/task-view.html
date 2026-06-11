@@ -1,8 +1,9 @@
 <div class="flex min-h-full flex-col bg-base-200/50 p-6">
   <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    
     <!-- Top Navigation Bar & Action Buttons -->
-    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4">
+    <div
+      class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4"
+    >
       <div class="flex flex-wrap items-center gap-2">
         <a routerLink="/tasks" class="btn btn-sm btn-ghost gap-1">
           <pc-icon name="arrow-left" [size]="4"></pc-icon>
@@ -39,14 +40,12 @@
     } @else { @if (task(); as t) {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      
       <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
       <div class="lg:col-span-2 flex flex-col gap-6">
-        
         <!-- Elegant Title & Description Card -->
         <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
           <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
-          
+
           <div class="p-6">
             <!-- Inline Edit Task Name -->
             <div class="group relative mb-4">
@@ -70,18 +69,27 @@
               </div>
               } @else {
               <div class="flex items-start justify-between gap-4">
-                <h1 (click)="startEditingName()" class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow">
+                <h1
+                  (click)="startEditingName()"
+                  class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow"
+                >
                   {{ t.name || '(No Name)' }}
                   <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
                     <pc-icon name="pencil-square" [size]="4.5" class="text-base-content/40 inline"></pc-icon>
                   </span>
                 </h1>
                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <span class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2" [class]="getStatusBadgeClass(t.status)">
+                  <span
+                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+                    [class]="getStatusBadgeClass(t.status)"
+                  >
                     {{ toTitleCase(t.status) }}
                   </span>
                   @if (t.priority) {
-                  <span class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2" [class]="getPriorityBadgeClass(t.priority)">
+                  <span
+                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+                    [class]="getPriorityBadgeClass(t.priority)"
+                  >
                     {{ toTitleCase(t.priority) }}
                   </span>
                   }
@@ -141,14 +149,20 @@
             @if (subtasks().length > 0) {
             <div class="grid gap-2.5">
               @for (s of subtasks(); track s.id) {
-              <label class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200">
+              <label
+                class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
+              >
                 <input
                   type="checkbox"
                   class="checkbox checkbox-primary checkbox-sm"
                   [checked]="s.status === 'done'"
                   (change)="toggleSubtask(s, $any($event.target).checked)"
                 />
-                <span class="text-sm font-medium text-base-content" [class.line-through]="s.status === 'done'" [class.opacity-50]="s.status === 'done'">
+                <span
+                  class="text-sm font-medium text-base-content"
+                  [class.line-through]="s.status === 'done'"
+                  [class.opacity-50]="s.status === 'done'"
+                >
                   {{ s.name }}
                 </span>
               </label>
@@ -197,14 +211,14 @@
                 [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
                 [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
               >
-                <div class="chat-image avatar">
-                  <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-primary/30 to-secondary/30 text-base-content border border-base-300 grid place-items-center leading-none">
-                    <span class="text-xs font-bold uppercase select-none">
-                      {{ (userName(c.author_id || c.createdby_id) || '?') | slice: 0:1 }}
-                    </span>
-                  </div>
+                <div class="chat-image">
+                  <pc-user-avatar
+                    [name]="userName(c.author_id || c.createdby_id)"
+                    [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
+                    [size]="8"
+                  />
                 </div>
-                
+
                 <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
                   <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
                   @if (c.created_at) {
@@ -213,8 +227,12 @@
                   </span>
                   }
                 </div>
-                
-                <div class="chat-bubble text-sm font-light shadow-sm" [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()" [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"></div>
+
+                <div
+                  class="chat-bubble text-sm font-light shadow-sm"
+                  [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
+                  [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
+                ></div>
               </div>
               }
             </div>
@@ -236,17 +254,21 @@
                 (keydown)="onComposerKeydown($event)"
                 (click)="onComposerClick($event)"
               ></textarea>
-              
+
               <!-- Mentions Dropdown -->
               @if (mc.open() && mc.candidates().length) {
-              <div class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20">
+              <div
+                class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
+              >
                 @for (u of mc.candidates(); track u.id; let i = $index) {
                 <div
                   class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
                   [class.bg-base-200]="i === mc.index()"
                   (mousedown)="selectMention(u, $event)"
                 >
-                  <div class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold">
+                  <div
+                    class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold"
+                  >
                     {{ (u.first_name || u.email || '?') | slice:0:1 }}
                   </div>
                   <div class="truncate">
@@ -257,10 +279,22 @@
                 }
               </div>
               }
-              
+
               <div class="mt-2 flex items-center justify-end gap-2">
-                <button type="button" class="btn btn-sm btn-ghost" (click)="newComment.set('')" [disabled]="!newComment() || isLoading()">Clear</button>
-                <button type="button" class="btn btn-sm btn-primary px-4 gap-1.5" (click)="addComment()" [disabled]="!newComment() || isLoading()">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-ghost"
+                  (click)="newComment.set('')"
+                  [disabled]="!newComment() || isLoading()"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary px-4 gap-1.5"
+                  (click)="addComment()"
+                  [disabled]="!newComment() || isLoading()"
+                >
                   <pc-icon name="paper-airplane" [size]="3.5"></pc-icon> Comment
                 </button>
               </div>
@@ -286,7 +320,9 @@
             @if (attachments().length > 0) {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               @for (a of attachments(); track a.id) {
-              <div class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md">
+              <div
+                class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
+              >
                 <div class="min-w-0 flex-1">
                   <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
                   <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
@@ -294,7 +330,12 @@
                   </div>
                 </div>
                 @if (a.url) {
-                <a class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10" [href]="a.url" target="_blank" title="Open Attachment">
+                <a
+                  class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
+                  [href]="a.url"
+                  target="_blank"
+                  title="Open Attachment"
+                >
                   <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
                 </a>
                 }
@@ -302,14 +343,20 @@
               }
             </div>
             } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No files attached to this task.
-            </div>
+            <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
             }
 
             <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
-              <input class="input input-bordered input-sm grow" placeholder="File Name (e.g. report.pdf)" [(ngModel)]="attName" />
-              <input class="input input-bordered input-sm grow" placeholder="URL (e.g. https://...)" [(ngModel)]="attUrl" />
+              <input
+                class="input input-bordered input-sm grow"
+                placeholder="File Name (e.g. report.pdf)"
+                [(ngModel)]="attName"
+              />
+              <input
+                class="input input-bordered input-sm grow"
+                placeholder="URL (e.g. https://...)"
+                [(ngModel)]="attUrl"
+              />
               <button class="btn btn-accent btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
                 Attach File
               </button>
@@ -317,23 +364,22 @@
           </div>
           }
         </div>
-
       </div>
 
       <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
       <div class="lg:col-span-1 flex flex-col gap-6">
-        
         <!-- Task Status & Detail Settings Card -->
         <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
           <div class="p-4 border-b border-base-200 bg-base-50/50">
             <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
           </div>
-          
+
           <div class="p-6 flex flex-col gap-4">
-            
             <!-- Status Dropdown Selector -->
             <div class="form-control w-full">
-              <label class="label pt-0"><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label>
+              <label class="label pt-0"
+                ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
+              >
               <select
                 class="select select-bordered select-sm w-full font-medium"
                 [ngModel]="t.status || 'todo'"
@@ -347,7 +393,9 @@
 
             <!-- Priority Dropdown Selector -->
             <div class="form-control w-full">
-              <label class="label"><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label>
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
+              >
               <select
                 class="select select-bordered select-sm w-full font-medium"
                 [ngModel]="t.priority || 'medium'"
@@ -361,9 +409,14 @@
 
             <!-- Due Date Calendar Picker -->
             <div class="form-control w-full">
-              <label class="label pt-0"><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label>
+              <label class="label pt-0"
+                ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
+              >
               @if (!isEditingDueDate()) {
-              <div (click)="isEditingDueDate.set(true)" class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300">
+              <div
+                (click)="isEditingDueDate.set(true)"
+                class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
+              >
                 <div class="flex items-center gap-2">
                   <pc-icon name="clock" [size]="4.5" class="text-teal-500"></pc-icon>
                   <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
@@ -388,7 +441,9 @@
 
             <!-- Assigned User Selector -->
             <div class="form-control w-full">
-              <label class="label"><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label>
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
+              >
               <div class="flex gap-2">
                 <select
                   class="select select-bordered select-sm grow font-medium"
@@ -408,7 +463,9 @@
 
             <!-- Associated Team Selector -->
             <div class="form-control w-full">
-              <label class="label"><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label>
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
+              >
               <select
                 class="select select-bordered select-sm w-full font-medium"
                 [ngModel]="teamId()"
@@ -439,7 +496,6 @@
                 <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
               </div>
             </div>
-
           </div>
         </div>
 
@@ -457,9 +513,7 @@
           </div>
         </div>
         }
-
       </div>
-
     </div>
     } @else {
     <div class="alert alert-error">
@@ -467,6 +521,5 @@
       <span>Task not found or failed to load.</span>
     </div>
     } }
-
   </div>
 </div>

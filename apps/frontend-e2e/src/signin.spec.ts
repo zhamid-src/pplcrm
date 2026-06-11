@@ -90,12 +90,66 @@ test.describe('Authentication', () => {
     });
 
     test('should redirect authenticated users away from sign-in', async ({ page }) => {
+      page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+      page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+
       // Mock currentUser query response for tRPC using RegExp
       await page.route(/\/auth\.currentUser/, async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify([{ result: { data: { id: '123', email: 'test@example.com' } } }]),
+          body: JSON.stringify({ result: { data: { json: { id: '123', email: 'test@example.com' } } } }),
+        });
+      });
+
+      // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
+      await page.route(/\/notifications\.getUnreadCount/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ result: { data: { json: 0 } } }),
+        });
+      });
+
+      await page.route(/\/notifications\.getLatest/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ result: { data: { json: [] } } }),
+        });
+      });
+
+      await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+        });
+      });
+
+      await page.route(/\/dashboard\.getStats/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            result: {
+              data: {
+                json: {
+                  avgFirstResponseHours: 0,
+                  avgTimeToCloseHours: 0,
+                  emailsAssigned: [],
+                  emailsClosed: [],
+                  contactsGrowth: [],
+                  unassignedCount: 0,
+                  totalOpenCount: 0,
+                  userStats: [],
+                  unassignedSlaBreaches: 0,
+                  unassignedEmailSlaBreaches: 0,
+                  unassignedTaskSlaBreaches: 0,
+                },
+              },
+            },
+          }),
         });
       });
 

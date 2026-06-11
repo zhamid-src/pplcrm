@@ -7,8 +7,6 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-users-grid',
@@ -39,7 +37,6 @@ import { environment } from '../../../../environments/environment';
 })
 export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
   private readonly auth = inject(AuthService);
-  private readonly tokenService = inject(TokenService);
 
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -48,62 +45,50 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
 
   protected col = [
     {
-      field: 'avatar_url',
-      headerName: 'Avatar',
-      editable: false,
-      sortable: false,
-      filter: false,
-      width: 72,
-      minWidth: 72,
-      maxWidth: 72,
+      field: 'email',
+      headerName: 'Email',
+      editable: true,
       cellRenderer: (p: any) => {
         let avatarUrl: string | null = p.data?.avatar_url ?? null;
         const firstName: string = p.data?.first_name ?? '';
         const lastName: string = p.data?.last_name ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || p.data?.email || '?';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || p.value || '?';
+        const emailVal = p.value || '';
+
+        let avatarHtml = '';
         if (avatarUrl) {
-          if (avatarUrl.startsWith('/') && !avatarUrl.startsWith('//')) {
-            avatarUrl = environment.apiUrl + avatarUrl;
-          }
-          if (!avatarUrl.includes('token=')) {
-            const token = this.tokenService.getAuthToken();
-            if (token) {
-              const separator = avatarUrl.includes('?') ? '&' : '?';
-              avatarUrl = `${avatarUrl}${separator}token=${encodeURIComponent(token)}`;
-            }
-          }
-          return `<div class="flex items-center justify-center h-full py-1">
-            <img src="${avatarUrl}" alt="${name}" class="w-8 h-8 rounded-full object-cover ring-2 ring-base-200" />
+          avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
+          avatarHtml = `<img src="${avatarUrl}" alt="${name}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+        } else {
+          const PALETTES = [
+            'bg-indigo-500/20 text-indigo-700',
+            'bg-teal-500/20 text-teal-700',
+            'bg-purple-500/20 text-purple-700',
+            'bg-rose-500/20 text-rose-700',
+            'bg-amber-500/20 text-amber-700',
+            'bg-emerald-500/20 text-emerald-700',
+            'bg-blue-500/20 text-blue-700',
+            'bg-orange-500/20 text-orange-700',
+            'bg-pink-500/20 text-pink-700',
+            'bg-cyan-500/20 text-cyan-700',
+          ];
+          let sum = 0;
+          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+          const colorClass = PALETTES[sum % PALETTES.length];
+          const parts = name.split(/\s+/);
+          const initials =
+            parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
+          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
+            <span>${initials}</span>
           </div>`;
         }
-        const PALETTES = [
-          'bg-indigo-500/20 text-indigo-700',
-          'bg-teal-500/20 text-teal-700',
-          'bg-purple-500/20 text-purple-700',
-          'bg-rose-500/20 text-rose-700',
-          'bg-amber-500/20 text-amber-700',
-          'bg-emerald-500/20 text-emerald-700',
-          'bg-blue-500/20 text-blue-700',
-          'bg-orange-500/20 text-orange-700',
-          'bg-pink-500/20 text-pink-700',
-          'bg-cyan-500/20 text-cyan-700',
-        ];
-        let sum = 0;
-        for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-        const colorClass = PALETTES[sum % PALETTES.length];
-        const parts = name.split(/\s+/);
-        const initials =
-          parts.length >= 2
-            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-            : name[0].toUpperCase();
-        return `<div class="flex items-center justify-center h-full py-1">
-          <div class="w-8 h-8 rounded-full ${colorClass} flex items-center justify-center font-bold text-[11px] ring-2 ring-base-200">
-            <span>${initials}</span>
-          </div>
+
+        return `<div class="flex items-center gap-2 py-0.5 h-full">
+          ${avatarHtml}
+          <span>${emailVal}</span>
         </div>`;
       },
     },
-    { field: 'email', headerName: 'Email', editable: true },
     { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
     {

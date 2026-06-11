@@ -1,7 +1,6 @@
 import { Component, computed, input, inject } from '@angular/core';
 import { NgClass } from '@angular/common';
-import { environment } from '../../../../environments/environment';
-import { TokenService } from '../../../services/api/token-service';
+import { AuthService } from '../../../auth/auth-service';
 
 /**
  * Reusable user avatar component.
@@ -15,10 +14,7 @@ import { TokenService } from '../../../services/api/token-service';
 @Component({
   selector: 'pc-user-avatar',
   template: `
-    <div
-      class="avatar"
-      [class.placeholder]="!resolvedAvatarUrl()"
-    >
+    <div class="avatar" [class.placeholder]="!resolvedAvatarUrl()">
       @if (resolvedAvatarUrl()) {
         <div
           class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
@@ -49,7 +45,7 @@ import { TokenService } from '../../../services/api/token-service';
   host: { class: 'contents' },
 })
 export class UserAvatarComponent {
-  private readonly tokenService = inject(TokenService);
+  private readonly auth = inject(AuthService);
 
   /** Pre-computed download URL for the user's avatar, or null/undefined. */
   readonly avatarUrl = input<string | null | undefined>(null);
@@ -64,20 +60,7 @@ export class UserAvatarComponent {
   readonly size = input<number>(8);
 
   protected readonly resolvedAvatarUrl = computed(() => {
-    const url = this.avatarUrl();
-    if (!url) return null;
-    let resolved = url;
-    if (url.startsWith('/') && !url.startsWith('//')) {
-      resolved = environment.apiUrl + url;
-    }
-    if (!resolved.includes('token=')) {
-      const token = this.tokenService.getAuthToken();
-      if (token) {
-        const separator = resolved.includes('?') ? '&' : '?';
-        resolved = `${resolved}${separator}token=${encodeURIComponent(token)}`;
-      }
-    }
-    return resolved;
+    return this.auth.resolveAvatarUrl(this.avatarUrl());
   });
 
   protected readonly sizeRem = computed(() => this.size() * 0.25);
