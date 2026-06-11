@@ -516,6 +516,100 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
     await queueUsageLimitCheck(payload.tenantId, db);
+  } else if (payload.type === 'send-newsletter-batch') {
+    const newsletterMailSvc = new NewsletterEmailService();
+    const recipients = payload.recipients || [];
+
+    const deliveredCount = await newsletterMailSvc.sendNewsletter({
+      fromName: payload.fromName,
+      fromEmail: payload.fromEmail,
+      recipients,
+      subject: payload.subject,
+      html: payload.html,
+      text: payload.text,
+      sendgridApiKey: payload.sendgridApiKey,
+      subuserUsername: payload.subuserUsername,
+      newsletterId: payload.newsletterId,
+      tenantId: payload.tenantId,
+    });
+
+    const newsletterId = String(payload.newsletterId);
+    const tenantId = String(payload.tenantId);
+    const userId = String(payload.userId);
+
+    await db.transaction().execute(async (trx: any) => {
+      const newsletter = await trx
+        .selectFrom('newsletters')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (!newsletter) {
+        console.warn(`Newsletter ${newsletterId} not found during batch completion.`);
+        return;
+      }
+
+      const newDelivered = Number(newsletter.delivered_count || 0) + deliveredCount;
+      const nextStatus = newsletter.status === 'queuing' ? 'sending' : newsletter.status;
+
+      const remainingJobs = await trx
+        .selectFrom('background_jobs' as any)
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'send-newsletter-batch')
+        .where(sql`payload->>'newsletterId'`, '=', newsletterId)
+        .where('id', '!=', jobId as any)
+        .execute();
+
+      if (remainingJobs.length === 0) {
+        await trx
+          .updateTable('newsletters')
+          .set({
+            status: 'sent',
+            delivered_count: newDelivered,
+            send_date: new Date(),
+            updatedby_id: userId,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', newsletterId)
+          .execute();
+
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'send',
+            entity: 'newsletters',
+            entity_id: newsletterId,
+            quantity: newsletter.total_recipients || newDelivered,
+            metadata: JSON.stringify({
+              recipientsCount: newsletter.total_recipients || newDelivered,
+              deliveredCount: newDelivered,
+            }),
+            createdby_id: userId,
+            updatedby_id: userId,
+          })
+          .execute();
+
+        const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
+        await queueUsageLimitCheck(tenantId, trx);
+      } else {
+        await trx
+          .updateTable('newsletters')
+          .set({
+            status: nextStatus,
+            delivered_count: newDelivered,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', newsletterId)
+          .execute();
+      }
+    });
   } else if (payload.type === 'recompute_address_fingerprints') {
     const tenantIds: string[] = [];
     if (payload.tenant_id) {
@@ -607,12 +701,23 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             const htmlContent =
               step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
 
-            await mailService.sendMail({
-              to: person.email,
-              subject: step.subject,
-              text: textContent,
-              html: htmlContent,
-            });
+            await trx
+              .insertInto('background_jobs' as any)
+              .values({
+                tenant_id: lockedEnrollment.tenant_id as any,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-transactional-email',
+                  to: person.email,
+                  subject: step.subject,
+                  text: textContent,
+                  html: htmlContent,
+                }),
+                run_at: new Date(),
+                max_attempts: 5,
+              })
+              .execute();
 
             const workflow = await trx
               .selectFrom('workflows')
@@ -798,7 +903,6 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       });
     }
 
-
     await db
       .insertInto('background_jobs' as any)
       .values({
@@ -837,7 +941,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
       // Fetch all rows for the entity
       const table = String(payload.table || payload.entity);
-      let query = db.selectFrom(table as any).selectAll().where('tenant_id', '=', tenantId as any);
+      let query = db
+        .selectFrom(table as any)
+        .selectAll()
+        .where('tenant_id', '=', tenantId as any);
 
       // Issues are tags with type='issue'
       if (payload.entity === 'issues') {
@@ -851,12 +958,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         // Best-effort: try name, first_name/last_name depending on table
         if (table === 'persons') {
           query = query.where((eb: any) =>
-            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)])
+            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
           ) as any;
         } else if (table === 'households') {
-          query = query.where((eb: any) =>
-            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])
-          ) as any;
+          query = query.where((eb: any) => eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])) as any;
         } else {
           query = query.where('name' as any, 'ilike', like) as any;
         }
@@ -877,9 +982,12 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const records = rows.map((r: any) => ({ ...(r as Record<string, unknown>) }));
 
       // Determine columns
-      const requestedCols: string[] = Array.isArray(payload.columns) && payload.columns.length
-        ? payload.columns
-        : records.length > 0 ? Object.keys(records[0]) : [];
+      const requestedCols: string[] =
+        Array.isArray(payload.columns) && payload.columns.length
+          ? payload.columns
+          : records.length > 0
+            ? Object.keys(records[0])
+            : [];
 
       const csv = requestedCols.length ? rowsToCsv(records, requestedCols) : '';
       const storageKey = `exports/${tenantId}/${exportId}.csv`;
