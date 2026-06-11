@@ -7,60 +7,26 @@ import { PcIconNameType } from '@icons/icons.index';
  * The sidebar items are defined here. They go in the order they're added
  */
 export interface ISidebarItem {
-  /**
-   * If true then only admins can see this item
-   */
   adminOnly?: boolean;
-
-  /**
-   * The badge to show on the item
-   */
   badge?: string;
-
-  /**
-   * The color of the badge. Default is 'primary'
-   */
   badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
   children?: ISidebarItem[];
   collapsed?: boolean;
   favourite?: boolean;
-
-  /**
-   * Whether the component should be hidden or not
-   */
   hidden?: boolean;
 
   /**
-   * The icon to show on the item
+   * Used internally to hide items when they are moved to the bookmarks section,
+   * without destroying their native 'hidden' state.
    */
-  icon?: PcIconNameType;
+  hiddenByFavourite?: boolean;
 
-  /**
-   * The name of the item. It's shown on the sidebar
-   */
+  icon?: PcIconNameType;
   name: string;
   short_name?: string;
-
-  /**
-   * The parent of this item. If this is not set then it's a top level item
-   */
   parent?: ISidebarItem;
-
-  /**
-   * Whether the path should be matched exactly or not. It is used with the
-   * Angular route
-   */
   pathMatchExact?: boolean;
-
-  /**
-   * The route to navigate to when the item is clicked
-   */
   route?: string;
-
-  /**
-   * Whether this is a component or a heading. If it's a heading then it's
-   * not clickable
-   */
   type?: 'item' | 'subheading' | 'bookmark';
 }
 

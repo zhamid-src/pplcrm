@@ -1,7 +1,5 @@
-<!-- Sidebar template containing navigation items and drawer controls -->
-
-<!-- Reusable nav link template – avoids duplicating the <a> block in every branch -->
 <ng-template #navLink let-nav>
+  @if (!nav.hidden && !nav.hiddenByFavourite) {
   <a
     class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg"
     (click)="this.closeMobile()"
@@ -13,6 +11,7 @@
       {{ nav.name }}
     </span>
   </a>
+  }
 </ng-template>
 
 <div
@@ -23,7 +22,6 @@
   [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
   [class.w-18]="this.isDrawerHalf() && !this.isMobileOpen()"
 >
-  <!-- Logo: Full or Compact -->
   <div
     [class.hidden]="!this.isDrawerFull()"
     class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
@@ -38,11 +36,9 @@
     <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
   </div>
 
-  <!-- Sidebar Items -->
   @for (item of items; track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden">
+  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <!-- Subheading with collapsible children -->
     <div
       class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
@@ -73,13 +69,11 @@
       }
     </div>
     } } @else {
-    <!-- Regular top-level item -->
     <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
     }
   </div>
   }
 
-  <!-- Toggle Drawer Button -->
   <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
