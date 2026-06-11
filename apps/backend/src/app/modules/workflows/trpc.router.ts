@@ -2,51 +2,15 @@ import { AddWorkflowObj, UpdateWorkflowObj, getAllOptions, idSchema } from '@com
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { WorkflowsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
 
 const workflows = new WorkflowsController();
 
+const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj);
+
 export const WorkflowsRouter = router({
-  getAllWithCounts: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => workflows.getAllWithCounts(ctx.auth.tenant_id, input)),
-    
-  count: authProcedure.query(({ ctx }) => workflows.getCount(ctx.auth.tenant_id)),
-  
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => workflows.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-    
-  create: authProcedure
-    .input(AddWorkflowObj)
-    .mutation(async ({ input, ctx }) => {
-      return workflows.add({
-        ...input,
-        tenant_id: ctx.auth.tenant_id,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      } as any);
-    }),
-    
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateWorkflowObj }))
-    .mutation(async ({ input, ctx }) => {
-      return workflows.update({
-        tenant_id: ctx.auth.tenant_id,
-        id: input.id,
-        row: {
-          ...input.data,
-          updatedby_id: ctx.auth.user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }),
-    
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => {
-      return workflows.delete(ctx.auth.tenant_id, input, ctx.auth.user_id);
-    }),
-    
+  ...crud,
+
   getSteps: authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),

@@ -1,7 +1,8 @@
-import { idSchema, getAllOptions } from '@common';
+import { idSchema } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
 
 const companies = new CompaniesController();
 
@@ -15,11 +16,11 @@ const CompanyInputSchema = z.object({
   notes: z.string().trim().max(10000).optional().nullable(),
 });
 
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+
 export const CompaniesRouter = router({
-  add: authProcedure
-    .input(CompanyInputSchema)
-    .mutation(({ input, ctx }) => companies.addCompany(input, ctx.auth)),
-  
+  ...crud,
+
   import: authProcedure
     .input(
       z.object({
@@ -32,26 +33,6 @@ export const CompaniesRouter = router({
       ctx.res.status(202);
       return companies.importRows(input, ctx.auth);
     }),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => companies.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => companies.deleteMany(ctx.auth.tenant_id, input)),
-  
-  getAll: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => companies.getAllCompanies(ctx.auth, input)),
-  
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => companies.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: CompanyInputSchema.partial() }))
-    .mutation(({ input, ctx }) => companies.updateCompany(input.id, input.data, ctx.auth)),
 
   findPotentialDuplicates: authProcedure
     .query(({ ctx }) => companies.findPotentialDuplicates(ctx.auth)),
