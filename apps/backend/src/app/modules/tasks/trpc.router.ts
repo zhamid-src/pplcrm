@@ -115,5 +115,11 @@ export const TasksRouter = router({
         }),
       }),
     )
-    .mutation(({ input, ctx }) => new TaskSubtasksController().updateSubtask({ tenant_id: ctx.auth.tenant_id, id: input.id, row: input.data as any })),
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().updateSubtask({
+        tenant_id: ctx.auth.tenant_id,
+        id: input.id,
+        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as any,
+      }),
+    ),
 });
