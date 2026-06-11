@@ -139,8 +139,8 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   public async getAssignedLists(auth: IAuthKeyPayload, teamId: string) {
     const listIds = await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: teamId });
     if (!listIds.length) return [];
-    const lists = await this.getRepo().db
-      .selectFrom('lists')
+    const lists = await this.getRepo()
+      .db.selectFrom('lists')
       .select(['id', 'name', 'description', 'object', 'is_dynamic'])
       .where('tenant_id', '=', auth.tenant_id)
       .where('id', 'in', listIds)
@@ -161,14 +161,18 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const volunteerIds = await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id });
     const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds);
     const captainName = this.resolveCaptainName(team, volunteers);
-    const leadUserName = await this.resolveLeadUserName(auth.tenant_id, (team as any).team_lead_user_id ? String((team as any).team_lead_user_id) : null);
-    const sanitized = this.sanitizeTeam(team, captainName ?? undefined, leadUserName ?? undefined);
+    const leadUserName = await this.resolveLeadUserName(
+      auth.tenant_id,
+      (team as any).team_lead_user_id ? String((team as any).team_lead_user_id) : null,
+    );
+    const teamWithUsers = await this.resolveCreatorAndUpdater(auth.tenant_id, team);
+    const sanitized = this.sanitizeTeam(teamWithUsers, captainName ?? undefined, leadUserName ?? undefined);
 
     const listIds = await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id });
     let lists: any[] = [];
     if (listIds.length > 0) {
-      lists = await this.getRepo().db
-        .selectFrom('lists')
+      lists = await this.getRepo()
+        .db.selectFrom('lists')
         .select(['id', 'name', 'description', 'object', 'is_dynamic'])
         .where('tenant_id', '=', auth.tenant_id)
         .where('id', 'in', listIds)
@@ -187,9 +191,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
       : true;
 
     return {
-      ...(captainStillVolunteer
-        ? sanitized
-        : { ...sanitized, team_captain_id: null, team_captain_name: null }),
+      ...(captainStillVolunteer ? sanitized : { ...sanitized, team_captain_id: null, team_captain_name: null }),
       volunteers: volunteers.map((person) => ({
         id: person.id,
         first_name: person.first_name,
@@ -228,14 +230,19 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         if (updatedRow) result = updatedRow as typeof existing;
       }
 
-      let volunteerIds = input.volunteer_ids !== undefined
-        ? this.normalizeVolunteerIds(input.volunteer_ids)
-        : await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
+      let volunteerIds =
+        input.volunteer_ids !== undefined
+          ? this.normalizeVolunteerIds(input.volunteer_ids)
+          : await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
 
-      const currentCaptainId = (result as any)?.team_captain_id != null ? String((result as any).team_captain_id) : null;
-      const targetCaptainId = input.team_captain_id !== undefined
-        ? (input.team_captain_id ? String(input.team_captain_id) : null)
-        : currentCaptainId;
+      const currentCaptainId =
+        (result as any)?.team_captain_id != null ? String((result as any).team_captain_id) : null;
+      const targetCaptainId =
+        input.team_captain_id !== undefined
+          ? input.team_captain_id
+            ? String(input.team_captain_id)
+            : null
+          : currentCaptainId;
 
       volunteerIds = this.normalizeVolunteerIds(volunteerIds, targetCaptainId ?? null);
 
@@ -275,14 +282,20 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
       }
 
       const captainName = this.resolveCaptainName(result, volunteers, targetCaptainId);
-      const targetLeadUserId = input.team_lead_user_id !== undefined
-        ? (input.team_lead_user_id ? String(input.team_lead_user_id) : null)
-        : (result as any).team_lead_user_id ? String((result as any).team_lead_user_id) : null;
+      const targetLeadUserId =
+        input.team_lead_user_id !== undefined
+          ? input.team_lead_user_id
+            ? String(input.team_lead_user_id)
+            : null
+          : (result as any).team_lead_user_id
+            ? String((result as any).team_lead_user_id)
+            : null;
       const leadUserName = await this.resolveLeadUserName(auth.tenant_id, targetLeadUserId, trx);
 
-      const finalListIds = input.list_ids !== undefined
-        ? input.list_ids
-        : await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
+      const finalListIds =
+        input.list_ids !== undefined
+          ? input.list_ids
+          : await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
 
       let lists: any[] = [];
       if (finalListIds.length > 0) {
@@ -301,8 +314,9 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         }));
       }
 
+      const resultWithUsers = await this.resolveCreatorAndUpdater(auth.tenant_id, result, trx);
       return {
-        ...this.sanitizeTeam(result, captainName ?? undefined, leadUserName ?? undefined),
+        ...this.sanitizeTeam(resultWithUsers, captainName ?? undefined, leadUserName ?? undefined),
         volunteers: volunteers.map((person) => ({
           id: person.id,
           first_name: person.first_name,
@@ -315,11 +329,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     });
   }
 
-  private async fetchVolunteers(
-    tenant_id: string,
-    ids: string[],
-    trx?: Transaction<Models>,
-  ) {
+  private async fetchVolunteers(tenant_id: string, ids: string[], trx?: Transaction<Models>) {
     if (!ids?.length) return [];
     return this.personsRepo.getByIds({ tenant_id, ids, tags: [this.volunteerTag] }, trx);
   }
@@ -335,12 +345,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     return Array.from(set);
   }
 
-  private async ensureVolunteerTag(
-    tenant_id: string,
-    personIds: string[],
-    user_id: string,
-    trx?: Transaction<Models>,
-  ) {
+  private async ensureVolunteerTag(tenant_id: string, personIds: string[], user_id: string, trx?: Transaction<Models>) {
     const ids = Array.from(new Set(personIds.filter(Boolean)));
     if (!ids.length) return;
 
@@ -394,13 +399,14 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     volunteers: Array<{ id: string; first_name: string; last_name: string }>,
     fallbackId?: string | null,
   ) {
-    const captainId = fallbackId !== undefined
-      ? fallbackId
-        ? String(fallbackId)
-        : null
-      : record?.team_captain_id != null
-        ? String(record.team_captain_id)
-        : null;
+    const captainId =
+      fallbackId !== undefined
+        ? fallbackId
+          ? String(fallbackId)
+          : null
+        : record?.team_captain_id != null
+          ? String(record.team_captain_id)
+          : null;
     if (!captainId) return null;
     const captain = volunteers.find((v) => v.id === captainId);
     if (!captain) return null;
@@ -419,6 +425,8 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
       updated_at: record.updated_at ?? null,
       team_captain_name: captainName ?? null,
       team_lead_user_name: leadUserName ?? null,
+      created_by_name: record.created_by_name ?? null,
+      updated_by_name: record.updated_by_name ?? null,
     };
   }
 }

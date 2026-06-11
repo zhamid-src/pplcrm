@@ -17,11 +17,12 @@ interface PersonOption {
   label: string;
 }
 
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe],
+  imports: [FormField, RouterModule, Icon, DatePipe, RecordActivities],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {
@@ -99,12 +100,7 @@ export class TeamDetailComponent implements OnInit {
     if (!this.isNew()) {
       this.id = this.route.snapshot.paramMap.get('id');
     }
-    await Promise.all([
-      this.loadPeople(),
-      this.loadUsers(),
-      this.loadLists(),
-      this.loadTeam(),
-    ]);
+    await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
 
     if (this.isNew()) {
       const state = window.history.state;
@@ -315,7 +311,7 @@ export class TeamDetailComponent implements OnInit {
       this.detail.set(team);
       this.setForm(team);
       const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id } }
+        filterModel: { team_id: { value: this.id } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
     } catch (err: any) {
@@ -342,21 +338,30 @@ export class TeamDetailComponent implements OnInit {
   protected getPriorityClass(priority: string | null | undefined): string {
     const p = String(priority || '').toLowerCase();
     switch (p) {
-      case 'urgent': return 'badge-error text-error-content';
-      case 'high': return 'badge-warning text-warning-content';
-      case 'medium': return 'badge-info text-info-content';
-      default: return 'badge-ghost';
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
     }
   }
 
   protected getStatusClass(status: string | null | undefined): string {
     const s = String(status || '').toLowerCase();
     switch (s) {
-      case 'done': return 'badge-success text-success-content';
-      case 'in_progress': return 'badge-info text-info-content';
-      case 'blocked': return 'badge-error text-error-content';
-      case 'canceled': return 'badge-neutral text-neutral-content';
-      default: return 'badge-ghost';
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'blocked':
+        return 'badge-error text-error-content';
+      case 'canceled':
+        return 'badge-neutral text-neutral-content';
+      default:
+        return 'badge-ghost';
     }
   }
 }

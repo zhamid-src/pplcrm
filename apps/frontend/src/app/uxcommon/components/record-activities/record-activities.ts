@@ -10,9 +10,7 @@ import { ActivityService } from '../../../experiences/activity/services/activity
   template: `
     <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
       <!-- Header -->
-      <div
-        class="flex items-center justify-between px-3 py-2 text-sm font-medium bg-gray-50 border-b border-gray-200"
-      >
+      <div class="flex items-center justify-between px-3 py-2 text-sm font-medium bg-gray-50 border-b border-gray-200">
         <span class="flex items-center gap-2">
           <pc-icon name="clock" [size]="4" class="text-gray-500"></pc-icon>
           <span class="font-semibold text-gray-700">Activity History</span>
@@ -30,10 +28,7 @@ import { ActivityService } from '../../../experiences/activity/services/activity
       <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
         @if (isLoading()) {
           <div class="flex items-center justify-center py-6">
-            <span
-              class="loading loading-spinner loading-sm text-gray-400"
-              aria-label="Loading activities"
-            ></span>
+            <span class="loading loading-spinner loading-sm text-gray-400" aria-label="Loading activities"></span>
           </div>
         } @else if (activities().length === 0) {
           <div class="flex flex-col items-center justify-center py-6 gap-1 text-gray-400">
@@ -41,10 +36,7 @@ import { ActivityService } from '../../../experiences/activity/services/activity
             <span class="text-xs">No activity recorded yet</span>
           </div>
         } @else {
-          <ol
-            class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3"
-            aria-label="Record activity timeline"
-          >
+          <ol class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3" aria-label="Record activity timeline">
             @for (act of activities(); track act.id) {
               <li class="ml-4">
                 <!-- Timeline dot -->
@@ -61,10 +53,9 @@ import { ActivityService } from '../../../experiences/activity/services/activity
                     <span class="font-semibold">{{ act.first_name }} {{ act.last_name }}</span>
                     {{ getActivityLabel(act) }}
                   </p>
-                  <time
-                    class="text-[10px] text-gray-400 mt-0.5 block"
-                    [title]="act.created_at | date:'medium'"
-                  >{{ act.created_at | date:'short' }}</time>
+                  <time class="text-[10px] text-gray-400 mt-0.5 block" [title]="act.created_at | date: 'medium'">{{
+                    act.created_at | date: 'short'
+                  }}</time>
                 </div>
               </li>
             }
@@ -86,12 +77,15 @@ export class RecordActivities {
   protected readonly activityCount = computed(() => this.activities().length);
 
   constructor() {
-    effect(() => {
-      // Access signals to subscribe to updates
-      this.entityId();
-      this.entity();
-      void this.loadActivities();
-    }, { allowSignalWrites: true });
+    effect(
+      () => {
+        // Access signals to subscribe to updates
+        this.entityId();
+        this.entity();
+        void this.loadActivities();
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   public async loadActivities(): Promise<void> {
@@ -111,33 +105,55 @@ export class RecordActivities {
 
   protected getActivityIcon(activity: string): PcIconNameType {
     switch (activity) {
-      case 'create':   return 'plus';
-      case 'update':   return 'pencil-square';
-      case 'delete':   return 'trash';
-      case 'merge':    return 'merge';
-      case 'import':   return 'arrow-up-tray';
-      case 'export':   return 'arrow-down-tray';
-      case 'assign':   return 'user-plus';
-      case 'unassign': return 'user-circle';
-      case 'close':    return 'check-circle';
-      case 'reopen':   return 'arrow-path';
-      default:         return 'information-circle';
+      case 'create':
+        return 'plus';
+      case 'update':
+        return 'pencil-square';
+      case 'delete':
+        return 'trash';
+      case 'merge':
+        return 'merge';
+      case 'import':
+        return 'arrow-up-tray';
+      case 'export':
+        return 'arrow-down-tray';
+      case 'assign':
+        return 'user-plus';
+      case 'unassign':
+        return 'user-circle';
+      case 'close':
+        return 'check-circle';
+      case 'reopen':
+        return 'arrow-path';
+      default:
+        return 'information-circle';
     }
   }
 
   protected getActivityDotClass(activity: string): string {
     switch (activity) {
-      case 'create':   return 'bg-green-100 text-green-600';
-      case 'update':   return 'bg-blue-100 text-blue-600';
-      case 'delete':   return 'bg-red-100 text-red-600';
-      case 'merge':    return 'bg-yellow-100 text-yellow-600';
-      case 'import':   return 'bg-indigo-100 text-indigo-600';
-      case 'export':   return 'bg-purple-100 text-purple-600';
-      case 'assign':   return 'bg-teal-100 text-teal-600';
-      case 'unassign': return 'bg-gray-100 text-gray-500';
-      case 'close':    return 'bg-green-100 text-green-600';
-      case 'reopen':   return 'bg-amber-100 text-amber-600';
-      default:         return 'bg-gray-100 text-gray-400';
+      case 'create':
+        return 'bg-green-100 text-green-600';
+      case 'update':
+        return 'bg-blue-100 text-blue-600';
+      case 'delete':
+        return 'bg-red-100 text-red-600';
+      case 'merge':
+        return 'bg-yellow-100 text-yellow-600';
+      case 'import':
+        return 'bg-indigo-100 text-indigo-600';
+      case 'export':
+        return 'bg-purple-100 text-purple-600';
+      case 'assign':
+        return 'bg-teal-100 text-teal-600';
+      case 'unassign':
+        return 'bg-gray-100 text-gray-500';
+      case 'close':
+        return 'bg-green-100 text-green-600';
+      case 'reopen':
+        return 'bg-amber-100 text-amber-600';
+      default:
+        return 'bg-gray-100 text-gray-400';
     }
   }
 
@@ -178,9 +194,15 @@ export class RecordActivities {
     else if (entLower === 'households') ent = 'household';
     else if (entLower === 'companies') ent = 'company';
     else if (entLower === 'tasks') ent = 'task';
+    else if (entLower === 'teams') ent = 'team';
+    else if (entLower === 'workflows') ent = 'workflow';
+    else if (entLower === 'lists') ent = 'list';
+    else if (entLower === 'web_forms') ent = 'web form';
+    else if (entLower === 'volunteer_events') ent = 'volunteer event';
 
     switch (act.activity) {
-      case 'create':   return `created this ${ent} record`;
+      case 'create':
+        return `created this ${ent} record`;
       case 'update': {
         if (meta['action'] === 'add_comment') {
           return `added a comment to this ${ent}`;
@@ -203,7 +225,11 @@ export class RecordActivities {
               const month = parseInt(parts[1], 10) - 1;
               const day = parseInt(parts[2], 10);
               const dateVal = new Date(year, month, day);
-              formattedDate = dateVal.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+              formattedDate = dateVal.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
             }
             return `changed the due date to ${formattedDate} on this ${ent}`;
           }
@@ -218,28 +244,46 @@ export class RecordActivities {
         if (meta['action'] === 'status_update') {
           return `updated the status of this ${ent}`;
         }
-        
+
         // Household address check
         if (entLower === 'households' || entLower === 'household') {
-          const addressFields = ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'formatted_address'];
-          if (meta.changes && Object.keys(meta.changes).some(k => addressFields.includes(k))) {
+          const addressFields = [
+            'apt',
+            'street_num',
+            'street1',
+            'street2',
+            'city',
+            'state',
+            'zip',
+            'country',
+            'formatted_address',
+          ];
+          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
             return `updated the address of this household` + this.getChangesSuffix(meta.changes);
           }
         }
         return `updated this ${ent} record` + this.getChangesSuffix(meta.changes);
       }
-      case 'delete':   return `deleted ${ent} record${qty}`;
-      case 'merge':    return `merged duplicate ${ent} records`;
-      case 'import':   return `imported this ${ent}${qty}`;
-      case 'export':   return `exported ${ent} data${qty}`;
+      case 'delete':
+        return `deleted ${ent} record${qty}`;
+      case 'merge':
+        return `merged duplicate ${ent} records`;
+      case 'import':
+        return `imported this ${ent}${qty}`;
+      case 'export':
+        return `exported ${ent} data${qty}`;
       case 'assign': {
         const assignee = meta['assigned_to_name'] ?? 'someone';
         return `assigned this ${ent} to ${assignee}`;
       }
-      case 'unassign': return `unassigned this ${ent}`;
-      case 'close':    return `closed this ${ent}`;
-      case 'reopen':   return `reopened this ${ent}`;
-      default:         return `performed ${act.activity} on this ${ent}`;
+      case 'unassign':
+        return `unassigned this ${ent}`;
+      case 'close':
+        return `closed this ${ent}`;
+      case 'reopen':
+        return `reopened this ${ent}`;
+      default:
+        return `performed ${act.activity} on this ${ent}`;
     }
   }
 }

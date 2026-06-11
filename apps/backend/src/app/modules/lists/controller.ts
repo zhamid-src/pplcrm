@@ -321,7 +321,11 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       // Support legacy string values too (pre-migration rows or test data).
       let parsed: unknown = n.target_lists;
       if (typeof parsed === 'string') {
-        try { parsed = JSON.parse(parsed); } catch { /* fall through */ }
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          /* fall through */
+        }
       }
       if (Array.isArray(parsed)) {
         return parsed.includes(id);
@@ -332,7 +336,10 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         return include.includes(id);
       }
       if (typeof parsed === 'string') {
-        return parsed.split(',').map((s) => s.trim()).includes(id);
+        return parsed
+          .split(',')
+          .map((s) => s.trim())
+          .includes(id);
       }
       return false;
     });
@@ -496,6 +503,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         }
       }
     }
-    return list;
+    if (!list) return list;
+    return this.resolveCreatorAndUpdater(input.tenant_id, list);
   }
 }

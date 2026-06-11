@@ -10,9 +10,11 @@ import { Icon } from '@icons/icon';
 import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+
 @Component({
   selector: 'pc-list-view',
-  imports: [ReactiveFormsModule, AddBtnRow, Icon, RouterLink, CommonModule],
+  imports: [ReactiveFormsModule, AddBtnRow, Icon, RouterLink, CommonModule, RecordActivities],
   templateUrl: './list-view.html',
 })
 export class ListView implements OnInit, OnDestroy {

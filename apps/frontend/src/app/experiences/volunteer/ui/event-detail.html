@@ -555,7 +555,14 @@
             </div>
           </div>
         </div>
-        }
+
+        @if (id) {
+        <div class="card bg-base-100 border border-base-350 shadow-md mt-6">
+          <div class="card-body p-6 space-y-4">
+            <pc-record-activities [entity]="'volunteer_events'" [entityId]="id"></pc-record-activities>
+          </div>
+        </div>
+        } }
       </div>
     </form>
   </div>

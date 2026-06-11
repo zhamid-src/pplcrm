@@ -289,17 +289,6 @@
     >
       Enrolled Contacts ({{ enrollments().length }})
     </button>
-    <button
-      (click)="!isNew() && selectTab('activity')"
-      class="tab rounded-xl transition-all font-semibold"
-      [class.tab-active]="activeTab() === 'activity'"
-      [class.opacity-50]="isNew()"
-      [class.cursor-not-allowed]="isNew()"
-      [class.tooltip]="isNew()"
-      [attr.data-tip]="isNew() ? 'Save workflow to view audit log' : null"
-    >
-      Activity & Audit
-    </button>
   </div>
 
   <!-- TAB 1: VISUAL SEQUENCE DESIGNER -->
@@ -866,23 +855,12 @@
       </div>
     </div>
   </div>
-  }
-
-  <!-- TAB 3: ACTIVITY LOGS & AUDIT -->
-  @if (!isNew() && activeTab() === 'activity') {
-  <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl w-full">
-    <div class="card-body gap-4 p-5">
-      <h2 class="card-title text-lg font-bold">Activity Track & Audit Log</h2>
-      <p class="text-xs text-base-content/50">
-        Full audit logs of manual triggers, edits, cancellations, and background system deliveries.
-      </p>
-
-      <div class="mt-2 border-t border-base-200 pt-4">
-        <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
-      </div>
-    </div>
+  } @if (!isNew() && workflowId()) {
+  <div class="mt-8 border-t border-base-200 pt-6">
+    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
   </div>
-  } }
+  }
+  }
 </div>
 
 <!-- FULLSCREEN DIALOG: EMAIL TEMPLATE VISUAL DESIGNER -->

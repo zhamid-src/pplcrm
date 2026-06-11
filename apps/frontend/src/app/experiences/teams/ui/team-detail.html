@@ -8,27 +8,19 @@
       </button>
       <div class="divider divider-horizontal hidden sm:block"></div>
       <div>
-        <h1 class="text-2xl font-semibold">
-          @if (isNew()) {
-            New Team
-          } @else {
-            {{ detail()?.name || 'Team' }}
-          }
-        </h1>
+        <h1 class="text-2xl font-semibold">@if (isNew()) { New Team } @else { {{ detail()?.name || 'Team' }} }</h1>
         <p class="text-sm text-base-content/70">Teams group volunteers for easier coordination.</p>
       </div>
     </div>
     @if (!isNew() && detail()) {
-      <button class="btn btn-error btn-sm" type="button" (click)="deleteTeam()" [disabled]="saving()">
-        Delete Team
-      </button>
+    <button class="btn btn-error btn-sm" type="button" (click)="deleteTeam()" [disabled]="saving()">Delete Team</button>
     }
   </div>
 
   @if (error()) {
-    <div class="alert alert-error">
-      <span>{{ error() }}</span>
-    </div>
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
   }
 
   <form class="grid gap-6" (submit)="save($event)" novalidate>
@@ -36,9 +28,15 @@
       <div class="grid gap-4 sm:grid-cols-3">
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="team-name">Team Name</label>
-          <input id="team-name" type="text" class="input input-bordered w-full" [formField]="form.name" placeholder="Community Outreach" />
+          <input
+            id="team-name"
+            type="text"
+            class="input input-bordered w-full"
+            [formField]="form.name"
+            placeholder="Community Outreach"
+          />
           @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
-            <p class="text-sm text-error">Team name is required.</p>
+          <p class="text-sm text-error">Team name is required.</p>
           }
         </div>
         <div class="space-y-2">
@@ -46,7 +44,7 @@
           <select id="team-captain" class="select select-bordered w-full" [formField]="form.team_captain_id">
             <option value="">No captain</option>
             @for (person of people(); track person.id) {
-              <option [value]="person.id">{{ person.label }}</option>
+            <option [value]="person.id">{{ person.label }}</option>
             }
           </select>
         </div>
@@ -55,7 +53,7 @@
           <select id="team-lead" class="select select-bordered w-full" [formField]="form.team_lead_user_id">
             <option value="">No lead</option>
             @for (user of users(); track user.id) {
-              <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
+            <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
             }
           </select>
         </div>
@@ -88,9 +86,14 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
-          <select id="volunteer-select" class="select select-bordered h-40 w-full" (change)="onVolunteersChange($event)" multiple>
+          <select
+            id="volunteer-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onVolunteersChange($event)"
+            multiple
+          >
             @for (person of people(); track person.id) {
-              <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
+            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
             }
           </select>
           <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
@@ -99,20 +102,20 @@
           <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (volunteers().length === 0) {
-              <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
             } @else {
-              <ul class="divide-y divide-base-200">
-                @for (volunteer of volunteers(); track volunteer.id) {
-                  <li class="flex items-center justify-between p-3 text-sm">
-                    <div>
-                      <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
-                      @if (volunteer.email) {
-                        <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
-                      }
-                    </div>
-                  </li>
-                }
-              </ul>
+            <ul class="divide-y divide-base-200">
+              @for (volunteer of volunteers(); track volunteer.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                  @if (volunteer.email) {
+                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  }
+                </div>
+              </li>
+              }
+            </ul>
             }
           </div>
         </div>
@@ -123,17 +126,22 @@
     <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
       <div>
         <h2 class="text-lg font-semibold">Target Constituent Lists</h2>
-        <p class="text-sm text-base-content/70">Assign lists of people or households this team is responsible for contacting.</p>
+        <p class="text-sm text-base-content/70">
+          Assign lists of people or households this team is responsible for contacting.
+        </p>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
-          <select id="lists-select" class="select select-bordered h-40 w-full" (change)="onListsChange($event)" multiple>
+          <select
+            id="lists-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onListsChange($event)"
+            multiple
+          >
             @for (list of availableLists(); track list.id) {
-              <option [value]="list.id" [selected]="isListSelected(list.id)">
-                {{ list.name }} ({{ list.object }})
-              </option>
+            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
             }
           </select>
           <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
@@ -142,20 +150,20 @@
           <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (assignedLists().length === 0) {
-              <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
             } @else {
-              <ul class="divide-y divide-base-200">
-                @for (list of assignedLists(); track list.id) {
-                  <li class="flex items-center justify-between p-3 text-sm">
-                    <div>
-                      <p class="font-medium text-base-content">{{ list.name }}</p>
-                      <p class="text-xs text-base-content/60">
-                        {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                      </p>
-                    </div>
-                  </li>
-                }
-              </ul>
+            <ul class="divide-y divide-base-200">
+              @for (list of assignedLists(); track list.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ list.name }}</p>
+                  <p class="text-xs text-base-content/60">
+                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                  </p>
+                </div>
+              </li>
+              }
+            </ul>
             }
           </div>
         </div>
@@ -179,46 +187,42 @@
 
       <div class="overflow-x-auto rounded border border-base-200">
         @if (teamTasks().length === 0) {
-          <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
         } @else {
-          <table class="table table-zebra w-full text-sm">
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Due Date</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (task of teamTasks(); track task.id) {
-                <tr>
-                  <td class="font-medium">
-                    <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary">
-                      {{ task.name }}
-                    </a>
-                  </td>
-                  <td>
-                    <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
-                      {{ task.priority || 'medium' }}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
-                      {{ task.status || 'todo' }}
-                    </span>
-                  </td>
-                  <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
-                  <td>
-                    <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary">
-                      View details
-                    </a>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+        <table class="table table-zebra w-full text-sm">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (task of teamTasks(); track task.id) {
+            <tr>
+              <td class="font-medium">
+                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                  {{ task.priority || 'medium' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                  {{ task.status || 'todo' }}
+                </span>
+              </td>
+              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+              <td>
+                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
         }
       </div>
     </section>
@@ -231,8 +235,13 @@
       </button>
     </div>
   </form>
+
+  @if (!isNew() && detail()?.id) {
+  <div class="mt-8 border-t border-base-250 pt-6">
+    <pc-record-activities [entity]="'teams'" [entityId]="detail()!.id"></pc-record-activities>
+  </div>
+  }
 </section>
-}
-@else {
-  <div class="p-6 text-sm text-base-content/70">Loading team…</div>
+} @else {
+<div class="p-6 text-sm text-base-content/70">Loading team…</div>
 }

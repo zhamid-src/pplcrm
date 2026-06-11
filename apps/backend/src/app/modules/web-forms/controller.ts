@@ -17,6 +17,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     super(new WebFormsRepo());
   }
 
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  }
+
   public async getFormPublic(id: string) {
     return this.getRepo().getByIdPublic(id);
   }

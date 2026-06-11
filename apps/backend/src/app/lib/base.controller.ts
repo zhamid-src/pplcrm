@@ -425,4 +425,29 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       rowCount: rows.length,
     };
   }
+
+  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: any) {
+    if (!record) return record;
+    const db = trx || this.repo.db;
+    const userIds = [record.createdby_id, record.updatedby_id].filter(Boolean);
+    if (userIds.length === 0) return record;
+
+    const users = await db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('id', 'in', userIds as any)
+      .where('tenant_id', '=', tenantId as any)
+      .execute();
+
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u.id)] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User';
+    }
+
+    return {
+      ...record,
+      created_by_name: record.createdby_id ? (userMap[String(record.createdby_id)] ?? 'Unknown User') : null,
+      updated_by_name: record.updatedby_id ? (userMap[String(record.updatedby_id)] ?? 'Unknown User') : null,
+    };
+  }
 }

@@ -12,6 +12,12 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     super(new WorkflowsRepo());
   }
 
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const workflow = await super.getOneById(input);
+    if (!workflow) return workflow;
+    return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
+  }
+
   /**
    * Retrieves all steps for a specific workflow, ordered by step_number.
    */
