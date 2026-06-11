@@ -1,6 +1,87 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <header class="mb-8 space-y-2">
+    <h1 class="text-3xl font-bold tracking-tight">
+      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Configuration } @case
+      ('billing') { Billing } }
+    </h1>
+    <p class="text-base-content/70">
+      @switch (currentMode) { @case ('settings') { Control user-specific preferences for PeopleCRM. } @case
+      ('configuration') { Control tenant-wide defaults for PeopleCRM. } @case ('billing') { Manage your subscription
+      plans and payment methods. } }
+    </p>
+  </header>
+
   @if (hasLoaded()) {
   <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
+    <!-- Sidebar Navigation -->
+    <aside class="w-48 md:sticky md:top-8 shrink-0">
+      <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected(section.config.id)"
+          [class.text-base-content]="isSelected(section.config.id)"
+          [class.text-base-content]="!isSelected(section.config.id)"
+          [class.opacity-70]="!isSelected(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+        </button>
+        } @if (currentMode === 'configuration') {
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('email-sync')"
+          [class.opacity-70]="!isSelected('email-sync')"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon name="envelope" class="mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" [size]="5" />
+          Email Sync
+        </button>
+
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('domains')"
+          [class.opacity-70]="!isSelected('domains')"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon
+            name="globe-americas"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('domains')"
+            [size]="5"
+          />
+          Domain Verification
+        </button>
+        } @if (currentMode === 'billing') {
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('billing')"
+          [class.opacity-70]="!isSelected('billing')"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon name="credit-card" class="mr-2 opacity-80" [class.text-primary]="isSelected('billing')" [size]="5" />
+          Billing
+        </button>
+        }
+      </nav>
+    </aside>
+
     <!-- Main Content Area -->
     <main class="flex-1 w-full max-w-4xl">
       @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
