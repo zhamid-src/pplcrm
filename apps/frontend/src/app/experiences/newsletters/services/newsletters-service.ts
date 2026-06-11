@@ -12,6 +12,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
+  protected override readonly endpointName = 'newsletters';
+
   public add(row: AddMarketingEmailType) {
     return this.api.newsletters.create.mutate(row);
   }
@@ -26,17 +28,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
 
   public count(): Promise<number> {
     return this.api.newsletters.count.query();
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return this.api.newsletters.delete.mutate(id);
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    for (const id of ids) {
-      await this.delete(id);
-    }
-    return true;
   }
 
   public detachTag(_id: string, _tag_name: string) {

@@ -11,6 +11,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
+  protected override readonly endpointName = 'webForms';
+
   public add(row: AddWebFormType) {
     return this.api.webForms.add.mutate(row);
   }
@@ -25,17 +27,6 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
 
   public count(): Promise<number> {
     return Promise.resolve(0);
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return this.api.webForms.delete.mutate(id);
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    for (const id of ids) {
-      await this.delete(id);
-    }
-    return true;
   }
 
   public detachTag(_id: string, _tag_name: string) {

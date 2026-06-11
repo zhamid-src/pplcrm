@@ -11,6 +11,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class VolunteerEventsFrontendService extends AbstractAPIService<'volunteer_events', UpdateVolunteerEventType> {
+  protected override readonly endpointName = 'volunteer';
+
   public add(row: AddVolunteerEventType) {
     return this.api.volunteer.add.mutate(row);
   }
@@ -24,17 +26,7 @@ export class VolunteerEventsFrontendService extends AbstractAPIService<'voluntee
   }
 
   public count(): Promise<number> {
-    return this.api.volunteer.getAll
-      .query({ startRow: 0, endRow: 1 })
-      .then((res: { count: number }) => res.count ?? 0);
-  }
-
-  public delete(id: string): Promise<boolean> {
-    return this.api.volunteer.delete.mutate(id);
-  }
-
-  public deleteMany(ids: string[]): Promise<boolean> {
-    return Promise.all(ids.map((id) => this.delete(id))).then((results) => results.every(Boolean));
+    return this.api.volunteer.getAll.query({ startRow: 0, endRow: 1 }).then((res: { count: number }) => res.count ?? 0);
   }
 
   public detachTag(_id: string, _tag_name: string) {

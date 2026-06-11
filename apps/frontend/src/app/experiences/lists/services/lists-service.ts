@@ -6,6 +6,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 /** Service handling CRUD operations for list entities. */
 @Service()
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
+  protected override readonly endpointName = 'lists';
+
   /** Add a new list (opt-out of global error toast to avoid duplicates) */
   public add(row: AddListType) {
     return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
@@ -25,14 +27,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 
   public count(): Promise<number> {
     return this.api.lists.count.query();
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.lists.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return (await this.api.lists.deleteMany.mutate(ids)) !== null;
   }
 
   /** Tags are not supported on lists */

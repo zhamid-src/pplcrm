@@ -65,6 +65,8 @@ export interface DetachTagResult {
  */
 @Service()
 export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
+
   /**
    * Add a single person record to the backend.
    *
@@ -113,7 +115,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param skipAlert - Skip global error alerts
    * @returns True if deleted, false otherwise
    */
-  public async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
       return (await (this.api.persons.delete.mutate as any)({ id, force }, opts)) !== null;
@@ -129,7 +131,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param skipAlert - Skip global error alerts
    * @returns True if deletion was successful
    */
-  public async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
       return await (this.api.persons.deleteMany.mutate as any)({ ids, force }, opts);

@@ -4,6 +4,8 @@ import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@c
 
 @Service()
 export class FilesService extends AbstractAPIService<'files', any> {
+  protected override readonly endpointName = 'files';
+
   public add(_row: any) {
     return Promise.resolve({});
   }
@@ -18,14 +20,6 @@ export class FilesService extends AbstractAPIService<'files', any> {
 
   public count(): Promise<number> {
     return Promise.resolve(0);
-  }
-
-  public async delete(id: string): Promise<boolean> {
-    return (await this.api.files.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    return await this.api.files.deleteMany.mutate(ids);
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -54,8 +48,14 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return Promise.resolve({});
   }
 
-  public async getUploadUrl(filename: string, mimeType?: string | null): Promise<{ uploadUrl: string; storageKey: string }> {
-    return (await this.api.files.getUploadUrl.query({ filename, mimeType })) as { uploadUrl: string; storageKey: string };
+  public async getUploadUrl(
+    filename: string,
+    mimeType?: string | null,
+  ): Promise<{ uploadUrl: string; storageKey: string }> {
+    return (await this.api.files.getUploadUrl.query({ filename, mimeType })) as {
+      uploadUrl: string;
+      storageKey: string;
+    };
   }
 
   public async registerFile(data: {

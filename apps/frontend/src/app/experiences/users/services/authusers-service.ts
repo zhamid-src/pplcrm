@@ -13,6 +13,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
 export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
+
   public add(row: InviteAuthUserType) {
     return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
       meta: { skipErrorHandler: true },
@@ -31,11 +33,11 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.count.query();
   }
 
-  public delete(_id: string): Promise<boolean> {
+  public override delete(_id: string): Promise<boolean> {
     return Promise.resolve(false);
   }
 
-  public deleteMany(_ids: string[]): Promise<boolean> {
+  public override deleteMany(_ids: string[]): Promise<boolean> {
     return Promise.resolve(false);
   }
 
