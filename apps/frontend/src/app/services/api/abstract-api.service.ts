@@ -59,7 +59,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * @param row - The row data to add to the database
    * @returns Promise resolving to the newly created row or unknown if operation fails
    */
-  public abstract add(row: U): Promise<Partial<T> | unknown>;
+  public abstract add(row: U, options?: any): Promise<Partial<T> | unknown>;
 
   /**
    * Adds multiple rows to the database in a batch operation.
@@ -216,7 +216,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
    * console.log('Updated record:', updated);
    * ```
    */
-  public abstract update(id: string, data: U): Promise<Partial<T>[] | unknown>;
+  public abstract update(id: string, data: U, options?: any): Promise<Partial<T>[] | unknown>;
 
   public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
 

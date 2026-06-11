@@ -172,7 +172,12 @@ export class ListDetail {
     return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
   });
 
-  protected readonly rulesRoot = signal<QueryBuilderGroupNode>({ kind: 'group', id: 'root', conjunction: 'AND', rules: [] });
+  protected readonly rulesRoot = signal<QueryBuilderGroupNode>({
+    kind: 'group',
+    id: 'root',
+    conjunction: 'AND',
+    rules: [],
+  });
 
   protected readonly listFields = computed<QueryBuilderField[]>(() => {
     const isPeople = this.listType() === 'people';
@@ -361,23 +366,20 @@ export class ListDetail {
         this.listsRefresh.trigger();
         done();
       })
-      .catch((err: any) => this.alertSvc.showError(err?.message ?? String(err)))
       .finally(() => end());
   }
 
   private evalGroupWithRow(group: QueryBuilderGroupNode, tagSet: Set<string>, row: any): boolean {
     const results = group.rules.map((it) =>
-      this.isRule(it) ? this.evalRule(it, tagSet, row) : this.evalGroupWithRow(it as QueryBuilderGroupNode, tagSet, row),
+      this.isRule(it)
+        ? this.evalRule(it, tagSet, row)
+        : this.evalGroupWithRow(it as QueryBuilderGroupNode, tagSet, row),
     );
     if (group.conjunction === 'AND') return results.every(Boolean);
     return results.some(Boolean);
   }
 
-  private evalRule(
-    rule: { field: string; op: string; value?: any },
-    tagSet: Set<string>,
-    row: any,
-  ): boolean {
+  private evalRule(rule: { field: string; op: string; value?: any }, tagSet: Set<string>, row: any): boolean {
     const field = rule.field;
     const op = rule.op;
     const val = rule.value;
@@ -385,12 +387,16 @@ export class ListDetail {
     if (field === 'tag' || field === 'tags' || field === 'issues') {
       if (!val) return false;
       const has = tagSet.has(val);
-      return (op === 'eq' || op === 'equals' || op === 'contains') ? has : !has;
+      return op === 'eq' || op === 'equals' || op === 'contains' ? has : !has;
     }
 
     // For other fields, retrieve the row value
-    const rowVal = String(row?.[field] ?? '').trim().toLowerCase();
-    const searchVal = String(val ?? '').trim().toLowerCase();
+    const rowVal = String(row?.[field] ?? '')
+      .trim()
+      .toLowerCase();
+    const searchVal = String(val ?? '')
+      .trim()
+      .toLowerCase();
 
     const isEmpty = rowVal.length === 0;
 
