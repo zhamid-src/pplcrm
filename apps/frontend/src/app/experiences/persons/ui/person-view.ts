@@ -39,6 +39,11 @@ export class PersonView implements OnInit {
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly openedNewslettersCount = computed(() => {
+    return this.activityData().newsletters.filter(
+      (n: any) => n.event_type === 'open' || n.event_type === 'click'
+    ).length;
+  });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
 
