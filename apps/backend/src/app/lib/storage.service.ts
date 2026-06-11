@@ -1,14 +1,15 @@
-import { BlobServiceClient } from '@azure/storage-blob';
+import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
 import { env } from '../../env';
 
 export class StorageService {
+  private serviceClient: BlobServiceClient;
   private containerClient;
 
   constructor() {
     const connectionString = env.azureStorageConnectionString || 'UseDevelopmentStorage=true';
     const containerName = env.azureStorageContainer || 'uploads';
-    const serviceClient = BlobServiceClient.fromConnectionString(connectionString);
-    this.containerClient = serviceClient.getContainerClient(containerName);
+    this.serviceClient = BlobServiceClient.fromConnectionString(connectionString);
+    this.containerClient = this.serviceClient.getContainerClient(containerName);
   }
 
   public async upload(key: string, data: Buffer, contentType: string): Promise<void> {
@@ -16,6 +17,35 @@ export class StorageService {
     const blockBlobClient = this.containerClient.getBlockBlobClient(key);
     await blockBlobClient.upload(data, data.length, {
       blobHTTPHeaders: { blobContentType: contentType },
+    });
+  }
+
+  public async generateWriteSasUrl(key: string, expiryMinutes = 15): Promise<string> {
+    await this.containerClient.createIfNotExists();
+
+    try {
+      await this.serviceClient.setProperties({
+        cors: [
+          {
+            allowedOrigins: '*',
+            allowedMethods: 'GET,HEAD,POST,PUT,DELETE,OPTIONS',
+            allowedHeaders: '*',
+            exposedHeaders: '*',
+            maxAgeInSeconds: 3600,
+          },
+        ],
+      });
+    } catch (err) {
+      console.warn('Failed to set storage service CORS properties:', err);
+    }
+
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    const permissions = BlobSASPermissions.parse('w');
+    const expiresOn = new Date();
+    expiresOn.setMinutes(expiresOn.getMinutes() + expiryMinutes);
+    return await blockBlobClient.generateSasUrl({
+      permissions,
+      expiresOn,
     });
   }
 

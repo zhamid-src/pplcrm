@@ -2,6 +2,7 @@ import { idSchema, getAllOptions } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { FilesController } from './controller';
+import crypto from 'crypto';
 
 const files = new FilesController();
 
@@ -9,6 +10,38 @@ export const FilesRouter = router({
   getAll: authProcedure
     .input(getAllOptions)
     .query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
+
+  getUploadUrl: authProcedure
+    .input(z.object({
+      filename: z.string(),
+      mimeType: z.string().nullable().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const fileUUID = crypto.randomUUID();
+      const storageKey = `uploads/${ctx.auth.tenant_id}/${fileUUID}_${input.filename}`;
+      const uploadUrl = await files.generateUploadSasUrl(storageKey);
+      return { uploadUrl, storageKey };
+    }),
+
+  registerFile: authProcedure
+    .input(z.object({
+      filename: z.string(),
+      mimeType: z.string().nullable().optional(),
+      sizeBytes: z.number().nullable().optional(),
+      storageKey: z.string(),
+      sha256Hex: z.string().nullable().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return files.add({
+        tenant_id: ctx.auth.tenant_id,
+        filename: input.filename,
+        mime_type: input.mimeType || null,
+        size_bytes: input.sizeBytes || null,
+        storage_key: input.storageKey,
+        sha256_hex: input.sha256Hex || null,
+        uploaded_by: ctx.auth.user_id,
+      });
+    }),
   
   delete: authProcedure
     .input(idSchema)

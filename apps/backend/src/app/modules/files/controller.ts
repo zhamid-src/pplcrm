@@ -14,6 +14,10 @@ export class FilesController extends BaseController<'files', FilesRepo> {
     return this.getAllWithCounts(auth.tenant_id, options);
   }
 
+  public async generateUploadSasUrl(key: string, expiryMinutes = 15): Promise<string> {
+    return this.storageService.generateWriteSasUrl(key, expiryMinutes);
+  }
+
   public override async delete(tenant_id: string, id: string, userId?: string): Promise<boolean> {
     const file = await this.getOneById({ tenant_id, id }) as any;
     if (!file) return false;
