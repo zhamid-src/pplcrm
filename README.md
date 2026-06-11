@@ -6,15 +6,15 @@
 
 ## 🧰 Tech Stack
 
-| Layer         | Tools                                                |
-| ------------- | ---------------------------------------------------- |
-| Frontend      | Angular 22, Tailwind CSS v4, DaisyUI v5, AG Grid     |
-| Backend       | Fastify 5, tRPC, Kysely ORM, PostgreSQL              |
-| Auth          | JWT via `fast-jwt`, refresh tokens, session tracking |
-| Styling       | Tailwind CSS, DaisyUI, SCSS                          |
-| Emails        | MS Graph & Gmail APIs                                |
-| Build Tooling | Nx Monorepo, Esbuild, SWC                            |
-| Testing       | Jest (unit), Playwright (e2e)                        |
+| Layer         | Tools                                                   |
+| ------------- | ------------------------------------------------------- |
+| Frontend      | Angular 22, Tailwind CSS v4, DaisyUI v5, AG Grid        |
+| Backend       | Fastify 5, tRPC, Kysely ORM, PostgreSQL                 |
+| Auth          | JWT via `fast-jwt`, refresh tokens, session tracking    |
+| Styling       | Tailwind CSS, DaisyUI, SCSS                             |
+| Emails        | Postmark for transactional and Sendgrid for newsletters |
+| Build Tooling | Nx Monorepo, Esbuild, SWC                               |
+| Testing       | Jest (unit), Playwright (e2e)                           |
 
 ---
 
