@@ -6,22 +6,72 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Email Client', () => {
   test.beforeEach(async ({ page }) => {
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+
+    // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
+    await page.route(/\/notifications\.getUnreadCount/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: 0 } } }),
+      });
+    });
+
+    await page.route(/\/notifications\.getLatest/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
+      });
+    });
+
+    await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/dashboard\.getStats/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
+                avgFirstResponseHours: 0,
+                avgTimeToCloseHours: 0,
+                emailsAssigned: [],
+                emailsClosed: [],
+                contactsGrowth: [],
+                unassignedCount: 0,
+                totalOpenCount: 0,
+                userStats: [],
+                unassignedSlaBreaches: 0,
+                unassignedEmailSlaBreaches: 0,
+                unassignedTaskSlaBreaches: 0,
+              },
+            },
+          },
+        }),
+      });
+    });
+
     // 1. Mock currentUser to bypass AuthGuard
     await page.route(/\/auth\.currentUser/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'user-1',
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'User',
-              role: 'user',
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'user-1',
+                email: 'test@example.com',
+                first_name: 'Test',
+                last_name: 'User',
+                role: 'user',
+              } } } }),
       });
     });
 
@@ -30,19 +80,15 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: [
-              {
-                id: 'user-1',
-                email: 'test@example.com',
-                first_name: 'Test',
-                last_name: 'User',
-                role: 'user',
-              }
-            ]
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: [
+                {
+                  id: 'user-1',
+                  email: 'test@example.com',
+                  first_name: 'Test',
+                  last_name: 'User',
+                  role: 'user',
+                }
+              ] } } }),
       });
     });
 
@@ -51,30 +97,26 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: [
-              {
-                id: 'inbox-folder',
-                name: 'Inbox',
-                icon: 'inbox',
-                sort_order: 1,
-                is_default: true,
-                is_virtual: false,
-                email_count: 2
-              },
-              {
-                id: 'sent-folder',
-                name: 'Sent',
-                icon: 'paper-airplane',
-                sort_order: 2,
-                is_default: false,
-                is_virtual: false,
-                email_count: 0
-              }
-            ]
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: [
+                {
+                  id: 'inbox-folder',
+                  name: 'Inbox',
+                  icon: 'inbox',
+                  sort_order: 1,
+                  is_default: true,
+                  is_virtual: false,
+                  email_count: 2
+                },
+                {
+                  id: 'sent-folder',
+                  name: 'Sent',
+                  icon: 'paper-airplane',
+                  sort_order: 2,
+                  is_default: false,
+                  is_virtual: false,
+                  email_count: 0
+                }
+              ] } } }),
       });
     });
 
@@ -83,42 +125,38 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: [
-              {
-                id: 'email-1',
-                folder_id: 'inbox-folder',
-                from_email: 'sender1@example.com',
-                from_name: 'John Sender',
-                to_email: 'test@example.com',
-                subject: 'Hello World',
-                preview: 'This is a preview of the email content...',
-                assigned_to: null,
-                updated_at: '2026-05-20T00:00:00.000Z',
-                is_favourite: false,
-                attachment_count: 0,
-                has_attachment: false,
-                status: 'open'
-              },
-              {
-                id: 'email-2',
-                folder_id: 'inbox-folder',
-                from_email: 'sender2@example.com',
-                from_name: 'Jane Sender',
-                to_email: 'test@example.com',
-                subject: 'Important Meeting',
-                preview: 'Just checking in about the meeting today.',
-                assigned_to: null,
-                updated_at: '2026-05-20T01:00:00.000Z',
-                is_favourite: true,
-                attachment_count: 1,
-                has_attachment: true,
-                status: 'open'
-              }
-            ]
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: [
+                {
+                  id: 'email-1',
+                  folder_id: 'inbox-folder',
+                  from_email: 'sender1@example.com',
+                  from_name: 'John Sender',
+                  to_email: 'test@example.com',
+                  subject: 'Hello World',
+                  preview: 'This is a preview of the email content...',
+                  assigned_to: null,
+                  updated_at: '2026-05-20T00:00:00.000Z',
+                  is_favourite: false,
+                  attachment_count: 0,
+                  has_attachment: false,
+                  status: 'open'
+                },
+                {
+                  id: 'email-2',
+                  folder_id: 'inbox-folder',
+                  from_email: 'sender2@example.com',
+                  from_name: 'Jane Sender',
+                  to_email: 'test@example.com',
+                  subject: 'Important Meeting',
+                  preview: 'Just checking in about the meeting today.',
+                  assigned_to: null,
+                  updated_at: '2026-05-20T01:00:00.000Z',
+                  is_favourite: true,
+                  attachment_count: 1,
+                  has_attachment: true,
+                  status: 'open'
+                }
+              ] } } }),
       });
     });
 
@@ -127,14 +165,10 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: [
-              { email_id: 'email-1', has: false },
-              { email_id: 'email-2', has: true }
-            ]
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: [
+                { email_id: 'email-1', has: false },
+                { email_id: 'email-2', has: true }
+              ] } } }),
       });
     });
 
@@ -143,31 +177,27 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              email: {
-                id: 'email-1',
-                folder_id: 'inbox-folder',
-                from_email: 'sender1@example.com',
-                from_name: 'John Sender',
-                to_email: 'test@example.com',
-                subject: 'Hello World',
-                preview: 'This is a preview of the email content...',
-                assigned_to: null,
-                updated_at: '2026-05-20T00:00:00.000Z',
-                is_favourite: false,
-                attachment_count: 0,
-                has_attachment: false,
-                status: 'open',
-                to_list: [{ email: 'test@example.com', name: 'Test User' }],
-                cc_list: [],
-                bcc_list: []
-              },
-              comments: []
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                email: {
+                  id: 'email-1',
+                  folder_id: 'inbox-folder',
+                  from_email: 'sender1@example.com',
+                  from_name: 'John Sender',
+                  to_email: 'test@example.com',
+                  subject: 'Hello World',
+                  preview: 'This is a preview of the email content...',
+                  assigned_to: null,
+                  updated_at: '2026-05-20T00:00:00.000Z',
+                  is_favourite: false,
+                  attachment_count: 0,
+                  has_attachment: false,
+                  status: 'open',
+                  to_list: [{ email: 'test@example.com', name: 'Test User' }],
+                  cc_list: [],
+                  bcc_list: []
+                },
+                comments: []
+              } } } }),
       });
     });
 
@@ -176,11 +206,7 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: '<p>This is the full body content of the email.</p>'
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: '<p>This is the full body content of the email.</p>' } } }),
       });
     });
 
@@ -189,11 +215,7 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { success: true }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
       });
     });
 
@@ -202,11 +224,7 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { success: true }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
       });
     });
 
@@ -382,11 +400,7 @@ test.describe('Email Client', () => {
         route.fulfill({ 
           status: 200, 
           contentType: 'application/json',
-          body: JSON.stringify([{
-            result: {
-              data: []
-            }
-          }])
+          body: JSON.stringify({ result: { data: { json: [] } } })
         })
       );
       

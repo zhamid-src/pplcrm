@@ -6,22 +6,72 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Persons Grid', () => {
   test.beforeEach(async ({ page }) => {
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+
+    // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
+    await page.route(/\/notifications\.getUnreadCount/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: 0 } } }),
+      });
+    });
+
+    await page.route(/\/notifications\.getLatest/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
+      });
+    });
+
+    await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/dashboard\.getStats/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
+                avgFirstResponseHours: 0,
+                avgTimeToCloseHours: 0,
+                emailsAssigned: [],
+                emailsClosed: [],
+                contactsGrowth: [],
+                unassignedCount: 0,
+                totalOpenCount: 0,
+                userStats: [],
+                unassignedSlaBreaches: 0,
+                unassignedEmailSlaBreaches: 0,
+                unassignedTaskSlaBreaches: 0,
+              },
+            },
+          },
+        }),
+      });
+    });
+
     // 1. Mock currentUser to bypass AuthGuard
     await page.route(/\/auth\.currentUser/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'user-1',
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'User',
-              role: 'user',
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'user-1',
+                email: 'test@example.com',
+                first_name: 'Test',
+                last_name: 'User',
+                role: 'user',
+              } } } }),
       });
     });
 
@@ -30,53 +80,49 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [
-                {
-                  id: 'person-1',
-                  first_name: 'Alice',
-                  last_name: 'Smith',
-                  email: 'alice@example.com',
-                  mobile: '123-456-7890',
-                  home_phone: '987-654-3210',
-                  tags: ['donor', 'volunteer'],
-                  street_num: '123',
-                  apt: '4B',
-                  street1: 'Main St',
-                  street2: '',
-                  city: 'Springfield',
-                  state: 'IL',
-                  zip: '62701',
-                  country: 'USA',
-                  notes: 'Some notes here',
-                  household_id: 'household-1'
-                },
-                {
-                  id: 'person-2',
-                  first_name: 'Bob',
-                  last_name: 'Jones',
-                  email: 'bob@example.com',
-                  mobile: '555-555-5555',
-                  home_phone: '',
-                  tags: ['volunteer'],
-                  street_num: '456',
-                  apt: '',
-                  street1: 'Oak Ave',
-                  street2: '',
-                  city: 'Springfield',
-                  state: 'IL',
-                  zip: '62702',
-                  country: 'USA',
-                  notes: '',
-                  household_id: 'household-2'
-                }
-              ],
-              count: 2
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [
+                  {
+                    id: 'person-1',
+                    first_name: 'Alice',
+                    last_name: 'Smith',
+                    email: 'alice@example.com',
+                    mobile: '123-456-7890',
+                    home_phone: '987-654-3210',
+                    tags: ['donor', 'volunteer'],
+                    street_num: '123',
+                    apt: '4B',
+                    street1: 'Main St',
+                    street2: '',
+                    city: 'Springfield',
+                    state: 'IL',
+                    zip: '62701',
+                    country: 'USA',
+                    notes: 'Some notes here',
+                    household_id: 'household-1'
+                  },
+                  {
+                    id: 'person-2',
+                    first_name: 'Bob',
+                    last_name: 'Jones',
+                    email: 'bob@example.com',
+                    mobile: '555-555-5555',
+                    home_phone: '',
+                    tags: ['volunteer'],
+                    street_num: '456',
+                    apt: '',
+                    street1: 'Oak Ave',
+                    street2: '',
+                    city: 'Springfield',
+                    state: 'IL',
+                    zip: '62702',
+                    country: 'USA',
+                    notes: '',
+                    household_id: 'household-2'
+                  }
+                ],
+                count: 2
+              } } } }),
       });
     });
 
@@ -85,17 +131,13 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [
-                { id: 't1', name: 'volunteer' },
-                { id: 't2', name: 'donor' }
-              ],
-              count: 2
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [
+                  { id: 't1', name: 'volunteer' },
+                  { id: 't2', name: 'donor' }
+                ],
+                count: 2
+              } } } }),
       });
     });
 
@@ -104,11 +146,7 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { success: true }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
       });
     });
 
@@ -152,11 +190,7 @@ test.describe('Persons Grid', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify([{
-            result: {
-              data: { rows: [], count: 0 }
-            }
-          }]),
+          body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
         });
       });
 

@@ -9,8 +9,6 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-tasks-grid',
@@ -53,7 +51,6 @@ import { environment } from '../../../../environments/environment';
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
   private readonly auth = inject(AuthService);
-  private readonly tokenService = inject(TokenService);
   private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
   private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
   private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
@@ -79,7 +76,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       editable: true,
       valueGetter: (p: any) => this.assignedToValueGetter(p),
       valueFormatter: (p: any) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: any) => this.renderAssignedCell(p.value),
+      cellRenderer: (p: any) => this.renderAssignedCell(p.data?.assigned_to),
       cellEditorParams: () => ({
         values: [null, ...this.userIds],
         labels: [this.unassignedLabel, ...this.userLabels],
@@ -117,7 +114,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
       headerName: 'Created By',
       editable: false,
       valueFormatter: (p: any) => this.userNameForId(p.value),
-      cellRenderer: (p: any) => this.renderCreatedByCell(p.value),
+      cellRenderer: (p: any) => this.renderCreatedByCell(p.data?.createdby_id),
       // Provide filter options using known user labels
       cellEditorParams: () => ({ values: this.userLabels }),
     },
@@ -294,16 +291,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     }
     let avatarUrl = this.usersAvatarById.get(v);
     if (avatarUrl) {
-      if (avatarUrl.startsWith('/') && !avatarUrl.startsWith('//')) {
-        avatarUrl = environment.apiUrl + avatarUrl;
-      }
-      if (!avatarUrl.includes('token=')) {
-        const token = this.tokenService.getAuthToken();
-        if (token) {
-          const separator = avatarUrl.includes('?') ? '&' : '?';
-          avatarUrl = `${avatarUrl}${separator}token=${encodeURIComponent(token)}`;
-        }
-      }
+      avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
           <img src="${avatarUrl}" alt="${label}" class="w-5 h-5 rounded-full object-cover" />
@@ -344,16 +332,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     const resolvedName = this.usersById.get(label) ?? label;
     let avatarUrl = this.usersAvatarById.get(label);
     if (avatarUrl) {
-      if (avatarUrl.startsWith('/') && !avatarUrl.startsWith('//')) {
-        avatarUrl = environment.apiUrl + avatarUrl;
-      }
-      if (!avatarUrl.includes('token=')) {
-        const token = this.tokenService.getAuthToken();
-        if (token) {
-          const separator = avatarUrl.includes('?') ? '&' : '?';
-          avatarUrl = `${avatarUrl}${separator}token=${encodeURIComponent(token)}`;
-        }
-      }
+      avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
           <img src="${avatarUrl}" alt="${resolvedName}" class="w-5 h-5 rounded-full object-cover" />

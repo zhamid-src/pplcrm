@@ -17,6 +17,8 @@ import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
+import { UserAvatarComponent } from '../../../uxcommon/components/user-avatar/user-avatar';
+
 @Component({
   selector: 'pc-task-view',
   imports: [
@@ -31,6 +33,7 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
     MentionifyPipe,
     TimeAgoPipe,
     RecordActivities,
+    UserAvatarComponent,
   ],
   templateUrl: './task-view.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -346,6 +349,13 @@ export class TaskView implements OnInit {
     const uid = String(id);
     const u = this.users().find((x) => String(x.id) === uid);
     return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'Unknown';
+  }
+
+  protected userAvatar(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const uid = String(id);
+    const u = this.users().find((x) => String(x.id) === uid);
+    return u ? ((u as any).avatar_url ?? null) : null;
   }
 
   protected myUserId(): string | null {
