@@ -2,13 +2,9 @@
  * Service responsible for managing sidebar items and drawer open state.
  */
 import { signal, Service } from '@angular/core';
-
 import { ISidebarItem, SidebarItems } from './sidebar-items';
 
 @Service()
-/**
- * Provides utility methods for controlling the sidebar and retrieving its items.
- */
 export class SidebarService {
   private readonly collapsedSections = new Set<string>();
   private readonly initializedSections = new Set<string>();
@@ -17,17 +13,18 @@ export class SidebarService {
   private readonly isMobileOpenSubject = signal<boolean>(false);
   private favourites = new Set<string>();
   private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
-  private get items() { return this.itemsSignal(); }
-  private set items(value: ISidebarItem[]) { this.itemsSignal.set(value); }
+  private get items() {
+    return this.itemsSignal();
+  }
+  private set items(value: ISidebarItem[]) {
+    this.itemsSignal.set(value);
+  }
 
   constructor() {
     this.initializeCollapsedDefaults(this.items);
     this.loadFavourites();
   }
 
-  /**
-   * Closes the sidebar when viewed on mobile.
-   */
   public closeMobile() {
     this.isMobileOpenSubject.set(false);
   }
@@ -41,24 +38,10 @@ export class SidebarService {
       .find((item) => this.matchesRoute(normalizedUrl, item.route!));
   }
 
-  /**
-   * Retrieves the current set of sidebar items.
-   *
-   * @returns Array of sidebar items.
-   */
   public getItems() {
     return this.itemsSignal;
   }
 
-  /**
-   * Retrieves a full route path that ends with the specified destination segment.
-   *
-   * This function searches through all sidebar items, including nested children,
-   * to find the first route that matches the provided destination.
-   *
-   * @param destination - The last segment of the desired route (e.g., "tags", "people")
-   * @returns The full route path if found (e.g., "/tags"); otherwise, undefined
-   */
   public getRoute(destination: string): string | undefined {
     const allItems = this.flattenItems(this.items);
     const target = allItems.find((item) => item.route?.split('/').pop()?.toLowerCase() === destination.toLowerCase());
@@ -82,24 +65,14 @@ export class SidebarService {
   }
 
   public isFavourite(route?: string) {
-    if (!route) {
-      return false;
-    }
-
+    if (!route) return false;
     return this.favourites.has(this.normalizeRoute(route));
   }
 
-  /**
-   * Checks if the drawer is fully expanded.
-   *
-   * @returns `true` when the drawer is open.
-   */
   public setFavourite(route: string, favourite: boolean) {
     const normalizedRoute = this.normalizeRoute(route);
 
-    if (!normalizedRoute) {
-      return favourite;
-    }
+    if (!normalizedRoute) return favourite;
 
     if (favourite) {
       this.favourites.add(normalizedRoute);
@@ -114,11 +87,6 @@ export class SidebarService {
     return favourite;
   }
 
-  /**
-   * Replaces the sidebar items. Useful for updating badges or visibility.
-   *
-   * @param items - New array of sidebar items to use.
-   */
   public setItems(items: ISidebarItem[]) {
     this.items = items;
     this.initializeCollapsedDefaults(items);
@@ -130,15 +98,9 @@ export class SidebarService {
       this.collapsedSections.delete(name);
       return;
     }
-
     this.collapsedSections.add(name);
   }
 
-  /**
-   * Toggles the drawer state between full and half.
-   *
-   * @returns The updated drawer state.
-   */
   public toggleDrawer() {
     const next = this.drawerStateSubject() === 'full' ? 'half' : 'full';
     return this.setState(next);
@@ -150,21 +112,24 @@ export class SidebarService {
     return next;
   }
 
-  /**
-   * Toggles the mobile drawer open or closed.
-   */
   public toggleMobile() {
     this.isMobileOpenSubject.update((v) => !v);
   }
 
   private applyFavouritesToItems(items: ISidebarItem[]) {
     this.walkItems(items, (item) => {
+      if (item.type === 'bookmark' || item.parent?.type === 'bookmark') {
+        return;
+      }
+
       if (!item.route) {
         item.favourite = false;
         return;
       }
 
-      item.favourite = this.favourites.has(this.normalizeRoute(item.route));
+      const isFavourited = this.favourites.has(this.normalizeRoute(item.route));
+      item.favourite = isFavourited;
+      item.hiddenByFavourite = isFavourited; // Safely hide original items
     });
 
     this.rebuildFavouritesSection();
@@ -178,28 +143,16 @@ export class SidebarService {
       parent,
       children: undefined,
       hidden: false,
+      hiddenByFavourite: false, // Ensure the bookmark copy is visible
       type: 'item',
       favourite: true,
     };
   }
 
-  /**
-   * Recursively flattens a nested array of sidebar items into a single-level array.
-   *
-   * This includes all top-level items and their children.
-   *
-   * @param items - The array of sidebar items to flatten
-   * @returns A flat array of sidebar items with no nested children
-   */
   private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
     return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
   }
 
-  /**
-   * Retrieves the current drawer state from local storage.
-   *
-   * @returns The persisted drawer state.
-   */
   private getState(): DrawerStates {
     const state = localStorage.getItem(DRAWER_STATE_KEY);
     return state === 'full' ? 'full' : 'half';
@@ -207,9 +160,7 @@ export class SidebarService {
 
   private initializeCollapsedDefaults(items: ISidebarItem[]) {
     this.walkItems(items, (item) => {
-      if (this.initializedSections.has(item.name)) {
-        return;
-      }
+      if (this.initializedSections.has(item.name)) return;
 
       this.initializedSections.add(item.name);
 
@@ -237,17 +188,13 @@ export class SidebarService {
   private matchesRoute(url: string, route: string) {
     const normalizedRoute = this.normalizeRoute(route);
 
-    if (normalizedRoute === '/') {
-      return url === '/';
-    }
+    if (normalizedRoute === '/') return url === '/';
 
     return url === normalizedRoute || url.startsWith(`${normalizedRoute}/`);
   }
 
   private normalizeRoute(route: string) {
-    if (!route) {
-      return '';
-    }
+    if (!route) return '';
 
     const [pathWithHash] = route.split('?');
     const path = pathWithHash.split('#')[0];
@@ -263,9 +210,7 @@ export class SidebarService {
     const currentItems = this.itemsSignal();
     const favouritesSectionIndex = currentItems.findIndex((item) => item.type === 'bookmark');
 
-    if (favouritesSectionIndex === -1) {
-      return;
-    }
+    if (favouritesSectionIndex === -1) return;
 
     const favouritesSection = currentItems[favouritesSectionIndex];
     const favouriteRoutes = new Set(this.favourites);
@@ -275,19 +220,17 @@ export class SidebarService {
       .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
       .map((item) => this.cloneForFavourite(item, favouritesSection));
 
-    // Replace the section object (and the array) to trigger signal reactivity.
-    const updatedSection: ISidebarItem = { ...favouritesSection, children: favouriteItems, hidden: favouriteItems.length === 0 };
+    const updatedSection: ISidebarItem = {
+      ...favouritesSection,
+      children: favouriteItems,
+      hidden: favouriteItems.length === 0,
+    };
+
     const updatedItems = [...currentItems];
     updatedItems[favouritesSectionIndex] = updatedSection;
     this.itemsSignal.set(updatedItems);
   }
 
-  /**
-   * Saves the drawer state to local storage so it can be restored on reload.
-   *
-   * @param state - Drawer state to persist.
-   * @returns The stored drawer state.
-   */
   private setState(state: DrawerStates) {
     this.drawerStateSubject.set(state);
     localStorage.setItem(DRAWER_STATE_KEY, state);
@@ -296,8 +239,11 @@ export class SidebarService {
 
   private updateItemFavourite(route: string, favourite: boolean) {
     this.walkItems(this.items, (item) => {
-      if (item.route && this.normalizeRoute(item.route) === route) {
-        item.favourite = favourite;
+      if (item.type !== 'bookmark' && item.parent?.type !== 'bookmark') {
+        if (item.route && this.normalizeRoute(item.route) === route) {
+          item.favourite = favourite;
+          item.hiddenByFavourite = favourite;
+        }
       }
     });
   }
@@ -305,7 +251,6 @@ export class SidebarService {
   private walkItems(items: ISidebarItem[], cb: (item: ISidebarItem) => void) {
     items.forEach((item) => {
       cb(item);
-
       if (item.children?.length) {
         this.walkItems(item.children, cb);
       }
