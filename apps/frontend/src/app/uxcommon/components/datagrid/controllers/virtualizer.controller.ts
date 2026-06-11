@@ -2,7 +2,7 @@ import { Injectable, effect, signal } from '@angular/core';
 import { GridStoreService } from '../services/grid-store.service';
 import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class VirtualizerController {
   private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
   private scrollerEl: HTMLDivElement | null = null;

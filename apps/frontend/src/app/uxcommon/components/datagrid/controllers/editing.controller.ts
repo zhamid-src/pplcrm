@@ -1,7 +1,21 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import { GridStoreService } from '../services/grid-store.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DataGridUtilsService } from '../services/utils.service';
+import { AbstractAPIService } from '../../../../services/api/abstract-api.service';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class EditingController {
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly utilsSvc = inject(DataGridUtilsService);
+  private readonly gridSvc = inject(AbstractAPIService);
+
+  private get grid(): DataGrid<any, any> {
+    return this.store.grid;
+  }
+
   public coerceEditingValue(col: { cellDataType?: string }, raw: any): any {
     const t = String(col?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') {
@@ -20,67 +34,58 @@ export class EditingController {
     return raw;
   }
 
-  public async commitSingleCell(opts: {
-    row: any;
-    col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean };
-    currentValue: any;
-    toId: (row: any) => string;
-    createPayload: (row: any, key: string) => any;
-    applyEdit: (id: string, data: any) => Promise<boolean>;
-    updateEditedRowInCaches: (id: string, field: string | undefined, value: any) => void;
-    updateTableWindow: (start: number, end: number) => void;
-    startIndex: () => number;
-    endIndex: () => number;
-    showSuccess: (msg: string) => void;
-    showError: (msg: string) => void;
-    undo: () => void;
-  }): Promise<boolean> {
-    const { row, col, currentValue, toId } = opts;
+  public async commitSingleCell(
+    row: any,
+    col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean },
+    currentValue: any,
+  ): Promise<boolean> {
     if (!col.field) return false;
-    const id = toId(row);
+    const id = this.grid.toId(row);
     if (!id) return false;
     const key = col.field as string;
     const prev = (row as Record<string, unknown>)[key];
     // If a valueSetter is provided on the col, let it handle assignment/normalization
     let changed = false;
     const before: Record<string, unknown> = { ...(row || {}) };
-    if (typeof opts.col.valueSetter === 'function') {
+    if (typeof col.valueSetter === 'function') {
       try {
-        // Provide a best-effort AG-like params object
-        const didSet = opts.col.valueSetter({ data: row, newValue: opts.currentValue, value: prev, colDef: opts.col });
+        const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
         changed = !!didSet;
       } catch {
         changed = false;
       }
     } else {
       const equal =
-        prev === opts.currentValue || (prev == null && (opts.currentValue == null || opts.currentValue === ''));
+        prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
       changed = !equal;
-      if (changed) Object.assign(row as object, { [key]: opts.currentValue });
+      if (changed) Object.assign(row as object, { [key]: currentValue });
     }
     if (!changed) return true;
     try {
       if (this.shouldBlockEdit(row, key)) {
-        opts.undo();
-        opts.showError('Editing this field is blocked');
+        this.grid.undoMgr.undo();
+        this.alertSvc.showError('Editing this field is blocked');
         Object.assign(row as object, { [key]: before[key] });
         return false;
       }
-      const payload = opts.createPayload(row, key);
-      const edited = await opts.applyEdit(id, payload);
+      const payload = this.utilsSvc.createPayload(row, key);
+      const edited = await this.gridSvc
+        .update(id, payload)
+        .then(() => true)
+        .catch(() => false);
       if (!edited) {
-        opts.undo();
+        this.grid.undoMgr.undo();
         Object.assign(row as object, { [key]: before[key] });
-        opts.showError('Update failed');
+        this.alertSvc.showError('Update failed');
         return false;
       }
-      opts.updateEditedRowInCaches(id, col.field, currentValue);
-      opts.updateTableWindow(opts.startIndex(), opts.endIndex());
-      opts.showSuccess('Row updated');
+      this.grid.updateEditedRowInCaches(id, col.field, currentValue);
+      this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      this.alertSvc.showSuccess('Row updated');
       return true;
     } catch {
       Object.assign(row as object, { [key]: before[key] });
-      opts.showError('Update failed');
+      this.alertSvc.showError('Update failed');
       return false;
     }
   }

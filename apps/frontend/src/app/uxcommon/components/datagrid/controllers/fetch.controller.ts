@@ -1,103 +1,76 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import { AbstractAPIService } from '../../../../services/api/abstract-api.service';
+import { DataGridDataService } from '../services/data.service';
+import { GridStoreService } from '../services/grid-store.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class FetchController {
-  async loadPage(opts: {
-    index: number;
-    append?: boolean;
-    pageSize: number;
-    archiveMode: boolean;
-    searchText: string;
-    limitToTags: string[];
-    limitToIssues?: string[];
-    filterModel: Record<string, any>;
-    sortState: Array<{ id: string; desc?: boolean }>;
-    sortCol: string | null;
-    sortDir: 'asc' | 'desc' | null;
-    advancedFilterModel?: any;
-    listId?: string | null;
+  private readonly gridSvc = inject(AbstractAPIService);
+  private readonly dataSvc = inject(DataGridDataService);
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
 
-    // dependencies
-    gridSvc: {
-      getAll(o: any): Promise<{ rows: any[]; count: number }>;
-      getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
-    };
-    dataSvc: { buildGetAllOptions(a: any): any };
+  private get grid(): DataGrid<any, any> {
+    return this.store.grid;
+  }
 
-    // state hooks
-    getRows: () => any[];
-    setRows: (rows: any[]) => void;
-    setVirtualCount?: (count: number) => void;
-    updateTableData: (rows: any[]) => void;
-    setTotalCountAll: (n: number) => void;
-    setPageIndex: (i: number) => void;
-
-    // error/loading UX
-    begin: () => () => void;
-    showError: (msg: string) => void;
-    loadFailedMsg: string;
-  }): Promise<void> {
-    const end = opts.begin();
+  async loadPage(index: number, append?: boolean): Promise<void> {
+    const end = this.grid._loading.begin();
     try {
-      const startRow = opts.index * opts.pageSize;
-      const endRow = startRow + opts.pageSize;
-      const options = opts.dataSvc.buildGetAllOptions({
-        searchStr: opts.searchText,
+      const pageSize = this.store.pageSize();
+      const startRow = index * pageSize;
+      const endRow = startRow + pageSize;
+      const options = this.dataSvc.buildGetAllOptions({
+        searchStr: this.grid.searchTerm(),
         startRow,
         endRow,
-        tags: opts.limitToTags,
-        issues: opts.limitToIssues,
-        filterModel: opts.filterModel,
-        sortState: opts.sortState,
-        sortCol: opts.sortCol,
-        sortDir: opts.sortDir,
-        includeArchived: opts.archiveMode,
-        advancedFilterModel: opts.advancedFilterModel,
-        listId: opts.listId,
+        tags: this.grid.selectedTags(),
+        issues: this.grid.selectedIssues(),
+        filterModel: this.grid.buildFilterModel(),
+        sortState: this.store.sorting(),
+        sortCol: this.grid.sortCol(),
+        sortDir: this.grid.sortDir(),
+        includeArchived: this.grid.archiveMode(),
+        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+        listId: this.grid.activeListId(),
       });
-      const data = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
+      const data = this.grid.archiveMode()
+        ? await this.gridSvc.getAllArchived(options)
+        : await this.gridSvc.getAll(options);
       const incoming = data.rows ?? [];
-      if (opts.append && opts.getRows().length > 0) {
-        const next = [...opts.getRows(), ...incoming];
-        opts.setRows(next);
-        opts.updateTableData(next);
+      if (append && this.store.rows().length > 0) {
+        const next = [...this.store.rows(), ...incoming];
+        this.store.rows.set(next);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
       } else {
-        opts.setRows(incoming);
-        opts.updateTableData(incoming);
+        this.store.rows.set(incoming);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
       }
-      if (opts.setVirtualCount) opts.setVirtualCount(opts.getRows().length);
-      opts.setTotalCountAll(data.count ?? opts.getRows().length);
-      opts.setPageIndex(opts.index);
+      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
+      this.store.pageIndex.set(index);
     } catch {
-      opts.showError(opts.loadFailedMsg);
+      this.alertSvc.showError(this.grid.config.messages.loadFailed);
     } finally {
       end();
     }
   }
 
-  async selectAllMatching(opts: {
-    archiveMode: boolean;
-    searchText: string;
-    limitToTags: string[];
-    limitToIssues?: string[];
-    advancedFilterModel?: any;
-    listId?: string | null;
-    gridSvc: {
-      getAll(o: any): Promise<{ rows: any[]; count: number }>;
-      getAllArchived(o: any): Promise<{ rows: any[]; count: number }>;
-    };
-    rowCanSelect?: ((row: any) => boolean) | null;
-  }): Promise<{ ids: string[]; count: number }> {
+  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
     const options: any = {
-      searchStr: opts.searchText,
-      tags: opts.limitToTags,
-      issues: opts.limitToIssues,
-      advancedFilterModel: opts.advancedFilterModel,
-      listId: opts.listId ?? undefined,
+      searchStr: this.grid.searchTerm(),
+      tags: this.grid.selectedTags(),
+      issues: this.grid.selectedIssues(),
+      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+      listId: this.grid.activeListId() ?? undefined,
     };
-    const { rows } = opts.archiveMode ? await opts.gridSvc.getAllArchived(options) : await opts.gridSvc.getAll(options);
-    const filteredRows = opts.rowCanSelect ? (rows ?? []).filter(opts.rowCanSelect) : (rows ?? []);
-    const ids = filteredRows.map((r: any) => String(r.id)).filter(Boolean);
+    const { rows } = this.grid.archiveMode()
+      ? await this.gridSvc.getAllArchived(options)
+      : await this.gridSvc.getAll(options);
+    const rowCanSelect = this.grid.rowCanSelect();
+    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
+    const ids = filteredRows.map((r: any) => this.grid.toId(r)).filter(Boolean);
     return { ids, count: filteredRows.length };
   }
 }
