@@ -9,22 +9,6 @@ import { ActivityService } from '../../../experiences/activity/services/activity
   imports: [DatePipe, Icon],
   template: `
     <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
-      <!-- Header -->
-      <div class="flex items-center justify-between px-3 py-2 text-sm font-medium bg-gray-50 border-b border-gray-200">
-        <span class="flex items-center gap-2">
-          <pc-icon name="clock" [size]="4" class="text-gray-500"></pc-icon>
-          <span class="font-semibold text-gray-700">Activity History</span>
-          @if (activityCount() > 0) {
-            <span
-              class="inline-flex items-center justify-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700"
-              [attr.aria-label]="activityCount() + ' activities'"
-            >
-              {{ activityCount() }}
-            </span>
-          }
-        </span>
-      </div>
-
       <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
         @if (isLoading()) {
           <div class="flex items-center justify-center py-6">
