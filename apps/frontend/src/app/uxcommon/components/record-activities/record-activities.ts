@@ -8,24 +8,24 @@ import { ActivityService } from '../../../experiences/activity/services/activity
   selector: 'pc-record-activities',
   imports: [DatePipe, Icon],
   template: `
-    <div class="min-h-0 flex flex-col rounded-lg bg-white border border-gray-200 overflow-hidden">
-      <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
+    <div class="min-h-0 flex flex-col rounded-lg bg-base-100 text-base-content">
+      <div id="activities-panel" class="overflow-auto email-scrollbar ">
         @if (isLoading()) {
           <div class="flex items-center justify-center py-6">
-            <span class="loading loading-spinner loading-sm text-gray-400" aria-label="Loading activities"></span>
+            <span class="loading loading-spinner loading-sm text-base-content/40" aria-label="Loading activities"></span>
           </div>
         } @else if (activities().length === 0) {
-          <div class="flex flex-col items-center justify-center py-6 gap-1 text-gray-400">
+          <div class="flex flex-col items-center justify-center py-6 gap-1 text-base-content/40">
             <pc-icon name="information-circle" [size]="5"></pc-icon>
             <span class="text-xs">No activity recorded yet</span>
           </div>
         } @else {
-          <ol class="relative border-l border-gray-200 ml-4 py-3 pr-3 space-y-3" aria-label="Record activity timeline">
+          <ol class="relative border-l border-base-300 ml-4 py-3 pr-3 space-y-3" aria-label="Record activity timeline">
             @for (act of activities(); track act.id) {
               <li class="ml-4">
                 <!-- Timeline dot -->
                 <span
-                  class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white"
+                  class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-base-100"
                   [class]="getActivityDotClass(act.activity)"
                 >
                   <pc-icon [name]="getActivityIcon(act.activity)" [size]="2.5"></pc-icon>
@@ -33,11 +33,11 @@ import { ActivityService } from '../../../experiences/activity/services/activity
 
                 <!-- Content -->
                 <div class="pl-1">
-                  <p class="text-xs text-gray-700 leading-snug">
-                    <span class="font-semibold">{{ act.first_name }} {{ act.last_name }}</span>
+                  <p class="text-xs text-base-content/80 leading-snug">
+                    <span class="font-semibold text-base-content">{{ act.first_name }} {{ act.last_name }}</span>
                     {{ getActivityLabel(act) }}
                   </p>
-                  <time class="text-[10px] text-gray-400 mt-0.5 block" [title]="act.created_at | date: 'medium'">{{
+                  <time class="text-[10px] text-base-content/40 mt-0.5 block" [title]="act.created_at | date: 'medium'">{{
                     act.created_at | date: 'short'
                   }}</time>
                 </div>
@@ -117,27 +117,27 @@ export class RecordActivities {
   protected getActivityDotClass(activity: string): string {
     switch (activity) {
       case 'create':
-        return 'bg-green-100 text-green-600';
+        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
       case 'update':
-        return 'bg-blue-100 text-blue-600';
+        return 'bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400';
       case 'delete':
-        return 'bg-red-100 text-red-600';
+        return 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400';
       case 'merge':
-        return 'bg-yellow-100 text-yellow-600';
+        return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400';
       case 'import':
-        return 'bg-indigo-100 text-indigo-600';
+        return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400';
       case 'export':
-        return 'bg-purple-100 text-purple-600';
+        return 'bg-purple-100 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400';
       case 'assign':
-        return 'bg-teal-100 text-teal-600';
+        return 'bg-teal-100 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400';
       case 'unassign':
-        return 'bg-gray-100 text-gray-500';
+        return 'bg-gray-100 text-gray-500 dark:bg-neutral/50 dark:text-neutral-content/70';
       case 'close':
-        return 'bg-green-100 text-green-600';
+        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
       case 'reopen':
-        return 'bg-amber-100 text-amber-600';
+        return 'bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400';
       default:
-        return 'bg-gray-100 text-gray-400';
+        return 'bg-gray-100 text-gray-400 dark:bg-neutral/30 dark:text-neutral-content/50';
     }
   }
 
