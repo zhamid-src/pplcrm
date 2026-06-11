@@ -16,8 +16,6 @@ function count() {
   return authProcedure.query(({ ctx }) => lists.getCount(ctx.auth.tenant_id));
 }
 
-
-
 function deleteList() {
   return authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.delete(ctx.auth.tenant_id, input));
 }
@@ -73,6 +71,10 @@ function getListStats() {
   return authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input));
 }
 
+function getMemberCount() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input));
+}
+
 const lists = new ListsController();
 
 export const ListsRouter = router({
@@ -89,4 +91,5 @@ export const ListsRouter = router({
   exportCsv: exportCsv(),
   refresh: refresh(),
   getListStats: getListStats(),
+  getMemberCount: getMemberCount(),
 });

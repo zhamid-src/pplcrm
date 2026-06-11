@@ -88,6 +88,7 @@ export const getAllOptions = z
     entity: z.string().optional(),
     activity: z.string().optional(),
     advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
   })
   .optional();
 

@@ -55,7 +55,7 @@
     >
       <div>
         <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">List Size</span>
-        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ members().length }}</h3>
+        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ memberCount() }}</h3>
         <span class="text-[11px] text-base-content/60 mt-2 block">
           Targeting {{ isPeople() ? 'People' : 'Households' }}
         </span>
@@ -123,7 +123,7 @@
       [class.tab-active]="activeTab() === 'members'"
       (click)="activeTab.set('members')"
     >
-      Members List ({{ members().length }})
+      Members List ({{ memberCount() }})
     </button>
     <button
       class="tab tab-lg font-medium transition-all duration-200"
@@ -143,74 +143,12 @@
 
   <!-- Tab 1: Members Panel -->
   @if (activeTab() === 'members') {
-  <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-    <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-      <h2 class="text-lg font-bold text-base-content">List Members</h2>
-      <span class="text-xs text-base-content/50">Showing all resolved records</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      @if (members().length === 0) {
-      <div class="p-8 text-center text-base-content/50">
-        <pc-icon name="users" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-        <p class="font-medium text-base">This list has no members yet</p>
-        <p class="text-xs mt-1">If this is a dynamic list, try refreshing to query members</p>
-      </div>
-      } @else { @if (isPeople()) {
-      <table class="table table-zebra table-md w-full">
-        <thead>
-          <tr class="bg-base-200/50 text-base-content/70">
-            <th class="font-bold">Name</th>
-            <th class="font-bold">Email</th>
-            <th class="font-bold">Mobile</th>
-            <th class="font-bold">Address</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (m of members(); track m.id) {
-          <tr class="hover:bg-base-200/40 transition-colors">
-            <td class="font-semibold text-base-content">
-              <a [routerLink]="['/people', m.id]" class="link link-primary hover:no-underline font-semibold">
-                {{ m.first_name }} {{ m.last_name }}
-              </a>
-            </td>
-            <td class="text-base-content/85">{{ m.email || '—' }}</td>
-            <td class="text-base-content/85">{{ m.mobile || '—' }}</td>
-            <td class="text-xs text-base-content/70">
-              {{ m.street_num }} {{ m.street1 }}@if (m.city){, {{ m.city }} }@if (m.state){, {{ m.state }} }@if (m.zip){
-              {{ m.zip }} }
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-      } @else {
-      <table class="table table-zebra table-md w-full">
-        <thead>
-          <tr class="bg-base-200/50 text-base-content/70">
-            <th class="font-bold">Address</th>
-            <th class="font-bold">City</th>
-            <th class="font-bold">State</th>
-            <th class="font-bold">Zip</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (m of members(); track m.id) {
-          <tr class="hover:bg-base-200/40 transition-colors">
-            <td class="font-semibold text-base-content">
-              <a [routerLink]="['/households', m.id]" class="link link-primary hover:no-underline font-semibold">
-                {{ m.street_num }} {{ m.street1 }}
-              </a>
-            </td>
-            <td class="text-base-content/85">{{ m.city || '—' }}</td>
-            <td class="text-base-content/85">{{ m.state || '—' }}</td>
-            <td class="text-base-content/85">{{ m.zip || '—' }}</td>
-          </tr>
-          }
-        </tbody>
-      </table>
-      } }
-    </div>
+  <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
+    @if (isPeople()) {
+    <pc-persons-grid [listId]="id()" [showHeader]="false" [showToolbar]="false"></pc-persons-grid>
+    } @else {
+    <pc-households-grid [listId]="id()" [showHeader]="false" [showToolbar]="false"></pc-households-grid>
+    }
   </div>
   }
 

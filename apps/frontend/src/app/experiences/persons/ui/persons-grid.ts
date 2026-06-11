@@ -3,7 +3,7 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows.
  */
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
@@ -247,6 +247,9 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   // Generic CSV importer integration
   protected importerOpen = signal(false);
   protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public override listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
 
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];

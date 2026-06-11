@@ -175,6 +175,54 @@
   </pc-grid-tool-btn>
   }
 
+  <!-- List Filter Dropdown -->
+  @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>Filter by List</span>
+        @if (grid.selectedListId() !== null) {
+        <button
+          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+          (click)="grid.clearListFilter()"
+        >
+          Clear Filter
+        </button>
+        }
+      </div>
+      <div class="border-t border-base-200 my-0.5"></div>
+
+      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
+        @if (grid.availableLists().length === 0) {
+        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No lists found</div>
+        } @else { @for (l of grid.availableLists(); track l.id) {
+        <label
+          tabindex="-1"
+          class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
+        >
+          <input
+            type="radio"
+            name="selectedList"
+            class="radio radio-primary radio-xs shrink-0"
+            [checked]="grid.selectedListId() === l.id"
+            (change)="grid.selectListFilter(l.id)"
+          />
+          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="l.name">{{ l.name }}</span>
+        </label>
+        } }
+      </div>
+    </div>
+  </pc-grid-tool-btn>
+  }
+
   <pc-grid-tool-btn
     icon="funnel"
     tip="Advanced Filters"

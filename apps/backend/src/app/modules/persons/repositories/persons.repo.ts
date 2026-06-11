@@ -159,7 +159,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[] } = input.options || {};
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags;
@@ -177,6 +177,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('households.tenant_id', '=', tenantId)
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId!)
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(

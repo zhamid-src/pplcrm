@@ -1,7 +1,7 @@
 /**
  * @file Grid component for listing households with counts and tags.
  */
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '@common';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -27,12 +27,16 @@ interface ParamsType {
   template: `
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
-      <pc-grid-header
-        title="Households"
-        description="Manage household groups, track shared addresses, and organize family relationships."
-      ></pc-grid-header>
+      @if (showHeader()) {
+        <pc-grid-header
+          title="Households"
+          description="Manage household groups, track shared addresses, and organize family relationships."
+        ></pc-grid-header>
+      }
 
       <pc-datagrid
+        [listId]="listId()"
+        [showToolbar]="showToolbar()"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -226,6 +230,9 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       cellEditorParams: { textarea: true, rows: 5 },
     },
   ];
+  public override listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
   protected importSummary = signal<CsvImportSummary | null>(null);
 
   // Importer state
