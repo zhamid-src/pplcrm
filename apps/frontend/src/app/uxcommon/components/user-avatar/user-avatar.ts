@@ -1,5 +1,7 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, inject } from '@angular/core';
 import { NgClass } from '@angular/common';
+import { environment } from '../../../../environments/environment';
+import { TokenService } from '../../../services/api/token-service';
 
 /**
  * Reusable user avatar component.
@@ -15,16 +17,16 @@ import { NgClass } from '@angular/common';
   template: `
     <div
       class="avatar"
-      [class.placeholder]="!avatarUrl()"
+      [class.placeholder]="!resolvedAvatarUrl()"
     >
-      @if (avatarUrl()) {
+      @if (resolvedAvatarUrl()) {
         <div
           class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
           [style.width.rem]="sizeRem()"
           [style.height.rem]="sizeRem()"
         >
           <img
-            [src]="avatarUrl()!"
+            [src]="resolvedAvatarUrl()!"
             [alt]="name() + ' avatar'"
             class="w-full h-full object-cover"
             referrerpolicy="no-referrer"
@@ -47,6 +49,8 @@ import { NgClass } from '@angular/common';
   host: { class: 'contents' },
 })
 export class UserAvatarComponent {
+  private readonly tokenService = inject(TokenService);
+
   /** Pre-computed download URL for the user's avatar, or null/undefined. */
   readonly avatarUrl = input<string | null | undefined>(null);
 
@@ -58,6 +62,23 @@ export class UserAvatarComponent {
    * Defaults to 8 (= 2rem / 32px).
    */
   readonly size = input<number>(8);
+
+  protected readonly resolvedAvatarUrl = computed(() => {
+    const url = this.avatarUrl();
+    if (!url) return null;
+    let resolved = url;
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      resolved = environment.apiUrl + url;
+    }
+    if (!resolved.includes('token=')) {
+      const token = this.tokenService.getAuthToken();
+      if (token) {
+        const separator = resolved.includes('?') ? '&' : '?';
+        resolved = `${resolved}${separator}token=${encodeURIComponent(token)}`;
+      }
+    }
+    return resolved;
+  });
 
   protected readonly sizeRem = computed(() => this.size() * 0.25);
   protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));

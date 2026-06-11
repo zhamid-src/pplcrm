@@ -87,6 +87,36 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   /**
+   * Upload a new profile picture for the current user.
+   * Converts the File to base64 and sends via tRPC mutation.
+   */
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    return this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    }) as Promise<{ avatar_url: string }>;
+  }
+
+  /**
+   * Remove the current user's profile picture.
+   */
+  public deleteAvatar(): Promise<{ success: boolean }> {
+    return this.api.auth.deleteAvatar.mutate() as Promise<{ success: boolean }>;
+  }
+
+  /**
    * Updates an existing user's profile details.
    */
   public async updateUserProfile(id: string, data: UpdateAuthUserType) {

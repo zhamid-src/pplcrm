@@ -2,22 +2,72 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Web Forms', () => {
   test.beforeEach(async ({ page }) => {
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+
+    // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
+    await page.route(/\/notifications\.getUnreadCount/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: 0 } } }),
+      });
+    });
+
+    await page.route(/\/notifications\.getLatest/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
+      });
+    });
+
+    await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/dashboard\.getStats/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
+                avgFirstResponseHours: 0,
+                avgTimeToCloseHours: 0,
+                emailsAssigned: [],
+                emailsClosed: [],
+                contactsGrowth: [],
+                unassignedCount: 0,
+                totalOpenCount: 0,
+                userStats: [],
+                unassignedSlaBreaches: 0,
+                unassignedEmailSlaBreaches: 0,
+                unassignedTaskSlaBreaches: 0,
+              },
+            },
+          },
+        }),
+      });
+    });
+
     // 1. Mock currentUser to bypass AuthGuard
     await page.route(/\/auth\.currentUser/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'user-1',
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'User',
-              role: 'user',
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'user-1',
+                email: 'test@example.com',
+                first_name: 'Test',
+                last_name: 'User',
+                role: 'user',
+              } } } }),
       });
     });
 
@@ -26,14 +76,10 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [{ id: 'list-1', name: 'Newsletter Subscribers' }],
-              count: 1
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [{ id: 'list-1', name: 'Newsletter Subscribers' }],
+                count: 1
+              } } } }),
       });
     });
 
@@ -42,14 +88,10 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [{ id: 'tag-1', name: 'newsletter' }],
-              count: 1
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [{ id: 'tag-1', name: 'newsletter' }],
+                count: 1
+              } } } }),
       });
     });
   });
@@ -60,23 +102,19 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [
-                {
-                  id: 'form-1111-2222-3333-444444444444',
-                  name: 'Newsletter Form',
-                  description: 'Used on home page',
-                  redirect_url: 'https://example.com/thanks',
-                  status: 'active',
-                  created_at: new Date().toISOString(),
-                }
-              ],
-              count: 1
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [
+                  {
+                    id: 'form-1111-2222-3333-444444444444',
+                    name: 'Newsletter Form',
+                    description: 'Used on home page',
+                    redirect_url: 'https://example.com/thanks',
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                  }
+                ],
+                count: 1
+              } } } }),
       });
     });
 
@@ -94,11 +132,7 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { id: 'form-1111-2222-3333-444444444444' }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { id: 'form-1111-2222-3333-444444444444' } } } }),
       });
     });
 
@@ -107,20 +141,16 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'form-1111-2222-3333-444444444444',
-              name: 'Newsletter Form',
-              description: 'Used on home page',
-              redirect_url: 'https://example.com/thanks',
-              status: 'active',
-              target_tags: ['newsletter'],
-              target_lists: ['list-1'],
-              created_at: new Date().toISOString(),
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'form-1111-2222-3333-444444444444',
+                name: 'Newsletter Form',
+                description: 'Used on home page',
+                redirect_url: 'https://example.com/thanks',
+                status: 'active',
+                target_tags: ['newsletter'],
+                target_lists: ['list-1'],
+                created_at: new Date().toISOString(),
+              } } } }),
       });
     });
 
@@ -192,7 +222,7 @@ test.describe('Web Forms', () => {
     });
 
     // 1. Visit landing page
-    await page.goto(`/api/forms/view/${formId}`);
+    await page.goto(`http://localhost:3000/api/forms/view/${formId}`);
     await expect(page.locator('h1')).toHaveText('Newsletter Form');
 
     // 2. Fill form and submit
@@ -237,7 +267,7 @@ test.describe('Web Forms', () => {
       });
     });
 
-    await page.goto(`/api/forms/view/${formId}`);
+    await page.goto(`http://localhost:3000/api/forms/view/${formId}`);
     await page.locator('input[name="_hp"]').fill('spam-bot-detected');
     await page.locator('#email').fill('spam@bot.com');
     await page.locator('button[type="submit"]').click();

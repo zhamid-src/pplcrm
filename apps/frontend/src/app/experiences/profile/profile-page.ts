@@ -6,8 +6,6 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { AuthService } from '../../auth/auth-service';
-import { TokenService } from '../../services/api/token-service';
-import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'pc-profile-page',
@@ -17,7 +15,6 @@ import { environment } from '../../../environments/environment';
 export class ProfilePage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
-  private readonly tokens = inject(TokenService);
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
@@ -199,26 +196,9 @@ export class ProfilePage implements OnInit {
   }
 
   protected async uploadAvatar(file: File) {
-    const token = this.tokens.getAuthToken();
-    if (!token) return;
-
     this.uploadingAvatar.set(true);
     try {
-      const formData = new FormData();
-      formData.append('avatar', file);
-
-      const resp = await fetch(`${environment.apiUrl}/api/auth/avatar`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        throw new Error((body as any)?.error || 'Upload failed');
-      }
-
-      const data: any = await resp.json();
+      const data = await this.auth.uploadAvatar(file);
       this.avatarUrl.set(data.avatar_url ?? null);
       this.alerts.showSuccess('Profile picture updated');
     } catch (err: any) {
@@ -229,16 +209,9 @@ export class ProfilePage implements OnInit {
   }
 
   protected async removeAvatar() {
-    const token = this.tokens.getAuthToken();
-    if (!token) return;
-
     this.uploadingAvatar.set(true);
     try {
-      const resp = await fetch(`${environment.apiUrl}/api/auth/avatar`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) throw new Error('Remove failed');
+      await this.auth.deleteAvatar();
       this.avatarUrl.set(null);
       this.alerts.showSuccess('Profile picture removed');
     } catch (err: any) {

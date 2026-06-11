@@ -6,7 +6,7 @@
     </div>
     <button
       id="exports-refresh-btn"
-      class="btn btn-outline btn-sm gap-2 cursor-pointer"
+      class="btn btn-outline btn-sm gap-2 cursor-pointer hover:btn-primary"
       title="Refresh export list"
       pcSpinOnClick
       [disabled]="_loading.visible()"
@@ -57,20 +57,17 @@
           </td>
           <td class="text-right tabular-nums text-sm">{{ j.row_count ?? '—' }}</td>
           <td class="text-right">
-            @if (j.status === 'completed') {
-              @if (isExpired(j)) {
-                <span class="text-xs text-base-content/40 italic">Expired (30d)</span>
-              } @else {
-                <button
-                  class="btn btn-xs btn-ghost text-primary gap-1"
-                  title="Download CSV"
-                  (click)="downloadJob(j)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                  Download
-                </button>
-              }
-            }
+            @if (j.status === 'completed') { @if (isExpired(j)) {
+            <span class="text-xs text-base-content/40 italic">Expired (30d)</span>
+            } @else {
+            <button
+              class="btn btn-xs btn-ghost text-primary gap-1 hover:btn-primary hover:text-white"
+              title="Download CSV"
+              (click)="downloadJob(j)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            } }
           </td>
         </tr>
         } @empty {
@@ -85,6 +82,7 @@
   </div>
 
   <div class="opacity-60 text-xs">
-    Exports run in the background. Click <strong>Refresh</strong> to check status. Completed exports are available for 30 days.
+    Exports run in the background. Click <strong>Refresh</strong> to check status. Completed exports are available for
+    30 days.
   </div>
 </div>

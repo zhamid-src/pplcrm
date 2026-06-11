@@ -1,17 +1,20 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Sidebar } from './sidebar';
 import { SidebarService } from './sidebar-service';
+import { AuthService } from '../../auth/auth-service';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { provideRouter } from '@angular/router';
+import { signal } from '@angular/core';
 
 describe('Sidebar Component', () => {
   let component: Sidebar;
   let fixture: ComponentFixture<Sidebar>;
   let mockSidebarSvc: any;
+  let mockAuthService: any;
 
   beforeEach(async () => {
     mockSidebarSvc = {
-      getItems: vi.fn().mockReturnValue([{ label: 'Test Item' }]),
+      getItems: vi.fn().mockReturnValue(signal([{ label: 'Test Item' }])),
       closeMobile: vi.fn(),
       isCollapsed: vi.fn().mockReturnValue(false),
       isFull: vi.fn().mockReturnValue(true),
@@ -21,10 +24,16 @@ describe('Sidebar Component', () => {
       toggleDrawer: vi.fn()
     };
 
+    mockAuthService = {
+      getUser: vi.fn().mockReturnValue({ role: 'admin' }),
+      getUserSignal: vi.fn().mockReturnValue(signal({ role: 'admin' })),
+    };
+
     await TestBed.configureTestingModule({
       imports: [Sidebar],
       providers: [
         { provide: SidebarService, useValue: mockSidebarSvc },
+        { provide: AuthService, useValue: mockAuthService },
         provideRouter([]) // needed for RouterLink
       ]
     }).compileComponents();

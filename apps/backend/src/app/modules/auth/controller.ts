@@ -11,11 +11,12 @@ import {
   signUpInputType,
 } from '@common';
 
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID, createHash } from 'crypto';
 import { createDecoder, createSigner } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashToken, generateToken } from '../../lib/token-hash';
+import { StorageService } from '../../lib/storage.service';
 
 import {
   AppError,
@@ -58,6 +59,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private personsRepo: PersonsRepo = new PersonsRepo();
   private tagsRepo: TagsRepo = new TagsRepo();
   private mailService = new TransactionalEmailService();
+  private storage = new StorageService();
+
+  private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
   constructor() {
     super(new AuthUsersRepo());
@@ -96,9 +101,22 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       options: sanitizedOptions,
     });
     return {
-      rows: result.rows.map((row) => this.sanitizeUser(row)),
+      rows: result.rows.map((row) => ({
+        ...this.sanitizeUser(row),
+        avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+      })),
       count: result.count,
     };
+  }
+
+  public async getUsersList(auth: IAuthKeyPayload) {
+    const result = await this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+    });
+    return result.rows.map((row) => ({
+      ...this.sanitizeUser(row),
+      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+    }));
   }
 
   public async getUserById(auth: IAuthKeyPayload, id: string) {
@@ -113,7 +131,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
     const stats = await this.buildUserStats(auth, String(authUser.id));
     const sanitized = this.sanitizeUser({ ...authUser, profile });
-    return { ...sanitized, stats };
+    const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+    return { ...sanitized, avatar_url, stats };
   }
 
   public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
@@ -1162,6 +1181,123 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       previous_role: record.previous_role ?? null,
       notification_preferences: notificationPreferences,
     };
+  }
+  /**
+   * Upload a new avatar for the authenticated user.
+   * Accepts base64-encoded image data via tRPC.
+   */
+  public async uploadAvatar(
+    auth: IAuthKeyPayload,
+    input: { dataBase64: string; mimeType: string; filename: string },
+  ) {
+    const { dataBase64, mimeType, filename } = input;
+
+    if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
+      throw new BadRequestError(
+        `Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`,
+      );
+    }
+
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > AuthController.AVATAR_MAX_BYTES) {
+      throw new BadRequestError('File too large. Maximum size is 5 MB.');
+    }
+
+    const storageFileUUID = randomUUID();
+    const ext = mimeType.split('/')[1] || 'jpg';
+    const storageKey = `avatars/${auth.tenant_id}/${auth.user_id}/${storageFileUUID}.${ext}`;
+    const sha256_hex = createHash('sha256').update(buffer).digest('hex');
+
+    await this.storage.upload(storageKey, buffer, mimeType);
+
+    let finalFileId = '';
+
+    await this.getRepo().db.transaction().execute(async (trx) => {
+      const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+
+      // Clean up old avatar
+      if (existingProfile?.avatar_file_id) {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('id', '=', existingProfile.avatar_file_id)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx.deleteFrom('files').where('id', '=', existingProfile.avatar_file_id).execute();
+        } catch { /* non-critical */ }
+      }
+
+      // Insert new file record
+      const fileResult = await trx
+        .insertInto('files')
+        .values({
+          tenant_id: auth.tenant_id,
+          filename,
+          mime_type: mimeType,
+          size_bytes: buffer.length,
+          storage_key: storageKey,
+          sha256_hex,
+          uploaded_by: auth.user_id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+
+      const fileId = String(fileResult.id);
+      finalFileId = fileId;
+
+      // Update or insert profile
+      if (existingProfile) {
+        await trx
+          .updateTable('profiles')
+          .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('auth_id', '=', auth.user_id)
+          .execute();
+      } else {
+        await trx
+          .insertInto('profiles')
+          .values({
+            tenant_id: auth.tenant_id,
+            auth_id: auth.user_id,
+            avatar_file_id: fileId,
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          })
+          .execute();
+      }
+    });
+
+    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
+  }
+
+  /**
+   * Remove the authenticated user's avatar.
+   */
+  public async deleteAvatar(auth: IAuthKeyPayload) {
+    const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+    if (!existingProfile?.avatar_file_id) return { success: true };
+
+    const fileId = existingProfile.avatar_file_id;
+
+    await this.getRepo().db.transaction().execute(async (trx) => {
+      try {
+        const oldFile = await trx
+          .selectFrom('files')
+          .select('storage_key')
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+        if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+        await trx.deleteFrom('files').where('id', '=', fileId).execute();
+      } catch { /* non-critical */ }
+
+      await trx
+        .updateTable('profiles')
+        .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+        .where('auth_id', '=', auth.user_id)
+        .execute();
+    });
+
+    return { success: true };
   }
 
   private async buildUserStats(auth: IAuthKeyPayload, userId: string) {

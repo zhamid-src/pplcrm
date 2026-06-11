@@ -9,9 +9,9 @@
         <div class="flex items-center gap-2">
           <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ listData()?.name }}</h1>
           @if (listData()?.is_dynamic) {
-            <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
+          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
           } @else {
-            <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
+          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
           }
         </div>
         <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
@@ -20,293 +20,295 @@
 
     <!-- Actions (Refresh for Dynamic lists) -->
     @if (listData()?.is_dynamic) {
-      <div class="flex items-center gap-3 self-start sm:self-center">
-        <div class="text-xs text-base-content/60 text-right hidden md:block">
-          <div>Last Refreshed</div>
-          <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
-        </div>
-        <button 
-          class="btn btn-primary btn-sm gap-2 shadow-md hover:scale-105 transition-all duration-200"
-          [disabled]="refreshing() || loading()"
-          (click)="refreshList()"
-        >
-          @if (refreshing()) {
-            <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
-            Refreshing...
-          } @else {
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            Refresh Now
-          }
-        </button>
+    <div class="flex items-center gap-3 self-start sm:self-center">
+      <div class="text-xs text-base-content/60 text-right hidden md:block">
+        <div>Last Refreshed</div>
+        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
       </div>
+      <button
+        class="btn btn-outline btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200"
+        [disabled]="refreshing() || loading()"
+        (click)="refreshList()"
+      >
+        @if (refreshing()) {
+        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
+        Refreshing... } @else {
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh Now }
+      </button>
+    </div>
     }
   </div>
 
   <!-- Loading State -->
   @if (loading()) {
-    <div class="flex flex-1 flex-col items-center justify-center py-20">
-      <progress class="progress progress-primary w-56"></progress>
-      <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
-    </div>
+  <div class="flex flex-1 flex-col items-center justify-center py-20">
+    <progress class="progress progress-primary w-56"></progress>
+    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
+  </div>
   } @else {
-    <!-- KPI Stats Cards -->
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-      <!-- Card 1: Members Count -->
-      <div class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200">
-        <div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">List Size</span>
-          <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ members().length }}</h3>
-          <span class="text-[11px] text-base-content/60 mt-2 block">
-            Targeting {{ isPeople() ? 'People' : 'Households' }}
-          </span>
-        </div>
-        <div class="bg-primary/10 text-primary p-3.5 rounded-2xl">
-          <pc-icon name="users" [size]="6"></pc-icon>
-        </div>
+  <!-- KPI Stats Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    <!-- Card 1: Members Count -->
+    <div
+      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    >
+      <div>
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">List Size</span>
+        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ members().length }}</h3>
+        <span class="text-[11px] text-base-content/60 mt-2 block">
+          Targeting {{ isPeople() ? 'People' : 'Households' }}
+        </span>
       </div>
-
-      <!-- Card 2: Campaigns Sent -->
-      <div class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200">
-        <div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Newsletters Sent</span>
-          <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ stats()?.totalNewsletters || 0 }}</h3>
-          <span class="text-[11px] text-base-content/60 mt-2 block">
-            Campaign dispatches
-          </span>
-        </div>
-        <div class="bg-secondary/10 text-secondary p-3.5 rounded-2xl">
-          <pc-icon name="megaphone" [size]="6"></pc-icon>
-        </div>
-      </div>
-
-      <!-- Card 3: Avg Open Rate -->
-      <div class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200">
-        <div class="flex-grow">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Open Rate</span>
-          <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgOpenRate) }}</h3>
-          
-          <!-- Open Rate Progress Bar -->
-          <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
-            <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
-          </div>
-        </div>
-        <div class="bg-accent/10 text-accent p-3.5 rounded-2xl ml-4 shrink-0">
-          <pc-icon name="envelope" [size]="6"></pc-icon>
-        </div>
-      </div>
-
-      <!-- Card 4: Avg Click Rate -->
-      <div class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200">
-        <div class="flex-grow">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Click Rate</span>
-          <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgClickRate) }}</h3>
-
-          <!-- Click Rate Progress Bar -->
-          <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
-            <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
-          </div>
-        </div>
-        <div class="bg-info/10 text-info p-3.5 rounded-2xl ml-4 shrink-0">
-          <pc-icon name="chart-pie" [size]="6"></pc-icon>
-        </div>
+      <div class="bg-primary/10 text-primary p-3.5 rounded-2xl">
+        <pc-icon name="users" [size]="6"></pc-icon>
       </div>
     </div>
 
-    <!-- Tabs Header -->
-    <div class="tabs tabs-lifted mb-6">
-      <button 
-        class="tab tab-lg font-medium transition-all duration-200" 
-        [class.tab-active]="activeTab() === 'members'"
-        (click)="activeTab.set('members')"
-      >
-        Members List ({{ members().length }})
-      </button>
-      <button 
-        class="tab tab-lg font-medium transition-all duration-200" 
-        [class.tab-active]="activeTab() === 'newsletters'"
-        (click)="activeTab.set('newsletters')"
-      >
-        Newsletter Campaigns ({{ stats()?.newsletters?.length || 0 }})
-      </button>
-      <button 
-        class="tab tab-lg font-medium transition-all duration-200" 
-        [class.tab-active]="activeTab() === 'settings'"
-        (click)="activeTab.set('settings')"
-      >
-        List Settings
-      </button>
+    <!-- Card 2: Campaigns Sent -->
+    <div
+      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    >
+      <div>
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Newsletters Sent</span>
+        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ stats()?.totalNewsletters || 0 }}</h3>
+        <span class="text-[11px] text-base-content/60 mt-2 block"> Campaign dispatches </span>
+      </div>
+      <div class="bg-secondary/10 text-secondary p-3.5 rounded-2xl">
+        <pc-icon name="megaphone" [size]="6"></pc-icon>
+      </div>
     </div>
 
-    <!-- Tab 1: Members Panel -->
-    @if (activeTab() === 'members') {
-      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-          <h2 class="text-lg font-bold text-base-content">List Members</h2>
-          <span class="text-xs text-base-content/50">Showing all resolved records</span>
+    <!-- Card 3: Avg Open Rate -->
+    <div
+      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    >
+      <div class="flex-grow">
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Open Rate</span>
+        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgOpenRate) }}</h3>
+
+        <!-- Open Rate Progress Bar -->
+        <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
+          <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
         </div>
-        
-        <div class="overflow-x-auto">
-          @if (members().length === 0) {
-            <div class="p-8 text-center text-base-content/50">
-              <pc-icon name="users" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-              <p class="font-medium text-base">This list has no members yet</p>
-              <p class="text-xs mt-1">If this is a dynamic list, try refreshing to query members</p>
-            </div>
-          } @else {
-            @if (isPeople()) {
-              <table class="table table-zebra table-md w-full">
-                <thead>
-                  <tr class="bg-base-200/50 text-base-content/70">
-                    <th class="font-bold">Name</th>
-                    <th class="font-bold">Email</th>
-                    <th class="font-bold">Mobile</th>
-                    <th class="font-bold">Address</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (m of members(); track m.id) {
-                    <tr class="hover:bg-base-200/40 transition-colors">
-                      <td class="font-semibold text-base-content">
-                        <a [routerLink]="['/people', m.id]" class="link link-primary hover:no-underline font-semibold">
-                          {{ m.first_name }} {{ m.last_name }}
-                        </a>
-                      </td>
-                      <td class="text-base-content/85">{{ m.email || '—' }}</td>
-                      <td class="text-base-content/85">{{ m.mobile || '—' }}</td>
-                      <td class="text-xs text-base-content/70">
-                        {{ m.street_num }} {{ m.street1 }}@if (m.city){, {{ m.city }} }@if (m.state){, {{ m.state }} }@if (m.zip){ {{ m.zip }} }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            } @else {
-              <table class="table table-zebra table-md w-full">
-                <thead>
-                  <tr class="bg-base-200/50 text-base-content/70">
-                    <th class="font-bold">Address</th>
-                    <th class="font-bold">City</th>
-                    <th class="font-bold">State</th>
-                    <th class="font-bold">Zip</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (m of members(); track m.id) {
-                    <tr class="hover:bg-base-200/40 transition-colors">
-                      <td class="font-semibold text-base-content">
-                        <a [routerLink]="['/households', m.id]" class="link link-primary hover:no-underline font-semibold">
-                          {{ m.street_num }} {{ m.street1 }}
-                        </a>
-                      </td>
-                      <td class="text-base-content/85">{{ m.city || '—' }}</td>
-                      <td class="text-base-content/85">{{ m.state || '—' }}</td>
-                      <td class="text-base-content/85">{{ m.zip || '—' }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            }
+      </div>
+      <div class="bg-accent/10 text-accent p-3.5 rounded-2xl ml-4 shrink-0">
+        <pc-icon name="envelope" [size]="6"></pc-icon>
+      </div>
+    </div>
+
+    <!-- Card 4: Avg Click Rate -->
+    <div
+      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    >
+      <div class="flex-grow">
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Click Rate</span>
+        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgClickRate) }}</h3>
+
+        <!-- Click Rate Progress Bar -->
+        <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
+          <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
+        </div>
+      </div>
+      <div class="bg-info/10 text-info p-3.5 rounded-2xl ml-4 shrink-0">
+        <pc-icon name="chart-pie" [size]="6"></pc-icon>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs Header -->
+  <div class="tabs tabs-lifted mb-6">
+    <button
+      class="tab tab-lg font-medium transition-all duration-200"
+      [class.tab-active]="activeTab() === 'members'"
+      (click)="activeTab.set('members')"
+    >
+      Members List ({{ members().length }})
+    </button>
+    <button
+      class="tab tab-lg font-medium transition-all duration-200"
+      [class.tab-active]="activeTab() === 'newsletters'"
+      (click)="activeTab.set('newsletters')"
+    >
+      Newsletter Campaigns ({{ stats()?.newsletters?.length || 0 }})
+    </button>
+    <button
+      class="tab tab-lg font-medium transition-all duration-200"
+      [class.tab-active]="activeTab() === 'settings'"
+      (click)="activeTab.set('settings')"
+    >
+      List Settings
+    </button>
+  </div>
+
+  <!-- Tab 1: Members Panel -->
+  @if (activeTab() === 'members') {
+  <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+    <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+      <h2 class="text-lg font-bold text-base-content">List Members</h2>
+      <span class="text-xs text-base-content/50">Showing all resolved records</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      @if (members().length === 0) {
+      <div class="p-8 text-center text-base-content/50">
+        <pc-icon name="users" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+        <p class="font-medium text-base">This list has no members yet</p>
+        <p class="text-xs mt-1">If this is a dynamic list, try refreshing to query members</p>
+      </div>
+      } @else { @if (isPeople()) {
+      <table class="table table-zebra table-md w-full">
+        <thead>
+          <tr class="bg-base-200/50 text-base-content/70">
+            <th class="font-bold">Name</th>
+            <th class="font-bold">Email</th>
+            <th class="font-bold">Mobile</th>
+            <th class="font-bold">Address</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of members(); track m.id) {
+          <tr class="hover:bg-base-200/40 transition-colors">
+            <td class="font-semibold text-base-content">
+              <a [routerLink]="['/people', m.id]" class="link link-primary hover:no-underline font-semibold">
+                {{ m.first_name }} {{ m.last_name }}
+              </a>
+            </td>
+            <td class="text-base-content/85">{{ m.email || '—' }}</td>
+            <td class="text-base-content/85">{{ m.mobile || '—' }}</td>
+            <td class="text-xs text-base-content/70">
+              {{ m.street_num }} {{ m.street1 }}@if (m.city){, {{ m.city }} }@if (m.state){, {{ m.state }} }@if (m.zip){
+              {{ m.zip }} }
+            </td>
+          </tr>
           }
-        </div>
-      </div>
-    }
-
-    <!-- Tab 2: Campaigns Panel -->
-    @if (activeTab() === 'newsletters') {
-      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
-          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
-            <div class="p-12 text-center text-base-content/50">
-              <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-              <p class="font-medium text-base">No campaign emails sent to this list</p>
-              <p class="text-xs mt-1">Sent newsletters targeting this list will appear here with engagement statistics.</p>
-            </div>
-          } @else {
-            <table class="table table-zebra table-md w-full">
-              <thead>
-                <tr class="bg-base-200/50 text-base-content/70">
-                  <th class="font-bold">Newsletter Name</th>
-                  <th class="font-bold">Subject</th>
-                  <th class="font-bold">Send Date</th>
-                  <th class="font-bold text-right">Recipients</th>
-                  <th class="font-bold text-right">Open Rate</th>
-                  <th class="font-bold text-right">Click Rate</th>
-                  <th class="font-bold text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (n of stats().newsletters; track n.id) {
-                  <tr class="hover:bg-base-200/40 transition-colors">
-                    <td class="font-bold text-base-content">{{ n.name }}</td>
-                    <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
-                    <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
-                    <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
-                    <td class="text-right">
-                      <div class="flex items-center justify-end gap-1.5">
-                        <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
-                      </div>
-                    </td>
-                    <td class="text-right">
-                      <div class="flex items-center justify-end gap-1.5">
-                        <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
-                      </div>
-                    </td>
-                    <td class="text-center">
-                      <a 
-                        [routerLink]="['/newsletter', n.id]"
-                        class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
-                      >
-                        <pc-icon name="presentation-chart-line" [size]="3.5"></pc-icon>
-                        View Report
-                      </a>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+        </tbody>
+      </table>
+      } @else {
+      <table class="table table-zebra table-md w-full">
+        <thead>
+          <tr class="bg-base-200/50 text-base-content/70">
+            <th class="font-bold">Address</th>
+            <th class="font-bold">City</th>
+            <th class="font-bold">State</th>
+            <th class="font-bold">Zip</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of members(); track m.id) {
+          <tr class="hover:bg-base-200/40 transition-colors">
+            <td class="font-semibold text-base-content">
+              <a [routerLink]="['/households', m.id]" class="link link-primary hover:no-underline font-semibold">
+                {{ m.street_num }} {{ m.street1 }}
+              </a>
+            </td>
+            <td class="text-base-content/85">{{ m.city || '—' }}</td>
+            <td class="text-base-content/85">{{ m.state || '—' }}</td>
+            <td class="text-base-content/85">{{ m.zip || '—' }}</td>
+          </tr>
           }
-        </div>
-      </div>
-    }
-
-    <!-- Tab 3: Settings Panel -->
-    @if (activeTab() === 'settings') {
-      <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
-        <h2 class="text-lg font-bold text-base-content mb-4">Edit List Details</h2>
-        <form [formGroup]="form" class="flex flex-col gap-5 max-w-xl">
-          <div class="form-control w-full">
-            <label class="label">
-              <span class="label-text font-semibold text-base-content">List Name</span>
-            </label>
-            <input 
-              type="text"
-              class="input input-bordered w-full bg-base-100" 
-              placeholder="List Name" 
-              formControlName="name" 
-            />
-          </div>
-
-          <div class="form-control w-full">
-            <label class="label">
-              <span class="label-text font-semibold text-base-content">Description</span>
-            </label>
-            <textarea 
-              class="textarea textarea-bordered w-full bg-base-100 min-h-24" 
-              placeholder="Provide a detailed description of what this list filters or collects." 
-              formControlName="description"
-            ></textarea>
-          </div>
-
-          <div class="mt-4 pt-4 border-t border-base-200 flex justify-end">
-            <pc-add-btn-row [isLoading]="loading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
-          </div>
-        </form>
-      </div>
-    }
+        </tbody>
+      </table>
+      } }
+    </div>
+  </div>
   }
+
+  <!-- Tab 2: Campaigns Panel -->
+  @if (activeTab() === 'newsletters') {
+  <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+    <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+      <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
+      <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
+      <div class="p-12 text-center text-base-content/50">
+        <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+        <p class="font-medium text-base">No campaign emails sent to this list</p>
+        <p class="text-xs mt-1">Sent newsletters targeting this list will appear here with engagement statistics.</p>
+      </div>
+      } @else {
+      <table class="table table-zebra table-md w-full">
+        <thead>
+          <tr class="bg-base-200/50 text-base-content/70">
+            <th class="font-bold">Newsletter Name</th>
+            <th class="font-bold">Subject</th>
+            <th class="font-bold">Send Date</th>
+            <th class="font-bold text-right">Recipients</th>
+            <th class="font-bold text-right">Open Rate</th>
+            <th class="font-bold text-right">Click Rate</th>
+            <th class="font-bold text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (n of stats().newsletters; track n.id) {
+          <tr class="hover:bg-base-200/40 transition-colors">
+            <td class="font-bold text-base-content">{{ n.name }}</td>
+            <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
+            <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
+            <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
+            <td class="text-right">
+              <div class="flex items-center justify-end gap-1.5">
+                <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
+              </div>
+            </td>
+            <td class="text-right">
+              <div class="flex items-center justify-end gap-1.5">
+                <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
+              </div>
+            </td>
+            <td class="text-center">
+              <a
+                [routerLink]="['/newsletter', n.id]"
+                class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
+              >
+                <pc-icon name="presentation-chart-line" [size]="3.5"></pc-icon>
+                View Report
+              </a>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- Tab 3: Settings Panel -->
+  @if (activeTab() === 'settings') {
+  <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
+    <h2 class="text-lg font-bold text-base-content mb-4">Edit List Details</h2>
+    <form [formGroup]="form" class="flex flex-col gap-5 max-w-xl">
+      <div class="form-control w-full">
+        <label class="label">
+          <span class="label-text font-semibold text-base-content">List Name</span>
+        </label>
+        <input
+          type="text"
+          class="input input-bordered w-full bg-base-100"
+          placeholder="List Name"
+          formControlName="name"
+        />
+      </div>
+
+      <div class="form-control w-full">
+        <label class="label">
+          <span class="label-text font-semibold text-base-content">Description</span>
+        </label>
+        <textarea
+          class="textarea textarea-bordered w-full bg-base-100 min-h-24"
+          placeholder="Provide a detailed description of what this list filters or collects."
+          formControlName="description"
+        ></textarea>
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-base-200 flex justify-end">
+        <pc-add-btn-row [isLoading]="loading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
+      </div>
+    </form>
+  </div>
+  } }
 </div>
