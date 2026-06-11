@@ -192,7 +192,8 @@ export class BackgroundJobWorker {
           payload.type === 'send-form-notifications' ||
           payload.type === 'send-webform-notifications' ||
           payload.type === 'send-shift-reminder' ||
-          payload.type === 'send-newsletter';
+          payload.type === 'send-newsletter' ||
+          payload.type === 'send-newsletter-batch';
         const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
         console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);

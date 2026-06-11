@@ -53,7 +53,11 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const parseJsonField = (value: unknown): unknown => {
       if (value == null) return null;
       if (typeof value === 'string') {
-        try { return JSON.parse(value); } catch { return value; }
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
       }
       return value; // already parsed object from jsonb column
     };
@@ -66,7 +70,10 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
       excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
     } else if (typeof listsObj === 'string' && listsObj) {
-      includeListIds = (listsObj as string).split(',').map((s) => s.trim()).filter(Boolean);
+      includeListIds = (listsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
 
     const segmentsObj = parseJsonField(newsletter.segments);
@@ -77,11 +84,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
       excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
     } else if (typeof segmentsObj === 'string' && segmentsObj) {
-      includeTags = (segmentsObj as string).split(',').map((s) => s.trim()).filter(Boolean);
+      includeTags = (segmentsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
 
     const db = this.getRepo().db;
-    let query = db.selectFrom('persons')
+    let query = db
+      .selectFrom('persons')
       .select(['persons.email'])
       .where('persons.tenant_id', '=', tenant_id as any)
       .where('persons.email', 'is not', null)
@@ -92,24 +103,26 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       if (includeListIds.length > 0) {
         conditions.push(
           eb.exists(
-            db.selectFrom('map_lists_persons')
+            db
+              .selectFrom('map_lists_persons')
               .select('person_id')
               .where('map_lists_persons.tenant_id', '=', tenant_id as any)
               .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
-              .where('map_lists_persons.list_id', 'in', includeListIds)
-          )
+              .where('map_lists_persons.list_id', 'in', includeListIds),
+          ),
         );
       }
       if (includeTags.length > 0) {
         conditions.push(
           eb.exists(
-            db.selectFrom('map_peoples_tags')
+            db
+              .selectFrom('map_peoples_tags')
               .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
               .select('map_peoples_tags.person_id')
               .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
               .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
-              .where('tags.name', 'in', includeTags)
-          )
+              .where('tags.name', 'in', includeTags),
+          ),
         );
       }
 
@@ -123,13 +136,14 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       query = query.where((eb) =>
         eb.not(
           eb.exists(
-            db.selectFrom('map_lists_persons')
+            db
+              .selectFrom('map_lists_persons')
               .select('person_id')
               .where('map_lists_persons.tenant_id', '=', tenant_id as any)
               .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
-              .where('map_lists_persons.list_id', 'in', excludeListIds)
-          )
-        )
+              .where('map_lists_persons.list_id', 'in', excludeListIds),
+          ),
+        ),
       );
     }
 
@@ -137,14 +151,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       query = query.where((eb) =>
         eb.not(
           eb.exists(
-            db.selectFrom('map_peoples_tags')
+            db
+              .selectFrom('map_peoples_tags')
               .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
               .select('map_peoples_tags.person_id')
               .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
               .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
-              .where('tags.name', 'in', excludeTags)
-          )
-        )
+              .where('tags.name', 'in', excludeTags),
+          ),
+        ),
       );
     }
 
@@ -155,7 +170,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       throw new BadRequestError('No recipients found for the selected lists or tags');
     }
 
-    const settingsRows = await db.selectFrom('settings')
+    const settingsRows = await db
+      .selectFrom('settings')
       .select(['key', 'value'])
       .where('tenant_id', '=', tenant_id as any)
       .where('key', 'in', [
@@ -184,24 +200,26 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       row: {
         status: 'queuing',
         total_recipients: recipients.length,
+        delivered_count: 0,
         updatedby_id: userId,
         updated_at: new Date(),
       },
     });
 
-    await db.insertInto('background_jobs' as any)
-      .values({
+    const batchSize = 500;
+    const jobs: any[] = [];
+    for (let i = 0; i < recipients.length; i += batchSize) {
+      const chunk = recipients.slice(i, i + batchSize);
+      jobs.push({
         tenant_id,
         queue: 'default',
         status: 'pending',
         payload: JSON.stringify({
-          type: 'send-newsletter',
+          type: 'send-newsletter-batch',
           newsletterId: id,
           tenantId: tenant_id,
           userId: userId,
-          recipients,
-          offset: 0,
-          deliveredCount: 0,
+          recipients: chunk,
           fromName,
           fromEmail,
           subject: newsletter.subject || 'Newsletter',
@@ -211,7 +229,12 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
           subuserUsername,
         }),
         run_at: new Date(),
-      } as any)
+      });
+    }
+
+    await db
+      .insertInto('background_jobs' as any)
+      .values(jobs)
       .execute();
 
     return updated;
@@ -219,7 +242,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 
   public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
     const db = this.getRepo().db;
-    
+
     // 1. Fetch recent events (limit 100)
     const activities = await db
       .selectFrom('newsletter_events')
