@@ -384,7 +384,7 @@ export class PersonDetail implements OnInit {
       await this.personsSvc.attachTag(this.id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to attach tag:', err);
     }
   }
 
@@ -438,7 +438,7 @@ export class PersonDetail implements OnInit {
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to detach tag:', err);
       restoreTag();
     }
   }
@@ -450,7 +450,7 @@ export class PersonDetail implements OnInit {
       await this.personsSvc.attachTag(this.id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to attach issue:', err);
     }
   }
 
@@ -465,7 +465,7 @@ export class PersonDetail implements OnInit {
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to detach issue:', err);
       restoreIssue();
     }
   }
@@ -484,7 +484,7 @@ export class PersonDetail implements OnInit {
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .add(data)
+      .add(data, { meta: { skipErrorHandler: true } })
       .then(() => {
         this.alertSvc.showSuccess('Person added');
         this.personsSvc.triggerRefresh();
@@ -625,7 +625,7 @@ export class PersonDetail implements OnInit {
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .update(this.id, data)
+      .update(this.id, data, { meta: { skipErrorHandler: true } })
       .then(() => {
         this.alertSvc.showSuccess('Person updated successfully.');
         this.form().reset();

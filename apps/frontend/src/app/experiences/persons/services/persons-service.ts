@@ -73,8 +73,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param row - Person data to be added
    * @returns A promise resolving to the result of the mutation
    */
-  public add(row: UpdatePersonsType) {
-    return this.api.persons.add.mutate(row);
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
   }
 
   /**
@@ -290,9 +290,9 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param id - Person ID
    * @param data - New data to apply
    */
-  public async update(id: string, data: UpdatePersonsType) {
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
     console.log(id, data);
-    return this.api.persons.update.mutate({ id: id, data });
+    return this.api.persons.update.mutate({ id: id, data }, options);
   }
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {

@@ -78,19 +78,9 @@ export class HouseholdDetail implements OnInit {
 
     const parts: string[] = [];
 
-    const streetParts = [
-      raw.apt ? `Apt ${raw.apt}` : null,
-      raw.street_num,
-      raw.street1,
-      raw.street2,
-    ].filter(Boolean);
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
 
-    const locationParts = [
-      raw.city,
-      raw.state,
-      raw.zip,
-      raw.country,
-    ].filter(Boolean);
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
 
     if (streetParts.length) {
       parts.push(streetParts.join(' ').trim());
@@ -225,7 +215,7 @@ export class HouseholdDetail implements OnInit {
       await this.householdsSvc.attachTag(this.id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to attach tag:', err);
     }
   }
 
@@ -239,7 +229,7 @@ export class HouseholdDetail implements OnInit {
       await this.householdsSvc.detachTag(this.id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to detach tag:', err);
     }
   }
 
@@ -253,7 +243,7 @@ export class HouseholdDetail implements OnInit {
       await this.householdsSvc.attachTag(this.id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to attach issue:', err);
     }
   }
 
@@ -267,7 +257,7 @@ export class HouseholdDetail implements OnInit {
       await this.householdsSvc.detachTag(this.id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      console.error('Failed to detach issue:', err);
     }
   }
 
@@ -286,7 +276,6 @@ export class HouseholdDetail implements OnInit {
           done();
         }
       })
-      .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => end());
   }
 
@@ -364,7 +353,6 @@ export class HouseholdDetail implements OnInit {
           done();
         }
       })
-      .catch((err: unknown) => this.alertSvc.showError(String(err)))
       .finally(() => end());
   }
 }
