@@ -2,22 +2,72 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Volunteer Events', () => {
   test.beforeEach(async ({ page }) => {
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+
+    // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
+    await page.route(/\/notifications\.getUnreadCount/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: 0 } } }),
+      });
+    });
+
+    await page.route(/\/notifications\.getLatest/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
+      });
+    });
+
+    await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/dashboard\.getStats/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
+                avgFirstResponseHours: 0,
+                avgTimeToCloseHours: 0,
+                emailsAssigned: [],
+                emailsClosed: [],
+                contactsGrowth: [],
+                unassignedCount: 0,
+                totalOpenCount: 0,
+                userStats: [],
+                unassignedSlaBreaches: 0,
+                unassignedEmailSlaBreaches: 0,
+                unassignedTaskSlaBreaches: 0,
+              },
+            },
+          },
+        }),
+      });
+    });
+
     // 1. Mock currentUser to bypass AuthGuard
     await page.route(/\/auth\.currentUser/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'user-1',
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'User',
-              role: 'user',
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'user-1',
+                email: 'test@example.com',
+                first_name: 'Test',
+                last_name: 'User',
+                role: 'user',
+              } } } }),
       });
     });
 
@@ -26,21 +76,17 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [
-                {
-                  id: 'person-v1',
-                  first_name: 'John',
-                  last_name: 'Volunteer',
-                  email: 'johnv@example.com',
-                }
-              ],
-              count: 1
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [
+                  {
+                    id: 'person-v1',
+                    first_name: 'John',
+                    last_name: 'Volunteer',
+                    email: 'johnv@example.com',
+                  }
+                ],
+                count: 1
+              } } } }),
       });
     });
   });
@@ -51,25 +97,21 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              rows: [
-                {
-                  id: 'event-1',
-                  name: ' Weekend Door Knocking',
-                  description: 'Canvassing weekend',
-                  location_address: 'Central Park',
-                  start_time: new Date().toISOString(),
-                  end_time: new Date().toISOString(),
-                  capacity: 10,
-                  volunteers_count: 2,
-                }
-              ],
-              count: 1
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                rows: [
+                  {
+                    id: 'event-1',
+                    name: ' Weekend Door Knocking',
+                    description: 'Canvassing weekend',
+                    location_address: 'Central Park',
+                    start_time: new Date().toISOString(),
+                    end_time: new Date().toISOString(),
+                    capacity: 10,
+                    volunteers_count: 2,
+                  }
+                ],
+                count: 1
+              } } } }),
       });
     });
 
@@ -87,11 +129,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { id: 'event-1' }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { id: 'event-1' } } } }),
       });
     });
 
@@ -100,20 +138,16 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'event-1',
-              name: 'Weekend Door Knocking',
-              description: 'Canvassing weekend',
-              location_address: 'Central Park',
-              start_time: new Date().toISOString(),
-              end_time: new Date().toISOString(),
-              capacity: 10,
-              created_at: new Date().toISOString(),
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'event-1',
+                name: 'Weekend Door Knocking',
+                description: 'Canvassing weekend',
+                location_address: 'Central Park',
+                start_time: new Date().toISOString(),
+                end_time: new Date().toISOString(),
+                capacity: 10,
+                created_at: new Date().toISOString(),
+              } } } }),
       });
     });
 
@@ -122,11 +156,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: []
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: [] } } }),
       });
     });
 
@@ -161,20 +191,16 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: {
-              id: 'event-1',
-              name: 'Weekend Door Knocking',
-              description: 'Canvassing weekend',
-              location_address: 'Central Park',
-              start_time: new Date().toISOString(),
-              end_time: new Date().toISOString(),
-              capacity: 10,
-              created_at: new Date().toISOString(),
-            }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: {
+                id: 'event-1',
+                name: 'Weekend Door Knocking',
+                description: 'Canvassing weekend',
+                location_address: 'Central Park',
+                start_time: new Date().toISOString(),
+                end_time: new Date().toISOString(),
+                capacity: 10,
+                created_at: new Date().toISOString(),
+              } } } }),
       });
     });
 
@@ -184,11 +210,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: shiftList
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: shiftList } } }),
       });
     });
 
@@ -208,11 +230,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { id: 'shift-1' }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { id: 'shift-1' } } } }),
       });
     });
 
@@ -221,11 +239,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { success: true }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
       });
     });
 
@@ -235,11 +249,7 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          result: {
-            data: { success: true }
-          }
-        }]),
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
       });
     });
 
@@ -256,7 +266,7 @@ test.describe('Volunteer Events', () => {
 
     // 3. Edit shift details and save
     await page.locator('select').selectOption('attended');
-    await page.locator('input[type="number"]').fill('3.5');
+    await page.locator('tbody input[type="number"]').fill('3.5');
     await page.locator('input[placeholder*="Optional details"]').fill('Great volunteer work');
     await page.locator('button[title="Save shift edits"]').click();
 

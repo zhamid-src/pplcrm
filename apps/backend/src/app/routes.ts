@@ -49,6 +49,12 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // Register exports download REST route (auth handled inside route via query token)
   fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
 
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
 
@@ -87,12 +93,6 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
     // Register email routes
     protectedFastify.register(emailsRoute, { prefix: '/v1/inbox' });
-
-    // Register email attachments REST routes
-    protectedFastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-    // Register files download REST route
-    protectedFastify.register(filesRoute, { prefix: '/api/files' });
 
     protectedDone();
   });

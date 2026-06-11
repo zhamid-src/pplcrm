@@ -7,6 +7,8 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { TokenService } from '../../../services/api/token-service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-users-grid',
@@ -37,6 +39,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 })
 export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
   private readonly auth = inject(AuthService);
+  private readonly tokenService = inject(TokenService);
 
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -54,11 +57,21 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
       minWidth: 72,
       maxWidth: 72,
       cellRenderer: (p: any) => {
-        const avatarUrl: string | null = p.data?.avatar_url ?? null;
+        let avatarUrl: string | null = p.data?.avatar_url ?? null;
         const firstName: string = p.data?.first_name ?? '';
         const lastName: string = p.data?.last_name ?? '';
         const name = [firstName, lastName].filter(Boolean).join(' ') || p.data?.email || '?';
         if (avatarUrl) {
+          if (avatarUrl.startsWith('/') && !avatarUrl.startsWith('//')) {
+            avatarUrl = environment.apiUrl + avatarUrl;
+          }
+          if (!avatarUrl.includes('token=')) {
+            const token = this.tokenService.getAuthToken();
+            if (token) {
+              const separator = avatarUrl.includes('?') ? '&' : '?';
+              avatarUrl = `${avatarUrl}${separator}token=${encodeURIComponent(token)}`;
+            }
+          }
           return `<div class="flex items-center justify-center h-full py-1">
             <img src="${avatarUrl}" alt="${name}" class="w-8 h-8 rounded-full object-cover ring-2 ring-base-200" />
           </div>`;

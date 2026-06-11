@@ -38,9 +38,7 @@ function count() {
  * Only minimal fields are returned.
  */
 function getUsers() {
-  return authProcedure.query(({ ctx }) =>
-    controller.getAll(ctx.auth.tenant_id, { columns: ['id', 'first_name', 'last_name'] }),
-  );
+  return authProcedure.query(({ ctx }) => controller.getUsersList(ctx.auth));
 }
 
 /**
@@ -140,6 +138,28 @@ function cancelEmailChange() {
 }
 
 /**
+ * Upload a profile avatar (base64-encoded image) for the current user.
+ */
+function uploadAvatar() {
+  return authProcedure
+    .input(
+      z.object({
+        dataBase64: z.string().min(1),
+        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+        filename: z.string().min(1).max(255),
+      }),
+    )
+    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
+}
+
+/**
+ * Remove the current user's profile avatar.
+ */
+function deleteAvatar() {
+  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
+}
+
+/**
  * Trigger password reset by administrator.
  */
 function adminTriggerPasswordReset() {
@@ -229,4 +249,6 @@ export const AuthRouter = router({
   cancelAccountDeletion: cancelAccountDeletion(),
   cancelEmailChange: cancelEmailChange(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  uploadAvatar: uploadAvatar(),
+  deleteAvatar: deleteAvatar(),
 });
