@@ -35,7 +35,6 @@ export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode 
   }
 }
 
-
 export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
   z.discriminatedUnion('kind', [
     z.object({
@@ -51,7 +50,7 @@ export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
       conjunction: z.enum(['AND', 'OR']),
       rules: z.array(queryBuilderNodeSchema),
     }),
-  ])
+  ]),
 );
 
 export const oldAdvancedFilterModelSchema = z.object({
@@ -125,6 +124,14 @@ export const dataExportRecord = z.object({
   error: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
@@ -155,7 +162,8 @@ export const descriptionSchema = (maxLen = 1000) =>
 export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
 
 export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) => z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
 
 export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 export const jsonSchema = z.string().trim().max(50000, 'JSON is too long').nullable().optional();
