@@ -8,11 +8,11 @@
 
 | Layer         | Tools                                                |
 | ------------- | ---------------------------------------------------- |
-| Frontend      | Angular 20, Tailwind CSS v4, DaisyUI v5, AG Grid     |
+| Frontend      | Angular 22, Tailwind CSS v4, DaisyUI v5, AG Grid     |
 | Backend       | Fastify 5, tRPC, Kysely ORM, PostgreSQL              |
 | Auth          | JWT via `fast-jwt`, refresh tokens, session tracking |
 | Styling       | Tailwind CSS, DaisyUI, SCSS                          |
-| Emails        | Nodemailer with SMTP                                 |
+| Emails        | MS Graph & Gmail APIs                                |
 | Build Tooling | Nx Monorepo, Esbuild, SWC                            |
 | Testing       | Jest (unit), Playwright (e2e)                        |
 
@@ -21,7 +21,7 @@
 ## 🗂️ Repository Structure
 
 - `apps/backend/` – Fastify API server with controllers, repositories, migrations, and routers.
-- `apps/frontend/` – Angular 20 SPA (standalone components & signals) styled with Tailwind CSS and DaisyUI.
+- `apps/frontend/` – Angular 22 SPA (standalone components & signals) styled with Tailwind CSS and DaisyUI.
 - `common/` – Shared TypeScript/Zod definitions and Kysely database models.
 - `docs/` – Project documentation including [Common UX Elements](docs/UX_COMMON.md) and [Feature Components](docs/COMPONENTS.md).
 - Root configs (`package.json`, `nx.json`, `tsconfig.base.json`) define dependencies, build targets, and TypeScript settings.
@@ -39,7 +39,7 @@
 
 ## 🎨 Frontend Highlights
 
-- Standalone Angular 20 components (`app.ts`, `app.routes.ts`) using signals and reactive forms.
+- Standalone Angular 22 components (`app.ts`, `app.routes.ts`) using signals and reactive forms.
 - `services/api/` provides tRPC client setup, token storage, and search utilities.
 - Feature modules in `components/` (persons, households, tags, etc.) with grids, detail pages, and services.
 - Reusable UI elements live in `layout/` and `uxcommon/`, which now groups shared
@@ -65,11 +65,13 @@ docker start pplcrm-azurite
 Start the backend and frontend in two separate terminal windows:
 
 **Terminal 1 (Backend):**
+
 ```bash
 nx serve backend
 ```
 
 **Terminal 2 (Frontend):**
+
 ```bash
 nx serve frontend
 ```
