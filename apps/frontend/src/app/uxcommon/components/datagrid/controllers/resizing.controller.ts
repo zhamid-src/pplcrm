@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class ResizingController {
   private _colStartX = 0;
   private _colStartW = 0;

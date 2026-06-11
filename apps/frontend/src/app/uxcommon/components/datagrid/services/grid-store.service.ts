@@ -1,7 +1,8 @@
 import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class GridStoreService {
+  public grid?: any;
   readonly rows = signal<any[]>([]);
   readonly sorting = signal<any[]>([]);
   readonly colVisibility = signal<Record<string, boolean>>({});

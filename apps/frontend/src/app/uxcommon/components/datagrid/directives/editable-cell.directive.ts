@@ -108,21 +108,7 @@ export class EditableCellDirective {
     if (typeof p.customCommit === 'function') {
       await p.customCommit(currentValue);
     } else {
-      await this.editing.commitSingleCell({
-        row: p.row,
-        col: p.col,
-        currentValue,
-        toId: p.toId,
-        createPayload: p.createPayload,
-        applyEdit: p.applyEdit,
-        updateEditedRowInCaches: p.updateEditedRow,
-        updateTableWindow: p.updateWindow,
-        startIndex: p.startIndex,
-        endIndex: p.endIndex,
-        showSuccess: p.showSuccess,
-        showError: p.showError,
-        undo: p.undo,
-      });
+      await this.editing.commitSingleCell(p.row, p.col, currentValue);
     }
     p.setEditingCell(null);
     this.isEditing = false;

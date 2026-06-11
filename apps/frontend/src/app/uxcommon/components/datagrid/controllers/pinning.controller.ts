@@ -1,7 +1,7 @@
 import { Injectable, signal, effect } from '@angular/core';
 import { DataGridColumnsService } from '../services/columns.service';
 
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class PinningController {
   private headerWidthMap = new Map<string, number>();
   readonly pinnedLeftOffsets = signal<Record<string, number>>({});

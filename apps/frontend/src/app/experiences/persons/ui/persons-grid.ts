@@ -461,7 +461,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       return true;
     }
 
-    const ids = selected.map((r) => r.id);
+    const ids = selected.map((r: any) => r.id);
 
     // Show standard delete confirmation
     const selectedCount = selected.length;
