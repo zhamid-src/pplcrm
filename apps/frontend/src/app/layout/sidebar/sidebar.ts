@@ -9,10 +9,12 @@ import { Swap } from '@uxcommon/components/swap/swap';
 
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, Swap],
+  imports: [NgTemplateOutlet, Icon, RouterLink, Swap, AnimateIfDirective],
   templateUrl: './sidebar.html',
   styles: [
     `
@@ -60,6 +62,11 @@ export class Sidebar {
    */
   protected closeMobile() {
     this.sidebarSvc.closeMobile();
+  }
+
+  // return a signal indicating whether the item should be visible or not as indicated by !nav.hidden && !nav.hiddenByFavourite
+  protected getVisibilitySignal(item: ISidebarItem) {
+    return signal(!item.hidden && !item.hiddenByFavourite);
   }
 
   /**
