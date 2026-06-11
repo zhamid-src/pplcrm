@@ -310,5 +310,9 @@
       </div>
     </form>
   </div>
-  } }
+  } } @if (listData() && listData()?.id) {
+  <div class="mt-8 border-t border-base-250 pt-6">
+    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
+  </div>
+  }
 </div>

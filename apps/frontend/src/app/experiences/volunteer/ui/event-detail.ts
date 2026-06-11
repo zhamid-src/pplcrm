@@ -12,9 +12,11 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 
+import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon],
+  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, RecordActivities],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
