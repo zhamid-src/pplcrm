@@ -68,8 +68,17 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return await this.api.files.registerFile.mutate(data);
   }
 
+  private async computeSha256(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
   public async uploadFileDirectly(file: File): Promise<any> {
     const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
+
+    const sha256Hex = await this.computeSha256(file);
 
     const res = await fetch(uploadUrl, {
       method: 'PUT',
@@ -89,7 +98,7 @@ export class FilesService extends AbstractAPIService<'files', any> {
       mimeType: file.type || null,
       sizeBytes: file.size,
       storageKey,
-      sha256Hex: null,
+      sha256Hex,
     });
   }
 
