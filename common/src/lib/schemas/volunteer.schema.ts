@@ -5,16 +5,30 @@ export const AddVolunteerEventObj = z.object({
   name: nameSchema('Event name', 200),
   description: descriptionSchema(2000),
   location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().int().positive().nullable().optional(),
+  start_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'Start date & time is required' }),
+  ),
+  end_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'End date & time is required' }),
+  ),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
   contact_email: z.string().trim().max(255).nullable().optional(),
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().default(false).optional(),
   send_reminder: z.boolean().default(true).optional(),
   send_signup_confirmation: z.boolean().default(true).optional(),
   send_volunteer_alert: z.boolean().default(true).optional(),
-  slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens'),
+  slug: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(
+      /^(?=.*[a-z])[a-z0-9-]+$/,
+      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+    ),
 });
 
 export const VolunteerEventsObj = z.object({
@@ -39,16 +53,35 @@ export const UpdateVolunteerEventObj = z.object({
   name: nameSchema('Event name', 200).optional(),
   description: descriptionSchema(2000),
   location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.coerce.date().optional(),
-  end_time: z.coerce.date().optional(),
-  capacity: z.number().int().positive().nullable().optional(),
+  start_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'Start date & time is required' }),
+    )
+    .optional(),
+  end_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'End date & time is required' }),
+    )
+    .optional(),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
   contact_email: z.string().trim().max(255).nullable().optional(),
   contact_phone: z.string().trim().max(50).nullable().optional(),
   is_private: z.boolean().optional(),
   send_reminder: z.boolean().optional(),
   send_signup_confirmation: z.boolean().optional(),
   send_volunteer_alert: z.boolean().optional(),
-  slug: z.string().trim().min(1).max(200).regex(/^(?=.*[a-z])[a-z0-9-]+$/, 'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens').optional(),
+  slug: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(
+      /^(?=.*[a-z])[a-z0-9-]+$/,
+      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+    )
+    .optional(),
 });
 
 export const AddVolunteerShiftObj = z.object({
