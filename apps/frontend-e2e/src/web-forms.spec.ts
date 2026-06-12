@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Web Forms', () => {
   test.beforeEach(async ({ page }) => {
-    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+    page.on('console', (msg) => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', (err) => console.log('BROWSER ERROR:', err.message));
 
     // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
     await page.route(/\/notifications\.getUnreadCount/, async (route) => {
@@ -27,6 +27,30 @@ test.describe('Web Forms', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/auth\.getUsers/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
+      });
+    });
+
+    await page.route(/\/webForms\.getSubmissionsCount/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: 0 } } }),
+      });
+    });
+
+    await page.route(/\/activity\.getActivities/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
       });
     });
 
@@ -61,13 +85,19 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'user-1',
                 email: 'test@example.com',
                 first_name: 'Test',
                 last_name: 'User',
                 role: 'user',
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -76,10 +106,16 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [{ id: 'list-1', name: 'Newsletter Subscribers' }],
-                count: 1
-              } } } }),
+                count: 1,
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -88,10 +124,16 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [{ id: 'tag-1', name: 'newsletter' }],
-                count: 1
-              } } } }),
+                count: 1,
+              },
+            },
+          },
+        }),
       });
     });
   });
@@ -102,7 +144,10 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [
                   {
                     id: 'form-1111-2222-3333-444444444444',
@@ -111,10 +156,13 @@ test.describe('Web Forms', () => {
                     redirect_url: 'https://example.com/thanks',
                     status: 'active',
                     created_at: new Date().toISOString(),
-                  }
+                  },
                 ],
-                count: 1
-              } } } }),
+                count: 1,
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -141,7 +189,10 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'form-1111-2222-3333-444444444444',
                 name: 'Newsletter Form',
                 description: 'Used on home page',
@@ -150,7 +201,10 @@ test.describe('Web Forms', () => {
                 target_tags: ['newsletter'],
                 target_lists: ['list-1'],
                 created_at: new Date().toISOString(),
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -161,10 +215,10 @@ test.describe('Web Forms', () => {
     await page.locator('input[placeholder*="Newsletter Signup"]').fill('Newsletter Form');
     await page.locator('textarea[placeholder*="Internal note"]').fill('Used on home page');
     await page.locator('input[placeholder*="thank-you"]').fill('https://example.com/thanks');
-    
+
     // Select list
     await page.locator('select:has-text("Select a list to target")').selectOption('list-1');
-    
+
     // Submit
     await page.locator('button[type="submit"]:has-text("Save Web Form")').click();
 
@@ -207,8 +261,8 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 302,
         headers: {
-          'Location': '/api/forms/success'
-        }
+          Location: '/api/forms/success',
+        },
       });
     });
 
@@ -217,7 +271,7 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: '<h1>Submission Successful</h1>'
+        body: '<h1>Submission Successful</h1>',
       });
     });
 
@@ -263,7 +317,7 @@ test.describe('Web Forms', () => {
       await route.fulfill({
         status: 400,
         contentType: 'text/html',
-        body: '<h1>Submission Failed</h1>'
+        body: '<h1>Submission Failed</h1>',
       });
     });
 

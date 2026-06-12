@@ -1,13 +1,14 @@
 <div class="flex h-full flex-col bg-base-100">
   <!-- Header -->
   <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-    <div class="flex items-center gap-3">
-      <a class="btn btn-ghost btn-sm" routerLink="/forms">
-        <pc-icon name="arrow-uturn-left" class="mr-1"></pc-icon>
-        Back
-      </a>
-      <h1 class="text-lg font-semibold">{{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}</h1>
-    </div>
+    <h1 class="text-xl font-bold flex items-center gap-2">
+      <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
+    </h1>
+    <a [routerLink]="isNew() ? ['/forms'] : ['/forms', formId()]" class="btn btn-sm btn-ghost gap-1">
+      <pc-icon name="x-mark" [size]="4"></pc-icon>
+      Cancel
+    </a>
   </header>
 
   <!-- Main Content -->
@@ -230,10 +231,16 @@
               </div>
 
               <!-- Submit actions -->
-              <div class="card-actions justify-end mt-4">
+              <div class="card-actions justify-end mt-4 gap-2">
+                <a [routerLink]="isNew() ? ['/forms'] : ['/forms', formId()]" class="btn btn-outline btn-accent gap-2">
+                  <pc-icon name="x-circle" [size]="4"></pc-icon>
+                  Cancel
+                </a>
                 <button type="submit" class="btn btn-primary" [disabled]="saving()">
                   @if (saving()) {
                   <span class="loading loading-spinner loading-xs"></span>
+                  } @else {
+                  <pc-icon name="save" [size]="4"></pc-icon>
                   } Save Web Form
                 </button>
               </div>
@@ -417,8 +424,6 @@
           }
         </div>
       </div>
-
-
     </div>
     }
   </main>

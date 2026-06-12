@@ -6,8 +6,8 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Email Client', () => {
   test.beforeEach(async ({ page }) => {
-    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+    page.on('console', (msg) => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', (err) => console.log('BROWSER ERROR:', err.message));
 
     // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
     await page.route(/\/notifications\.getUnreadCount/, async (route) => {
@@ -65,13 +65,19 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'user-1',
                 email: 'test@example.com',
                 first_name: 'Test',
                 last_name: 'User',
                 role: 'user',
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -80,15 +86,21 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: [
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: [
                 {
                   id: 'user-1',
                   email: 'test@example.com',
                   first_name: 'Test',
                   last_name: 'User',
                   role: 'user',
-                }
-              ] } } }),
+                },
+              ],
+            },
+          },
+        }),
       });
     });
 
@@ -97,7 +109,10 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: [
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: [
                 {
                   id: 'inbox-folder',
                   name: 'Inbox',
@@ -105,7 +120,7 @@ test.describe('Email Client', () => {
                   sort_order: 1,
                   is_default: true,
                   is_virtual: false,
-                  email_count: 2
+                  email_count: 2,
                 },
                 {
                   id: 'sent-folder',
@@ -114,9 +129,12 @@ test.describe('Email Client', () => {
                   sort_order: 2,
                   is_default: false,
                   is_virtual: false,
-                  email_count: 0
-                }
-              ] } } }),
+                  email_count: 0,
+                },
+              ],
+            },
+          },
+        }),
       });
     });
 
@@ -125,7 +143,10 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: [
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: [
                 {
                   id: 'email-1',
                   folder_id: 'inbox-folder',
@@ -139,7 +160,7 @@ test.describe('Email Client', () => {
                   is_favourite: false,
                   attachment_count: 0,
                   has_attachment: false,
-                  status: 'open'
+                  status: 'open',
                 },
                 {
                   id: 'email-2',
@@ -154,9 +175,12 @@ test.describe('Email Client', () => {
                   is_favourite: true,
                   attachment_count: 1,
                   has_attachment: true,
-                  status: 'open'
-                }
-              ] } } }),
+                  status: 'open',
+                },
+              ],
+            },
+          },
+        }),
       });
     });
 
@@ -165,10 +189,16 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: [
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: [
                 { email_id: 'email-1', has: false },
-                { email_id: 'email-2', has: true }
-              ] } } }),
+                { email_id: 'email-2', has: true },
+              ],
+            },
+          },
+        }),
       });
     });
 
@@ -177,7 +207,10 @@ test.describe('Email Client', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 email: {
                   id: 'email-1',
                   folder_id: 'inbox-folder',
@@ -194,10 +227,13 @@ test.describe('Email Client', () => {
                   status: 'open',
                   to_list: [{ email: 'test@example.com', name: 'Test User' }],
                   cc_list: [],
-                  bcc_list: []
+                  bcc_list: [],
                 },
-                comments: []
-              } } } }),
+                comments: [],
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -228,16 +264,28 @@ test.describe('Email Client', () => {
       });
     });
 
+    // Mock emails.setEmailReadStatus
+    await page.route(/\/emails\.setEmailReadStatus/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { success: true } } } }),
+      });
+    });
+
     // Navigate to email client (actual route is /inbox)
     await page.goto('/inbox');
     await page.waitForLoadState('networkidle');
+
+    // Expand the Folders list section since real folders are collapsed by default
+    await page.locator('pc-email-folder-list').getByText('Folders').click();
   });
 
   test.describe('Email Folder Navigation', () => {
     test('should display email folders', async ({ page }) => {
       // Check that folder list is visible
       await expect(page.locator('pc-email-folder-list')).toBeVisible();
-      
+
       // Check for common folders
       await expect(page.locator('pc-email-folder-list').getByText('Inbox')).toBeVisible();
     });
@@ -245,10 +293,10 @@ test.describe('Email Client', () => {
     test('should select folder and load emails', async ({ page }) => {
       // Click on Inbox folder
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
-      
+
       // Wait for emails to load
       await page.waitForLoadState('networkidle');
-      
+
       // Check that email list is visible
       await expect(page.locator('pc-email-list')).toBeVisible();
     });
@@ -256,10 +304,10 @@ test.describe('Email Client', () => {
     test('should highlight selected folder', async ({ page }) => {
       // Click on Inbox folder
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
-      
-      // Check that the folder has selected styling (bg-blue-100)
+
+      // Check that the folder has selected styling (bg-primary)
       const inboxFolder = page.locator('pc-email-folder-list li:has-text("Inbox")');
-      await expect(inboxFolder).toHaveClass(/bg-blue-100/);
+      await expect(inboxFolder).toHaveClass(/bg-primary/);
     });
   });
 
@@ -276,18 +324,19 @@ test.describe('Email Client', () => {
 
     test('should show email preview information', async ({ page }) => {
       // Check for email elements (subject, sender, preview)
-      const firstEmail = page.locator('pc-email-list li').first();
+      const firstEmail = page.locator('pc-email-list ul.email-scrollbar > li').first();
       await expect(firstEmail).toBeVisible();
-      
+
       // Check for email metadata
-      await expect(firstEmail.locator('div.truncate.text-gray-500 span.truncate')).toBeVisible();
-      await expect(firstEmail.locator('div.truncate.font-medium span.truncate')).toBeVisible();
+      await expect(firstEmail.getByText('sender2@example.com')).toBeVisible();
+      await expect(firstEmail.getByText('Important Meeting')).toBeVisible();
+      await expect(firstEmail.getByText('Just checking in about the meeting today.')).toBeVisible();
     });
 
     test('should select email on click', async ({ page }) => {
-      const firstEmail = page.locator('pc-email-list li').first();
+      const firstEmail = page.locator('pc-email-list ul.email-scrollbar > li').first();
       await firstEmail.click();
-      
+
       // Check that email details are shown
       await expect(page.locator('pc-email-details')).toBeVisible();
     });
@@ -298,8 +347,8 @@ test.describe('Email Client', () => {
       // Select folder and email
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
       await page.waitForLoadState('networkidle');
-      
-      const firstEmail = page.locator('pc-email-list li').first();
+
+      const firstEmail = page.locator('pc-email-list ul.email-scrollbar > li').first();
       await firstEmail.click();
       await page.waitForLoadState('networkidle');
     });
@@ -307,7 +356,7 @@ test.describe('Email Client', () => {
     test('should display email header information', async ({ page }) => {
       const emailHeader = page.locator('pc-email-header');
       await expect(emailHeader).toBeVisible();
-      
+
       // Check for header elements
       await expect(emailHeader.locator('h1')).toBeVisible();
       await expect(emailHeader.locator('span.font-semibold')).toBeVisible();
@@ -317,7 +366,7 @@ test.describe('Email Client', () => {
     test('should display email body content', async ({ page }) => {
       const emailBody = page.locator('pc-email-body');
       await expect(emailBody).toBeVisible();
-      
+
       // Check that body content is loaded
       await expect(emailBody.locator('.prose')).toBeVisible();
     });
@@ -328,8 +377,8 @@ test.describe('Email Client', () => {
       // Select folder and email
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
       await page.waitForLoadState('networkidle');
-      
-      const firstEmail = page.locator('pc-email-list li').first();
+
+      const firstEmail = page.locator('pc-email-list ul.email-scrollbar > li').first();
       await firstEmail.click();
       await page.waitForLoadState('networkidle');
     });
@@ -337,7 +386,7 @@ test.describe('Email Client', () => {
     test('should toggle favorite status', async ({ page }) => {
       const favoriteButton = page.locator('[data-testid="favorite-button"]');
       await expect(favoriteButton).toBeVisible();
-      
+
       // Click to toggle
       await favoriteButton.click();
       await page.waitForLoadState('networkidle');
@@ -346,9 +395,9 @@ test.describe('Email Client', () => {
     test('should show assignment options', async ({ page }) => {
       const assignButton = page.locator('pc-email-assign .dropdown .badge');
       await expect(assignButton).toBeVisible();
-      
+
       await assignButton.click();
-      
+
       // Check that assignment dropdown is visible
       await expect(page.locator('pc-email-assign .dropdown-content')).toBeVisible();
     });
@@ -358,14 +407,14 @@ test.describe('Email Client', () => {
     test('should work on mobile viewport', async ({ page }) => {
       // Set mobile viewport
       await page.setViewportSize({ width: 375, height: 667 });
-      
+
       // Check that email client components are visible
       await expect(page.locator('pc-email-folder-list')).toBeVisible();
-      
+
       // Select folder
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
       await page.waitForLoadState('networkidle');
-      
+
       // Check that email list is visible
       await expect(page.locator('pc-email-list')).toBeVisible();
     });
@@ -373,7 +422,7 @@ test.describe('Email Client', () => {
     test('should work on tablet viewport', async ({ page }) => {
       // Set tablet viewport
       await page.setViewportSize({ width: 768, height: 1024 });
-      
+
       // Check that all components are visible
       await expect(page.locator('pc-email-folder-list')).toBeVisible();
       await expect(page.locator('pc-email-list')).toBeVisible();
@@ -384,33 +433,34 @@ test.describe('Email Client', () => {
   test.describe('Error Handling', () => {
     test('should handle network errors gracefully', async ({ page }) => {
       // Simulate network failure on getEmails
-      await page.route(/\/emails\.getEmails/, route => route.abort());
-      
+      await page.route(/\/emails\.getEmails/, (route) => route.abort());
+
       // Select folder to trigger loading emails which fails
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
       await page.waitForLoadState('networkidle');
-      
+
       // Should show error alert toast
       await expect(page.locator('pc-alerts .alert').first()).toBeVisible();
     });
 
     test('should handle empty folder state', async ({ page }) => {
       // Mock empty emails list
-      await page.route(/\/emails\.getEmails/, route => 
-        route.fulfill({ 
-          status: 200, 
+      await page.route(/\/emails\.getEmails/, (route) =>
+        route.fulfill({
+          status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ result: { data: { json: [] } } })
-        })
+          body: JSON.stringify({ result: { data: { json: [] } } }),
+        }),
       );
-      
+
       // Reload page and click Inbox
       await page.reload();
+      await page.locator('pc-email-folder-list').getByText('Folders').click();
       await page.locator('pc-email-folder-list').getByText('Inbox').click();
       await page.waitForLoadState('networkidle');
-      
+
       // No email list items should be shown, or empty state should display
-      await expect(page.locator('pc-email-list li')).toHaveCount(0);
+      await expect(page.locator('pc-email-list ul.email-scrollbar > li')).toHaveCount(0);
     });
   });
 });

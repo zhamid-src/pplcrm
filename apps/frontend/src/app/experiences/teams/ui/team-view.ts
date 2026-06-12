@@ -15,12 +15,11 @@ import { type IAuthUser } from '@common';
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-        <!-- Top Navigation Bar & Action Button -->
         <div class="flex items-center justify-between border-b border-base-300 pb-4">
           <div class="flex items-center gap-3">
             <a routerLink="/teams" class="btn btn-sm btn-ghost gap-1">
               <pc-icon name="arrow-left" [size]="4"></pc-icon>
-              Back to Teams
+              Close
             </a>
           </div>
           <div class="flex items-center gap-2">

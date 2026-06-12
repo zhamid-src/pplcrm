@@ -21,35 +21,35 @@ describe('TeamDetailComponent', () => {
       add: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
-      triggerRefresh: vi.fn()
+      triggerRefresh: vi.fn(),
     };
 
     mockPersonsSvc = {
       getAll: vi.fn().mockResolvedValue({
         rows: [
           { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' },
-          { id: '2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com' }
+          { id: '2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com' },
         ],
-        count: 2
-      })
+        count: 2,
+      }),
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
-      showSuccess: vi.fn()
+      showSuccess: vi.fn(),
     };
 
     mockRouter = {
-      navigate: vi.fn()
+      navigate: vi.fn(),
     };
 
     mockActivatedRoute = {
       snapshot: {
         data: { mode: 'edit' },
         paramMap: {
-          get: vi.fn().mockReturnValue('team-123')
-        }
-      }
+          get: vi.fn().mockReturnValue('team-123'),
+        },
+      },
     };
   });
 
@@ -61,8 +61,8 @@ describe('TeamDetailComponent', () => {
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
-        { provide: ActivatedRoute, useValue: mockActivatedRoute }
-      ]
+        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TeamDetailComponent);
@@ -75,9 +75,7 @@ describe('TeamDetailComponent', () => {
       name: 'Outreach Team',
       description: 'Community Outreach',
       team_captain_id: '1',
-      volunteers: [
-        { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' }
-      ]
+      volunteers: [{ id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' }],
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
 
@@ -93,7 +91,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '1',
       team_lead_user_id: '',
       volunteer_ids: ['1'],
-      list_ids: []
+      list_ids: [],
     });
     expect(component['volunteers']()).toEqual(mockTeam.volunteers);
   });
@@ -113,7 +111,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '',
       team_lead_user_id: '',
       volunteer_ids: [],
-      list_ids: []
+      list_ids: [],
     });
   });
 
@@ -143,7 +141,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '2',
       team_lead_user_id: '',
       volunteer_ids: ['1', '2'],
-      list_ids: []
+      list_ids: [],
     });
 
     await component['save']();
@@ -154,10 +152,10 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '2',
       team_lead_user_id: undefined,
       volunteer_ids: ['1', '2'],
-      list_ids: []
+      list_ids: [],
     });
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/teams']);
   });
 
   it('should call update and show success alert on successful save in edit mode', async () => {
@@ -166,12 +164,12 @@ describe('TeamDetailComponent', () => {
       name: 'Outreach Team',
       description: 'Community Outreach',
       team_captain_id: '1',
-      volunteers: []
+      volunteers: [],
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
     mockTeamsSvc.update.mockResolvedValue({
       ...mockTeam,
-      name: 'Updated Outreach Team'
+      name: 'Updated Outreach Team',
     });
 
     await createComponent();
@@ -184,7 +182,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '1',
       team_lead_user_id: '',
       volunteer_ids: [],
-      list_ids: []
+      list_ids: [],
     });
 
     await component['save']();
@@ -195,7 +193,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '1',
       team_lead_user_id: null,
       volunteer_ids: [],
-      list_ids: []
+      list_ids: [],
     });
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Team updated');
@@ -207,7 +205,7 @@ describe('TeamDetailComponent', () => {
       name: 'Outreach Team',
       description: 'Community Outreach',
       team_captain_id: '',
-      volunteers: []
+      volunteers: [],
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
     mockTeamsSvc.delete.mockResolvedValue(true);
@@ -223,7 +221,7 @@ describe('TeamDetailComponent', () => {
     expect(mockTeamsSvc.delete).toHaveBeenCalledWith('team-123');
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Team deleted');
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/teams']);
   });
 
   it('should clean up invalid captain/volunteers when people options change', async () => {
@@ -239,7 +237,7 @@ describe('TeamDetailComponent', () => {
       team_captain_id: '1',
       team_lead_user_id: '',
       volunteer_ids: ['1', '2'],
-      list_ids: []
+      list_ids: [],
     });
 
     // Verify selections are correct initially
@@ -247,9 +245,7 @@ describe('TeamDetailComponent', () => {
     expect(component['payload']().volunteer_ids).toEqual(['1', '2']);
 
     // Change people options: remove 1, keep only 2
-    component['signalPeople'].set([
-      { id: '2', label: 'Jane Smith', email: 'jane@example.com' }
-    ]);
+    component['signalPeople'].set([{ id: '2', label: 'Jane Smith', email: 'jane@example.com' }]);
 
     fixture.detectChanges();
 

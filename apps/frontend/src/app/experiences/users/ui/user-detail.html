@@ -11,10 +11,10 @@
 <section class="m-4 space-y-6">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex items-center gap-3">
-      <button class="btn btn-ghost btn-sm" type="button" (click)="goBack()">
-        <pc-icon name="arrow-left" class="text-base-content" [size]="4"></pc-icon>
-        Back
-      </button>
+      <a routerLink="/users" class="btn btn-sm btn-ghost gap-1">
+        <pc-icon name="arrow-left" [size]="4"></pc-icon>
+        Close
+      </a>
       <div class="divider divider-horizontal hidden sm:block"></div>
       <div>
         <h1 class="text-2xl font-semibold">{{ displayName() }}</h1>

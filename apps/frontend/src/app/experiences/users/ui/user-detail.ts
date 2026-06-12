@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -18,7 +18,6 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 export class UserDetailComponent implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
   private readonly auth = inject(AuthService);
 
@@ -136,10 +135,6 @@ export class UserDetailComponent implements OnInit {
     if (!user) return;
     this.setForm(user);
     this.form().reset();
-  }
-
-  protected goBack() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
   protected readonly resettingPassword = signal(false);

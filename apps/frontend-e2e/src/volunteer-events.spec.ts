@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Volunteer Events', () => {
   test.beforeEach(async ({ page }) => {
-    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+    page.on('console', (msg) => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', (err) => console.log('BROWSER ERROR:', err.message));
 
     // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
     await page.route(/\/notifications\.getUnreadCount/, async (route) => {
@@ -61,13 +61,19 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'user-1',
                 email: 'test@example.com',
                 first_name: 'Test',
                 last_name: 'User',
                 role: 'user',
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -76,17 +82,41 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [
                   {
                     id: 'person-v1',
                     first_name: 'John',
                     last_name: 'Volunteer',
                     email: 'johnv@example.com',
-                  }
+                  },
                 ],
-                count: 1
-              } } } }),
+                count: 1,
+              },
+            },
+          },
+        }),
+      });
+    });
+
+    // Mock volunteer.checkSlugUnique
+    await page.route(/\/volunteer\.checkSlugUnique/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { unique: true } } } }),
+      });
+    });
+
+    // Mock activity.getActivities
+    await page.route(/\/activity\.getActivities/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: [] } } }),
       });
     });
   });
@@ -97,7 +127,10 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [
                   {
                     id: 'event-1',
@@ -108,10 +141,13 @@ test.describe('Volunteer Events', () => {
                     end_time: new Date().toISOString(),
                     capacity: 10,
                     volunteers_count: 2,
-                  }
+                  },
                 ],
-                count: 1
-              } } } }),
+                count: 1,
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -138,7 +174,10 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'event-1',
                 name: 'Weekend Door Knocking',
                 description: 'Canvassing weekend',
@@ -147,7 +186,10 @@ test.describe('Volunteer Events', () => {
                 end_time: new Date().toISOString(),
                 capacity: 10,
                 created_at: new Date().toISOString(),
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -167,7 +209,7 @@ test.describe('Volunteer Events', () => {
     await page.locator('#event-name').fill('Weekend Door Knocking');
     await page.locator('#event-desc').fill('Canvassing weekend');
     await page.locator('#event-location').fill('Central Park');
-    
+
     // Fill dates
     const formatDateTimeLocal = (date: Date) => {
       const pad = (n: number) => String(n).padStart(2, '0');
@@ -176,13 +218,13 @@ test.describe('Volunteer Events', () => {
     await page.locator('#start-time').fill(formatDateTimeLocal(new Date()));
     await page.locator('#end-time').fill(formatDateTimeLocal(new Date()));
     await page.locator('#capacity').fill('10');
-    
+
     // Submit
     await page.locator('button[type="submit"]:has-text("Create Event")').click();
 
     // Verify it saved and navigated to edit URL
     await expect(page).toHaveURL(/\/schedule\/event-1/);
-    await expect(page.locator('h1')).toContainText('Weekend Door Knocking');
+    await expect(page.locator('h2')).toContainText('Weekend Door Knocking');
   });
 
   test('should allow roster management', async ({ page }) => {
@@ -191,7 +233,10 @@ test.describe('Volunteer Events', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'event-1',
                 name: 'Weekend Door Knocking',
                 description: 'Canvassing weekend',
@@ -200,7 +245,10 @@ test.describe('Volunteer Events', () => {
                 end_time: new Date().toISOString(),
                 capacity: 10,
                 created_at: new Date().toISOString(),
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -217,16 +265,18 @@ test.describe('Volunteer Events', () => {
     // Mock signup mutation
     await page.route(/\/volunteer\.signupVolunteer/, async (route) => {
       // Update our mocked list so next fetch returns the shift
-      shiftList = [{
-        id: 'shift-1',
-        person_id: 'person-v1',
-        first_name: 'John',
-        last_name: 'Volunteer',
-        email: 'johnv@example.com',
-        status: 'signed_up',
-        hours_worked: null,
-        notes: '',
-      }];
+      shiftList = [
+        {
+          id: 'shift-1',
+          person_id: 'person-v1',
+          first_name: 'John',
+          last_name: 'Volunteer',
+          email: 'johnv@example.com',
+          status: 'signed_up',
+          hours_worked: null,
+          notes: '',
+        },
+      ];
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -236,6 +286,16 @@ test.describe('Volunteer Events', () => {
 
     // Mock updateShift mutation
     await page.route(/\/volunteer\.updateShift/, async (route) => {
+      const payload = route.request().postDataJSON();
+      const input = payload?.json;
+      if (shiftList.length > 0 && input) {
+        const updateData = input.data;
+        if (updateData) {
+          if (updateData.status) shiftList[0].status = updateData.status;
+          if (updateData.hours_worked !== undefined) shiftList[0].hours_worked = updateData.hours_worked;
+          if (updateData.notes !== undefined) shiftList[0].notes = updateData.notes;
+        }
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -254,7 +314,7 @@ test.describe('Volunteer Events', () => {
     });
 
     // 1. Visit details page
-    await page.goto('/schedule/event-1');
+    await page.goto('/schedule/event-1/edit');
     await page.waitForLoadState('networkidle');
 
     // 2. Search and add a volunteer
@@ -274,7 +334,7 @@ test.describe('Volunteer Events', () => {
     await expect(page.locator('pc-alerts .alert').first()).toBeVisible();
 
     // 4. Remove volunteer from roster
-    page.once('dialog', dialog => dialog.accept()); // Automatically confirm window confirm dialog
+    page.once('dialog', (dialog) => dialog.accept()); // Automatically confirm window confirm dialog
     await page.locator('button[title="Remove volunteer"]').click();
 
     // Verify roster is empty again

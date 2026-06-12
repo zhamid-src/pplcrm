@@ -13,11 +13,9 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
-
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, RecordActivities],
+  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
@@ -172,10 +170,6 @@ export class EventDetailComponent implements OnInit {
     }
   }
 
-  protected goBack() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
   protected toDatetimeLocalString(val: any): string {
     if (!val) return '';
     const date = new Date(val);
@@ -293,7 +287,7 @@ export class EventDetailComponent implements OnInit {
         await this.volunteerEventsSvc.update(this.id!, data as UpdateVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
         this.alerts.showSuccess('Event updated successfully');
-        await this.loadEvent();
+        await this.router.navigate(['/schedule', this.id]);
       }
     } catch (err: any) {
       this.error.set(err?.message || 'Failed to save event');

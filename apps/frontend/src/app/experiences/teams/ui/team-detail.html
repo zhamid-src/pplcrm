@@ -9,21 +9,26 @@
 </div>
 } @else {
 <section class="m-4 space-y-6">
-  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
     <div class="flex items-center gap-3">
-      <button class="btn btn-ghost btn-sm" type="button" (click)="goBack()">
-        <pc-icon name="arrow-left" class="text-base-content" [size]="4"></pc-icon>
-        Back
-      </button>
-      <div class="divider divider-horizontal hidden sm:block"></div>
+      <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
       <div>
-        <h1 class="text-2xl font-semibold">@if (isNew()) { New Team } @else { {{ detail()?.name || 'Team' }} }</h1>
-        <p class="text-sm text-base-content/70">Teams group volunteers for easier coordination.</p>
+        <h1 class="text-xl font-bold">@if (isNew()) { New Team } @else { {{ detail()?.name || 'Team' }} }</h1>
+        <p class="text-sm text-base-content/60 mt-0.5">Teams group volunteers for easier coordination.</p>
       </div>
     </div>
-    @if (!isNew() && detail()) {
-    <button class="btn btn-error btn-sm" type="button" (click)="deleteTeam()" [disabled]="saving()">Delete Team</button>
-    }
+    <div class="flex items-center gap-2">
+      @if (!isNew() && detail()) {
+      <button class="btn btn-error btn-outline btn-sm gap-2" type="button" (click)="deleteTeam()" [disabled]="saving()">
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete Team
+      </button>
+      }
+      <a [routerLink]="isNew() ? ['/teams'] : ['/teams', id]" class="btn btn-sm btn-ghost gap-1">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+        Cancel
+      </a>
+    </div>
   </div>
 
   @if (error()) {
@@ -244,9 +249,13 @@
     </section>
     }
 
-    <div class="flex justify-end gap-3">
-      <button type="button" class="btn" (click)="goBack()">Cancel</button>
+    <div class="flex justify-end gap-2 pt-4 border-t border-base-250">
+      <a [routerLink]="isNew() ? ['/teams'] : ['/teams', id]" class="btn btn-outline btn-accent gap-2">
+        <pc-icon name="x-circle" [size]="4"></pc-icon>
+        Cancel
+      </a>
       <button type="submit" class="btn btn-primary" [disabled]="form().invalid() || saving()">
+        <pc-icon name="save" [size]="4"></pc-icon>
         {{ saving() ? 'Saving…' : isNew() ? 'Create Team' : 'Save Changes' }}
       </button>
     </div>

@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { CompanyInputObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -11,7 +11,7 @@ import { PeopleInCompany } from './people-in-company';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, FormField, Icon, PeopleInCompany],
+  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
@@ -35,10 +35,10 @@ import { PeopleInCompany } from './people-in-company';
                 {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
               </p>
             </div>
-            <button class="btn btn-outline btn-sm gap-2" (click)="goBack()">
-              <pc-icon name="arrow-left" [size]="4"></pc-icon>
-              Back
-            </button>
+            <a [routerLink]="id ? ['/companies', id] : ['/companies']" class="btn btn-sm btn-ghost gap-1">
+              <pc-icon name="x-mark" [size]="4"></pc-icon>
+              Cancel
+            </a>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -188,7 +188,11 @@ import { PeopleInCompany } from './people-in-company';
                   }
                 </label>
 
-                <div class="card-actions justify-end pt-4 border-t border-base-300">
+                <div class="card-actions justify-end pt-4 border-t border-base-300 gap-2">
+                  <a [routerLink]="id ? ['/companies', id] : ['/companies']" class="btn btn-outline btn-accent gap-2">
+                    <pc-icon name="x-circle" [size]="4"></pc-icon>
+                    Cancel
+                  </a>
                   <button class="btn btn-primary" [disabled]="form().invalid()" (click)="save()">
                     <pc-icon name="save" [size]="4"></pc-icon>
                     Save Company
@@ -211,8 +215,6 @@ import { PeopleInCompany } from './people-in-company';
                   </div>
                 </div>
               }
-
-
 
               <!-- Metadata Card -->
               @if (!isNewMode()) {
@@ -318,7 +320,7 @@ export class CompanyDetail implements OnInit {
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company updated successfully');
-          this.router.navigate(['/companies']);
+          this.router.navigate(['/companies', this.id]);
         })
         .finally(() => end());
     } else {
@@ -332,9 +334,5 @@ export class CompanyDetail implements OnInit {
         })
         .finally(() => end());
     }
-  }
-
-  protected goBack() {
-    this.router.navigate(['/companies']);
   }
 }

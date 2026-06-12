@@ -16,24 +16,24 @@ describe('UserDetailComponent', () => {
   beforeEach(async () => {
     mockUsersSvc = {
       getById: vi.fn(),
-      update: vi.fn()
+      update: vi.fn(),
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
-      showSuccess: vi.fn()
+      showSuccess: vi.fn(),
     };
 
     mockRouter = {
-      navigate: vi.fn()
+      navigate: vi.fn(),
     };
 
     mockActivatedRoute = {
       snapshot: {
         paramMap: {
-          get: vi.fn().mockReturnValue('user-123')
-        }
-      }
+          get: vi.fn().mockReturnValue('user-123'),
+        },
+      },
     };
 
     mockUsersSvc.getById.mockResolvedValue({
@@ -47,8 +47,8 @@ describe('UserDetailComponent', () => {
         emails_assigned: { total: 5, open: 2, closed: 3 },
         contacts_added: { total: 10, last_created_at: new Date('2026-05-19T20:00:00Z') },
         files_imported: { count: 1, total_rows: 50, last_activity_at: new Date('2026-05-19T20:00:00Z') },
-        files_exported: { count: 2, total_rows: 100, last_activity_at: new Date('2026-05-19T20:00:00Z') }
-      }
+        files_exported: { count: 2, total_rows: 100, last_activity_at: new Date('2026-05-19T20:00:00Z') },
+      },
     });
 
     await TestBed.configureTestingModule({
@@ -57,8 +57,8 @@ describe('UserDetailComponent', () => {
         { provide: AuthUsersService, useValue: mockUsersSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
-        { provide: ActivatedRoute, useValue: mockActivatedRoute }
-      ]
+        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(UserDetailComponent);
@@ -77,7 +77,7 @@ describe('UserDetailComponent', () => {
       first_name: 'John',
       last_name: 'Doe',
       role: 'editor',
-      verified: true
+      verified: true,
     });
     expect(component['form']().invalid()).toBe(false);
   });
@@ -86,11 +86,11 @@ describe('UserDetailComponent', () => {
     const emailInput = fixture.nativeElement.querySelector('#email');
     emailInput.value = 'invalid-email';
     emailInput.dispatchEvent(new Event('input'));
-    
+
     const nameInput = fixture.nativeElement.querySelector('#first_name');
     nameInput.value = '';
     nameInput.dispatchEvent(new Event('input'));
-    
+
     fixture.detectChanges();
     expect(component['form']().invalid()).toBe(true);
 
@@ -103,7 +103,7 @@ describe('UserDetailComponent', () => {
     const nameInput = fixture.nativeElement.querySelector('#first_name');
     nameInput.value = 'Changed';
     nameInput.dispatchEvent(new Event('input'));
-    
+
     fixture.detectChanges();
     expect(component['form']().dirty()).toBe(true);
 
@@ -115,18 +115,18 @@ describe('UserDetailComponent', () => {
       first_name: 'John',
       last_name: 'Doe',
       role: 'editor',
-      verified: true
+      verified: true,
     });
     expect(component['form']().dirty()).toBe(false);
   });
 
   it('should save user details and trigger success alert', async () => {
     mockUsersSvc.update.mockResolvedValue({});
-    
+
     const nameInput = fixture.nativeElement.querySelector('#first_name');
     nameInput.value = 'Johnny';
     nameInput.dispatchEvent(new Event('input'));
-    
+
     fixture.detectChanges();
     expect(component['form']().dirty()).toBe(true);
 
@@ -137,7 +137,7 @@ describe('UserDetailComponent', () => {
       first_name: 'Johnny',
       last_name: 'Doe',
       role: 'editor',
-      verified: true
+      verified: true,
     });
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('User updated');
   });
@@ -149,17 +149,12 @@ describe('UserDetailComponent', () => {
     const nameInput = fixture.nativeElement.querySelector('#first_name');
     nameInput.value = 'Johnny';
     nameInput.dispatchEvent(new Event('input'));
-    
+
     fixture.detectChanges();
 
     await component['save']();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
     expect(component['error']()).toBe(errorMsg);
-  });
-
-  it('should navigate back on cancel/goBack', () => {
-    component['goBack']();
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
   });
 });
