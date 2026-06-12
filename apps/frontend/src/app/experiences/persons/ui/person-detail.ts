@@ -2,9 +2,9 @@
  * @file Component for creating or updating individual person records.
  */
 import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
-import { form, FormField } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { type IAuthUser, UpdatePersonsType } from '@common';
+import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -113,7 +113,9 @@ export class PersonDetail implements OnInit {
   });
 
   /** Signal form for person data validation and status tracking */
-  protected readonly form = form(this.payload);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdatePersonsObj);
+  });
 
   /** ID of the person being edited (if in edit mode) */
   protected id: string | null = null;
