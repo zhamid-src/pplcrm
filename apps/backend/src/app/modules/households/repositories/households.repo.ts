@@ -6,6 +6,7 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 
 /**
  * Repository for the `households` table.
@@ -24,20 +25,43 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     input: { rows: OperationDataType<'households', 'insert'>[] },
     trx?: Transaction<Models>,
   ) {
-    const processedRows = input.rows.map((row) => {
-      const isBlank = isBlankAddress(row);
-      const isIncomplete = isIncompleteAddress(row);
-      return {
-        ...row,
-        geocoding_status: isBlank || isIncomplete ? 'failed' : 'pending',
-      };
-    });
+    const processedRows = await Promise.all(
+      input.rows.map(async (row) => {
+        const isBlank = isBlankAddress(row);
+        const isIncomplete = isIncompleteAddress(row);
+
+        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
+        let district = row.district ?? null;
+        let precinct = row.precinct ?? null;
+        let ward = row.ward ?? null;
+
+        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            console.error('Failed to map coordinates to district during insert', err);
+          }
+        }
+
+        return {
+          ...row,
+          district,
+          precinct,
+          ward,
+          geocoding_status,
+        };
+      })
+    );
 
     const createdRows = await super.addMany({ rows: processedRows }, trx);
     const db = trx || this.db;
 
     const jobs = createdRows
-      .filter((row) => row && row.id && !isBlankAddress(row) && !isIncompleteAddress(row))
+      .filter((row) => row && row.id && row.geocoding_status === 'pending')
       .map((row) => ({
         tenant_id: row.tenant_id,
         queue: 'default',

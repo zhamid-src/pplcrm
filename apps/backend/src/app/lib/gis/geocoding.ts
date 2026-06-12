@@ -149,8 +149,7 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
   let addressType: string | null = null;
 
   const apiKey = env.googleMapsApiKey;
-  const isMockOrTest =
-    !apiKey || apiKey.includes('mock') || apiKey.startsWith('AIzaSyDgTt') || process.env.NODE_ENV === 'test';
+  const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
 
   const addressStr = [hh.street_num, hh.street1, hh.street2, hh.city, hh.state, hh.zip, hh.country]
     .filter(Boolean)
