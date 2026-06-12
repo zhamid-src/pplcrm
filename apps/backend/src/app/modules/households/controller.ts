@@ -12,6 +12,7 @@ import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
+import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
 import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -144,6 +145,25 @@ export class HouseholdsController extends BaseController<'households', Household
       try {
         const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
         const merged = { ...current, ...(input.row as any) };
+
+        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
+        let district = null;
+        let precinct = null;
+        let ward = null;
+
+        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
+        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            console.error('Failed to map coordinates to district during update', err);
+          }
+        }
+
         const fpRow: any = {
           address_fp_street: fingerprintStreet({
             street_num: merged.street_num,
@@ -160,15 +180,15 @@ export class HouseholdsController extends BaseController<'households', Household
             zip: merged.zip,
             country: merged.country,
           }),
-          geocoding_status: isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending',
-          district: null,
-          precinct: null,
-          ward: null,
+          geocoding_status,
+          district,
+          precinct,
+          ward,
         };
         await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
 
-        // Queue geocoding background job if updated address is not blank and not incomplete
-        if (!isBlankAddress(merged) && !isIncompleteAddress(merged)) {
+        // Queue geocoding background job if geocoding status is pending
+        if (geocoding_status === 'pending') {
           await this.getRepo()
             .db.insertInto('background_jobs' as any)
             .values({
