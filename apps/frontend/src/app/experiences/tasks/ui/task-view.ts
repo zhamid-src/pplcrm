@@ -17,7 +17,7 @@ import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
-import { UserAvatarComponent } from '../../../uxcommon/components/user-avatar/user-avatar';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 
 @Component({
   selector: 'pc-task-view',

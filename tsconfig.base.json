@@ -20,10 +20,12 @@
     "paths": {
       "@common": ["./common/src/index.ts"],
       "@experiences/*": ["./apps/frontend/src/app/experiences/*"],
-      "@icons/*": ["./apps/frontend/src/app/uxcommon/components/icons/*"],
-      "@uxcommon/*": ["./apps/frontend/src/app/uxcommon/*"],
-      "common/*": ["./common/*"],
-      "apps/*": ["./apps/*"]
+      "@frontend/*": ["./apps/frontend/src/app/*"],
+      "@icons/*": ["./libs/uxcommon/src/components/icons/*"],
+      "@pplcrm/uxcommon": ["./libs/uxcommon/src/index.ts"],
+      "@uxcommon/*": ["./libs/uxcommon/src/*"],
+      "apps/*": ["./apps/*"],
+      "common/*": ["./common/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]

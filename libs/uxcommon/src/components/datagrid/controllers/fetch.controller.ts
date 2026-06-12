@@ -1,0 +1,76 @@
+import { inject, Injectable } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { DataGridDataService } from '../services/data.service';
+import { GridStoreService } from '../services/grid-store.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+@Injectable()
+export class FetchController {
+  private readonly gridSvc = inject(AbstractAPIService);
+  private readonly dataSvc = inject(DataGridDataService);
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
+
+  private get grid(): DataGrid<any, any> {
+    return this.store.grid;
+  }
+
+  async loadPage(index: number, append?: boolean): Promise<void> {
+    const end = this.grid._loading.begin();
+    try {
+      const pageSize = this.store.pageSize();
+      const startRow = index * pageSize;
+      const endRow = startRow + pageSize;
+      const options = this.dataSvc.buildGetAllOptions({
+        searchStr: this.grid.searchTerm(),
+        startRow,
+        endRow,
+        tags: this.grid.selectedTags(),
+        issues: this.grid.selectedIssues(),
+        filterModel: this.grid.buildFilterModel(),
+        sortState: this.store.sorting(),
+        sortCol: this.grid.sortCol(),
+        sortDir: this.grid.sortDir(),
+        includeArchived: this.grid.archiveMode(),
+        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+        listId: this.grid.activeListId(),
+      });
+      const data = this.grid.archiveMode()
+        ? await this.gridSvc.getAllArchived(options)
+        : await this.gridSvc.getAll(options);
+      const incoming = data.rows ?? [];
+      if (append && this.store.rows().length > 0) {
+        const next = [...this.store.rows(), ...incoming];
+        this.store.rows.set(next);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      } else {
+        this.store.rows.set(incoming);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      }
+      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
+      this.store.pageIndex.set(index);
+    } catch {
+      this.alertSvc.showError(this.grid.config.messages.loadFailed);
+    } finally {
+      end();
+    }
+  }
+
+  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
+    const options: any = {
+      searchStr: this.grid.searchTerm(),
+      tags: this.grid.selectedTags(),
+      issues: this.grid.selectedIssues(),
+      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+      listId: this.grid.activeListId() ?? undefined,
+    };
+    const { rows } = this.grid.archiveMode()
+      ? await this.gridSvc.getAllArchived(options)
+      : await this.gridSvc.getAll(options);
+    const rowCanSelect = this.grid.rowCanSelect();
+    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
+    const ids = filteredRows.map((r: any) => this.grid.toId(r)).filter(Boolean);
+    return { ids, count: filteredRows.length };
+  }
+}
