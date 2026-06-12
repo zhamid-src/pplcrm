@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { form, required, FormField } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IAuthUser } from '@common';
+import { IAuthUser, AddTaskObj } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -14,7 +14,9 @@ import { TeamsService } from '../../teams/services/teams-service';
   selector: 'pc-task-add',
   imports: [FormField, Icon],
   template: `
-    <section class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl">
+    <section
+      class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl"
+    >
       <header class="border-b border-base-200/60 pb-5">
         <h1 class="text-2xl font-bold text-primary flex items-center gap-3">
           <span class="p-2 bg-primary/10 rounded-xl">
@@ -37,13 +39,16 @@ import { TeamsService } from '../../teams/services/teams-service';
             placeholder="Enter task name..."
             class="input input-bordered w-full focus:input-primary transition-all duration-200"
             [formField]="form.name"
+            [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
             autofocus
           />
           @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
-            <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-              Task name is required and must be under 200 characters.
-            </p>
+            @for (err of form.name().errors(); track err) {
+              <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
+                <pc-icon name="x-mark" [size]="3"></pc-icon>
+                {{ err.message }}
+              </p>
+            }
           }
         </div>
 
@@ -57,12 +62,15 @@ import { TeamsService } from '../../teams/services/teams-service';
             placeholder="Describe the task details, requirements, or instructions..."
             class="textarea textarea-bordered h-32 w-full focus:textarea-primary transition-all duration-200 resize-y"
             [formField]="form.details"
+            [class.textarea-error]="form.details().invalid() && (form.details().dirty() || form.details().touched())"
           ></textarea>
           @if (form.details().invalid() && (form.details().dirty() || form.details().touched())) {
-            <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-              Details are too long (maximum 10,000 characters).
-            </p>
+            @for (err of form.details().errors(); track err) {
+              <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
+                <pc-icon name="x-mark" [size]="3"></pc-icon>
+                {{ err.message }}
+              </p>
+            }
           }
         </div>
 
@@ -111,7 +119,16 @@ import { TeamsService } from '../../teams/services/teams-service';
               type="date"
               class="input input-bordered w-full focus:input-primary transition-all duration-200"
               [formField]="form.due_at"
+              [class.input-error]="form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())"
             />
+            @if (form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())) {
+              @for (err of form.due_at().errors(); track err) {
+                <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                  {{ err.message }}
+                </p>
+              }
+            }
           </div>
 
           <!-- Assigned To -->
@@ -160,11 +177,7 @@ import { TeamsService } from '../../teams/services/teams-service';
 
         <!-- Form Footer Actions -->
         <div class="flex justify-end gap-3 pt-6 border-t border-base-200/60">
-          <button
-            type="button"
-            class="btn btn-ghost hover:bg-base-200 transition-all duration-200"
-            (click)="cancel()"
-          >
+          <button type="button" class="btn btn-ghost hover:bg-base-200 transition-all duration-200" (click)="cancel()">
             Cancel
           </button>
           <button
@@ -208,15 +221,15 @@ export class TaskAddComponent implements OnInit {
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo',
-    priority: 'medium',
+    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
     team_id: '',
   });
 
   protected readonly form = form(this.payload, (p) => {
-    required(p.name);
+    validateStandardSchema(p, AddTaskObj);
   });
 
   public async ngOnInit() {

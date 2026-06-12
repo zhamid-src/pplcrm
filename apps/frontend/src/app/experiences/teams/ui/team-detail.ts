@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
-import { form, required, FormField } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddTeamType, UpdateTeamType, IAuthUser } from '@common';
+import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
@@ -50,7 +50,7 @@ export class TeamDetailComponent implements OnInit {
   });
 
   protected readonly form = form(this.payload, (p) => {
-    required(p.name);
+    validateStandardSchema(p, AddTeamObj);
   });
 
   protected readonly isNew = signal(false);

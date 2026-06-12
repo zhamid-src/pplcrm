@@ -34,10 +34,12 @@
             class="input input-bordered w-full"
             [formField]="form.name"
             placeholder="Community Outreach"
+            [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
           />
-          @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
-          <p class="text-sm text-error">Team name is required.</p>
-          }
+          @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+          form.name().errors(); track err) {
+          <p class="text-sm text-error">{{ err.message }}</p>
+          } }
         </div>
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="team-captain">Team Captain (Volunteer)</label>
@@ -67,7 +69,12 @@
           class="textarea textarea-bordered w-full"
           placeholder="Describe this team's focus"
           [formField]="form.description"
+          [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
         ></textarea>
+        @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for (err
+        of form.description().errors(); track err) {
+        <p class="text-sm text-error">{{ err.message }}</p>
+        } }
       </div>
     </section>
 

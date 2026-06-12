@@ -1,6 +1,7 @@
 import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
+import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagObj } from '@common';
 import { TRPCClientError } from '@trpc/client';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -20,13 +21,42 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
         <label class="label text-base font-light">
           Enter a unique issue name (and optionally, give it a description)
         </label>
-        <input class="input" placeholder="Issue Name" [formField]="form.name" />
-        <input class="input" placeholder="Optional description" [formField]="form.description" />
+        <input
+          class="input"
+          placeholder="Issue Name"
+          [formField]="form.name"
+          [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+        />
+        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+          @for (err of form.name().errors(); track err) {
+            <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+          }
+        }
+        <input
+          class="input"
+          placeholder="Optional description"
+          [formField]="form.description"
+          [class.input-error]="
+            form.description().invalid() && (form.description().dirty() || form.description().touched())
+          "
+        />
+        @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) {
+          @for (err of form.description().errors(); track err) {
+            <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+          }
+        }
         <div class="flex items-center gap-2">
           <label class="label-text font-light text-sm">Colour</label>
-          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
-          @if (form.color().invalid() && form.color().touched()) {
-            <span class="text-error text-xs">Use a value like #3366ff</span>
+          <input
+            class="input input-bordered input-sm w-24"
+            type="color"
+            [formField]="form.color"
+            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+          />
+          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+            @for (err of form.color().errors(); track err) {
+              <span class="text-error text-xs">{{ err.message }}</span>
+            }
           }
         </div>
         <pc-add-btn-row [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-add-btn-row>
@@ -48,8 +78,7 @@ export class AddIssue {
   });
 
   public readonly form = form(this.payload, (p) => {
-    required(p.name);
-    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
+    validateStandardSchema(p, AddTagObj);
   });
 
   protected isLoading = this._loading.visible;
@@ -90,7 +119,7 @@ export class AddIssue {
           end();
         }
         return null;
-      }
+      },
     });
   }
 }

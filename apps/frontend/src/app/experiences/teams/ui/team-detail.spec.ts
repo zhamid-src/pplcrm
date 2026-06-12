@@ -27,8 +27,8 @@ describe('TeamDetailComponent', () => {
     mockPersonsSvc = {
       getAll: vi.fn().mockResolvedValue({
         rows: [
-          { id: 'p1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' },
-          { id: 'p2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com' }
+          { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' },
+          { id: '2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com' }
         ],
         count: 2
       })
@@ -74,9 +74,9 @@ describe('TeamDetailComponent', () => {
       id: 'team-123',
       name: 'Outreach Team',
       description: 'Community Outreach',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       volunteers: [
-        { id: 'p1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' }
+        { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' }
       ]
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
@@ -90,9 +90,9 @@ describe('TeamDetailComponent', () => {
     expect(component['payload']()).toEqual({
       name: 'Outreach Team',
       description: 'Community Outreach',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       team_lead_user_id: '',
-      volunteer_ids: ['p1'],
+      volunteer_ids: ['1'],
       list_ids: []
     });
     expect(component['volunteers']()).toEqual(mockTeam.volunteers);
@@ -140,9 +140,9 @@ describe('TeamDetailComponent', () => {
     component['payload'].set({
       name: 'New Team',
       description: 'Brand new focus',
-      team_captain_id: 'p2',
+      team_captain_id: '2',
       team_lead_user_id: '',
-      volunteer_ids: ['p1', 'p2'],
+      volunteer_ids: ['1', '2'],
       list_ids: []
     });
 
@@ -151,9 +151,9 @@ describe('TeamDetailComponent', () => {
     expect(mockTeamsSvc.add).toHaveBeenCalledWith({
       name: 'New Team',
       description: 'Brand new focus',
-      team_captain_id: 'p2',
+      team_captain_id: '2',
       team_lead_user_id: undefined,
-      volunteer_ids: ['p1', 'p2'],
+      volunteer_ids: ['1', '2'],
       list_ids: []
     });
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('TeamDetailComponent', () => {
       id: 'team-123',
       name: 'Outreach Team',
       description: 'Community Outreach',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       volunteers: []
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
@@ -181,7 +181,7 @@ describe('TeamDetailComponent', () => {
     component['payload'].set({
       name: 'Updated Outreach Team',
       description: 'Community Outreach',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       team_lead_user_id: '',
       volunteer_ids: [],
       list_ids: []
@@ -192,7 +192,7 @@ describe('TeamDetailComponent', () => {
     expect(mockTeamsSvc.update).toHaveBeenCalledWith('team-123', {
       name: 'Updated Outreach Team',
       description: 'Community Outreach',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       team_lead_user_id: null,
       volunteer_ids: [],
       list_ids: []
@@ -236,25 +236,25 @@ describe('TeamDetailComponent', () => {
     component['payload'].set({
       name: 'Team with options',
       description: '',
-      team_captain_id: 'p1',
+      team_captain_id: '1',
       team_lead_user_id: '',
-      volunteer_ids: ['p1', 'p2'],
+      volunteer_ids: ['1', '2'],
       list_ids: []
     });
 
     // Verify selections are correct initially
-    expect(component['payload']().team_captain_id).toBe('p1');
-    expect(component['payload']().volunteer_ids).toEqual(['p1', 'p2']);
+    expect(component['payload']().team_captain_id).toBe('1');
+    expect(component['payload']().volunteer_ids).toEqual(['1', '2']);
 
-    // Change people options: remove p1, keep only p2
+    // Change people options: remove 1, keep only 2
     component['signalPeople'].set([
-      { id: 'p2', label: 'Jane Smith', email: 'jane@example.com' }
+      { id: '2', label: 'Jane Smith', email: 'jane@example.com' }
     ]);
 
     fixture.detectChanges();
 
     // The effect should trigger and update the payload to clean invalid choices
     expect(component['payload']().team_captain_id).toBe('');
-    expect(component['payload']().volunteer_ids).toEqual(['p2']);
+    expect(component['payload']().volunteer_ids).toEqual(['2']);
   });
 });
