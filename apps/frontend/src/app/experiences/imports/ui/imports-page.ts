@@ -7,6 +7,7 @@ import type { ImportListItem } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ImportsService } from '../services/imports-service';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-imports-page',
@@ -18,7 +19,9 @@ export class ImportsPage {
   private readonly alerts = inject(AlertService);
   private readonly imports = inject(ImportsService);
 
-  protected readonly loading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  private isLoadActive = false;
   protected readonly deleting = signal(false);
   protected readonly items = signal<ImportListItem[]>([]);
   protected readonly itemCount = computed(() => this.items().length);
@@ -127,8 +130,9 @@ export class ImportsPage {
   }
 
   private async load() {
-    if (this.loading()) return;
-    this.loading.set(true);
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
     this.error.set(null);
     try {
       const list = await this.imports.list();
@@ -138,7 +142,8 @@ export class ImportsPage {
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
-      this.loading.set(false);
+      this.isLoadActive = false;
+      end();
     }
   }
 }

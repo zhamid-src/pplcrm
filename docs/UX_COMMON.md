@@ -114,4 +114,65 @@ Custom template data-formatting pipes located under `uxcommon/pipes/`:
 ## 🚦 Loading Gate (`createLoadingGate`)
 
 * **Path**: [`uxcommon/loading-gate.ts`](../apps/frontend/src/app/uxcommon/loading-gate.ts)
-* **Description**: A wrapper object that track asynchronous state counters. It ensures loading spinners and overlay blocks do not flicker or close early if multiple concurrent requests are fetching data.
+* **Description**: A wrapper utility that manages signal-based loading state with built-in debouncing (default 300ms delay before showing) and a minimum duration (default 300ms) once visible. This prevents UI elements/spinners from flickering or flashing briefly on fast API requests.
+
+### Configuration Options
+```typescript
+export function createLoadingGate(options?: {
+  delay?: number;       // ms before setting visible to true (default: 300)
+  minDuration?: number; // ms loading stays visible once active (default: 300)
+}): loadingGate;
+```
+
+### Component Implementation Example
+In your component `.ts` file, import `createLoadingGate` and instantiate it. Expose the `visible` signal as `loading` for the template. Wrap async operations with `begin()` and its disposer callback in a `finally` block:
+```typescript
+import { Component, OnInit, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'my-detail-component',
+  templateUrl: './my-detail.html',
+})
+export class MyDetailComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  
+  // Expose the visible WritableSignal to the template (read-only usage is recommended)
+  protected readonly loading = this._loading.visible;
+  protected readonly detail = signal<any>(null);
+
+  public ngOnInit(): void {
+    void this.loadData();
+  }
+
+  private async loadData() {
+    const end = this._loading.begin();
+    try {
+      this.detail.set(await this.myService.getData());
+    } finally {
+      end(); // Always call this inside finally to release the gate
+    }
+  }
+}
+```
+
+### Template Usage Example
+When using `createLoadingGate` on page-level details, the gate starts as `visible === false`. To prevent **Flash of Unstyled/Empty Content (FOUT)** during the first 300ms of initial load, check if the data signal (`detail()`) is loaded, and use `loading()` to show subsequent action spinners or progress bars:
+```html
+@if (!detail()) {
+  <!-- Initial Load Skeleton/Spinner (renders immediately on first load) -->
+  <div class="flex items-center justify-center p-12">
+    <span class="loading loading-spinner text-primary"></span>
+    <p class="text-sm ml-2">Loading data...</p>
+  </div>
+} @else {
+  <!-- Main Content Layout -->
+  <section class="p-6">
+    <!-- Optional progress bar that appears for slow subsequent page actions -->
+    <progress class="progress w-full text-primary" [class.hidden]="!loading()"></progress>
+
+    <h1 class="text-2xl font-bold">{{ detail().name }}</h1>
+    <!-- Form Inputs & Fields -->
+  </section>
+}
+```

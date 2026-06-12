@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal, effect } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -99,7 +100,8 @@ export class EventDetailComponent implements OnInit {
 
   protected readonly detail = signal<any>(null);
   protected readonly error = signal<string | null>(null);
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
   protected readonly isNew = signal(false);
   protected readonly eventPassed = computed(() => {
@@ -150,16 +152,20 @@ export class EventDetailComponent implements OnInit {
   });
 
   public ngOnInit(): void {
-    const idParam = this.route.snapshot.paramMap.get('id');
-    if (idParam === 'add' || !idParam) {
-      this.isNew.set(true);
-    } else {
-      this.id = idParam;
-      this.isNew.set(false);
-    }
+    const end = this._loading.begin();
+    try {
+      const idParam = this.route.snapshot.paramMap.get('id');
+      if (idParam === 'add' || !idParam) {
+        this.isNew.set(true);
+      } else {
+        this.id = idParam;
+        this.isNew.set(false);
+      }
 
-    this.loadVolunteers();
-    this.loadEvent();
+      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
+    } catch {
+      end();
+    }
   }
 
   protected goBack() {
@@ -204,7 +210,6 @@ export class EventDetailComponent implements OnInit {
           send_volunteer_alert: event.send_volunteer_alert !== false,
         });
       }
-      this.loading.set(false);
       return;
     }
 
@@ -231,8 +236,6 @@ export class EventDetailComponent implements OnInit {
     } catch (err: any) {
       this.error.set(err?.message || 'Failed to load event');
       this.alerts.showError(this.error()!);
-    } finally {
-      this.loading.set(false);
     }
   }
 

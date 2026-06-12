@@ -1,6 +1,11 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <!-- Loading State -->
-  @if (loading()) {
+  @if (error() && !detail()) {
+  <div class="alert alert-error m-4 shadow-sm rounded-xl">
+    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!detail()) {
   <div
     class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
   >

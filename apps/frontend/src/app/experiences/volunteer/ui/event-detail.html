@@ -1,11 +1,15 @@
 <div class="p-6 max-w-5xl mx-auto space-y-6">
   <!-- Loading State -->
-  @if (loading()) {
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
   <div class="flex flex-col items-center justify-center py-20">
     <span class="loading loading-spinner loading-lg text-primary"></span>
     <p class="text-base-content/60 mt-4">Loading event details...</p>
   </div>
-  } @if (!loading()) {
+  } @else {
   <div class="space-y-6">
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

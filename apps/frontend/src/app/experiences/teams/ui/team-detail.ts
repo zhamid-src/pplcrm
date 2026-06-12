@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
@@ -54,7 +55,8 @@ export class TeamDetailComponent implements OnInit {
   });
 
   protected readonly isNew = signal(false);
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
   protected signalPeople = signal<PersonOption[]>([]);
   protected readonly people = computed(() => this.signalPeople());
   protected readonly users = signal<IAuthUser[]>([]);
@@ -95,12 +97,14 @@ export class TeamDetailComponent implements OnInit {
   }
 
   public async ngOnInit(): Promise<void> {
-    const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
-    this.isNew.set(mode === 'new');
-    if (!this.isNew()) {
-      this.id = this.route.snapshot.paramMap.get('id');
-    }
-    await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
+    const end = this._loading.begin();
+    try {
+      const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
+      this.isNew.set(mode === 'new');
+      if (!this.isNew()) {
+        this.id = this.route.snapshot.paramMap.get('id');
+      }
+      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
 
     if (this.isNew()) {
       const state = window.history.state;
@@ -132,6 +136,9 @@ export class TeamDetailComponent implements OnInit {
           }
         }
       }
+    }
+    } finally {
+      end();
     }
   }
 
@@ -297,12 +304,10 @@ export class TeamDetailComponent implements OnInit {
     if (this.isNew()) {
       this.detail.set(null);
       this.setForm(null);
-      this.loading.set(false);
       return;
     }
     if (!this.id) {
       this.error.set('Missing team identifier');
-      this.loading.set(false);
       return;
     }
 
@@ -318,8 +323,6 @@ export class TeamDetailComponent implements OnInit {
       const message = err?.message || err?.data?.message || 'Failed to load team';
       this.error.set(message);
       this.alerts.showError(message);
-    } finally {
-      this.loading.set(false);
     }
   }
 
