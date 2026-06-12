@@ -124,6 +124,7 @@ export {
   AddWorkflowStepObj,
   UpdateWorkflowStepObj,
   WorkflowEnrollmentObj,
+  CompanyInputObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';

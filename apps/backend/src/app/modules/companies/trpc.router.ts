@@ -1,4 +1,4 @@
-import { idSchema } from '@common';
+import { idSchema, CompanyInputObj } from '@common';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { CompaniesController } from './controller';
@@ -6,15 +6,7 @@ import { createCrudRouter } from '../../lib/crud-router';
 
 const companies = new CompaniesController();
 
-const CompanyInputSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
-  description: z.string().trim().max(1000).optional().nullable(),
-  website: z.string().trim().max(255).optional().nullable(),
-  email: z.string().trim().max(255).optional().nullable(),
-  phone: z.string().trim().max(50).optional().nullable(),
-  industry: z.string().trim().max(100).optional().nullable(),
-  notes: z.string().trim().max(10000).optional().nullable(),
-});
+const CompanyInputSchema = CompanyInputObj;
 
 const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
 
