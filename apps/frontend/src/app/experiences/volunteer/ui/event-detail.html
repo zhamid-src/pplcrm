@@ -75,10 +75,12 @@
                 class="input input-bordered w-full"
                 [formField]="form.name"
                 placeholder="E.g., Weekend Door Knocking Campaign"
+                [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
               />
-              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
-              <p class="text-xs text-error mt-0.5">Event name is required.</p>
-              }
+              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+              form.name().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="space-y-1">
@@ -94,14 +96,13 @@
                   [formField]="form.slug"
                   placeholder="e.g. weekend-knocking"
                   (input)="onSlugInput()"
+                  [class.input-error]="form.slug().invalid() && (form.slug().dirty() || form.slug().touched())"
                 />
               </div>
-              @if (form.slug().invalid() && (form.slug().dirty() || form.slug().touched())) {
-              <p class="text-xs text-error mt-0.5">
-                Slug is required, must contain at least one letter, and can only contain lowercase letters, numbers, and
-                hyphens.
-              </p>
-              } @if (slugChecking()) {
+              @if (form.slug().invalid() && (form.slug().dirty() || form.slug().touched())) { @for (err of
+              form.slug().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } } @if (slugChecking()) {
               <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1">
                 <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
               </p>
@@ -122,7 +123,12 @@
                 class="textarea textarea-bordered w-full"
                 [formField]="form.description"
                 placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+                [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
               ></textarea>
+              @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
+              (err of form.description().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="space-y-1">
@@ -135,7 +141,12 @@
                 class="input input-bordered w-full"
                 [formField]="form.location_address"
                 placeholder="E.g., Central Park Pavilion, or street coordinates"
+                [class.input-error]="form.location_address().invalid() && (form.location_address().dirty() || form.location_address().touched())"
               />
+              @if (form.location_address().invalid() && (form.location_address().dirty() ||
+              form.location_address().touched())) { @for (err of form.location_address().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="divider"></div>
@@ -159,7 +170,12 @@
                   class="input input-bordered w-full"
                   [formField]="form.contact_email"
                   placeholder="organizer@example.com"
+                  [class.input-error]="form.contact_email().invalid() && (form.contact_email().dirty() || form.contact_email().touched())"
                 />
+                @if (form.contact_email().invalid() && (form.contact_email().dirty() || form.contact_email().touched()))
+                { @for (err of form.contact_email().errors(); track err) {
+                <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+                } }
               </div>
               <div class="space-y-1">
                 <label class="label text-xs font-semibold text-base-content/65 uppercase" for="contact-phone"
@@ -171,7 +187,12 @@
                   class="input input-bordered w-full"
                   [formField]="form.contact_phone"
                   placeholder="E.g., 555-0199"
+                  [class.input-error]="form.contact_phone().invalid() && (form.contact_phone().dirty() || form.contact_phone().touched())"
                 />
+                @if (form.contact_phone().invalid() && (form.contact_phone().dirty() || form.contact_phone().touched()))
+                { @for (err of form.contact_phone().errors(); track err) {
+                <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+                } }
               </div>
             </div>
           </div>
@@ -411,10 +432,12 @@
                 type="datetime-local"
                 class="input input-bordered w-full"
                 [formField]="form.start_time"
+                [class.input-error]="form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())"
               />
-              @if (form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())) {
-              <p class="text-xs text-error mt-0.5">Start time is required.</p>
-              }
+              @if (form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())) { @for
+              (err of form.start_time().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="space-y-1">
@@ -426,10 +449,12 @@
                 type="datetime-local"
                 class="input input-bordered w-full"
                 [formField]="form.end_time"
+                [class.input-error]="form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())"
               />
-              @if (form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())) {
-              <p class="text-xs text-error mt-0.5">End time is required.</p>
-              }
+              @if (form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())) { @for (err of
+              form.end_time().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="space-y-1">
@@ -442,7 +467,12 @@
                 class="input input-bordered w-full"
                 [formField]="form.capacity"
                 placeholder="Unlimited"
+                [class.input-error]="form.capacity().invalid() && (form.capacity().dirty() || form.capacity().touched())"
               />
+              @if (form.capacity().invalid() && (form.capacity().dirty() || form.capacity().touched())) { @for (err of
+              form.capacity().errors(); track err) {
+              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
+              } }
             </div>
 
             <div class="divider"></div>

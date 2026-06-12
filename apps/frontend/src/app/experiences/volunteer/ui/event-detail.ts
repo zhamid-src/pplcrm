@@ -1,8 +1,8 @@
 import { Component, OnInit, computed, inject, signal, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { form, required, pattern, FormField } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddVolunteerEventType, UpdateVolunteerEventType } from '@common';
+import { AddVolunteerEventType, UpdateVolunteerEventType, AddVolunteerEventObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
@@ -132,11 +132,7 @@ export class EventDetailComponent implements OnInit {
   });
 
   protected readonly form = form(this.payload, (p) => {
-    required(p.name);
-    required(p.slug);
-    pattern(p.slug, /^(?=.*[a-z])[a-z0-9-]+$/);
-    required(p.start_time);
-    required(p.end_time);
+    validateStandardSchema(p, AddVolunteerEventObj);
   });
 
   // Filter out volunteers that are already signed up
