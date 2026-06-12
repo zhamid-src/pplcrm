@@ -251,11 +251,5 @@
       </button>
     </div>
   </form>
-
-  @if (!isNew() && detail()?.id) {
-  <div class="mt-8 border-t border-base-250 pt-6">
-    <pc-record-activities [entity]="'teams'" [entityId]="detail()!.id"></pc-record-activities>
-  </div>
-  }
 </section>
 }

@@ -57,6 +57,10 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
     return this.api.webForms.update.mutate({ id, data });
   }
 
+  public getSubmissionsCount(id: string): Promise<number> {
+    return this.api.webForms.getSubmissionsCount.query(id);
+  }
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Export CSV not supported for forms.'));
   }

@@ -323,7 +323,7 @@
 
             <!-- Panel: General Activity Feed -->
             @if (activeTab() === 'activity') {
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
               <pc-record-activities [entity]="'households'" [entityId]="id!"></pc-record-activities>
             </div>
             }

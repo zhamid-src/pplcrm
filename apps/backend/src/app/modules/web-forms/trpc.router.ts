@@ -22,4 +22,7 @@ export const WebFormsRouter = router({
   delete: authProcedure
     .input(z.string().uuid())
     .mutation(({ input, ctx }) => webForms.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  getSubmissionsCount: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
 });

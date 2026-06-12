@@ -37,6 +37,9 @@ export class BackgroundJobWorker {
     this.ensureDueTasksCheckScheduled().catch((err) =>
       console.error('Failed to ensure due tasks check scheduled:', err),
     );
+    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
+      console.error('Failed to ensure companies google refresh job scheduled:', err),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
@@ -247,6 +250,8 @@ export class BackgroundJobWorker {
     } else if (type === 'perform_scheduled_deletions') {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'check_all_usage_limits') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'refresh_companies_google') {
       delayMs = 24 * 60 * 60 * 1000;
     }
 
@@ -506,6 +511,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       console.error('Failed to ensure due tasks check scheduled:', err);
+    }
+  }
+
+  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily company google enrichment background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'refresh_companies_google' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure companies google refresh job scheduled:', err);
     }
   }
 

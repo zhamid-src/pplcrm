@@ -8,11 +8,10 @@ import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, FormField, Icon, PeopleInCompany, RecordActivities],
+  imports: [DatePipe, FormField, Icon, PeopleInCompany],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
@@ -213,10 +212,7 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                 </div>
               }
 
-              <!-- Activity history (Only when edit mode) -->
-              @if (!isNewMode() && id) {
-                <pc-record-activities [entity]="'companies'" [entityId]="id"></pc-record-activities>
-              }
+
 
               <!-- Metadata Card -->
               @if (!isNewMode()) {
