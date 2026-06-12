@@ -28,6 +28,15 @@
         <pc-icon name="save" [size]="4"></pc-icon>
         } Save Automation
       </button>
+      } @if (!isNew()) {
+      <button
+        (click)="deleteWorkflow()"
+        class="btn btn-error btn-outline btn-sm gap-2 animate-fade-in"
+        [disabled]="isLoading()"
+      >
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete Automation
+      </button>
       }
       <a routerLink="/workflows" class="btn btn-sm btn-ghost gap-1">
         <pc-icon name="x-mark" [size]="4"></pc-icon>

@@ -24,7 +24,6 @@ import { PeopleInCompany } from './people-in-company';
 
       @if (!isLoading()) {
         <div class="space-y-6">
-          <!-- Header -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
@@ -35,10 +34,17 @@ import { PeopleInCompany } from './people-in-company';
                 {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
               </p>
             </div>
-            <a [routerLink]="id ? ['/companies', id] : ['/companies']" class="btn btn-sm btn-ghost gap-1">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-              Cancel
-            </a>
+            @if (!isNewMode()) {
+              <button
+                class="btn btn-error btn-outline btn-sm gap-2"
+                type="button"
+                (click)="deleteCompany()"
+                [disabled]="isLoading()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+                Delete Company
+              </button>
+            }
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -306,6 +312,24 @@ export class CompanyDetail implements OnInit {
       }
     } catch (err: any) {
       console.error('Failed to load company details:', err);
+    } finally {
+      end();
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id) return;
+    const confirmed = confirm('Delete this company?');
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id);
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete company';
+      this.alertSvc.showError(message);
     } finally {
       end();
     }

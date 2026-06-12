@@ -176,6 +176,25 @@ ${
     );
   }
 
+  protected async deleteForm() {
+    const id = this.formId();
+    if (!id) return;
+    const confirmed = confirm('Delete this web form?');
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.formsSvc.delete(id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate(['/forms']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
   protected async save(event?: Event) {
     if (event) {
       event.preventDefault();

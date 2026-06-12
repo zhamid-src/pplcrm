@@ -203,6 +203,24 @@ export class PersonDetail implements OnInit {
     }
   }
 
+  protected async deletePerson() {
+    if (!this.id) return;
+    const confirmed = confirm('Delete this person?');
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(this.id);
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
   /**
    * Save the person details to backend.
    * If in edit mode, it updates the person; otherwise, it creates a new entry.
