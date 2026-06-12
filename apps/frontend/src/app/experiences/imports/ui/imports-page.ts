@@ -4,7 +4,7 @@ import { Icon } from '@icons/icon';
 
 import type { ImportListItem } from '@common';
 
-import { AlertService } from '../../../uxcommon/components/alerts/alert-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ImportsService } from '../services/imports-service';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 

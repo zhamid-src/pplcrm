@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 import { AuthService } from '../../../auth/auth-service';
 import { IAuthUser } from '@common';
 

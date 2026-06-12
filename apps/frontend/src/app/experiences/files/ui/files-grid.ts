@@ -5,7 +5,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TokenService } from '../../../services/api/token-service';
 import { environment } from '../../../../environments/environment';
 import { Icon } from '@icons/icon';
-import { PcIconNameType } from '../../../uxcommon/components/icons/icons.index';
+import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-files-grid',
