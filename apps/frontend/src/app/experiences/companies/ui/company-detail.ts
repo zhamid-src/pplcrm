@@ -1,7 +1,8 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { form, FormField, required } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { CompanyInputObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -55,7 +56,13 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                     type="text"
                     [formField]="form.name"
                     placeholder="e.g. Acme Corp"
+                    [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
                   />
+                  @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+                    @for (err of form.name().errors(); track err) {
+                      <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                    }
+                  }
                 </label>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -69,7 +76,15 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                       type="url"
                       [formField]="form.website"
                       placeholder="https://example.com"
+                      [class.input-error]="
+                        form.website().invalid() && (form.website().dirty() || form.website().touched())
+                      "
                     />
+                    @if (form.website().invalid() && (form.website().dirty() || form.website().touched())) {
+                      @for (err of form.website().errors(); track err) {
+                        <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                      }
+                    }
                   </label>
 
                   <!-- Industry -->
@@ -82,7 +97,15 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                       type="text"
                       [formField]="form.industry"
                       placeholder="e.g. Technology"
+                      [class.input-error]="
+                        form.industry().invalid() && (form.industry().dirty() || form.industry().touched())
+                      "
                     />
+                    @if (form.industry().invalid() && (form.industry().dirty() || form.industry().touched())) {
+                      @for (err of form.industry().errors(); track err) {
+                        <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                      }
+                    }
                   </label>
                 </div>
 
@@ -97,7 +120,13 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                       type="email"
                       [formField]="form.email"
                       placeholder="info@example.com"
+                      [class.input-error]="form.email().invalid() && (form.email().dirty() || form.email().touched())"
                     />
+                    @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) {
+                      @for (err of form.email().errors(); track err) {
+                        <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                      }
+                    }
                   </label>
 
                   <!-- Phone -->
@@ -110,7 +139,13 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                       type="tel"
                       [formField]="form.phone"
                       placeholder="+1 555-0100"
+                      [class.input-error]="form.phone().invalid() && (form.phone().dirty() || form.phone().touched())"
                     />
+                    @if (form.phone().invalid() && (form.phone().dirty() || form.phone().touched())) {
+                      @for (err of form.phone().errors(); track err) {
+                        <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                      }
+                    }
                   </label>
                 </div>
 
@@ -124,7 +159,15 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                     rows="3"
                     [formField]="form.description"
                     placeholder="Company description..."
+                    [class.textarea-error]="
+                      form.description().invalid() && (form.description().dirty() || form.description().touched())
+                    "
                   ></textarea>
+                  @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) {
+                    @for (err of form.description().errors(); track err) {
+                      <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                    }
+                  }
                 </label>
 
                 <!-- Notes -->
@@ -137,7 +180,13 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
                     rows="4"
                     [formField]="form.notes"
                     placeholder="Any additional notes..."
+                    [class.textarea-error]="form.notes().invalid() && (form.notes().dirty() || form.notes().touched())"
                   ></textarea>
+                  @if (form.notes().invalid() && (form.notes().dirty() || form.notes().touched())) {
+                    @for (err of form.notes().errors(); track err) {
+                      <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
+                    }
+                  }
                 </label>
 
                 <div class="card-actions justify-end pt-4 border-t border-base-300">
@@ -211,7 +260,7 @@ export class CompanyDetail implements OnInit {
   });
 
   protected readonly form = form(this.payload, (p) => {
-    required(p.name);
+    validateStandardSchema(p, CompanyInputObj);
   });
   protected id: string | null = null;
   protected isLoading = this._loading.visible;
