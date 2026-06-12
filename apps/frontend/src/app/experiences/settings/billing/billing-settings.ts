@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -26,7 +27,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
   protected readonly actionPending = signal(false);
   protected readonly details = signal<BillingDetailsSnapshot | null>(null);
 
@@ -55,7 +57,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   }
 
   protected async loadBilling() {
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       const data = await this.api.billing.getDetails.query();
       this.details.set(data);
@@ -63,7 +65,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       console.error(err);
       this.alerts.showError(err.message || 'Failed to load subscription details.');
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
@@ -98,7 +100,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   }
 
   private async handleMockActivation(plan: 'grassroots' | 'representative') {
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       await this.api.billing.activateMockPlan.mutate({ plan });
       this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
@@ -106,13 +108,13 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     } catch (err: any) {
       this.alerts.showError(err.message || 'Mock plan activation failed.');
     } finally {
-      this.loading.set(false);
+      end();
       this.clearQueryParams();
     }
   }
 
   protected async cancelMock() {
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       await this.api.billing.cancelMockPlan.mutate();
       this.alerts.showSuccess('Mock subscription has been canceled.');
@@ -120,7 +122,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     } catch (err: any) {
       this.alerts.showError(err.message || 'Failed to cancel mock plan.');
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 

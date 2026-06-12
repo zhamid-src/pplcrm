@@ -1,4 +1,5 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddWebFormObj } from '@common';
@@ -23,7 +24,9 @@ export class FormDetailComponent implements OnInit {
   private readonly listsSvc = inject(ListsService);
   private readonly alertSvc = inject(AlertService);
 
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly isInitialized = signal(false);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly isNew = signal(true);
@@ -228,7 +231,7 @@ ${
   }
 
   private async loadLists(): Promise<void> {
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       const result = await this.listsSvc.getAll({ limit: 100 });
       const rows = Array.isArray(result?.rows) ? result.rows : [];
@@ -240,19 +243,19 @@ ${
       );
       if (!this.isNew()) {
         await this.loadFormDetails();
-      } else {
-        this.loading.set(false);
       }
     } catch (err) {
       console.error('Failed to load lists', err);
-      this.loading.set(false);
+    } finally {
+      this.isInitialized.set(true);
+      end();
     }
   }
 
   private async loadFormDetails(): Promise<void> {
     const id = this.formId();
     if (!id) return;
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
       const form = (await this.formsSvc.getById(id)) as any;
       if (form) {
@@ -280,7 +283,7 @@ ${
       console.error('Failed to load form details', err);
       this.error.set('Failed to load form details.');
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 }

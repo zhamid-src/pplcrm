@@ -1,4 +1,13 @@
-@if (!loading()) {
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading team…
+</div>
+} @else {
 <section class="m-4 space-y-6">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex items-center gap-3">
@@ -249,6 +258,4 @@
   </div>
   }
 </section>
-} @else {
-<div class="p-6 text-sm text-base-content/70">Loading team…</div>
 }

@@ -1,5 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
@@ -17,7 +18,8 @@ export class ProfilePage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
 
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
   protected readonly uploadingAvatar = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -326,7 +328,7 @@ export class ProfilePage implements OnInit {
   }
 
   private async load() {
-    this.loading.set(true);
+    const end = this._loading.begin();
     this.error.set(null);
     try {
       // First ensure we have/refresh current user
@@ -334,7 +336,7 @@ export class ProfilePage implements OnInit {
       if (!currentUser) {
         throw new Error('Not logged in');
       }
-
+  
       const user = await this.auth.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);
@@ -346,7 +348,7 @@ export class ProfilePage implements OnInit {
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 

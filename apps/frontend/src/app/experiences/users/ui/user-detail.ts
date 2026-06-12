@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
@@ -21,7 +22,8 @@ export class UserDetailComponent implements OnInit {
   private readonly users = inject(AuthUsersService);
   private readonly auth = inject(AuthService);
 
-  protected readonly loading = signal(true);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
@@ -95,7 +97,6 @@ export class UserDetailComponent implements OnInit {
     this.id = this.route.snapshot.paramMap.get('id') ?? '';
     if (!this.id) {
       this.error.set('Missing user identifier.');
-      this.loading.set(false);
       return;
     }
     void this.load();
@@ -170,7 +171,7 @@ export class UserDetailComponent implements OnInit {
   }
 
   private async load() {
-    this.loading.set(true);
+    const end = this._loading.begin();
     this.error.set(null);
     try {
       const user = await this.users.getById(this.id);
@@ -183,7 +184,7 @@ export class UserDetailComponent implements OnInit {
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
