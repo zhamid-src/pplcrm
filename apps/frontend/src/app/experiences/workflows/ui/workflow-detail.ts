@@ -1,5 +1,6 @@
 import { Component, OnInit, signal, inject, computed } from '@angular/core';
-import { FormField, form, required, submit } from '@angular/forms/signals';
+import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
+import { AddWorkflowObj } from '@common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
@@ -82,7 +83,7 @@ export class WorkflowDetailComponent implements OnInit {
 
   // Signal-based form
   protected readonly form = form(this.payload, (p) => {
-    required(p.name);
+    validateStandardSchema(p, AddWorkflowObj);
   });
 
   // Computed signal to resolve the name of the selected event

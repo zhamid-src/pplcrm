@@ -688,7 +688,12 @@
             class="input input-bordered input-sm w-full font-semibold rounded-xl"
             placeholder="e.g. Volunteer Welcome Series"
             [formField]="form.name"
+            [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
           />
+          @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+          form.name().errors(); track err) {
+          <p class="text-xs text-error mt-1">{{ err.message }}</p>
+          } }
         </div>
 
         <div class="form-control">
@@ -698,7 +703,12 @@
             rows="4"
             placeholder="Brief summary of what this drip campaign does..."
             [formField]="form.description"
+            [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
           ></textarea>
+          @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for (err
+          of form.description().errors(); track err) {
+          <p class="text-xs text-error mt-1">{{ err.message }}</p>
+          } }
         </div>
 
         <div class="form-control">
@@ -859,8 +869,7 @@
   <div class="mt-8 border-t border-base-200 pt-6">
     <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
   </div>
-  }
-  }
+  } }
 </div>
 
 <!-- FULLSCREEN DIALOG: EMAIL TEMPLATE VISUAL DESIGNER -->

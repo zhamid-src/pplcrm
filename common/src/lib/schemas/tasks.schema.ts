@@ -4,13 +4,13 @@ import { nameSchema, notesSchema, idSchema } from './core.schema';
 export const AddTaskObj = z.object({
   name: nameSchema('Task name', 200),
   details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.coerce.date().optional(),
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.coerce.date().optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
-  assigned_to: idSchema.nullable().optional(),
-  team_id: idSchema.nullable().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
 
 export const TasksObj = z.object({
@@ -29,11 +29,11 @@ export const TasksObj = z.object({
 export const UpdateTaskObj = z.object({
   name: nameSchema('Task name', 200).optional(),
   details: notesSchema,
-  due_at: z.coerce.date().optional(),
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.coerce.date().optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
-  assigned_to: idSchema.nullable().optional(),
-  team_id: idSchema.nullable().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
