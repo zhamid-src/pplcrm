@@ -31,7 +31,7 @@
       <div class="grid gap-8 md:grid-cols-12">
         <!-- Left Column: Form Configuration -->
         <div class="space-y-6 md:col-span-7">
-          <form [formGroup]="formGroup" (submit)="save()" class="card bg-base-100 border border-base-200 shadow-sm">
+          <form (submit)="save($event)" class="card bg-base-100 border border-base-200 shadow-sm">
             <div class="card-body gap-5">
               <h2 class="card-title text-base font-semibold uppercase tracking-wide text-base-content/60">
                 Form Settings
@@ -42,25 +42,30 @@
                 <label class="label text-xs font-semibold py-1">Form Name *</label>
                 <input
                   type="text"
-                  formControlName="name"
+                  [formField]="form.name"
                   class="input input-bordered w-full"
                   placeholder="E.g., Newsletter Signup"
-                  [class.input-error]="formGroup.get('name')?.invalid && formGroup.get('name')?.touched"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
                 />
-                @if (formGroup.get('name')?.invalid && formGroup.get('name')?.touched) {
-                <p class="mt-1 text-xs text-error">Form name is required (max 100 chars).</p>
-                }
+                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+                form.name().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
               </div>
 
               <!-- Description -->
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Description</label>
                 <textarea
-                  formControlName="description"
+                  [formField]="form.description"
                   class="textarea textarea-bordered w-full"
                   rows="2"
                   placeholder="Internal note about where this form is deployed..."
                 ></textarea>
+                @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) {
+                @for (err of form.description().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
               </div>
 
               <!-- Redirect URL -->
@@ -71,23 +76,24 @@
                 </label>
                 <input
                   type="url"
-                  formControlName="redirect_url"
+                  [formField]="form.redirect_url"
                   class="input input-bordered w-full"
                   placeholder="https://mywebsite.com/thank-you"
-                  [class.input-error]="formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched"
+                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
                 />
                 <p class="mt-1 text-[11px] text-base-content/50">
                   If blank, users will see the PeopleCRM default success page.
                 </p>
-                @if (formGroup.get('redirect_url')?.invalid && formGroup.get('redirect_url')?.touched) {
-                <p class="mt-1 text-xs text-error">Please enter a valid URL starting with http:// or https://</p>
-                }
+                @if (form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())) {
+                @for (err of form.redirect_url().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
               </div>
 
               <!-- Status -->
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Status</label>
-                <select formControlName="status" class="select select-bordered w-full">
+                <select [formField]="form.status" class="select select-bordered w-full">
                   <option value="active">Active</option>
                   <option value="archived">Archived</option>
                 </select>
@@ -108,7 +114,7 @@
                   </div>
                   <input
                     type="checkbox"
-                    formControlName="send_confirmation"
+                    [formField]="form.send_confirmation"
                     class="toggle toggle-primary mt-1 shrink-0"
                   />
                 </label>
@@ -125,7 +131,7 @@
                       Send email alert notifications to organization admins when a new submission is received.
                     </p>
                   </div>
-                  <input type="checkbox" formControlName="send_alert" class="toggle toggle-primary mt-1 shrink-0" />
+                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
                 </label>
               </div>
 
@@ -259,10 +265,10 @@
                   <h4
                     class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
                   >
-                    {{ formGroup.get('name')?.value || 'Untitled Web Form' }}
+                    {{ payload().name || 'Untitled Web Form' }}
                   </h4>
                   <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
-                    {{ formGroup.get('description')?.value || 'Enter a description to see it here.' }}
+                    {{ payload().description || 'Enter a description to see it here.' }}
                   </p>
                 </div>
 

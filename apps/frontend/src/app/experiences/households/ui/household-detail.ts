@@ -2,9 +2,9 @@
  * @file Component for creating or editing households and managing their tags and members.
  */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
-import { form, FormField } from '@angular/forms/signals';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { UpdateHouseholdsType } from '@common';
+import { UpdateHouseholdsType, UpdateHouseholdsObj } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -65,7 +65,9 @@ export class HouseholdDetail implements OnInit {
   });
 
   /** Signal-based form control group */
-  protected readonly form = form(this.payload);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdateHouseholdsObj);
+  });
 
   /** Formatted address string computed from the payload */
   protected readonly addressString = computed(() => {
