@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { Models } from 'common/src/lib/kysely.models';
-import { isBlankAddress } from '../address-normalize';
+import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
 import { env } from '../../../env';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -123,8 +123,8 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
   }
 
   // 1. Check if the address is blank or incomplete
-  if (isBlankAddress(hh)) {
-    console.log(`Geocoding job: Household ${householdId} has a blank address. Marking as failed.`);
+  if (isBlankAddress(hh) || isIncompleteAddress(hh)) {
+    console.log(`Geocoding job: Household ${householdId} has a blank or incomplete address. Marking as failed.`);
     await db
       .updateTable('households')
       .set({

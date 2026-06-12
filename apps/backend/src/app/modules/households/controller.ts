@@ -8,7 +8,7 @@ import {
 import { TRPCError } from '@trpc/server';
 
 import { BaseRepository, QueryParams } from '../../lib/base.repo';
-import { fingerprintFull, fingerprintStreet, isBlankAddress } from '../../lib/address-normalize';
+import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
@@ -160,15 +160,15 @@ export class HouseholdsController extends BaseController<'households', Household
             zip: merged.zip,
             country: merged.country,
           }),
-          geocoding_status: isBlankAddress(merged) ? 'failed' : 'pending',
+          geocoding_status: isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending',
           district: null,
           precinct: null,
           ward: null,
         };
         await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
 
-        // Queue geocoding background job if updated address is not blank
-        if (!isBlankAddress(merged)) {
+        // Queue geocoding background job if updated address is not blank and not incomplete
+        if (!isBlankAddress(merged) && !isIncompleteAddress(merged)) {
           await this.getRepo()
             .db.insertInto('background_jobs' as any)
             .values({

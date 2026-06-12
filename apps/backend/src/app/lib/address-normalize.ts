@@ -102,3 +102,17 @@ export function isBlankAddress(input: {
   return fields.every((v) => !v || (v + '').trim().length === 0);
 }
 
+/** True if the address lacks essential information to be geocoded (e.g. missing street1, or missing both city and zip) */
+export function isIncompleteAddress(input: {
+  street1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}): boolean {
+  const street1 = (input.street1 ?? '').trim();
+  const city = (input.city ?? '').trim();
+  const zip = (input.zip ?? '').trim();
+
+  return !street1 || (!city && !zip);
+}
+
