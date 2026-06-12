@@ -78,7 +78,7 @@ export class EditingController {
         this.alertSvc.showError('Update failed');
         return false;
       }
-      this.grid.updateEditedRowInCaches(id, col.field, currentValue);
+      this.grid.updateEditedRowInCaches(id, col.field, currentValue, before[key]);
       this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
       this.alertSvc.showSuccess('Row updated');
       return true;

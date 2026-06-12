@@ -335,8 +335,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly toIdFn = (row: any) => this.toId(row);
   public readonly inputTypeForFn = (col: any) => this.inputTypeFor(col);
   public readonly createPayloadFn = (row: any, key: string) => this.utilsSvc.createPayload(row, key);
-  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any) =>
-    this.updateEditedRowInCaches(id, f, v);
+  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any, prev?: any) =>
+    this.updateEditedRowInCaches(id, f, v, prev);
   public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
   // Expose a simple persist method for header/directives
   public requestPersist() {
@@ -694,6 +694,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!this.store) {
       return;
     }
+    this.undoMgr.initialize(this);
     await this.tagFilter.init({
       limitToTags: this.limitToTags(),
       limitToIssues: this.limitToIssues(),
@@ -1187,22 +1188,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const diff = this.diffTagSelection(previous, next);
     if (!diff.hasChanges) return;
-    const applyTags = (tags: string[]) => {
+    const applyTags = (tags: string[], prevTags?: string[]) => {
       const safe = Array.isArray(tags) ? [...tags] : [];
       (row as Record<string, unknown>)[field] = safe;
-      this.updateEditedRowInCachesFn(id, field, safe);
+      this.updateEditedRowInCachesFn(id, field, safe, prevTags);
       this.updateTableWindowFn(this.startIndex(), this.endIndex());
     };
 
-    applyTags(next);
+    applyTags(next, previous);
 
     try {
       const removedTeamNames = await this.applyTagDiff(id, diff, col);
       const finalTags = await this.refreshTagsFromServer(id, next, col);
-      applyTags(finalTags);
+      applyTags(finalTags, previous);
       this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
     } catch {
-      applyTags(previous);
+      applyTags(previous, previous);
       const errorMsg =
         col.cellRendererParams?.tagType === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
       this.alertSvc.showError(errorMsg);
@@ -2200,11 +2201,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store?.requestPersist();
   }
 
-  public updateEditedRowInCaches(id: string, field: string | undefined, value: any) {
-    if (!field) return;
-    // Update visible rows array
-    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
-    // Trigger green flash on the updated row
+  public triggerRowFlash(id: string): void {
     this.flashedRowIds.update((s) => {
       const n = new Set(s);
       n.add(id);
@@ -2217,6 +2214,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         return n;
       });
     }, 1300);
+  }
+
+  public updateEditedRowInCaches(id: string, field: string | undefined, value: any, prevValue?: any) {
+    if (!field) return;
+    if (this.store) {
+      const targetRow = this.rows().find((r: any) => String(this.toId(r)) === id);
+      const prev = prevValue !== undefined ? prevValue : targetRow ? targetRow[field] : undefined;
+      this.store.recordSnapshotBeforeCommit(id, field, prev, value);
+    }
+    // Update visible rows array
+    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
+    // Trigger green flash on the updated row
+    this.triggerRowFlash(id);
   }
 
   // pin offsets handled by PinningController
