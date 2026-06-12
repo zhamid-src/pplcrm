@@ -35,12 +35,65 @@ export class GridStoreService {
 
   readonly displayedCount = computed(() => this.rows().length);
 
+  readonly editCommitCount = signal<number>(0);
+  private _lastSnapshot: any = null;
+
+  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: any, newValue: any) {
+    let rowsCopy: any[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(this.rows() || []));
+    } catch {
+      rowsCopy = (this.rows() || []).map((r: any) => {
+        const copy = { ...r };
+        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
+        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
+        return copy;
+      });
+    }
+
+    const getRowId = this._getRowId || ((r: any) => String(r?.id || ''));
+    rowsCopy = rowsCopy.map((r: any) => {
+      if (getRowId(r) === id) {
+        return { ...r, [field]: prevValue };
+      }
+      return r;
+    });
+
+    this._lastSnapshot = {
+      rows: rowsCopy,
+      selectedIdSet: new Set(this.selectedIdSet()),
+      filterValues: { ...this.filterValues() },
+      sorting: [...this.sorting()],
+      pageIndex: this.pageIndex(),
+      pageSize: this.pageSize(),
+      editMeta: {
+        id,
+        field,
+        prevValue,
+        newValue,
+      },
+    };
+    this.editCommitCount.update((c) => c + 1);
+  }
+
   private _persistKey = signal<string>('');
   private _persistTick = signal<number>(0);
   private _table: any = null;
   private _getRowId: ((row: any) => string) | null = null;
 
   constructor() {
+    effect(() => {
+      const count = this.editCommitCount();
+      if (count === 0) return;
+
+      untracked(() => {
+        if (this._lastSnapshot && this.grid?.undoMgr) {
+          this.grid.undoMgr.pushUndo(this._lastSnapshot);
+          this._lastSnapshot = null;
+        }
+      });
+    });
+
     effect(() => {
       const key = this._persistKey();
       this.sorting();
