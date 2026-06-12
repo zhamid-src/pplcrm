@@ -156,8 +156,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   private readonly dgListsSvc = inject(ListsService, { optional: true });
-  /** Set of row IDs currently showing the green "saved" flash animation */
-  public readonly flashedRowIds = signal<Set<string>>(new Set());
+  /** Set of cell keys (rowId:field) currently showing the green "saved" flash animation */
+  public readonly flashedCells = signal<Set<string>>(new Set());
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
   );
@@ -2201,16 +2201,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store?.requestPersist();
   }
 
-  public triggerRowFlash(id: string): void {
-    this.flashedRowIds.update((s) => {
+  public triggerCellFlash(rowId: string, field: string): void {
+    const key = `${rowId}:${field}`;
+    this.flashedCells.update((s) => {
       const n = new Set(s);
-      n.add(id);
+      n.add(key);
       return n;
     });
     setTimeout(() => {
-      this.flashedRowIds.update((s) => {
+      this.flashedCells.update((s) => {
         const n = new Set(s);
-        n.delete(id);
+        n.delete(key);
         return n;
       });
     }, 1300);
@@ -2225,8 +2226,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     // Update visible rows array
     this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
-    // Trigger green flash on the updated row
-    this.triggerRowFlash(id);
+    // Trigger green flash on the updated cell
+    this.triggerCellFlash(id, field);
   }
 
   // pin offsets handled by PinningController

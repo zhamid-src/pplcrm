@@ -131,7 +131,7 @@ export class UndoManager {
   private async applySnapshot(target: any, actionType: 'undo' | 'redo') {
     if (!target || !this.grid || !this.grid.store) return;
     const store = this.grid.store;
-    const flashedIds = new Set<string>();
+    const flashedCells: { id: string; field: string }[] = [];
 
     if (target.editMeta) {
       try {
@@ -139,7 +139,7 @@ export class UndoManager {
         const valToSet = actionType === 'undo' ? prevValue : newValue;
         const payload = { [field]: valToSet };
         await this.grid.gridSvc.update(id, payload);
-        flashedIds.add(String(id));
+        flashedCells.push({ id: String(id), field });
       } catch (err) {
         console.error(`Failed to update backend on ${actionType}:`, err);
         if (this.grid.alertSvc) {
@@ -154,7 +154,7 @@ export class UndoManager {
         for (const diff of diffs) {
           const payload = { [diff.field]: diff.newValue };
           await this.grid.gridSvc.update(diff.id, payload);
-          flashedIds.add(String(diff.id));
+          flashedCells.push({ id: String(diff.id), field: diff.field });
         }
       } catch (err) {
         console.error(`Failed to update backend on ${actionType} fallback:`, err);
@@ -170,9 +170,9 @@ export class UndoManager {
 
     this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
 
-    for (const id of flashedIds) {
-      if (typeof this.grid.triggerRowFlash === 'function') {
-        this.grid.triggerRowFlash(id);
+    for (const item of flashedCells) {
+      if (typeof this.grid.triggerCellFlash === 'function') {
+        this.grid.triggerCellFlash(item.id, item.field);
       }
     }
   }
