@@ -241,7 +241,6 @@
           (mouseover)="onCellMouseOver(r.original)"
           [attr.data-row-id]="toId(r.original)"
           [class.bg-base-200]="(i % 2) === 1"
-          [class.row-flash]="flashedRowIds().has(toId(r.original))"
         >
           @if (enableSelection()) {
           <td
@@ -280,6 +279,7 @@
           === col.field;
           <td
             [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
             tabindex="0"
             (keydown)="onCellKeydown($event)"
             (click)="handleCellClick(r.original, col)"

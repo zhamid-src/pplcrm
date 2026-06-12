@@ -173,8 +173,8 @@ describe('UndoManager', () => {
     expect(undoMgr.canRedo()).toBe(false);
   });
 
-  it('should call triggerRowFlash on the grid if available during undo and redo', async () => {
-    mockGrid.triggerRowFlash = vi.fn();
+  it('should call triggerCellFlash on the grid if available during undo and redo', async () => {
+    mockGrid.triggerCellFlash = vi.fn();
 
     // Initial state
     mockStore.rows.set([{ id: '1', name: 'John' }]);
@@ -200,11 +200,11 @@ describe('UndoManager', () => {
 
     // Undo
     await undoMgr.undo();
-    expect(mockGrid.triggerRowFlash).toHaveBeenCalledWith('1');
-    mockGrid.triggerRowFlash.mockClear();
+    expect(mockGrid.triggerCellFlash).toHaveBeenCalledWith('1', 'name');
+    mockGrid.triggerCellFlash.mockClear();
 
     // Redo
     await undoMgr.redo();
-    expect(mockGrid.triggerRowFlash).toHaveBeenCalledWith('1');
+    expect(mockGrid.triggerCellFlash).toHaveBeenCalledWith('1', 'name');
   });
 });
