@@ -1,6 +1,7 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddWebFormObj } from '@common';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { FormsService } from '../services/forms-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -12,11 +13,10 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [ReactiveFormsModule, RouterModule, Tags, TagItem, Icon, RecordActivities],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, RecordActivities],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {
-  private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly formsSvc = inject(FormsService);
@@ -48,13 +48,17 @@ export class FormDetailComponent implements OnInit {
     }
   }
 
-  protected readonly formGroup = this.fb.group({
-    name: ['', [Validators.required, Validators.maxLength(100)]],
-    description: ['', [Validators.maxLength(500)]],
-    redirect_url: ['', [Validators.pattern(/^https?:\/\/.+/) || Validators.required]],
-    status: ['active', [Validators.required]],
-    send_confirmation: [true],
-    send_alert: [true],
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    redirect_url: '',
+    status: 'active' as 'active' | 'archived',
+    send_confirmation: true,
+    send_alert: true,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWebFormObj);
   });
 
   protected readonly embedSnippet = computed(() => {
@@ -171,9 +175,13 @@ ${
     );
   }
 
-  protected async save() {
-    this.formGroup.markAllAsTouched();
-    if (this.formGroup.invalid) {
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
       this.alertSvc.showError('Please check your inputs.');
       return;
     }
@@ -181,37 +189,42 @@ ${
     this.saving.set(true);
     this.error.set(null);
 
-    const values = this.formGroup.getRawValue();
-    const payload = {
-      name: values.name?.trim() ?? '',
-      description: values.description?.trim() || null,
-      redirect_url: values.redirect_url?.trim() || null,
-      target_tags: this.selectedTags().length ? this.selectedTags() : null,
-      target_lists: this.selectedLists().length ? this.selectedLists() : null,
-      status: (values.status as 'active' | 'archived') ?? 'active',
-      fields: this.selectedFields(),
-      send_confirmation: !!values.send_confirmation,
-      send_alert: !!values.send_alert,
-    };
+    await submit(this.form, {
+      action: async () => {
+        const values = this.payload();
+        const payload = {
+          name: values.name?.trim() ?? '',
+          description: values.description?.trim() || null,
+          redirect_url: values.redirect_url?.trim() || null,
+          target_tags: this.selectedTags().length ? this.selectedTags() : null,
+          target_lists: this.selectedLists().length ? this.selectedLists() : null,
+          status: values.status,
+          fields: this.selectedFields(),
+          send_confirmation: !!values.send_confirmation,
+          send_alert: !!values.send_alert,
+        };
 
-    try {
-      if (this.isNew()) {
-        const result = (await this.formsSvc.add(payload)) as { id: string };
-        this.alertSvc.showSuccess('Form created successfully!');
-        void this.router.navigate(['../', result.id], { relativeTo: this.route });
-      } else {
-        const id = this.formId()!;
-        await this.formsSvc.update(id, payload);
-        this.alertSvc.showSuccess('Form updated successfully!');
-        void this.loadFormDetails();
-      }
-    } catch (err: any) {
-      const msg = err.message || 'An error occurred while saving the form.';
-      this.error.set(msg);
-      this.alertSvc.showError(msg);
-    } finally {
-      this.saving.set(false);
-    }
+        try {
+          if (this.isNew()) {
+            const result = (await this.formsSvc.add(payload)) as { id: string };
+            this.alertSvc.showSuccess('Form created successfully!');
+            void this.router.navigate(['../', result.id], { relativeTo: this.route });
+          } else {
+            const id = this.formId()!;
+            await this.formsSvc.update(id, payload);
+            this.alertSvc.showSuccess('Form updated successfully!');
+            void this.loadFormDetails();
+          }
+        } catch (err: any) {
+          const msg = err.message || 'An error occurred while saving the form.';
+          this.error.set(msg);
+          this.alertSvc.showError(msg);
+        } finally {
+          this.saving.set(false);
+        }
+        return null;
+      },
+    });
   }
 
   private async loadLists(): Promise<void> {
@@ -243,14 +256,15 @@ ${
     try {
       const form = (await this.formsSvc.getById(id)) as any;
       if (form) {
-        this.formGroup.setValue({
+        this.payload.set({
           name: form.name ?? '',
           description: form.description ?? '',
           redirect_url: form.redirect_url ?? '',
-          status: form.status ?? 'active',
+          status: (form.status as 'active' | 'archived') ?? 'active',
           send_confirmation: form.send_confirmation !== false,
           send_alert: form.send_alert !== false,
         });
+        this.form().reset();
         this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);
         this.selectedLists.set(Array.isArray(form.target_lists) ? form.target_lists : []);
 
