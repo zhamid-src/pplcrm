@@ -214,7 +214,7 @@ ${
             const id = this.formId()!;
             await this.formsSvc.update(id, payload);
             this.alertSvc.showSuccess('Form updated successfully!');
-            void this.loadFormDetails();
+            void this.router.navigate(['/forms', id]);
           }
         } catch (err: any) {
           const msg = err.message || 'An error occurred while saving the form.';

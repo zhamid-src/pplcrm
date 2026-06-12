@@ -6,8 +6,18 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Persons Grid', () => {
   test.beforeEach(async ({ page }) => {
-    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+    page.on('console', (msg) => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', (err) => console.log('BROWSER ERROR:', err.message));
+
+    // Set localStorage to show tags column by default
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'pcdg:/people',
+        JSON.stringify({
+          visibility: { tags: true },
+        }),
+      );
+    });
 
     // Mock global notifications, dashboard stats, and tags queries to prevent UNAUTHORIZED redirects
     await page.route(/\/notifications\.getUnreadCount/, async (route) => {
@@ -27,6 +37,14 @@ test.describe('Persons Grid', () => {
     });
 
     await page.route(/\/tags\.getAllWithCounts/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ result: { data: { json: { rows: [], count: 0 } } } }),
+      });
+    });
+
+    await page.route(/\/lists\.getAllWithCounts/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -65,13 +83,19 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 id: 'user-1',
                 email: 'test@example.com',
                 first_name: 'Test',
                 last_name: 'User',
                 role: 'user',
-              } } } }),
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -80,7 +104,10 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [
                   {
                     id: 'person-1',
@@ -99,7 +126,7 @@ test.describe('Persons Grid', () => {
                     zip: '62701',
                     country: 'USA',
                     notes: 'Some notes here',
-                    household_id: 'household-1'
+                    household_id: 'household-1',
                   },
                   {
                     id: 'person-2',
@@ -118,11 +145,14 @@ test.describe('Persons Grid', () => {
                     zip: '62702',
                     country: 'USA',
                     notes: '',
-                    household_id: 'household-2'
-                  }
+                    household_id: 'household-2',
+                  },
                 ],
-                count: 2
-              } } } }),
+                count: 2,
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -131,13 +161,19 @@ test.describe('Persons Grid', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ result: { data: { json: {
+        body: JSON.stringify({
+          result: {
+            data: {
+              json: {
                 rows: [
                   { id: 't1', name: 'volunteer' },
-                  { id: 't2', name: 'donor' }
+                  { id: 't2', name: 'donor' },
                 ],
-                count: 2
-              } } } }),
+                count: 2,
+              },
+            },
+          },
+        }),
       });
     });
 
@@ -163,15 +199,9 @@ test.describe('Persons Grid', () => {
 
     test('should display column headers', async ({ page }) => {
       // Check for common column headers
-      await expect(
-        page.locator('th[role="columnheader"]:has-text("First Name")')
-      ).toBeVisible();
-      await expect(
-        page.locator('th[role="columnheader"]:has-text("Email")')
-      ).toBeVisible();
-      await expect(
-        page.locator('th[role="columnheader"]:has-text("Mobile")')
-      ).toBeVisible();
+      await expect(page.locator('th[role="columnheader"]:has-text("First Name")')).toBeVisible();
+      await expect(page.locator('th[role="columnheader"]:has-text("Email")')).toBeVisible();
+      await expect(page.locator('th[role="columnheader"]:has-text("Mobile")')).toBeVisible();
     });
 
     test('should display person data in rows', async ({ page }) => {
@@ -186,7 +216,7 @@ test.describe('Persons Grid', () => {
     test('should show loading state initially', async ({ page }) => {
       // Setup a slow response to ensure loading indicator shows
       await page.route(/\/persons\.getAllWithAddress/, async (route) => {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -220,7 +250,9 @@ test.describe('Persons Grid', () => {
       await page.waitForSelector('th[role="columnheader"]', { timeout: 10000 });
 
       // Click on filter options button
-      const filterButton = page.locator('th[role="columnheader"]:has-text("First Name") label[title="Column options"]').first();
+      const filterButton = page
+        .locator('th[role="columnheader"]:has-text("First Name") label[title="Column options"]')
+        .first();
 
       if (await filterButton.isVisible()) {
         await filterButton.click();
@@ -415,8 +447,8 @@ test.describe('Persons Grid', () => {
 
       // Scroll the container to test responsiveness
       const scroller = page.locator('#scroller, .overflow-auto').first();
-      if (await scroller.count() > 0) {
-        await scroller.evaluate(node => node.scrollTop = 100);
+      if ((await scroller.count()) > 0) {
+        await scroller.evaluate((node) => (node.scrollTop = 100));
       }
 
       // Should still be responsive
@@ -450,9 +482,11 @@ test.describe('Persons Grid', () => {
         route.fulfill({
           status: 409,
           contentType: 'application/json',
-          body: JSON.stringify([{
-            error: { message: 'Conflict' }
-          }]),
+          body: JSON.stringify([
+            {
+              error: { message: 'Conflict' },
+            },
+          ]),
         }),
       );
 

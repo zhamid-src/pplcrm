@@ -12,25 +12,18 @@
   } @else {
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
       <div class="flex items-center gap-3">
-        <button class="btn btn-ghost btn-sm gap-2" type="button" (click)="goBack()">
-          <pc-icon name="arrow-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <div class="divider divider-horizontal hidden sm:block"></div>
+        <pc-icon name="clock" class="text-primary" [size]="5"></pc-icon>
         <div>
-          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-            <pc-icon name="clock" class="text-primary" [size]="6"></pc-icon>
-            {{ isNew() ? 'Create Volunteer Event' : detail()?.name }}
-          </h1>
-          <p class="text-sm text-base-content/60 mt-1">
+          <h1 class="text-xl font-bold">{{ isNew() ? 'Create Volunteer Event' : detail()?.name }}</h1>
+          <p class="text-sm text-base-content/60 mt-0.5">
             {{ isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance
             roster.' }}
           </p>
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="flex items-center gap-2">
         @if (!isNew()) {
         <button
           class="btn btn-error btn-outline btn-sm gap-2"
@@ -42,6 +35,10 @@
           Delete Event
         </button>
         }
+        <a [routerLink]="isNew() ? ['/schedule'] : ['/schedule', id]" class="btn btn-sm btn-ghost gap-1">
+          <pc-icon name="x-mark" [size]="4"></pc-icon>
+          Cancel
+        </a>
       </div>
     </div>
 
@@ -555,11 +552,17 @@
               >
                 @if (saving()) {
                 <span class="loading loading-spinner loading-xs"></span>
-                }
-                <pc-icon name="check-circle" [size]="5"></pc-icon>
-                {{ isNew() ? 'Create Event' : 'Save Changes' }}
+                } @else {
+                <pc-icon name="save" [size]="4"></pc-icon>
+                } {{ isNew() ? 'Create Event' : 'Save Changes' }}
               </button>
-              <button type="button" class="btn btn-outline w-full" (click)="goBack()">Cancel</button>
+              <a
+                [routerLink]="isNew() ? ['/schedule'] : ['/schedule', id]"
+                class="btn btn-outline btn-accent w-full gap-2"
+              >
+                <pc-icon name="x-circle" [size]="4"></pc-icon>
+                Cancel
+              </a>
             </div>
           </div>
         </div>
