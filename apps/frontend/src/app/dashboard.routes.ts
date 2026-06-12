@@ -167,6 +167,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/volunteer/ui/event-view').then((m) => m.EventViewComponent),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
       },
     ],

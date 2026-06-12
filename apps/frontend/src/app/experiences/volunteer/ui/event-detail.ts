@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal, effect } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, effect, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
@@ -36,23 +36,27 @@ export class EventDetailComponent implements OnInit {
   private slugTimeoutId: any = null;
 
   constructor() {
+    const nameSignal = computed(() => this.payload().name);
     effect(
       () => {
-        const name = this.payload().name;
+        const name = nameSignal();
         if (this.isNew() && !this.slugManuallyEdited) {
           const suggested = this.slugify(name);
-          this.payload.update((p) => ({
-            ...p,
-            slug: suggested,
-          }));
+          if (untracked(this.payload).slug !== suggested) {
+            this.payload.update((p) => ({
+              ...p,
+              slug: suggested,
+            }));
+          }
         }
       },
       { allowSignalWrites: true },
     );
 
+    const slugSignal = computed(() => this.payload().slug);
     effect(
       () => {
-        const slug = this.payload().slug;
+        const slug = slugSignal();
         if (this.slugTimeoutId) {
           clearTimeout(this.slugTimeoutId);
           this.slugTimeoutId = null;
@@ -69,13 +73,13 @@ export class EventDetailComponent implements OnInit {
           void (async () => {
             try {
               const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : this.id);
-              if (this.payload().slug === slug) {
+              if (untracked(slugSignal) === slug) {
                 this.slugUnique.set(res.unique);
               }
             } catch (err) {
               console.error('Failed to check slug uniqueness', err);
             } finally {
-              if (this.payload().slug === slug) {
+              if (untracked(slugSignal) === slug) {
                 this.slugChecking.set(false);
               }
             }
@@ -169,7 +173,7 @@ export class EventDetailComponent implements OnInit {
   }
 
   protected goBack() {
-    void this.router.navigate(['/schedule']);
+    void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
   protected toDatetimeLocalString(val: any): string {
