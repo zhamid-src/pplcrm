@@ -5,10 +5,12 @@
       <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
       {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
     </h1>
-    <a [routerLink]="isNew() ? ['/forms'] : ['/forms', formId()]" class="btn btn-sm btn-ghost gap-1">
-      <pc-icon name="x-mark" [size]="4"></pc-icon>
-      Cancel
-    </a>
+    @if (!isNew()) {
+    <button class="btn btn-error btn-outline btn-sm gap-2" type="button" (click)="deleteForm()" [disabled]="saving()">
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      Delete Web Form
+    </button>
+    }
   </header>
 
   <!-- Main Content -->

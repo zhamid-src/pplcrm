@@ -322,6 +322,25 @@ export class WorkflowDetailComponent implements OnInit {
     }
   }
 
+  protected async deleteWorkflow() {
+    const id = this.workflowId();
+    if (!id) return;
+    const confirmed = confirm('Delete this workflow?');
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.delete(id);
+      this.workflowsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Workflow deleted');
+      await this.router.navigate(['/workflows']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete workflow';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
   // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
   protected async saveSettings(event?: Event): Promise<void> {
     if (event instanceof Event) {

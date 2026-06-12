@@ -9,10 +9,17 @@
         <pc-icon [name]="person()?.id ? 'pencil-square' : 'user-plus'" [size]="5" class="text-primary"></pc-icon>
         {{ person()?.id ? 'Edit Person Details' : 'Add New Person' }}
       </h2>
-      <a [routerLink]="person()?.id ? ['/people', person()?.id] : ['/people']" class="btn btn-sm btn-ghost gap-1">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-        Cancel
-      </a>
+      @if (person()?.id) {
+      <button
+        class="btn btn-error btn-outline btn-sm gap-2"
+        type="button"
+        (click)="deletePerson()"
+        [disabled]="isLoading()"
+      >
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete Person
+      </button>
+      }
     </div>
 
     <form (submit)="save()" novalidate class="flex flex-col gap-5">

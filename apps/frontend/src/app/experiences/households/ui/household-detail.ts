@@ -3,7 +3,7 @@
  */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -15,6 +15,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from 'common/src/lib/kysely.models';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
 
 /**
  * Component for displaying and managing the details of a household.
@@ -30,6 +32,9 @@ export class HouseholdDetail implements OnInit {
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
 
   /** Whether a background operation is in progress */
   private _loading = createLoadingGate();
@@ -184,6 +189,54 @@ export class HouseholdDetail implements OnInit {
   /** Returns the last updated date of the household */
   protected getUpdatedAt() {
     return this.household()?.updated_at;
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id, { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = confirm('Delete this household?');
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id);
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
   }
 
   protected save(done?: () => void) {
