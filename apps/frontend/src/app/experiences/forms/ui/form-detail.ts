@@ -10,11 +10,9 @@ import { Tags } from '@uxcommon/components/tags/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
 
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
-
 @Component({
   selector: 'pc-form-detail',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, RecordActivities],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {

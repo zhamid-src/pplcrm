@@ -28,6 +28,28 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
   if (payload.type === 'refresh_list') {
     const listsController = new ListsController();
     await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+  } else if (payload.type === 'enrich_company_google') {
+    const { CompaniesEnrichmentService } = await import('../../modules/companies/services/companies-enrichment.service');
+    const enrichmentSvc = new CompaniesEnrichmentService(db);
+    await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
+  } else if (payload.type === 'refresh_companies_google') {
+    const { CompaniesEnrichmentService } = await import('../../modules/companies/services/companies-enrichment.service');
+    const enrichmentSvc = new CompaniesEnrichmentService(db);
+    await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id);
+
+    if (!payload.tenant_id) {
+      await db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: null,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'refresh_companies_google' }),
+          run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
+          max_attempts: 3,
+        })
+        .execute();
+    }
   } else if (payload.type === 'cleanup_activities') {
     const activityController = new ActivityController();
     await activityController.deleteOldActivities();

@@ -72,7 +72,7 @@ export class HouseholdView implements OnInit {
   }
 
   // Active tab state
-  protected activeTab = signal<'members' | 'activity' | 'details'>('members');
+  protected activeTab = signal<'members' | 'activity' | 'details'>('activity');
 
   constructor() {
     this.id = this.route.snapshot.paramMap.get('id');

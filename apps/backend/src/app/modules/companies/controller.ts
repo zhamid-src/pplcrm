@@ -11,6 +11,35 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     super(new CompaniesRepo());
   }
 
+  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
+    const company = (await super.getOneById(input)) as any;
+    if (company) {
+      let currentJson: any = {};
+      if (company.json) {
+        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+      }
+      if (!currentJson || !currentJson.google_enriched) {
+        await this.getRepo()
+          .db.insertInto('background_jobs' as any)
+          .values({
+            tenant_id: input.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'enrich_company_google',
+              company_id: String(company.id),
+              tenant_id: String(input.tenant_id),
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          } as any)
+          .execute()
+          .catch((err) => console.error('Failed to queue google enrichment job on getOneById:', err));
+      }
+    }
+    return company;
+  }
+
   public addCompany(payload: any, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
@@ -165,13 +194,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     } as any;
   }
 
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: any[],
-  ) {
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
     const results = { inserted: 0, errors: 0, skipped: 0 };
     const errorMessages: string[] = [];
 
@@ -205,9 +228,11 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
             notes: raw.notes ?? null,
             file_id: import_id,
           }));
-          await this.getRepo().transaction().execute(async (trx) => {
-            await (trx as any).insertInto('companies').values(companyRows).execute();
-          });
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await (trx as any).insertInto('companies').values(companyRows).execute();
+            });
           results.inserted += validRows.length;
         } catch (err: any) {
           results.errors += validRows.length;

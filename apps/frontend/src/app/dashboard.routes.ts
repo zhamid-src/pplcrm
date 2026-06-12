@@ -225,6 +225,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/teams/ui/team-detail').then((m) => m.TeamDetailComponent),
         data: { mode: 'edit' },
       },
@@ -263,6 +267,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/forms/ui/form-detail').then((m) => m.FormDetailComponent),
       },
     ],
@@ -307,6 +315,10 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+      },
+      {
+        path: ':id/edit',
         loadComponent: () => import('./experiences/companies/ui/company-detail').then((m) => m.CompanyDetail),
       },
     ],

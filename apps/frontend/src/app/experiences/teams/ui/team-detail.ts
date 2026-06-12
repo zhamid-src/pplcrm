@@ -18,12 +18,11 @@ interface PersonOption {
   label: string;
 }
 
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe, RecordActivities],
+  imports: [FormField, RouterModule, Icon, DatePipe],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {

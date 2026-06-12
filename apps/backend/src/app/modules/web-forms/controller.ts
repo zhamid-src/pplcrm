@@ -383,4 +383,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
     throw new Error('No campaign found for this tenant.');
   }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    const res = await this.getRepo().db
+      .selectFrom('user_activity')
+      .select(({ fn }) => fn.count('id').as('total'))
+      .where('tenant_id', '=', tenantId)
+      .where('entity', '=', 'web_forms')
+      .where('entity_id', '=', formId)
+      .where('activity', '=', 'submission')
+      .executeTakeFirst();
+    return Number(res?.total ?? 0);
+  }
 }
