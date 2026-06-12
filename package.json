@@ -5,7 +5,8 @@
   "scripts": {
     "lint": "eslint . --ext .ts",
     "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts",
-    "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts"
+    "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts",
+    "households:regeocode-all": "node --loader ts-node/esm scripts/regeocode-all.ts"
   },
   "private": true,
   "type": "module",

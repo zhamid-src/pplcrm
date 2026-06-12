@@ -125,6 +125,29 @@ describe('geocodeAndMapHousehold Background Job', () => {
     );
   });
 
+  it('should mark status as failed if the address is incomplete', async () => {
+    // Return an incomplete household address (missing street1)
+    dbMock.executeTakeFirst.mockResolvedValue({
+      id: '100',
+      tenant_id: '1',
+      street_num: '123',
+      street1: '',
+      city: 'Chicago',
+    });
+
+    await geocodeAndMapHousehold('100', '1', dbMock);
+
+    expect(dbMock.updateTable).toHaveBeenCalledWith('households');
+    expect(updateMock.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        geocoding_status: 'failed',
+        district: null,
+        precinct: null,
+        ward: null,
+      }),
+    );
+  });
+
   it('should geocode successfully and map boundaries in mock/test mode', async () => {
     // Return a valid household address
     dbMock.executeTakeFirst.mockResolvedValue({

@@ -5,7 +5,7 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models, OperationDataType } from 'common/src/lib/kysely.models';
-import { isBlankAddress } from '../../../lib/address-normalize';
+import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 
 /**
  * Repository for the `households` table.
@@ -24,11 +24,20 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     input: { rows: OperationDataType<'households', 'insert'>[] },
     trx?: Transaction<Models>,
   ) {
-    const createdRows = await super.addMany(input, trx);
+    const processedRows = input.rows.map((row) => {
+      const isBlank = isBlankAddress(row);
+      const isIncomplete = isIncompleteAddress(row);
+      return {
+        ...row,
+        geocoding_status: isBlank || isIncomplete ? 'failed' : 'pending',
+      };
+    });
+
+    const createdRows = await super.addMany({ rows: processedRows }, trx);
     const db = trx || this.db;
 
     const jobs = createdRows
-      .filter((row) => row && row.id && !isBlankAddress(row))
+      .filter((row) => row && row.id && !isBlankAddress(row) && !isIncompleteAddress(row))
       .map((row) => ({
         tenant_id: row.tenant_id,
         queue: 'default',
