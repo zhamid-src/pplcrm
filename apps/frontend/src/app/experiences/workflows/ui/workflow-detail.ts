@@ -17,10 +17,20 @@ import { TagsService } from '@experiences/tags/services/tags-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-workflow-detail',
-  imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe, VisualNewsletterEditorComponent, AddBtnRow],
+  imports: [
+    RouterModule,
+    FormsModule,
+    FormField,
+    Icon,
+    RecordActivities,
+    DatePipe,
+    VisualNewsletterEditorComponent,
+    AddBtnRow,
+  ],
   templateUrl: './workflow-detail.html',
   providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],
 })
@@ -34,6 +44,7 @@ export class WorkflowDetailComponent implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -326,7 +337,12 @@ export class WorkflowDetailComponent implements OnInit {
   protected async deleteWorkflow() {
     const id = this.workflowId();
     if (!id) return;
-    const confirmed = confirm('Delete this workflow?');
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Workflow',
+      message: 'Are you sure you want to delete this workflow? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
@@ -543,9 +559,12 @@ export class WorkflowDetailComponent implements OnInit {
   }
 
   protected async cancelEnrollment(enrollmentId: string): Promise<void> {
-    const confirmCancel = confirm(
-      'Are you sure you want to cancel this enrollment? This stops any future emails in this sequence.',
-    );
+    const confirmCancel = await this.dialogs.confirm({
+      title: 'Cancel Enrollment',
+      message: 'Are you sure you want to cancel this enrollment? This stops any future emails in this sequence.',
+      variant: 'warning',
+      confirmText: 'Cancel Enrollment',
+    });
     if (!confirmCancel) return;
 
     const end = this._loading.begin();

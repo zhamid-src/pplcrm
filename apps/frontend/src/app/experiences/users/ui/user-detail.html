@@ -35,6 +35,9 @@
         [buttonsToShow]="'two'"
         [btn1Text]="'Save User'"
         [btn1Icon]="'save'"
+        [showDelete]="true"
+        [deleteText]="'Delete User'"
+        (deleteClicked)="deleteUser()"
       ></pc-add-btn-row>
     </div>
   </div>

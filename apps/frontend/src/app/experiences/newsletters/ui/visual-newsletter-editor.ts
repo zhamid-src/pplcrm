@@ -16,7 +16,9 @@ import {
   selector: 'pc-visual-newsletter-editor',
   imports: [FormsModule, Icon],
   template: `
-    <div class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner">
+    <div
+      class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
+    >
       <!-- LEFT: VISUAL CANVAS PREVIEW -->
       <div class="flex-1 flex flex-col bg-base-200 h-full overflow-hidden">
         <!-- CANVAS HEADER / TOOLBAR -->
@@ -97,7 +99,9 @@ import {
                               <div class="p-8 text-center text-slate-400">
                                 <pc-icon name="document-text" [size]="8" class="mx-auto text-slate-300 mb-2"></pc-icon>
                                 <p class="text-sm font-medium">Your canvas is empty.</p>
-                                <p class="text-xs text-slate-400 mt-1">Add blocks from the sidebar to begin designing.</p>
+                                <p class="text-xs text-slate-400 mt-1">
+                                  Add blocks from the sidebar to begin designing.
+                                </p>
                               </div>
                             } @else {
                               @for (block of blocks(); track block.id; let idx = $index) {
@@ -109,7 +113,9 @@ import {
                                   (click)="selectBlock(block.id, $event)"
                                 >
                                   <!-- Hover controls -->
-                                  <div class="absolute -top-3 right-2 z-10 hidden group-hover:flex items-center gap-1 bg-primary text-primary-content text-[10px] rounded px-1 shadow-md">
+                                  <div
+                                    class="absolute -top-3 right-2 z-10 hidden group-hover:flex items-center gap-1 bg-primary text-primary-content text-[10px] rounded px-1 shadow-md"
+                                  >
                                     <button
                                       type="button"
                                       class="p-1 hover:bg-primary-focus rounded"
@@ -157,13 +163,14 @@ import {
                                           [style.font-size]="block.styles?.fontSize || '24px'"
                                           [style.text-align]="block.styles?.textAlign || 'center'"
                                           class="font-sans font-bold px-6 leading-tight select-none"
-                                          [innerHTML]="resolveVariablesForPreview(block.content || 'Heading Block', false)"
-                                        >
-                                        </td>
+                                          [innerHTML]="
+                                            resolveVariablesForPreview(block.content || 'Heading Block', false)
+                                          "
+                                        ></td>
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- TEXT BLOCK -->
                                   @if (block.type === 'text') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -175,13 +182,17 @@ import {
                                           [style.font-size]="block.styles?.fontSize || '16px'"
                                           [style.text-align]="block.styles?.textAlign || 'left'"
                                           class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
-                                          [innerHTML]="resolveVariablesForPreview(block.content || 'Click here to write some text...', false)"
-                                        >
-                                        </td>
+                                          [innerHTML]="
+                                            resolveVariablesForPreview(
+                                              block.content || 'Click here to write some text...',
+                                              false
+                                            )
+                                          "
+                                        ></td>
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- IMAGE BLOCK -->
                                   @if (block.type === 'image') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -193,7 +204,10 @@ import {
                                           class="px-6"
                                         >
                                           <img
-                                            [src]="block.imageUrl || 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'"
+                                            [src]="
+                                              block.imageUrl ||
+                                              'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'
+                                            "
                                             [alt]="block.imageAlt || 'Newsletter Image'"
                                             [style.max-width]="block.imageWidth || '100%'"
                                             class="w-full height-auto border-0 block rounded"
@@ -202,7 +216,7 @@ import {
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- BUTTON BLOCK -->
                                   @if (block.type === 'button') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -225,7 +239,9 @@ import {
                                                   class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
                                                   [style.color]="block.styles?.color || '#ffffff'"
                                                   [style.font-size]="block.styles?.fontSize || '16px'"
-                                                  [innerHTML]="resolveVariablesForPreview(block.content || 'Click Me', true)"
+                                                  [innerHTML]="
+                                                    resolveVariablesForPreview(block.content || 'Click Me', true)
+                                                  "
                                                 >
                                                 </span>
                                               </td>
@@ -235,7 +251,7 @@ import {
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- DIVIDER BLOCK -->
                                   @if (block.type === 'divider') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -254,7 +270,7 @@ import {
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- SPACER BLOCK -->
                                   @if (block.type === 'spacer') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -268,7 +284,7 @@ import {
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- SOCIAL LINKS BLOCK -->
                                   @if (block.type === 'social') {
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -285,9 +301,23 @@ import {
                                                 <td class="px-2">
                                                   <span
                                                     class="inline-flex items-center justify-center w-8 h-8 select-none"
-                                                    [style.background-color]="getSocialBgColor(social.platform, block.socialIconStyle || 'circular-solid')"
-                                                    [style.color]="getSocialIconColor(social.platform, block.socialIconStyle || 'circular-solid')"
-                                                    [style.border-radius]="(block.socialIconStyle || 'circular-solid').startsWith('circular') ? '50%' : '0%'"
+                                                    [style.background-color]="
+                                                      getSocialBgColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                                                    [style.color]="
+                                                      getSocialIconColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                                                    [style.border-radius]="
+                                                      (block.socialIconStyle || 'circular-solid').startsWith('circular')
+                                                        ? '50%'
+                                                        : '0%'
+                                                    "
                                                   >
                                                     <svg
                                                       viewBox="0 0 24 24"
@@ -305,7 +335,7 @@ import {
                                       </tr>
                                     </table>
                                   }
- 
+
                                   <!-- FOOTER BLOCK -->
                                   @if (block.type === 'footer') {
                                     <table
@@ -322,8 +352,24 @@ import {
                                           [style.padding-bottom.px]="block.styles?.paddingBottom || 24"
                                           class="font-sans px-6 text-xs text-center leading-normal"
                                         >
-                                          <p class="font-bold mb-1" [innerHTML]="resolveVariablesForPreview(block.footerCompany || 'Company Name Inc.', false)"></p>
-                                          <p class="mb-3 whitespace-pre-wrap" [innerHTML]="resolveVariablesForPreview(block.footerAddress || '123 Address Rd, City, State', false)"></p>
+                                          <p
+                                            class="font-bold mb-1"
+                                            [innerHTML]="
+                                              resolveVariablesForPreview(
+                                                block.footerCompany || 'Company Name Inc.',
+                                                false
+                                              )
+                                            "
+                                          ></p>
+                                          <p
+                                            class="mb-3 whitespace-pre-wrap"
+                                            [innerHTML]="
+                                              resolveVariablesForPreview(
+                                                block.footerAddress || '123 Address Rd, City, State',
+                                                false
+                                              )
+                                            "
+                                          ></p>
                                           <p>
                                             You are receiving this email because you opted in on our website.
                                             <br />
@@ -350,7 +396,8 @@ import {
               <div class="alert alert-warning text-xs py-2">
                 <pc-icon name="exclamation-triangle" [size]="4" class="mr-1"></pc-icon>
                 <span>
-                  <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be converted back into visual blocks.
+                  <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be
+                  converted back into visual blocks.
                 </span>
               </div>
               <textarea
@@ -365,7 +412,9 @@ import {
       </div>
 
       <!-- RIGHT: CONTROL PANEL -->
-      <aside class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden">
+      <aside
+        class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
+      >
         <!-- TABS -->
         <div role="tablist" class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
           <a
@@ -465,7 +514,9 @@ import {
 
               <!-- Quick action tip -->
               <div class="mt-4 rounded bg-info/10 border border-info/20 p-3 text-xs text-info-content">
-                <p><strong>Tip:</strong> Hover over blocks on the canvas to move them up/down, duplicate, or delete them.</p>
+                <p>
+                  <strong>Tip:</strong> Hover over blocks on the canvas to move them up/down, duplicate, or delete them.
+                </p>
               </div>
             </div>
           }
@@ -476,11 +527,7 @@ import {
               <div class="space-y-4">
                 <div class="flex items-center justify-between border-b border-base-200 pb-2">
                   <span class="text-xs uppercase font-bold text-base-content/60">Selected: {{ block.type }}</span>
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-error text-white"
-                    (click)="deleteBlock(block.id)"
-                  >
+                  <button type="button" class="btn btn-xs btn-error text-white" (click)="deleteBlock(block.id)">
                     Delete Block
                   </button>
                 </div>
@@ -503,12 +550,14 @@ import {
                         (ngModelChange)="updateBlocks()"
                       ></textarea>
                     }
-                    
+
                     <!-- Quick-Insert Variables -->
                     <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
                       <div class="flex items-center justify-between mb-1.5">
                         <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
-                        <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+                        <span class="text-[9px] text-base-content/50"
+                          >Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span
+                        >
                       </div>
                       <div class="flex flex-wrap gap-1">
                         <button
@@ -690,12 +739,14 @@ import {
                       [(ngModel)]="block.content"
                       (ngModelChange)="updateBlocks()"
                     />
-                    
+
                     <!-- Quick-Insert Variables -->
                     <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
                       <div class="flex items-center justify-between mb-1.5">
                         <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
-                        <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+                        <span class="text-[9px] text-base-content/50"
+                          >Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span
+                        >
                       </div>
                       <div class="flex flex-wrap gap-1">
                         <button
@@ -849,7 +900,9 @@ import {
                     <label class="label text-xs font-semibold py-1">Social Networks</label>
                     @for (social of block.socials; track social.platform) {
                       <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
-                        <span class="text-[10px] font-bold uppercase text-base-content/60">{{ social.platform }} URL</span>
+                        <span class="text-[10px] font-bold uppercase text-base-content/60"
+                          >{{ social.platform }} URL</span
+                        >
                         <input
                           type="text"
                           class="input input-bordered input-xs w-full font-mono"
@@ -998,8 +1051,6 @@ import {
               </div>
             }
           }
-
-
         </div>
       </aside>
     </div>
@@ -1063,7 +1114,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     const escaped = this.escapeHtml(text);
     return escaped.replace(/\{([a-zA-Z0-9_]+)(?:\|([^}]+))?\}/g, (match, varName, fallback) => {
       const mockValue = this.getMockVariableValue(varName);
-      const displayValue = mockValue !== undefined ? mockValue : (fallback !== undefined ? fallback : match);
+      const displayValue = mockValue !== undefined ? mockValue : fallback !== undefined ? fallback : match;
       if (isButton) {
         return `<span class="border-b border-dashed border-current font-semibold" title="Variable: ${match}">${displayValue}</span>`;
       }
@@ -1147,9 +1198,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     }
   }
 
-  protected addBlock(
-    type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social' | 'footer',
-  ): void {
+  protected addBlock(type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social' | 'footer'): void {
     const id = Math.random().toString(36).substring(2, 9);
     const styles: NonNullable<EmailBlock['styles']> = {
       textAlign: 'center',
@@ -1277,7 +1326,10 @@ export class VisualNewsletterEditorComponent implements OnInit {
   protected handleRawHtmlEdit(html: string): void {
     this.htmlContentChange.emit(html);
     // Simple text version conversion from html tags
-    const text = html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    const text = html
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     this.plainTextContentChange.emit(text);
   }
 

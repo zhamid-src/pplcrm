@@ -13,7 +13,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
   selector: 'pc-imports-page',
   imports: [FormsModule, Icon, SpinOnClickDirective],
   templateUrl: './imports-page.html',
-  })
+})
 export class ImportsPage {
   private readonly destroyRef = inject(DestroyRef);
   private readonly alerts = inject(AlertService);
@@ -58,9 +58,7 @@ export class ImportsPage {
 
   private startPolling() {
     this.pollInterval = setInterval(async () => {
-      const hasActiveJobs = this.items().some(
-        (item) => item.status === 'pending' || item.status === 'processing'
-      );
+      const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
       if (hasActiveJobs) {
         try {
           const list = await this.imports.list();

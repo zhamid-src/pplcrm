@@ -163,8 +163,18 @@ export class NewsletterDetailComponent implements OnInit {
     let clicksArea = '';
 
     if (timeline.length > 0) {
-      opensPath = `M ${points[0].x} ${points[0].yOpens} ` + points.slice(1).map(p => `L ${p.x} ${p.yOpens}`).join(' ');
-      clicksPath = `M ${points[0].x} ${points[0].yClicks} ` + points.slice(1).map(p => `L ${p.x} ${p.yClicks}`).join(' ');
+      opensPath =
+        `M ${points[0].x} ${points[0].yOpens} ` +
+        points
+          .slice(1)
+          .map((p) => `L ${p.x} ${p.yOpens}`)
+          .join(' ');
+      clicksPath =
+        `M ${points[0].x} ${points[0].yClicks} ` +
+        points
+          .slice(1)
+          .map((p) => `L ${p.x} ${p.yClicks}`)
+          .join(' ');
 
       const bottomY = height - paddingBottom;
       opensArea = opensPath + ` L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;

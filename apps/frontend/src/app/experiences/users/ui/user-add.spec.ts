@@ -16,20 +16,20 @@ describe('UserAddComponent', () => {
   beforeEach(async () => {
     mockUsersSvc = {
       add: vi.fn(),
-      triggerRefresh: vi.fn()
+      triggerRefresh: vi.fn(),
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
-      showSuccess: vi.fn()
+      showSuccess: vi.fn(),
     };
 
     mockRouter = {
-      navigate: vi.fn()
+      navigate: vi.fn(),
     };
 
     mockActivatedRoute = {
-      snapshot: {}
+      snapshot: {},
     };
 
     await TestBed.configureTestingModule({
@@ -38,8 +38,8 @@ describe('UserAddComponent', () => {
         { provide: AuthUsersService, useValue: mockUsersSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
-        { provide: ActivatedRoute, useValue: mockActivatedRoute }
-      ]
+        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(UserAddComponent);
@@ -53,7 +53,7 @@ describe('UserAddComponent', () => {
       email: '',
       first_name: '',
       last_name: '',
-      role: 'user'
+      role: 'user',
     });
     expect(component['form']().invalid()).toBe(true);
   });
@@ -64,7 +64,7 @@ describe('UserAddComponent', () => {
       email: '',
       first_name: 'John',
       last_name: '',
-      role: ''
+      role: '',
     });
     fixture.detectChanges();
     expect(component['form']().invalid()).toBe(true);
@@ -74,7 +74,7 @@ describe('UserAddComponent', () => {
       email: 'not-an-email',
       first_name: 'John',
       last_name: '',
-      role: ''
+      role: '',
     });
     fixture.detectChanges();
     expect(component['form']().invalid()).toBe(true);
@@ -84,7 +84,7 @@ describe('UserAddComponent', () => {
       email: 'john@example.com',
       first_name: '',
       last_name: '',
-      role: ''
+      role: '',
     });
     fixture.detectChanges();
     expect(component['form']().invalid()).toBe(true);
@@ -94,7 +94,7 @@ describe('UserAddComponent', () => {
       email: 'john@example.com',
       first_name: 'John',
       last_name: '',
-      role: ''
+      role: '',
     });
     fixture.detectChanges();
     expect(component['form']().invalid()).toBe(false);
@@ -113,7 +113,7 @@ describe('UserAddComponent', () => {
       email: 'john@example.com',
       first_name: ' John  ',
       last_name: ' Doe  ',
-      role: ' admin '
+      role: ' admin ',
     });
     fixture.detectChanges();
 
@@ -123,7 +123,7 @@ describe('UserAddComponent', () => {
       email: 'john@example.com',
       first_name: 'John',
       last_name: 'Doe',
-      role: 'admin'
+      role: 'admin',
     });
     expect(mockUsersSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Invitation sent');
@@ -138,7 +138,7 @@ describe('UserAddComponent', () => {
       email: 'john@example.com',
       first_name: 'John',
       last_name: '',
-      role: ''
+      role: '',
     });
     fixture.detectChanges();
 

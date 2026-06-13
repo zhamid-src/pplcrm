@@ -9,6 +9,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-company-detail',
@@ -193,8 +194,6 @@ import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
                     }
                   }
                 </label>
-
-
               </div>
             </div>
 
@@ -240,6 +239,7 @@ export class CompanyDetail implements OnInit {
   private readonly companiesSvc = inject(CompaniesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly company = signal<any | null>(null);
@@ -310,7 +310,12 @@ export class CompanyDetail implements OnInit {
 
   protected async deleteCompany() {
     if (!this.id) return;
-    const confirmed = confirm('Delete this company?');
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
     if (!confirmed) return;
     const end = this._loading.begin();
     try {

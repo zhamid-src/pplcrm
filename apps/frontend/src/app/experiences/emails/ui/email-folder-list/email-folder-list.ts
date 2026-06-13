@@ -28,7 +28,7 @@ export class EmailFolderList implements OnInit {
 
   /** Sidebar collapsed flag */
   public readonly foldersCollapsed = signal(false);
-  
+
   /** Real Folders section collapsed flag (collapsed by default) */
   public readonly realFoldersCollapsed = signal(true);
 

@@ -210,7 +210,7 @@ export class EmailsStore {
     this._isSyncing.set(true);
     try {
       const result = await this.emailSvc.syncEmails();
-      
+
       // Poll status every 3 seconds for up to 5 minutes (100 attempts)
       let attempts = 0;
       while (attempts < 100) {
@@ -232,7 +232,12 @@ export class EmailsStore {
       return result;
     } catch (e: any) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('No email accounts connected') || msg.includes('No Microsoft account connected') || msg.includes('No Google account connected') || msg.includes('Token refresh failed')) {
+      if (
+        msg.includes('No email accounts connected') ||
+        msg.includes('No Microsoft account connected') ||
+        msg.includes('No Google account connected') ||
+        msg.includes('Token refresh failed')
+      ) {
         this.alerts.show({
           text: 'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
           type: 'warning',

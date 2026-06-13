@@ -5,6 +5,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamsService } from '../services/teams-service';
 import { TeamDetailComponent } from './team-detail';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 describe('TeamDetailComponent', () => {
   let component: TeamDetailComponent;
@@ -14,6 +15,7 @@ describe('TeamDetailComponent', () => {
   let mockAlertSvc: any;
   let mockRouter: any;
   let mockActivatedRoute: any;
+  let mockConfirmDialogSvc: any;
 
   beforeEach(async () => {
     mockTeamsSvc = {
@@ -51,6 +53,10 @@ describe('TeamDetailComponent', () => {
         },
       },
     };
+
+    mockConfirmDialogSvc = {
+      confirm: vi.fn().mockResolvedValue(true),
+    };
   });
 
   async function createComponent() {
@@ -62,6 +68,7 @@ describe('TeamDetailComponent', () => {
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: ConfirmDialogService, useValue: mockConfirmDialogSvc },
       ],
     }).compileComponents();
 
@@ -209,7 +216,7 @@ describe('TeamDetailComponent', () => {
     };
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
     mockTeamsSvc.delete.mockResolvedValue(true);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockConfirmDialogSvc.confirm.mockResolvedValue(true);
 
     await createComponent();
     fixture.detectChanges();
@@ -217,7 +224,7 @@ describe('TeamDetailComponent', () => {
 
     await component['deleteTeam']();
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete this team?');
+    expect(mockConfirmDialogSvc.confirm).toHaveBeenCalled();
     expect(mockTeamsSvc.delete).toHaveBeenCalledWith('team-123');
     expect(mockTeamsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Team deleted');

@@ -53,7 +53,7 @@ export class EmailBody {
   });
   protected readonly bodyHtml = computed(() => {
     const id = this.emailId();
-    return id ? this.store.getEmailBodyById(id)() ?? '' : '';
+    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
   });
 
   /** Nullable input to avoid early read before Angular sets it */

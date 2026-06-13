@@ -1,13 +1,14 @@
 <div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
   <!-- Top Navigation & Title -->
-  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <!-- Top Navigation & Title -->
+  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
     <div class="flex items-center gap-3">
-      <a routerLink="/lists" class="btn btn-circle btn-ghost btn-sm">
-        <pc-icon name="arrow-left" [size]="5"></pc-icon>
-      </a>
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ listData()?.name }}</h1>
+          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
+            {{ listData()?.name }}
+          </h1>
           @if (listData()?.is_dynamic) {
           <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
           } @else {
@@ -18,15 +19,15 @@
       </div>
     </div>
 
-    <!-- Actions (Refresh for Dynamic lists) -->
-    @if (listData()?.is_dynamic) {
-    <div class="flex items-center gap-3 self-start sm:self-center">
-      <div class="text-xs text-base-content/60 text-right hidden md:block">
+    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
+    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
+      @if (listData()?.is_dynamic) {
+      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
         <div>Last Refreshed</div>
         <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
       </div>
       <button
-        class="btn btn-outline btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200"
+        class="btn btn-outline btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
         [disabled]="refreshing() || loading()"
         (click)="refreshList()"
       >
@@ -36,8 +37,17 @@
         <pc-icon name="arrow-path" [size]="4"></pc-icon>
         Refresh Now }
       </button>
+      }
+      <pc-add-btn-row
+        [isLoading]="loading()"
+        [btn1Text]="'Edit List'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        (btn1Clicked)="editList()"
+      ></pc-add-btn-row>
     </div>
-    }
   </div>
 
   <!-- Loading State -->

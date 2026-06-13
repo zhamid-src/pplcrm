@@ -104,7 +104,7 @@ describe('PersonView', () => {
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'issue');
     expect(mockPersonsSvc.getActivity).toHaveBeenCalledWith('p1');
     expect(mockVolunteerSvc.getVolunteerStats).toHaveBeenCalledWith('p1');
-    
+
     expect(component['fullName']()).toBe('John A Doe');
     expect(component['initials']()).toBe('JD');
     expect(component['tags']()).toContain('volunteer');

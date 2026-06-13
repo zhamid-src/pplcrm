@@ -20,7 +20,7 @@ interface DashboardStats {
           <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
           <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
         </div>
-        <button 
+        <button
           class="btn btn-xs btn-outline btn-ghost gap-1 font-medium capitalize"
           (click)="collapsed.set(!collapsed())"
         >
@@ -34,7 +34,9 @@ interface DashboardStats {
           <!-- Total Campaigns Sent -->
           <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
             <div class="stat p-4">
-              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Sent Campaigns</div>
+              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+                Sent Campaigns
+              </div>
               <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1">{{ stats().totalSent }}</div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
             </div>
@@ -43,32 +45,60 @@ interface DashboardStats {
           <!-- Total Recipients -->
           <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
             <div class="stat p-4">
-              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Total Delivered</div>
-              <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">{{ formatNumber(stats().totalRecipients) }}</div>
+              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+                Total Delivered
+              </div>
+              <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">
+                {{ formatNumber(stats().totalRecipients) }}
+              </div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
             </div>
           </div>
 
           <!-- Avg Open Rate -->
-          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4">
+          <div
+            class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+          >
             <div>
-              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Open Rate</div>
-              <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">{{ stats().avgOpenRate.toFixed(1) }}%</div>
+              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+                Avg Open Rate
+              </div>
+              <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
+                {{ stats().avgOpenRate.toFixed(1) }}%
+              </div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
             </div>
-            <div class="radial-progress text-success font-bold text-[10px] flex-shrink-0" [style.--value]="stats().avgOpenRate" [style.--size]="'3rem'" [style.--thickness]="'4px'" role="progressbar">
+            <div
+              class="radial-progress text-success font-bold text-[10px] flex-shrink-0"
+              [style.--value]="stats().avgOpenRate"
+              [style.--size]="'3rem'"
+              [style.--thickness]="'4px'"
+              role="progressbar"
+            >
               {{ stats().avgOpenRate.toFixed(0) }}%
             </div>
           </div>
 
           <!-- Avg Click Rate -->
-          <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4">
+          <div
+            class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+          >
             <div>
-              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Click Rate</div>
-              <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">{{ stats().avgClickRate.toFixed(1) }}%</div>
+              <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+                Avg Click Rate
+              </div>
+              <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">
+                {{ stats().avgClickRate.toFixed(1) }}%
+              </div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
             </div>
-            <div class="radial-progress text-accent font-bold text-[10px] flex-shrink-0" [style.--value]="stats().avgClickRate" [style.--size]="'3rem'" [style.--thickness]="'4px'" role="progressbar">
+            <div
+              class="radial-progress text-accent font-bold text-[10px] flex-shrink-0"
+              [style.--value]="stats().avgClickRate"
+              [style.--size]="'3rem'"
+              [style.--thickness]="'4px'"
+              role="progressbar"
+            >
               {{ stats().avgClickRate.toFixed(0) }}%
             </div>
           </div>
@@ -77,7 +107,9 @@ interface DashboardStats {
           <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
             <div class="stat p-4">
               <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-              <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1">{{ stats().totalBounces }}</div>
+              <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1">
+                {{ stats().totalBounces }}
+              </div>
               <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
             </div>
           </div>
@@ -86,7 +118,9 @@ interface DashboardStats {
         <!-- Comparative Chart Panel -->
         <div class="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">Campaign Comparison (Last 8 Dispatched)</h3>
+            <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">
+              Campaign Comparison (Last 8 Dispatched)
+            </h3>
             <div class="flex items-center gap-4 text-xs font-medium">
               <div class="flex items-center gap-1.5">
                 <span class="inline-block h-3 w-3 rounded bg-primary"></span>
@@ -186,9 +220,13 @@ interface DashboardStats {
               </svg>
             </ng-container>
             <ng-template #noChartData>
-              <div class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center">
+              <div
+                class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center"
+              >
                 <span class="text-sm font-medium text-base-content/40">No analytics data available</span>
-                <span class="text-xs text-base-content/30">Analytics comparison will appear here once campaigns are sent and tracked.</span>
+                <span class="text-xs text-base-content/30"
+                  >Analytics comparison will appear here once campaigns are sent and tracked.</span
+                >
               </div>
             </ng-template>
           </div>
@@ -196,14 +234,16 @@ interface DashboardStats {
       </div>
     </div>
   `,
-  styles: [`
-    .fill-primary {
-      fill: var(--color-primary, #6366f1);
-    }
-    .fill-secondary {
-      fill: var(--color-secondary, #10b981);
-    }
-  `]
+  styles: [
+    `
+      .fill-primary {
+        fill: var(--color-primary, #6366f1);
+      }
+      .fill-secondary {
+        fill: var(--color-secondary, #10b981);
+      }
+    `,
+  ],
 })
 export class NewslettersDashboardComponent {
   public rows = input<any[]>([]);
@@ -214,7 +254,7 @@ export class NewslettersDashboardComponent {
     const list = this.rows() || [];
     // Only aggregate records that have been sent
     const sentList = list.filter((r) => r.status === 'sent');
-    
+
     if (sentList.length === 0) {
       return { totalSent: 0, totalRecipients: 0, avgOpenRate: 0, avgClickRate: 0, totalBounces: 0 };
     }
@@ -253,11 +293,14 @@ export class NewslettersDashboardComponent {
       .sort((a, b) => new Date(b.send_date).getTime() - new Date(a.send_date).getTime());
 
     // Take up to 8 items, then reverse to display chronologically (left to right)
-    return sent.slice(0, 8).reverse().map((r) => ({
-      name: r.name || 'Newsletter',
-      openRate: Number(r.open_rate ?? 0),
-      clickRate: Number(r.click_rate ?? 0),
-    }));
+    return sent
+      .slice(0, 8)
+      .reverse()
+      .map((r) => ({
+        name: r.name || 'Newsletter',
+        openRate: Number(r.open_rate ?? 0),
+        clickRate: Number(r.click_rate ?? 0),
+      }));
   });
 
   // SVG Chart layout computations

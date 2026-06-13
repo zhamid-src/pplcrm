@@ -6,6 +6,7 @@ import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
@@ -35,6 +36,7 @@ export class TeamDetailComponent implements OnInit {
   private readonly lists = inject(ListsService);
   private readonly auth = inject(AuthService);
   private readonly tasksSvc = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected id: string | null = null;
 
@@ -183,7 +185,12 @@ export class TeamDetailComponent implements OnInit {
 
   protected async deleteTeam() {
     if (!this.id) return;
-    const confirmed = confirm('Delete this team?');
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
     if (!confirmed) return;
     this.saving.set(true);
     try {
