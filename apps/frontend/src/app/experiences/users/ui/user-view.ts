@@ -30,6 +30,11 @@ export class UserViewComponent implements OnInit {
   protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
 
+  protected readonly avatarUrl = computed(() => {
+    const user = this.detail();
+    return user ? this.auth.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
   protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
   protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
   protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
