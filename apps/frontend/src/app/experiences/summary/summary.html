@@ -46,10 +46,10 @@
             <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
             <button
               type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-semibold"
+              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
               (click)="showSlaDetails.set(!showSlaDetails())"
             >
-              <pc-icon [name]="showSlaDetails() ? 'eye-slash' : 'eye'" [size]="3.5"></pc-icon>
+              <pc-icon [name]="showSlaDetails() ? 'chevron-up' : 'chevron-down'" [size]="3.5"></pc-icon>
               {{ showSlaDetails() ? 'Hide Details' : 'View Details' }}
             </button>
           </div>
@@ -81,10 +81,10 @@
             <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
             <button
               type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-semibold"
+              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
               (click)="showSlaDetails.set(!showSlaDetails())"
             >
-              <pc-icon [name]="showSlaDetails() ? 'eye-slash' : 'eye'" [size]="3.5"></pc-icon>
+              <pc-icon [name]="showSlaDetails() ? 'chevron-up' : 'chevron-down'" [size]="3.5"></pc-icon>
               {{ showSlaDetails() ? 'Hide Details' : 'View Details' }}
             </button>
           </div>
@@ -103,7 +103,7 @@
     </div>
 
     <!-- SLA Details Action Center -->
-    @if (showSlaDetails() || totalEmailSlaBreaches() > 0 || totalTaskSlaBreaches() > 0) {
+    @if (showSlaDetails()) {
     <pc-sla-details
       [breachedEmails]="breachedEmails()"
       [breachedTasks]="breachedTasks()"
