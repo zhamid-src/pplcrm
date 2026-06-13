@@ -438,7 +438,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           trx,
         );
       });
-    return false;
+    return true;
   }
 
   /**
