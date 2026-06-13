@@ -17,7 +17,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { cloneQueryBuilderNode, getAllOptionsType, QueryBuilderGroupNode } from '@common';
+import { cloneQueryBuilderNode, getAllOptionsType, QueryBuilderGroupNode, QueueExportInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { Tags } from '@uxcommon/components/tags/tags';
@@ -2166,8 +2166,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       listId: this.activeListId(),
     });
     await this.gridSvc.queueExport({
-      entity:
-        this.config.messages.exportEntity || this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_'),
+      entity: (this.config.messages.exportEntity ||
+        this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
       options,
       columns: this.visibleColumnFields(),
       fileName: this.config.messages.exportFileName,
