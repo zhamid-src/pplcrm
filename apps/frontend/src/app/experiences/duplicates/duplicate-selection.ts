@@ -1,6 +1,15 @@
-import { Component } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { CompaniesService } from '@experiences/companies/services/companies-service';
+import { HouseholdsService } from '@experiences/households/services/households-service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Icon } from '@icons/icon';
+
+interface DuplicateCounts {
+  people: number;
+  households: number;
+  companies: number;
+}
 
 @Component({
   selector: 'pc-duplicate-selection',
@@ -30,9 +39,16 @@ import { Icon } from '@icons/icon';
                 <pc-icon name="identification" [size]="6"></pc-icon>
               </div>
               <div class="flex-1">
-                <h3 class="font-bold text-lg text-base-content mb-1 group-hover:text-primary transition-colors">
-                  People
-                </h3>
+                <div class="flex items-center gap-3 mb-1">
+                  <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-colors">People</h3>
+                  @if (isLoading()) {
+                    <div class="skeleton h-5 w-8 rounded-full opacity-50"></div>
+                  } @else if (counts().people > 0) {
+                    <span class="badge badge-warning badge-sm font-bold">{{ counts().people }} found</span>
+                  } @else {
+                    <span class="badge badge-success badge-sm badge-outline font-bold">Clean</span>
+                  }
+                </div>
                 <p class="text-sm text-base-content/60 font-light">
                   Review and merge duplicate contacts sharing the same email or name at the same address.
                 </p>
@@ -54,9 +70,18 @@ import { Icon } from '@icons/icon';
                 <pc-icon name="house-modern" [size]="6"></pc-icon>
               </div>
               <div class="flex-1">
-                <h3 class="font-bold text-lg text-base-content mb-1 group-hover:text-secondary transition-colors">
-                  Households
-                </h3>
+                <div class="flex items-center gap-3 mb-1">
+                  <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-colors">
+                    Households
+                  </h3>
+                  @if (isLoading()) {
+                    <div class="skeleton h-5 w-8 rounded-full opacity-50"></div>
+                  } @else if (counts().households > 0) {
+                    <span class="badge badge-warning badge-sm font-bold">{{ counts().households }} found</span>
+                  } @else {
+                    <span class="badge badge-success badge-sm badge-outline font-bold">Clean</span>
+                  }
+                </div>
                 <p class="text-sm text-base-content/60 font-light">
                   Review and merge duplicate household records sharing the exact same address fingerprint.
                 </p>
@@ -78,9 +103,18 @@ import { Icon } from '@icons/icon';
                 <pc-icon name="briefcase" [size]="6"></pc-icon>
               </div>
               <div class="flex-1">
-                <h3 class="font-bold text-lg text-base-content mb-1 group-hover:text-accent transition-colors">
-                  Companies
-                </h3>
+                <div class="flex items-center gap-3 mb-1">
+                  <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-colors">
+                    Companies
+                  </h3>
+                  @if (isLoading()) {
+                    <div class="skeleton h-5 w-8 rounded-full opacity-50"></div>
+                  } @else if (counts().companies > 0) {
+                    <span class="badge badge-warning badge-sm font-bold">{{ counts().companies }} found</span>
+                  } @else {
+                    <span class="badge badge-success badge-sm badge-outline font-bold">Clean</span>
+                  }
+                </div>
                 <p class="text-sm text-base-content/60 font-light">
                   Review and merge duplicate company records sharing the same name.
                 </p>
@@ -103,4 +137,39 @@ import { Icon } from '@icons/icon';
     `,
   ],
 })
-export class DuplicateSelectionComponent {}
+export class DuplicateSelectionComponent implements OnInit {
+  private personsSvc = inject(PersonsService);
+  private householdsSvc = inject(HouseholdsService);
+  private companiesSvc = inject(CompaniesService);
+
+  public isLoading = signal(true);
+  public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
+
+  async ngOnInit() {
+    this.isLoading.set(true);
+
+    // Use page: 1, pageSize: 1 just to get the 'total' metadata quickly without pulling heavy arrays
+    const options = { page: 1, pageSize: 1 };
+
+    try {
+      // Fetch all three concurrently so the user isn't waiting for a waterfall
+      // TODO: Implement a dedicated getDuplicateCounts call
+      const [peopleRes, householdsRes, companiesRes] = await Promise.allSettled([
+        this.personsSvc.getPotentialDuplicates(options),
+        this.householdsSvc.getPotentialDuplicates(options),
+        this.companiesSvc.getPotentialDuplicates(options),
+      ]);
+
+      this.counts.set({
+        people: peopleRes.status === 'fulfilled' ? peopleRes.value.total : 0,
+        households: householdsRes.status === 'fulfilled' ? householdsRes.value.total : 0,
+        companies: companiesRes.status === 'fulfilled' ? companiesRes.value.total : 0,
+      });
+    } catch (error) {
+      console.error('Failed to load duplicate counts', error);
+      // In case of error, we default to 0 (already set), but you could also show an error badge state
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+}
