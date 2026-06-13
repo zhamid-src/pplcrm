@@ -63,7 +63,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       query = query
         .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
         .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags);
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
     }
 
     const rows = await query.execute();
