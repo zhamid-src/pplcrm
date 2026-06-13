@@ -125,8 +125,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!table) return;
     requestAnimationFrame(() => {
       if (!this.pctrl) return;
-      const measured = this.pctrl.measureHeaderWidths(table);
-      if (measured.selectionWidth != null) this.selectionStickyWidth.set(measured.selectionWidth);
+      this.pctrl.measureHeaderWidths(table);
       const minMap = this.computeHeaderMinWidths(table);
       if (Object.keys(minMap).length > 0) {
         this.headerMinWidths.set(minMap);
