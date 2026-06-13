@@ -47,10 +47,13 @@
             <button
               type="button"
               class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="showSlaDetails.set(!showSlaDetails())"
+              (click)="toggleSlaDetails('emails')"
             >
-              <pc-icon [name]="showSlaDetails() ? 'chevron-up' : 'chevron-down'" [size]="3.5"></pc-icon>
-              {{ showSlaDetails() ? 'Hide Details' : 'View Details' }}
+              <pc-icon
+                [name]="showSlaDetails() && defaultSlaTab() === 'emails' ? 'chevron-up' : 'chevron-down'"
+                [size]="3.5"
+              ></pc-icon>
+              {{ showSlaDetails() && defaultSlaTab() === 'emails' ? 'Hide Details' : 'View Details' }}
             </button>
           </div>
           <div class="flex items-baseline gap-2 mt-1">
@@ -82,10 +85,13 @@
             <button
               type="button"
               class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="showSlaDetails.set(!showSlaDetails())"
+              (click)="toggleSlaDetails('tasks')"
             >
-              <pc-icon [name]="showSlaDetails() ? 'chevron-up' : 'chevron-down'" [size]="3.5"></pc-icon>
-              {{ showSlaDetails() ? 'Hide Details' : 'View Details' }}
+              <pc-icon
+                [name]="showSlaDetails() && defaultSlaTab() === 'tasks' ? 'chevron-up' : 'chevron-down'"
+                [size]="3.5"
+              ></pc-icon>
+              {{ showSlaDetails() && defaultSlaTab() === 'tasks' ? 'Hide Details' : 'View Details' }}
             </button>
           </div>
           <div class="flex items-baseline gap-2 mt-1">
@@ -109,6 +115,7 @@
       [breachedTasks]="breachedTasks()"
       [emailSlaHours]="emailSlaHours()"
       [taskSlaHours]="taskSlaHours()"
+      [(activeTab)]="defaultSlaTab"
     />
     }
 

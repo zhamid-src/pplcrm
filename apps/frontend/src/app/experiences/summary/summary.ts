@@ -43,6 +43,7 @@ export class Summary implements OnInit {
   protected readonly taskSlaWarningThreshold = signal(1);
   protected readonly taskSlaCriticalThreshold = signal(4);
   protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
 
   protected readonly emailSlaStatus = computed(() => {
     const breaches = this.totalEmailSlaBreaches();
@@ -312,6 +313,15 @@ export class Summary implements OnInit {
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
     } catch (e) {
       return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
     }
   }
 }
