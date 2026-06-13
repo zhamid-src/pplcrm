@@ -672,11 +672,11 @@ export class DuplicateManager implements OnInit {
       let response: { groups: any[]; total: number } = { groups: [], total: 0 };
       const options = { page: this.currentPage(), pageSize: this.pageSize() };
       if (mode === 'people') {
-        response = await this.personsSvc.findPotentialDuplicates(options);
+        response = await this.personsSvc.getPotentialDuplicates(options);
       } else if (mode === 'households') {
-        response = await this.householdsSvc.findPotentialDuplicates(options);
+        response = await this.householdsSvc.getPotentialDuplicates(options);
       } else if (mode === 'companies') {
-        response = await this.companiesSvc.findPotentialDuplicates(options);
+        response = await this.companiesSvc.getPotentialDuplicates(options);
       }
 
       this.totalGroups.set(response.total);
@@ -771,14 +771,33 @@ export class DuplicateManager implements OnInit {
           }
           this.alertSvc.showSuccess(`Successfully merged duplicate records into "${primaryName}"`);
 
-          const currentGroups = this.groups().filter((_, idx) => idx !== groupIndex);
-          this.groups.set(currentGroups);
-          this.totalGroups.update((t) => Math.max(0, t - 1));
+          // Remove the merged group
+          let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
 
-          if (currentGroups.length === 0 && this.currentPage() > 1) {
+          // Clean up the deleted sourceId from any other group
+          updatedGroups = updatedGroups.map((g) => {
+            if (mode === 'people') {
+              return { ...g, persons: g.persons?.filter((p) => p.id !== sourceId) };
+            } else if (mode === 'households') {
+              return { ...g, households: g.households?.filter((h) => h.id !== sourceId) };
+            } else if (mode === 'companies') {
+              return { ...g, companies: g.companies?.filter((c) => c.id !== sourceId) };
+            }
+            return g;
+          });
+
+          // Filter out any other groups that now have <= 1 record left
+          const initialLength = updatedGroups.length;
+          updatedGroups = updatedGroups.filter((g) => this.getItemsCount(g) > 1);
+          const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
+
+          this.groups.set(updatedGroups);
+          this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
+
+          if (updatedGroups.length === 0 && this.currentPage() > 1) {
             this.currentPage.update((p) => p - 1);
             this.loadDuplicates();
-          } else if (currentGroups.length === 0 && this.totalGroups() > 0) {
+          } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
             this.loadDuplicates();
           }
         } catch (err: any) {

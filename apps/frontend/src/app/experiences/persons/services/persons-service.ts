@@ -299,11 +299,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.exportCsv.mutate(input);
   }
 
-  public findPotentialDuplicates(options?: {
+  public getPotentialDuplicates(options?: {
     page?: number;
     pageSize?: number;
   }): Promise<{ groups: any[]; total: number }> {
-    return this.api.persons.findPotentialDuplicates.query(options);
+    return this.api.persons.getPotentialDuplicates.query(options);
   }
 
   /**

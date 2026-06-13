@@ -348,7 +348,7 @@ describe('PersonsRepo Integration', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
 
-    const { groups: dups } = await repo.findPotentialDuplicates(tenantId);
+    const { groups: dups } = await repo.getPotentialDuplicates(tenantId);
     expect(dups.length).toBeGreaterThanOrEqual(2);
 
     const householdGroup = dups.find((d) => d.reason.includes('Same Household'));
@@ -453,7 +453,7 @@ describe('PersonsRepo Integration', () => {
 
     // Run maintenance for p1 -> should find no duplicates yet
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
+    let { groups: dups } = await repo.getPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(0);
 
     // Add second person with same name in same household
@@ -471,7 +471,7 @@ describe('PersonsRepo Integration', () => {
 
     // Run maintenance for p2 -> should detect duplicate
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    const res = await repo.findPotentialDuplicates(tenantId);
+    const res = await repo.getPotentialDuplicates(tenantId);
     dups = res.groups;
     expect(dups).toHaveLength(1);
     expect(dups[0].reason).toContain('Matching Name at Same Household');
@@ -508,7 +508,7 @@ describe('PersonsRepo Integration', () => {
 
     // Run maintenance -> duplicate exists
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
+    let { groups: dups } = await repo.getPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
 
     // 2. Update p2 to have a unique name
@@ -520,7 +520,7 @@ describe('PersonsRepo Integration', () => {
 
     // Run maintenance for updated p2 -> duplicate should be cleared
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    const res = await repo.findPotentialDuplicates(tenantId);
+    const res = await repo.getPotentialDuplicates(tenantId);
     dups = res.groups;
     expect(dups).toHaveLength(0);
   });
@@ -553,7 +553,7 @@ describe('PersonsRepo Integration', () => {
     });
 
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
+    let { groups: dups } = await repo.getPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
 
     // 2. Fetch duplicate keys for deleted person and delete them (simulating deleteMany logic)
@@ -569,7 +569,7 @@ describe('PersonsRepo Integration', () => {
 
     // Run maintenance on the group keys -> should clear duplicates
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
-    const res = await repo.findPotentialDuplicates(tenantId);
+    const res = await repo.getPotentialDuplicates(tenantId);
     dups = res.groups;
     expect(dups).toHaveLength(0);
   });
@@ -735,7 +735,7 @@ describe('HouseholdRepo Duplicates', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
 
-    const { groups: dups } = await householdsRepo.findPotentialDuplicates(tenantId);
+    const { groups: dups } = await householdsRepo.getPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
     expect(dups[0].households).toHaveLength(2);
   });
@@ -886,7 +886,7 @@ describe('CompaniesRepo Duplicates', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
 
-    const { groups: dups } = await companiesRepo.findPotentialDuplicates(tenantId);
+    const { groups: dups } = await companiesRepo.getPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
     expect(dups[0].companies).toHaveLength(2);
   });

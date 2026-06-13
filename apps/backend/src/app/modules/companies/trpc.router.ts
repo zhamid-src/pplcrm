@@ -26,7 +26,7 @@ export const CompaniesRouter = router({
       return companies.importRows(input, ctx.auth);
     }),
 
-  findPotentialDuplicates: authProcedure
+  getPotentialDuplicates: authProcedure
     .input(
       z
         .object({
@@ -35,7 +35,7 @@ export const CompaniesRouter = router({
         })
         .optional(),
     )
-    .query(({ input, ctx }) => companies.findPotentialDuplicates(ctx.auth, input)),
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
 
   mergeCompanies: authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))

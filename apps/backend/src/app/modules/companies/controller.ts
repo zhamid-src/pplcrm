@@ -71,8 +71,8 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   private readonly importsRepo = new ImportsRepo();
   private readonly storageService = new StorageService();
 
-  public async findPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().findPotentialDuplicates(auth.tenant_id, options);
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
   }
 
   /**

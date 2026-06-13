@@ -128,11 +128,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.exportCsv.mutate(input);
   }
 
-  public findPotentialDuplicates(options?: {
+  public getPotentialDuplicates(options?: {
     page?: number;
     pageSize?: number;
   }): Promise<{ groups: any[]; total: number }> {
-    return this.api.households.findPotentialDuplicates.query(options);
+    return this.api.households.getPotentialDuplicates.query(options);
   }
 
   /**
