@@ -109,7 +109,7 @@ export const dashboardRoutes: Routes = [
   },
 
   {
-    path: 'newsletter',
+    path: 'newsletters',
     children: [
       {
         path: '',
@@ -306,7 +306,7 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
   },
   {
-    path: 'export',
+    path: 'exports',
     loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
   },
   {
@@ -336,7 +336,7 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
   },
   {
-    path: 'activity',
+    path: 'activities',
     loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
   },
 ];
