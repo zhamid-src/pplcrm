@@ -12,11 +12,18 @@ import {
 } from '@common';
 
 import { randomBytes, randomUUID, createHash } from 'crypto';
-import { createDecoder, createSigner } from 'fast-jwt';
+import { createSigner, createVerifier } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
+import { env } from '../../../env';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashToken, generateToken } from '../../lib/token-hash';
 import { StorageService } from '../../lib/storage.service';
+
+const renewalVerifier = createVerifier({
+  algorithms: ['HS256'],
+  key: env.sharedSecret,
+  ignoreExpiration: true,
+});
 
 import {
   AppError,
@@ -239,15 +246,40 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     try {
-      const decode = createDecoder();
-      const payload = decode(input.auth_token) as any;
+      // 1. Verify the signature of the expired auth token (ignoring expiration)
+      const payload = (await renewalVerifier(input.auth_token)) as any;
 
-      // Basic payload validation before issuing new tokens
-      if (!payload?.user_id || !payload?.tenant_id || !payload?.name) {
+      // Basic payload validation
+      if (!payload?.user_id || !payload?.tenant_id || !payload?.name || !payload?.session_id) {
         throw new UnauthorizedError();
       }
 
-      return this.createTokens(payload);
+      // 2. Hash the session ID and incoming refresh token
+      const sessionHash = hashToken(payload.session_id);
+      const refreshHash = hashToken(input.refresh_token);
+
+      // 3. Verify that the session is active and matches in the database
+      const session = await this.sessions.db
+        .selectFrom('sessions')
+        .select('id')
+        .where('session_id', '=', sessionHash)
+        .where('refresh_token', '=', refreshHash)
+        .where('user_id', '=', payload.user_id as any)
+        .where('tenant_id', '=', payload.tenant_id as any)
+        .where('status', '=', 'active')
+        .executeTakeFirst();
+
+      if (!session) {
+        throw new UnauthorizedError();
+      }
+
+      // 4. Generate a new set of tokens and delete the old session
+      return this.createTokens({
+        user_id: payload.user_id,
+        tenant_id: payload.tenant_id,
+        name: payload.name,
+        oldSession: payload.session_id,
+      });
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new UnauthorizedError();
@@ -1417,11 +1449,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             .where('id', '=', fileId)
             .executeTakeFirst();
           if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx
-            .deleteFrom('files')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', fileId)
-            .execute();
+          await trx.deleteFrom('files').where('tenant_id', '=', auth.tenant_id).where('id', '=', fileId).execute();
         } catch {
           /* non-critical */
         }
