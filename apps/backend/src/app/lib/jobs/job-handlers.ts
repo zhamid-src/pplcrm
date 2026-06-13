@@ -237,11 +237,19 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       }
     }
   } else if (payload.type === 'send-shift-reminder') {
-    const shift = (await db
+    // Inside the background job processor:
+    const shift = await db
       .selectFrom('volunteer_shifts')
-      .selectAll()
-      .where('id', '=', payload.shiftId as any)
-      .executeTakeFirst()) as any;
+      .select('status')
+      .where('id', '=', payload.shiftId)
+      .executeTakeFirst();
+
+    // Silently abort if the shift was cancelled or the user no-showed
+    if (!shift || shift.status === 'cancelled') {
+      return;
+    }
+
+    // Proceed with sending the email...
 
     if (!shift) {
       console.log(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
