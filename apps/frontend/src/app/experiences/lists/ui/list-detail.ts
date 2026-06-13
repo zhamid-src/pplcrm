@@ -1,7 +1,8 @@
-import { Component, computed, inject, input, resource, signal, viewChild } from '@angular/core';
+import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AddListType, UpdateHouseholdsType, UpdatePersonsType } from '@common';
+import { AddListType, UpdateHouseholdsType, UpdatePersonsType, UpdateListType } from '@common';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
@@ -15,6 +16,7 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
 import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '@common';
@@ -120,19 +122,25 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
   imports: [ReactiveFormsModule, AddBtnRow, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
   templateUrl: './list-detail.html',
 })
-export class ListDetail {
+export class ListDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly listsSvc = inject(ListsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly listsRefresh = inject(ListsRefreshService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private _loading = createLoadingGate();
   private readonly householdGrid = viewChild(HouseholdFilterGrid);
   private readonly peopleGrid = viewChild(PeopleFilterGrid);
 
   protected readonly tagSvc = inject(TagsService);
+
+  protected readonly id = signal<string | null>(null);
+  protected readonly isNew = signal<boolean>(true);
 
   protected readonly form = this.fb.group({
     name: ['', [Validators.required]],
@@ -155,6 +163,48 @@ export class ListDetail {
     this.form.get('is_dynamic')!.valueChanges.subscribe((val) => {
       this.isDynamic.set(val === true);
     });
+  }
+
+  public async ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
+    this.isNew.set(mode !== 'edit');
+    if (id && mode === 'edit') {
+      this.id.set(id);
+      await this.loadList();
+    }
+  }
+
+  private async loadList() {
+    const id = this.id();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const list = await this.listsSvc.getById(id);
+      if (list) {
+        this.form.patchValue({
+          name: list.name ?? '',
+          description: list.description ?? '',
+          object: list.object ?? 'people',
+          is_dynamic: list.is_dynamic ?? false,
+        });
+        this.listType.set(list.object ?? 'people');
+        this.isDynamic.set(list.is_dynamic ?? false);
+
+        const definition = list.definition as any;
+        if (definition) {
+          if (definition.advancedFilterModel) {
+            this.rulesRoot.set(definition.advancedFilterModel);
+          } else if (definition.filterModel?.tags_expression) {
+            this.rulesRoot.set(definition.filterModel.tags_expression);
+          }
+        }
+      }
+    } catch (err) {
+      this.alertSvc.showError('Failed to load list details');
+    } finally {
+      end();
+    }
   }
 
   protected readonly countRowSelected = computed(() => {
@@ -321,52 +371,104 @@ export class ListDetail {
   }
 
   /** Save the list using selection for static, or filters for dynamic */
-  protected save(done: () => void) {
-    const formValue = this.form.getRawValue();
-
-    const payload: AddListType = {
-      name: formValue.name!,
-      description: formValue.description ?? null,
-      object: formValue.object as 'people' | 'households',
-      is_dynamic: formValue.is_dynamic ?? false,
-    };
-
-    if (payload.is_dynamic) {
-      // Dynamic lists: use current filters/search as definition
-      const def =
-        payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
-      const tags_expression = this.rulesRoot();
-      payload.definition = {
-        ...(def ?? {}),
-        filterModel: { ...(def?.filterModel ?? {}), tags_expression },
-        advancedFilterModel: tags_expression,
-        // provide a simplified positive-tags list for compatibility
-        tags: this.flattenPositiveTags(tags_expression),
-      };
-    } else {
-      // Static lists: persist a snapshot based on the full filter definition
-      const def =
-        payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
-      const tags_expression = this.rulesRoot();
-      payload.definition = {
-        ...(def ?? {}),
-        filterModel: { ...(def?.filterModel ?? {}), tags_expression },
-        advancedFilterModel: tags_expression,
-        tags: this.flattenPositiveTags(tags_expression),
-      };
-      // Do not send member_ids limited to the current page; backend will expand definition to all matches
-      delete (payload as Record<string, unknown>)['member_ids'];
+  protected save(done: (() => void) | Event) {
+    let doneFn: () => void = () => {};
+    if (done instanceof Event) {
+      done.preventDefault();
+    } else if (typeof done === 'function') {
+      doneFn = done;
     }
 
+    const formValue = this.form.getRawValue();
+
     const end = this._loading.begin();
-    this.listsSvc
-      .add(payload)
-      .then(() => {
-        this.alertSvc.showSuccess('List added');
+    let savePromise;
+
+    if (this.isNew()) {
+      const payload: AddListType = {
+        name: formValue.name!,
+        description: formValue.description ?? null,
+        object: formValue.object as 'people' | 'households',
+        is_dynamic: formValue.is_dynamic ?? false,
+      };
+
+      if (payload.is_dynamic) {
+        // Dynamic lists: use current filters/search as definition
+        const def =
+          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+        const tags_expression = this.rulesRoot();
+        payload.definition = {
+          ...(def ?? {}),
+          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+          advancedFilterModel: tags_expression,
+          // provide a simplified positive-tags list for compatibility
+          tags: this.flattenPositiveTags(tags_expression),
+        };
+      } else {
+        // Static lists: persist a snapshot based on the full filter definition
+        const def =
+          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+        const tags_expression = this.rulesRoot();
+        payload.definition = {
+          ...(def ?? {}),
+          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+          advancedFilterModel: tags_expression,
+          tags: this.flattenPositiveTags(tags_expression),
+        };
+        // Do not send member_ids limited to the current page; backend will expand definition to all matches
+        delete (payload as Record<string, unknown>)['member_ids'];
+      }
+      savePromise = this.listsSvc.add(payload);
+    } else {
+      const payload: UpdateListType = {
+        name: formValue.name!,
+        description: formValue.description ?? null,
+      };
+      savePromise = this.listsSvc.update(this.id()!, payload);
+    }
+
+    savePromise
+      .then(async () => {
+        this.alertSvc.showSuccess(this.isNew() ? 'List added' : 'List updated');
         this.listsRefresh.trigger();
-        done();
+        doneFn();
+        if (this.isNew()) {
+          await this.router.navigate(['/lists']);
+        } else {
+          await this.router.navigate(['/lists', this.id()!]);
+        }
+      })
+      .catch((err: any) => {
+        const message =
+          err?.message || err?.data?.message || (this.isNew() ? 'Failed to add list' : 'Failed to update list');
+        this.alertSvc.showError(message);
+        doneFn();
       })
       .finally(() => end());
+  }
+
+  protected async deleteList() {
+    if (this.isNew() || !this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete List',
+      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.listsSvc.delete(this.id()!);
+      this.listsRefresh.trigger();
+      this.alertSvc.showSuccess('List deleted');
+      await this.router.navigate(['/lists']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete list';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
   }
 
   private evalGroupWithRow(group: QueryBuilderGroupNode, tagSet: Set<string>, row: any): boolean {

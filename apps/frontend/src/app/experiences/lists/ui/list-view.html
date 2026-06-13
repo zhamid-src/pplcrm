@@ -142,13 +142,6 @@
     >
       Newsletter Campaigns ({{ stats()?.newsletters?.length || 0 }})
     </button>
-    <button
-      class="tab tab-lg font-medium transition-all duration-200"
-      [class.tab-active]="activeTab() === 'settings'"
-      (click)="activeTab.set('settings')"
-    >
-      List Settings
-    </button>
   </div>
 
   <!-- Tab 1: Members Panel -->
@@ -222,41 +215,6 @@
       </table>
       }
     </div>
-  </div>
-  }
-
-  <!-- Tab 3: Settings Panel -->
-  @if (activeTab() === 'settings') {
-  <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
-    <h2 class="text-lg font-bold text-base-content mb-4">Edit List Details</h2>
-    <form [formGroup]="form" class="flex flex-col gap-5 max-w-xl">
-      <div class="form-control w-full">
-        <label class="label">
-          <span class="label-text font-semibold text-base-content">List Name</span>
-        </label>
-        <input
-          type="text"
-          class="input input-bordered w-full bg-base-100"
-          placeholder="List Name"
-          formControlName="name"
-        />
-      </div>
-
-      <div class="form-control w-full">
-        <label class="label">
-          <span class="label-text font-semibold text-base-content">Description</span>
-        </label>
-        <textarea
-          class="textarea textarea-bordered w-full bg-base-100 min-h-24"
-          placeholder="Provide a detailed description of what this list filters or collects."
-          formControlName="description"
-        ></textarea>
-      </div>
-
-      <div class="mt-4 pt-4 border-t border-base-200 flex justify-end">
-        <pc-add-btn-row [isLoading]="loading()" (btn1Clicked)="save($event)"></pc-add-btn-row>
-      </div>
-    </form>
   </div>
   } } @if (listData() && listData()?.id) {
   <div class="mt-8 border-t border-base-250 pt-6">

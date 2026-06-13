@@ -100,10 +100,16 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/lists/ui/list-detail').then((m) => m.ListDetail),
+        data: { mode: 'new' },
       },
       {
         path: ':id',
         loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-detail').then((m) => m.ListDetail),
+        data: { mode: 'edit' },
       },
     ],
   },

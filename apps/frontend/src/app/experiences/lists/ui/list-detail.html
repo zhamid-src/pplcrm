@@ -1,9 +1,70 @@
 <div class="flex min-h-full flex-col bg-base-100">
+  @if (!isNew()) {
+  <!-- Simple Edit Form -->
+  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10" (submit)="save($event)">
+    <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
+      <div class="flex items-center gap-3">
+        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
+        <div>
+          <h1 class="text-xl font-bold">Edit {{ form.get('name')?.value || 'List' }}</h1>
+          <p class="text-sm text-base-content/60 mt-0.5">Modify the name and description of this list.</p>
+        </div>
+      </div>
+      <pc-add-btn-row
+        [isLoading]="isLoading()"
+        (btn1Clicked)="save($event)"
+        [btn1Text]="'Save List'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        buttonsToShow="two"
+      ></pc-add-btn-row>
+    </div>
+
+    <section class="grid gap-6 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-base-content/80" for="list-name">List Name</label>
+        <input
+          id="list-name"
+          type="text"
+          class="input input-bordered w-full"
+          formControlName="name"
+          placeholder="List Name"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-base-content/80" for="list-description">Description</label>
+        <textarea
+          id="list-description"
+          rows="4"
+          class="textarea textarea-bordered w-full"
+          placeholder="Describe the purpose of this list"
+          formControlName="description"
+        ></textarea>
+      </div>
+    </section>
+  </form>
+  } @else {
+  <!-- Stepper Form for New Lists -->
   <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b border-base-200 pb-4">
+      <div class="flex items-center gap-3">
+        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
+        <div>
+          <h1 class="text-xl font-bold">New List</h1>
+          <p class="text-sm text-base-content/60 mt-0.5">
+            Configure static or dynamic contact lists for outreach campaigns.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Stepper -->
     <div class="w-full">
       <ol class="flex items-center w-full text-sm">
-        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(1)">
+        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(1)">
           <div
             class="w-7 h-7 rounded-full flex items-center justify-center"
             [class.bg-primary]="step() >= 1"
@@ -14,7 +75,7 @@
           <span class="font-medium">Type</span>
         </li>
         <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 1" [class.bg-base-300]="step() <= 1"></div>
-        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(2)">
+        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(2)">
           <div
             class="w-7 h-7 rounded-full flex items-center justify-center"
             [class.bg-primary]="step() >= 2"
@@ -130,7 +191,11 @@
       </div>
       <!-- Matches are shown in the summary line above -->
       <div class="flex items-center justify-between mt-2">
+        @if (isNew()) {
         <button type="button" class="btn" (click)="back()">Back</button>
+        } @else {
+        <div></div>
+        }
         <button type="button" class="btn btn-primary" (click)="next()">Next</button>
       </div>
     </div>
@@ -163,7 +228,7 @@
         />
         }
       </div>
-      <div class="flex items-cen'ter justify-between">
+      <div class="flex items-center justify-between">
         <button type="button" class="btn" (click)="back()">Back</button>
         <pc-add-btn-row
           [isLoading]="isLoading()"
@@ -175,4 +240,5 @@
     </div>
     }
   </form>
+  }
 </div>
