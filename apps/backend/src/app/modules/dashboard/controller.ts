@@ -23,7 +23,10 @@ export class DashboardController {
     const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
     const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
     const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
     const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
     const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
 
@@ -31,26 +34,30 @@ export class DashboardController {
     const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
 
     // 1. Fetch all users in the tenant
-    const users = await this.db.selectFrom('authusers')
+    const users = await this.db
+      .selectFrom('authusers')
       .select(['id', 'first_name', 'last_name'])
       .where('tenant_id', '=', tenant_id)
       .execute();
 
     // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
-    const inboxEmails = await this.db.selectFrom('emails')
-      .select(['id', 'from_email', 'created_at', 'updated_at', 'status', 'assigned_to'])
+    const inboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
       .where('folder_id', '=', '11')
       .execute();
 
     // 2.3 Fetch all tasks for this tenant
-    const tasks = await this.db.selectFrom('tasks')
-      .select(['id', 'status', 'created_at', 'completed_at', 'assigned_to'])
+    const tasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
       .execute();
 
     // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
-    const closeActivities = await this.db.selectFrom('user_activity')
+    const closeActivities = await this.db
+      .selectFrom('user_activity')
       .select(['entity_id', 'user_id'])
       .where('tenant_id', '=', tenant_id)
       .where('activity', '=', 'close')
@@ -66,7 +73,8 @@ export class DashboardController {
     }
 
     // 3. Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db.selectFrom('email_comments')
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
       .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
       .where('tenant_id', '=', tenant_id)
       .groupBy('email_id')
@@ -74,11 +82,12 @@ export class DashboardController {
     const commentMap = new Map<string, number>(
       earliestComments
         .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()])
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
     // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db.selectFrom('emails')
+    const sentEmails = await this.db
+      .selectFrom('emails')
       .select(['to_email', 'created_at'])
       .where('tenant_id', '=', tenant_id)
       .where('folder_id', '=', '3')
@@ -100,20 +109,23 @@ export class DashboardController {
     }
 
     // Initialize user stats map
-    const userStatsMap: Record<string, {
-      user_id: string;
-      first_name: string;
-      last_name: string;
-      openCount: number;
-      closedCount: number;
-      totalResponseTimeMs: number;
-      responseCount: number;
-      totalTimeToCloseMs: number;
-      timeToCloseCount: number;
-      slaBreaches: number;
-      emailSlaBreaches: number;
-      taskSlaBreaches: number;
-    }> = {};
+    const userStatsMap: Record<
+      string,
+      {
+        user_id: string;
+        first_name: string;
+        last_name: string;
+        openCount: number;
+        closedCount: number;
+        totalResponseTimeMs: number;
+        responseCount: number;
+        totalTimeToCloseMs: number;
+        timeToCloseCount: number;
+        slaBreaches: number;
+        emailSlaBreaches: number;
+        taskSlaBreaches: number;
+      }
+    > = {};
 
     for (const u of users) {
       userStatsMap[u.id] = {
@@ -141,6 +153,25 @@ export class DashboardController {
     let unassignedEmailSlaBreaches = 0;
     let unassignedTaskSlaBreaches = 0;
 
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
     const nowMs = Date.now();
 
     for (const email of inboxEmails) {
@@ -148,9 +179,10 @@ export class DashboardController {
       const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
 
       // Determine who closed the email (with fallback to assignee)
-      const closerId = email.status === 'closed'
-        ? (closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null))
-        : null;
+      const closerId =
+        email.status === 'closed'
+          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
+          : null;
       const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
 
       // Track open/closed counts
@@ -187,7 +219,7 @@ export class DashboardController {
         const sentTimes = sentMap.get(fromEmailClean);
         if (sentTimes) {
           const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find(t => t > emailCreatedTime);
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
           if (firstSentAfter) {
             outboundTime = firstSentAfter;
           }
@@ -222,7 +254,7 @@ export class DashboardController {
           new Date(nowMs),
           workingDays,
           workingHoursStart,
-          workingHoursEnd
+          workingHoursEnd,
         );
         if (workingTimeMs > emailSlaMs && !firstResponseTime) {
           if (assignedUser) {
@@ -232,6 +264,16 @@ export class DashboardController {
             unassignedEmailSlaBreaches++;
             unassignedSlaBreaches++; // for backward compatibility
           }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedEmailsList.push({
+            id: String(email.id),
+            from_email: email.from_email,
+            subject: email.subject || null,
+            created_at: email.created_at,
+            assigned_to: email.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
         }
       }
     }
@@ -245,7 +287,7 @@ export class DashboardController {
           new Date(nowMs),
           workingDays,
           workingHoursStart,
-          workingHoursEnd
+          workingHoursEnd,
         );
         if (workingTimeMs > taskSlaMs) {
           const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
@@ -255,19 +297,28 @@ export class DashboardController {
           } else {
             unassignedTaskSlaBreaches++;
           }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedTasksList.push({
+            id: String(task.id),
+            name: task.name,
+            created_at: task.created_at,
+            assigned_to: task.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
         }
       }
     }
 
-    const avgFirstResponseHours = globalResponseCount > 0 ? (globalTotalResponseTimeMs / globalResponseCount) / (1000 * 60 * 60) : 0;
-    const avgTimeToCloseHours = globalTimeToCloseCount > 0 ? (globalTotalTimeToCloseMs / globalTimeToCloseCount) / (1000 * 60 * 60) : 0;
+    const avgFirstResponseHours =
+      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
+    const avgTimeToCloseHours =
+      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
 
     // 5. Contacts Growth (Last 30 days)
-    const growthRows = await this.db.selectFrom('persons')
-      .select([
-        sql<string>`date_trunc('day', created_at)`.as('day'),
-        sql<number>`count(id)`.as('count')
-      ])
+    const growthRows = await this.db
+      .selectFrom('persons')
+      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
       .where('tenant_id', '=', tenant_id)
       .where('created_at', '>=', sql`now() - interval '30 days'`)
       .groupBy(sql`date_trunc('day', created_at)`)
@@ -281,30 +332,30 @@ export class DashboardController {
 
     // Build backward-compatible emailsAssigned
     const emailsAssigned = Object.values(userStatsMap)
-      .filter(u => u.openCount > 0)
-      .map(u => ({
+      .filter((u) => u.openCount > 0)
+      .map((u) => ({
         user_id: u.user_id,
         first_name: u.first_name,
         last_name: u.last_name,
-        count: u.openCount
+        count: u.openCount,
       }));
 
     // Build backward-compatible emailsClosed
     const emailsClosed = Object.values(userStatsMap)
-      .filter(u => u.closedCount > 0)
-      .map(u => ({
+      .filter((u) => u.closedCount > 0)
+      .map((u) => ({
         user_id: u.user_id,
         first_name: u.first_name,
         last_name: u.last_name,
-        count: u.closedCount
+        count: u.closedCount,
       }));
 
     // Map user stats for representative stats table
-    const userStats = Object.values(userStatsMap).map(u => {
+    const userStats = Object.values(userStatsMap).map((u) => {
       const totalHandled = u.openCount + u.closedCount;
       const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
-      const avgFirstResponse = u.responseCount > 0 ? (u.totalResponseTimeMs / u.responseCount) / (1000 * 60 * 60) : 0;
-      const avgTimeToClose = u.timeToCloseCount > 0 ? (u.totalTimeToCloseMs / u.timeToCloseCount) / (1000 * 60 * 60) : 0;
+      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
+      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
 
       return {
         user_id: u.user_id,
@@ -335,6 +386,14 @@ export class DashboardController {
       unassignedSlaBreaches,
       unassignedEmailSlaBreaches,
       unassignedTaskSlaBreaches,
+      breachedEmailsList,
+      breachedTasksList,
+      taskSlaHours,
+      emailSlaHours,
+      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
+      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
+      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
+      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
     };
   }
 }

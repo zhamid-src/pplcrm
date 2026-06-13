@@ -23,6 +23,14 @@ describe('summary', () => {
         unassignedEmailSlaBreaches: 0,
         unassignedTaskSlaBreaches: 0,
         userStats: [],
+        breachedEmailsList: [],
+        breachedTasksList: [],
+        emailSlaHours: 24,
+        taskSlaHours: 24,
+        emailSlaWarningThreshold: 1,
+        emailSlaCriticalThreshold: 4,
+        taskSlaWarningThreshold: 1,
+        taskSlaCriticalThreshold: 4,
       }),
     };
 

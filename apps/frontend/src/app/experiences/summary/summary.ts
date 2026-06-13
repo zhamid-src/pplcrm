@@ -4,9 +4,10 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
 
 @Component({
-  imports: [Icon, SpinOnClickDirective],
+  imports: [Icon, SpinOnClickDirective, SlaDetails],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })
@@ -32,6 +33,36 @@ export class Summary implements OnInit {
   protected readonly unassignedTaskSlaBreaches = signal(0);
   protected readonly totalEmailSlaBreaches = signal(0);
   protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<any[]>([]);
+  protected readonly breachedTasks = signal<any[]>([]);
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  protected readonly taskSlaStatus = computed(() => {
+    const breaches = this.totalTaskSlaBreaches();
+    const warning = this.taskSlaWarningThreshold();
+    const critical = this.taskSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
 
   // SVG Chart data
   protected readonly linePath = signal('');
@@ -154,6 +185,16 @@ export class Summary implements OnInit {
 
       this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
       this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Set breached lists and settings configurations
+      this.breachedEmails.set(stats.breachedEmailsList || []);
+      this.breachedTasks.set(stats.breachedTasksList || []);
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
 
       // Map representative stats
       const formattedUserStats = (stats.userStats || []).map((u: any) => ({
