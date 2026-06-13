@@ -85,7 +85,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         join
           .onRef('ers.email_id', '=', 'emails.id')
           .on('ers.user_id', '=', user_id)
-          .on('ers.tenant_id', '=', tenant_id)
+          .on('ers.tenant_id', '=', tenant_id),
       )
       .selectAll('emails')
       .select('eh.date_sent as date_sent')
@@ -143,15 +143,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
         join
           .onRef('ers.email_id', '=', 'emails.id')
           .on('ers.user_id', '=', user_id)
-          .on('ers.tenant_id', '=', tenant_id)
+          .on('ers.tenant_id', '=', tenant_id),
       )
       .select(() => [
-        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
-          'all_open',
-        ),
-        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
-          'closed',
-        ),
+        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as('all_open'),
+        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.INBOX})`.as('closed'),
         sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
           'assigned',
         ),
@@ -203,7 +199,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
           join
             .onRef('ers.email_id', '=', 'emails.id')
             .on('ers.user_id', '=', user_id)
-            .on('ers.tenant_id', '=', tenant_id)
+            .on('ers.tenant_id', '=', tenant_id),
         )
         .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'));
     }
@@ -313,7 +309,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .executeTakeFirst()) as unknown as UpdateResult;
 
       // Clean up only the provenance rows we used
-      await this.emailTrashRepo.deleteMany({ tenant_id: tenantId, ids: emailIds }, trx);
+      await this.emailTrashRepo.deleteByEmailIds({ tenant_id: tenantId as any, emailIds }, trx);
 
       return Number(updated?.numUpdatedRows ?? 0);
     });
@@ -348,11 +344,14 @@ export class EmailRepo extends BaseRepository<'emails'> {
       case SPECIAL_FOLDERS.CLOSED:
         return (eb) => eb.and([eb('status', '=', 'closed'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
-        return (eb) => eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+        return (eb) =>
+          eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.UNASSIGNED:
-        return (eb) => eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+        return (eb) =>
+          eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.FAVOURITES:
-        return (eb) => eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+        return (eb) =>
+          eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
       default:
         // Real folder
         return (eb) => eb('folder_id', '=', folder_id);

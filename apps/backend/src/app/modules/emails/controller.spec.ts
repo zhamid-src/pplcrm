@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EmailsController } from './controller';
 import { BadRequestError, InternalError } from '../../errors/app-errors';
 import { BaseRepository } from '../../lib/base.repo';
+import { EmailTrashRepo } from './repositories/email-trash.repo';
 
 describe('EmailsController Comments', () => {
   let controller: EmailsController;
@@ -47,9 +48,9 @@ describe('EmailsController Comments', () => {
   it('should throw InternalError if commentsRepo.add returns null or undefined', async () => {
     vi.spyOn((controller as any).commentsRepo, 'add').mockResolvedValue(undefined);
 
-    await expect(
-      controller.addComment('tenant-1', 'email-1', 'author-1', 'Some comment')
-    ).rejects.toThrow(InternalError);
+    await expect(controller.addComment('tenant-1', 'email-1', 'author-1', 'Some comment')).rejects.toThrow(
+      InternalError,
+    );
   });
 });
 
@@ -67,42 +68,52 @@ describe('EmailsController Integration', () => {
     emailId = rand();
 
     // 1. Tenant
-    await db.insertInto('tenants').values({
-      id: tenantId,
-      name: 'Test Tenant',
-    }).execute();
+    await db
+      .insertInto('tenants')
+      .values({
+        id: tenantId,
+        name: 'Test Tenant',
+      })
+      .execute();
 
     // 2. User
-    await db.insertInto('authusers').values({
-      id: userId,
-      tenant_id: tenantId,
-      email: `test-${userId}@example.com`,
-      password: 'password',
-      first_name: 'Test',
-      last_name: 'User',
-      verified: true,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('authusers')
+      .values({
+        id: userId,
+        tenant_id: tenantId,
+        email: `test-${userId}@example.com`,
+        password: 'password',
+        first_name: 'Test',
+        last_name: 'User',
+        verified: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 3. Email
-    await db.insertInto('emails').values({
-      id: emailId,
-      tenant_id: tenantId,
-      folder_id: '11',
-      from_email: 'sender@example.com',
-      to_email: 'recipient@example.com',
-      subject: 'Test Email',
-      preview: 'Preview',
-      is_favourite: false,
-      status: 'open',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('emails')
+      .values({
+        id: emailId,
+        tenant_id: tenantId,
+        folder_id: '11',
+        from_email: 'sender@example.com',
+        to_email: 'recipient@example.com',
+        subject: 'Test Email',
+        preview: 'Preview',
+        is_favourite: false,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
   });
 
   afterEach(async () => {
     await db.deleteFrom('email_read_states').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('email_trash').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
@@ -142,19 +153,22 @@ describe('EmailsController Integration', () => {
     // Insert 3 additional emails under this tenant
     const emailIds = [rand(), rand(), rand()];
     for (const eid of emailIds) {
-      await db.insertInto('emails').values({
-        id: eid,
-        tenant_id: tenantId,
-        folder_id: '11',
-        from_email: 'extra@example.com',
-        to_email: 'recipient@example.com',
-        subject: 'Extra Email',
-        preview: 'Preview',
-        is_favourite: false,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      }).execute();
+      await db
+        .insertInto('emails')
+        .values({
+          id: eid,
+          tenant_id: tenantId,
+          folder_id: '11',
+          from_email: 'extra@example.com',
+          to_email: 'recipient@example.com',
+          subject: 'Extra Email',
+          preview: 'Preview',
+          is_favourite: false,
+          status: 'open',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
     }
 
     // Total emails in inbox should be 4 (1 seeded in beforeEach + 3 extra)
@@ -175,5 +189,65 @@ describe('EmailsController Integration', () => {
     for (const id of secondPageIds) {
       expect(firstPageIds).not.toContain(id);
     }
+  });
+
+  it('should correctly move to trash, delete email_trash records via deleteByEmailIds on restore, and allow deleteMany to delete by primary key', async () => {
+    // 1. Move the email to trash.
+    const deleted = await controller.deleteMany(tenantId as any, [emailId]);
+    expect(deleted).toBe(true);
+
+    // Verify it is in trash folder
+    const emailInDb = await controller.getRepo().getOneBy('id', { tenant_id: tenantId as any, value: emailId });
+    expect(emailInDb?.folder_id).toBe('5'); // TRASH folder is '5'
+
+    // Verify exactly one row in email_trash
+    const trashRepo = new EmailTrashRepo();
+    const trashRows = await trashRepo.getAll({ tenant_id: tenantId as any });
+    expect(trashRows.length).toBe(1);
+    expect(trashRows[0].email_id).toBe(emailId);
+    expect(trashRows[0].from_folder_id).toBe('11'); // Original folder
+
+    const trashRowId = trashRows[0].id; // The primary key (id) of the email_trash record
+
+    // 2. Restore from trash using restoreFromTrash.
+    // This internally calls emailTrashRepo.deleteByEmailIds passing emailIds as IDs.
+    const restoredCount = await controller.restoreFromTrash(tenantId, [emailId]);
+    expect(restoredCount).toBe(1);
+
+    // Verify email is back to original folder '11'
+    const restoredEmail = await controller.getRepo().getOneBy('id', { tenant_id: tenantId as any, value: emailId });
+    expect(restoredEmail?.folder_id).toBe('11');
+
+    // Verify the email_trash row is deleted
+    const trashRowsAfterRestore = await trashRepo.getAll({ tenant_id: tenantId as any });
+    expect(trashRowsAfterRestore.length).toBe(0);
+
+    // 3. Test deleteMany now correctly deletes by its own primary key `id` rather than `email_id`.
+    // Let's add a record directly to email_trash
+    await trashRepo.addFromEmails({
+      tenant_id: tenantId,
+      emailIds: [emailId],
+      folder_id: '5',
+    });
+
+    const trashRowsForDeleteMany = await trashRepo.getAll({ tenant_id: tenantId as any });
+    expect(trashRowsForDeleteMany.length).toBe(1);
+    const primaryKeyId = trashRowsForDeleteMany[0].id;
+
+    // Call deleteMany with an emailId (which was the bug - it shouldn't delete anything since primaryKeyId !== emailId)
+    const deletedByWrongId = await trashRepo.deleteMany({ tenant_id: tenantId as any, ids: [emailId as any] });
+    expect(deletedByWrongId).toBe(false);
+
+    // The record should still exist!
+    const trashRowsAfterWrongId = await trashRepo.getAll({ tenant_id: tenantId as any });
+    expect(trashRowsAfterWrongId.length).toBe(1);
+
+    // Call deleteMany with the actual primary key id of the email_trash row
+    const deletedByPrimaryKey = await trashRepo.deleteMany({ tenant_id: tenantId as any, ids: [primaryKeyId as any] });
+    expect(deletedByPrimaryKey).toBe(true);
+
+    // Now it should be empty!
+    const trashRowsAfterPrimaryKey = await trashRepo.getAll({ tenant_id: tenantId as any });
+    expect(trashRowsAfterPrimaryKey.length).toBe(0);
   });
 });

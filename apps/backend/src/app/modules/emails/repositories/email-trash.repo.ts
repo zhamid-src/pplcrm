@@ -1,10 +1,10 @@
 /**
  * Repository for reading and writing email recipient records.
  */
-import { OperandValueExpressionOrList, Transaction, sql } from 'kysely';
+import { Transaction, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
+import { Models, TypeTenantId } from 'common/src/lib/kysely.models';
 
 /**
  * Data access for the `email_recipients` table.
@@ -70,18 +70,18 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
     return rows as unknown as Models['email_trash'][];
   }
 
-  public override async deleteMany(
-    input: { tenant_id: TypeTenantId<'email_trash'>; ids: TypeId<'email_trash'>[] },
+  /**
+   * Delete email_trash records associated with the given email_ids.
+   */
+  public async deleteByEmailIds(
+    input: { tenant_id: TypeTenantId<'email_trash'>; emailIds: string[] },
     trx?: Transaction<Models>,
   ) {
-    if (!input.ids?.length) return Promise.resolve(false);
-
-    // Convert to numbers if needed
-    const numericIds = input.ids as OperandValueExpressionOrList<Models, 'email_trash', 'email_id'>;
+    if (!input.emailIds?.length) return false;
 
     const deleteQuery = this.getDelete(trx);
     const result = await deleteQuery
-      .where('email_id', 'in', numericIds)
+      .where('email_id', 'in', input.emailIds)
       .where('tenant_id', '=', input.tenant_id)
       .executeTakeFirst();
 
