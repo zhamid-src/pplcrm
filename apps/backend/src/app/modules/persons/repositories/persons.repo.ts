@@ -441,7 +441,42 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   /**
    * Find potential duplicates within the tenant (querying pre-computed potential_duplicates table).
    */
-  public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
+  public async findPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: any[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    const countResult = await this.db
+      .selectFrom('potential_duplicates')
+      .select([sql<number>`count(distinct group_key)`.as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'is not', null)
+      .executeTakeFirst();
+    const total = Number((countResult as any)?.total || 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .select('group_key')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'is not', null)
+      .groupBy('group_key')
+      .orderBy(sql`min(id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
     const rows = await this.db
       .selectFrom('potential_duplicates')
       .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
@@ -460,6 +495,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.created_at',
       ])
       .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
 
     const groupsMap = new Map<string, { reason: string; persons: any[] }>();
@@ -477,35 +513,9 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       });
     }
 
-    return Array.from(groupsMap.values());
-  }
+    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter(Boolean) as any[];
 
-  /**
-   * Helper to queue duplicates maintenance background job.
-   */
-  public async queueDuplicatesJob(
-    tenant_id: string,
-    person_ids: string[],
-    group_keys: string[] = [],
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    const db = trx || this.db;
-    await db
-      .insertInto('background_jobs' as any)
-      .values({
-        tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'potential_duplicates_maintenance',
-          tenant_id,
-          person_ids,
-          group_keys,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
+    return { groups: sortedGroups, total };
   }
 
   /**
@@ -669,16 +679,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('tenant_id', '=', input.tenant_id)
         .where('team_captain_id', '=', input.source_id)
         .execute();
-
-      // Get old group keys of source before deleting them
-      const oldSourceKeys = await trx
-        .selectFrom('potential_duplicates')
-        .select('group_key')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-      const sourceKeys = oldSourceKeys.map((r) => r.group_key);
-
       // 6. Delete source person
       await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
 
@@ -699,9 +699,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .execute();
         }
       }
-
-      // 8. Queue duplicates maintenance job
-      await this.queueDuplicatesJob(input.tenant_id, [input.target_id], sourceKeys, trx);
 
       return { success: true };
     });

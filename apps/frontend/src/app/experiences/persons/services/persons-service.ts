@@ -299,11 +299,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.exportCsv.mutate(input);
   }
 
-  /**
-   * Find potential duplicate records in the database.
-   */
-  public findPotentialDuplicates(): Promise<any[]> {
-    return this.api.persons.findPotentialDuplicates.query();
+  public findPotentialDuplicates(options?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ groups: any[]; total: number }> {
+    return this.api.persons.findPotentialDuplicates.query(options);
   }
 
   /**

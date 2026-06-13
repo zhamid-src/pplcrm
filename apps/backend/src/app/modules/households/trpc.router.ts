@@ -18,9 +18,7 @@ export const HouseholdsRouter = router({
 
   getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
 
-  add: authProcedure
-    .input(UpdateHouseholdsObj)
-    .mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
+  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
 
   deleteMany: authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
@@ -66,11 +64,22 @@ export const HouseholdsRouter = router({
 
   getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
 
-  findPotentialDuplicates: authProcedure.query(({ ctx }) => households.findPotentialDuplicates(ctx.auth)),
+  findPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => households.findPotentialDuplicates(ctx.auth, input)),
 
   mergeHouseholds: authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))
     .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
 
-  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) => households.recomputeAddressFingerprints(ctx.auth.tenant_id)),
+  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
+    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
+  ),
 });

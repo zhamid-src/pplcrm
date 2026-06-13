@@ -29,11 +29,13 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const listsController = new ListsController();
     await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
   } else if (payload.type === 'enrich_company_google') {
-    const { CompaniesEnrichmentService } = await import('../../modules/companies/services/companies-enrichment.service');
+    const { CompaniesEnrichmentService } =
+      await import('../../modules/companies/services/companies-enrichment.service');
     const enrichmentSvc = new CompaniesEnrichmentService(db);
     await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
   } else if (payload.type === 'refresh_companies_google') {
-    const { CompaniesEnrichmentService } = await import('../../modules/companies/services/companies-enrichment.service');
+    const { CompaniesEnrichmentService } =
+      await import('../../modules/companies/services/companies-enrichment.service');
     const enrichmentSvc = new CompaniesEnrichmentService(db);
     await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id);
 
@@ -98,16 +100,57 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     });
     const syncSvc = new MsSyncService(db, oauthSvc);
     await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
-  } else if (payload.type === 'potential_duplicates_maintenance') {
-    const maintenanceSvc = new DuplicateMaintenanceService();
-    await maintenanceSvc.runMaintenance(payload.tenant_id, payload.person_ids || [], payload.group_keys || []);
   } else if (payload.type === 'recompute_all_duplicates') {
-    const tenants = await db.selectFrom('tenants').select('id').execute();
+    const lastJob = await db
+      .selectFrom('background_jobs' as any)
+      .select(['updated_at'])
+      .where('status', '=', 'completed')
+      .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
 
+    const tenants = await db.selectFrom('tenants').select('id').execute();
     const maintenanceSvc = new DuplicateMaintenanceService();
+    const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+
     for (const tenant of tenants) {
       try {
-        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+        let shouldRecompute = true;
+
+        if (lastRunTime) {
+          const personChanged = await db
+            .selectFrom('persons')
+            .select('id')
+            .where('tenant_id', '=', String(tenant.id))
+            .where('updated_at', '>', lastRunTime)
+            .limit(1)
+            .executeTakeFirst();
+
+          const householdChanged = await db
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', String(tenant.id))
+            .where('updated_at', '>', lastRunTime)
+            .limit(1)
+            .executeTakeFirst();
+
+          const companyChanged = await db
+            .selectFrom('companies')
+            .select('id')
+            .where('tenant_id', '=', String(tenant.id))
+            .where('updated_at', '>', lastRunTime)
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!personChanged && !householdChanged && !companyChanged) {
+            shouldRecompute = false;
+          }
+        }
+
+        if (shouldRecompute) {
+          await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+        }
       } catch (tenantErr) {
         console.error(`Failed to recompute duplicates for tenant ${tenant.id}:`, tenantErr);
       }

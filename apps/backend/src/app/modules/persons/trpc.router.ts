@@ -178,7 +178,16 @@ function importMany() {
 }
 
 function findPotentialDuplicates() {
-  return authProcedure.query(({ ctx }) => personsService.findPotentialDuplicates(ctx.auth));
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.findPotentialDuplicates(ctx.auth, input));
 }
 
 function mergePersons() {

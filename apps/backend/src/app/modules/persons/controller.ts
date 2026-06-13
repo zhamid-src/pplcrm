@@ -92,15 +92,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
           });
         }
 
-        // Fetch active duplicate group keys for these persons before they are deleted
-        const activeGroupKeys = await trx
-          .selectFrom('potential_duplicates')
-          .select('group_key')
-          .where('tenant_id', '=', tenant_id)
-          .where('person_id', 'in', idsToDelete)
-          .execute();
-        const groupKeysToMaintenance = Array.from(new Set(activeGroupKeys.map((k) => k.group_key)));
-
         // Unlink captaincy if forced and captained teams exist
         if (captainedTeams.length > 0) {
           await trx
@@ -126,11 +117,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete persons within the same transaction
         const result = await this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
-
-        // Queue duplicate maintenance for the affected group keys
-        if (groupKeysToMaintenance.length > 0) {
-          await this.getRepo().queueDuplicatesJob(tenant_id, [], groupKeysToMaintenance, trx);
-        }
 
         return result;
       });

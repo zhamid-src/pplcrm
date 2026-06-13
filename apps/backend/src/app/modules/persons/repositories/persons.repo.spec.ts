@@ -348,7 +348,7 @@ describe('PersonsRepo Integration', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
     await maintenanceSvc.recomputeAllDuplicates(tenantId);
 
-    const dups = await repo.findPotentialDuplicates(tenantId);
+    const { groups: dups } = await repo.findPotentialDuplicates(tenantId);
     expect(dups.length).toBeGreaterThanOrEqual(2);
 
     const householdGroup = dups.find((d) => d.reason.includes('Same Household'));
@@ -452,8 +452,8 @@ describe('PersonsRepo Integration', () => {
     });
 
     // Run maintenance for p1 -> should find no duplicates yet
-    await maintenanceSvc.runMaintenance(tenantId, [p1.id]);
-    let dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(0);
 
     // Add second person with same name in same household
@@ -470,8 +470,9 @@ describe('PersonsRepo Integration', () => {
     });
 
     // Run maintenance for p2 -> should detect duplicate
-    await maintenanceSvc.runMaintenance(tenantId, [p2.id]);
-    dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    const res = await repo.findPotentialDuplicates(tenantId);
+    dups = res.groups;
     expect(dups).toHaveLength(1);
     expect(dups[0].reason).toContain('Matching Name at Same Household');
     expect(dups[0].persons.map((p: any) => p.id)).toContain(p1.id);
@@ -506,8 +507,8 @@ describe('PersonsRepo Integration', () => {
     });
 
     // Run maintenance -> duplicate exists
-    await maintenanceSvc.runMaintenance(tenantId, [p1.id, p2.id]);
-    let dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
 
     // 2. Update p2 to have a unique name
@@ -518,8 +519,9 @@ describe('PersonsRepo Integration', () => {
     });
 
     // Run maintenance for updated p2 -> duplicate should be cleared
-    await maintenanceSvc.runMaintenance(tenantId, [p2.id]);
-    dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    const res = await repo.findPotentialDuplicates(tenantId);
+    dups = res.groups;
     expect(dups).toHaveLength(0);
   });
 
@@ -550,8 +552,8 @@ describe('PersonsRepo Integration', () => {
       },
     });
 
-    await maintenanceSvc.runMaintenance(tenantId, [p1.id, p2.id]);
-    let dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    let { groups: dups } = await repo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
 
     // 2. Fetch duplicate keys for deleted person and delete them (simulating deleteMany logic)
@@ -566,8 +568,9 @@ describe('PersonsRepo Integration', () => {
     await repo.delete({ tenant_id: tenantId, id: p2.id });
 
     // Run maintenance on the group keys -> should clear duplicates
-    await maintenanceSvc.runMaintenance(tenantId, [], groupKeys);
-    dups = await repo.findPotentialDuplicates(tenantId);
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+    const res = await repo.findPotentialDuplicates(tenantId);
+    dups = res.groups;
     expect(dups).toHaveLength(0);
   });
 
@@ -729,7 +732,10 @@ describe('HouseholdRepo Duplicates', () => {
       })
       .execute();
 
-    const dups = await householdsRepo.findPotentialDuplicates(tenantId);
+    const maintenanceSvc = new DuplicateMaintenanceService();
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+
+    const { groups: dups } = await householdsRepo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
     expect(dups[0].households).toHaveLength(2);
   });
@@ -877,7 +883,10 @@ describe('CompaniesRepo Duplicates', () => {
       })
       .execute();
 
-    const dups = await companiesRepo.findPotentialDuplicates(tenantId);
+    const maintenanceSvc = new DuplicateMaintenanceService();
+    await maintenanceSvc.recomputeAllDuplicates(tenantId);
+
+    const { groups: dups } = await companiesRepo.findPotentialDuplicates(tenantId);
     expect(dups).toHaveLength(1);
     expect(dups[0].companies).toHaveLength(2);
   });
@@ -1083,7 +1092,8 @@ describe('CompaniesRepo Duplicates', () => {
     it('should delete a person who has volunteer shifts and cascade delete those shifts', async () => {
       // 1. Create a person
       const personId = String(Math.floor(Math.random() * 100000000) + 10000000);
-      await db.insertInto('persons')
+      await db
+        .insertInto('persons')
         .values({
           id: personId,
           tenant_id: tenantId,
@@ -1098,7 +1108,8 @@ describe('CompaniesRepo Duplicates', () => {
 
       // 2. Create a volunteer event
       const eventId = String(Math.floor(Math.random() * 100000000) + 10000000);
-      await db.insertInto('volunteer_events')
+      await db
+        .insertInto('volunteer_events')
         .values({
           id: eventId,
           tenant_id: tenantId,
@@ -1113,7 +1124,8 @@ describe('CompaniesRepo Duplicates', () => {
 
       // 3. Create a volunteer shift linked to the person
       const shiftId = String(Math.floor(Math.random() * 100000000) + 10000000);
-      await db.insertInto('volunteer_shifts')
+      await db
+        .insertInto('volunteer_shifts')
         .values({
           id: shiftId,
           tenant_id: tenantId,
@@ -1133,7 +1145,11 @@ describe('CompaniesRepo Duplicates', () => {
       expect(checkPerson).toBeUndefined();
 
       // Verify volunteer shift is deleted cascadingly
-      const checkShift = await db.selectFrom('volunteer_shifts').selectAll().where('id', '=', shiftId).executeTakeFirst();
+      const checkShift = await db
+        .selectFrom('volunteer_shifts')
+        .selectAll()
+        .where('id', '=', shiftId)
+        .executeTakeFirst();
       expect(checkShift).toBeUndefined();
     });
   });
