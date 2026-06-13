@@ -35,7 +35,9 @@ async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): 
       } else {
         delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
       }
-      console.warn(`Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+      console.warn(
+        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
+      );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       continue;
     }
@@ -79,7 +81,7 @@ export class GoogleSyncService {
       { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
       { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
       { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
-    ].filter(f => allowedFolderIds.has(f.pplcrmId));
+    ].filter((f) => allowedFolderIds.has(f.pplcrmId));
 
     // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds)
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
@@ -116,9 +118,12 @@ export class GoogleSyncService {
         });
         if (pageToken) urlParams.set('pageToken', pageToken);
 
-        const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const res = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
 
         if (!res.ok) {
           const errText = await res.text();
@@ -209,7 +214,8 @@ export class GoogleSyncService {
     if (!payload) return false;
 
     const headers = payload.headers ?? [];
-    const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+    const getHeader = (name: string) =>
+      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 
     const subject = getHeader('subject');
     const fromVal = getHeader('from');
@@ -226,7 +232,10 @@ export class GoogleSyncService {
 
     const fromEmail = extractEmail(fromVal);
     const toEmail = extractEmail(toVal);
-    const dateSent = dateVal ? new Date(dateVal) : new Date();
+    let dateSent = dateVal ? new Date(dateVal) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
 
     // Parse body parts recursively
     const parts = payload.parts ? payload.parts : [payload];
@@ -308,7 +317,8 @@ export class GoogleSyncService {
 
       if (filename && body?.attachmentId) {
         const headers = part.headers ?? [];
-        const contentDisposition = headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
+        const contentDisposition =
+          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
         const isInline = contentDisposition.toLowerCase().includes('inline');
         const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
         const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;

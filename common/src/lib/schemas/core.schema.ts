@@ -109,7 +109,21 @@ export const exportCsvResponse = z.object({
 
 /** Input for queueing a full background export */
 export const queueExportInput = z.object({
-  entity: z.string().min(1),
+  entity: z.enum([
+    'persons',
+    'households',
+    'companies',
+    'tags',
+    'issues',
+    'tasks',
+    'lists',
+    'newsletters',
+    'teams',
+    'users',
+    'volunteer',
+    'forms',
+    'workflows',
+  ]),
   options: getAllOptions,
   columns: z.array(z.string()).optional(),
   fileName: z.string().optional(),
