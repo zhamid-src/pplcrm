@@ -1,4 +1,4 @@
-import { Component, input, signal } from '@angular/core';
+import { Component, input, model } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 
@@ -14,5 +14,5 @@ export class SlaDetails {
   public readonly emailSlaHours = input<number>(24);
   public readonly taskSlaHours = input<number>(24);
 
-  protected readonly activeTab = signal<'emails' | 'tasks'>('emails');
+  public readonly activeTab = model<'emails' | 'tasks'>('emails');
 }
