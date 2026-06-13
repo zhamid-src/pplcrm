@@ -289,23 +289,22 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     } as any;
   }
 
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: any[],
-  ) {
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
     const results = { inserted: 0, errors: 0, skipped: 0 };
     const errorMessages: string[] = [];
 
     // Parse status and priority to validate choices
-    const normalize = (v?: string) => (v || '').toLowerCase().trim().replace(/[_\s-]+/g, '');
+    const normalize = (v?: string) =>
+      (v || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s-]+/g, '');
     const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
     const validPriorities = ['low', 'medium', 'high', 'urgent'];
 
     // Map names to users for assigned_to
-    const users = await this.getRepo().db.selectFrom('authusers')
+    const users = await this.getRepo()
+      .db.selectFrom('authusers')
       .select(['id', 'first_name', 'last_name', 'email'])
       .where('tenant_id', '=', tenant_id)
       .execute();
@@ -376,10 +375,20 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
 
       if (taskRows.length > 0) {
         try {
-          // 2. Batch insert all valid task rows in one statement
-          await this.getRepo().transaction().execute(async (trx) => {
-            await (trx as any).insertInto('tasks').values(taskRows).execute();
-          });
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
+              const CHUNK_SIZE = 2000;
+              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
+                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
+                await (trx as any)
+                  .insertInto('tasks')
+                  .values(chunk)
+                  .returningAll() // Adheres to repository rules
+                  .execute();
+              }
+            });
           results.inserted += taskRows.length;
         } catch (err: any) {
           results.errors += taskRows.length;

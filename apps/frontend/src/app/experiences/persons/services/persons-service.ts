@@ -139,6 +139,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return await (this.api.persons.deleteMany.mutate as any)(ids, opts);
   }
 
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  }
+
   /**
    * Detach a tag from a person.
    *

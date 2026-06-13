@@ -94,7 +94,7 @@ export class PersonsService {
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', Number(payload.assigned_to) as any)
+            .where('authusers.id', '=', String(payload.assigned_to))
             .executeTakeFirst();
           if (assignee && assignee.email) {
             let optedIn = true;
@@ -180,7 +180,8 @@ export class PersonsService {
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
               .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-              .where('authusers.id', '=', Number(newAssigneeId) as any)
+              // String conversion ensures precision is maintained down to the database driver level
+              .where('authusers.id', '=', String(newAssigneeId))
               .executeTakeFirst();
 
             if (assignee && assignee.email) {
