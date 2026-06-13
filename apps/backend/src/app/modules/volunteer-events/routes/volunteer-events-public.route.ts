@@ -351,8 +351,9 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 
       const events = await ctrl.getUpcomingEventsPublic(tenantId);
 
-      const eventsListHtml = events.length === 0 
-        ? `<div class="empty-state">
+      const eventsListHtml =
+        events.length === 0
+          ? `<div class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
@@ -362,24 +363,31 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
             <p>No upcoming volunteer events scheduled at the moment.</p>
             <p style="font-size: 13px; margin-top: 4px; opacity: 0.7;">Please check back later or contact us directly.</p>
            </div>`
-        : events.map((ev) => {
-            const start = new Date(ev.start_time);
-            const end = new Date(ev.end_time);
-            
-            // Format dates
-            const dateStr = start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-            const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+          : events
+              .map((ev) => {
+                const start = new Date(ev.start_time);
+                const end = new Date(ev.end_time);
 
-            // Roster spots remaining
-            const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
-            const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
-            const capacityBadge = ev.capacity === null
-              ? `<span class="badge badge-open">Unlimited Spots Available</span>`
-              : isFull 
-                ? `<span class="badge badge-full">Event Full</span>`
-                : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
+                // Format dates
+                const dateStr = start.toLocaleDateString(undefined, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                });
+                const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
-            return `
+                // Roster spots remaining
+                const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
+                const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
+                const capacityBadge =
+                  ev.capacity === null
+                    ? `<span class="badge badge-open">Unlimited Spots Available</span>`
+                    : isFull
+                      ? `<span class="badge badge-full">Event Full</span>`
+                      : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
+
+                return `
               <div class="event-card">
                 <div class="event-card-body">
                   <div class="event-card-main">
@@ -396,27 +404,34 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
                         </svg>
                         <span>${dateStr} @ ${timeStr}</span>
                       </div>
-                      ${ev.location_address ? `
+                      ${
+                        ev.location_address
+                          ? `
                       <div class="meta-item">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
                           <circle cx="12" cy="10" r="3"/>
                         </svg>
                         <span>${ev.location_address}</span>
-                      </div>` : ''}
+                      </div>`
+                          : ''
+                      }
                     </div>
                   </div>
                   
                   <div class="event-card-footer">
                     ${capacityBadge}
-                    ${isFull 
-                      ? `<button class="btn btn-disabled" disabled>Event Full</button>` 
-                      : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`}
+                    ${
+                      isFull
+                        ? `<button class="btn btn-disabled" disabled>Event Full</button>`
+                        : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`
+                    }
                   </div>
                 </div>
               </div>
             `;
-          }).join('');
+              })
+              .join('');
 
       reply.type('text/html');
       return reply.send(`
@@ -637,14 +652,19 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       const start = new Date(event.start_time);
       const end = new Date(event.end_time);
       const hasPassed = end < new Date();
-      
-      const dateStr = start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+      const dateStr = start.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
       const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
       // Calculate availability
       const isFull = event.capacity !== null && Number(event.volunteers_count || 0) >= event.capacity;
       const remainingSpots = event.capacity !== null ? event.capacity - Number(event.volunteers_count || 0) : null;
-      
+
       reply.type('text/html');
       return reply.send(`
 <!DOCTYPE html>
@@ -849,14 +869,18 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </head>
 <body>
   <div class="container">
-    ${!event.is_private ? `
+    ${
+      !event.is_private
+        ? `
     <a href="/api/events/org/${slug}" class="back-link">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"/>
         <polyline points="12 19 5 12 12 5"/>
       </svg>
       Back to Upcoming Events
-    </a>` : ''}
+    </a>`
+        : ''
+    }
 
     <div class="header" style="text-align: left; margin-bottom: 24px;">
       <h1>${event.name}</h1>
@@ -880,7 +904,9 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
             </div>
           </div>
 
-          ${event.location_address ? `
+          ${
+            event.location_address
+              ? `
           <div class="meta-detail-row">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
@@ -890,7 +916,9 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
               <h4>Location</h4>
               <p>${event.location_address}</p>
             </div>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
 
           <div class="meta-detail-row">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -906,7 +934,9 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
             </div>
           </div>
 
-          ${event.contact_email || event.contact_phone ? `
+          ${
+            event.contact_email || event.contact_phone
+              ? `
           <div class="meta-detail-row">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
@@ -916,14 +946,20 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
               ${event.contact_email ? `<p><a href="mailto:${event.contact_email}" style="color: var(--accent); text-decoration: none;">${event.contact_email}</a></p>` : ''}
               ${event.contact_phone ? `<p style="margin-top: 2px;">${event.contact_phone}</p>` : ''}
             </div>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
         </div>
 
-        ${event.description ? `
+        ${
+          event.description
+            ? `
         <div class="info-group">
           <h3 class="info-title">Description</h3>
           <p class="info-desc">${event.description}</p>
-        </div>` : ''}
+        </div>`
+            : ''
+        }
       </div>
 
       <!-- Right Panel: Registration Form -->
@@ -931,28 +967,29 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
         <div class="card">
           <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
 
-          ${hasPassed
-            ? `<div class="spots-alert spots-alert-warning">
+          ${
+            hasPassed
+              ? `<div class="spots-alert spots-alert-warning">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
                 This event has passed and registration is closed.
                </div>`
-            : isFull 
-              ? `<div class="spots-alert spots-alert-warning">
+              : isFull
+                ? `<div class="spots-alert spots-alert-warning">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
                   This shift is currently fully booked.
                  </div>`
-              : remainingSpots !== null && remainingSpots <= 5
-                ? `<div class="spots-alert spots-alert-info">
+                : remainingSpots !== null && remainingSpots <= 5
+                  ? `<div class="spots-alert spots-alert-info">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                     Hurry! Only ${remainingSpots} spot(s) remaining.
                    </div>`
-                : `<div class="spots-alert spots-alert-success">
+                  : `<div class="spots-alert spots-alert-success">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     Spots are available. Sign up below!
                    </div>`
           }
 
-          <form action="/api/events/signup/${event.id}" method="POST">
+          <form action="/api/events/signup/${event.slug || event.id}" method="POST">
             <!-- Honeypot Bot Field (leave empty!) -->
             <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 
@@ -999,7 +1036,8 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
   // Handle volunteer signup POST
   fastify.post('/signup/:eventId', async (req: any, reply) => {
     const { eventId } = req.params;
-    const isJsonExpected = req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 
     if (/^\d+$/.test(eventId)) {
       if (isJsonExpected) {
@@ -1013,7 +1051,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 
     try {
       const body = req.body || {};
-      
+
       // Fetch event first to get its tenant_id for the redirect
       const event = await ctrl.getEventPublic(eventId);
       if (!event) {

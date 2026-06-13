@@ -340,6 +340,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.precinct',
         'households.ward',
         'households.geocoding_status',
+        'households.created_at',
+        'households.updated_at',
+        'households.campaign_id',
+        'households.createdby_id',
+        'households.updatedby_id',
+        'households.file_id',
+        'households.json',
+        'households.address_fp_street',
+        'households.address_fp_full',
+        'households.tenant_id',
         'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
