@@ -2,19 +2,30 @@ import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-add',
-  imports: [FormField],
+  imports: [FormField, AddBtnRow],
   template: `
-    <section class="max-w-xl space-y-4 m-4">
-      <header>
-        <h1 class="text-2xl font-semibold">Invite User</h1>
-        <p class="text-sm text-muted">Send an invitation to add a new teammate to this tenant.</p>
-      </header>
+    <section class="max-w-3xl mx-auto w-full p-6">
+      <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
+        <div>
+          <h1 class="text-2xl font-semibold">Invite User</h1>
+          <p class="text-sm text-base-content/60">Send an invitation to add a new teammate to this tenant.</p>
+        </div>
+        <pc-add-btn-row
+          [isLoading]="submitting()"
+          [signalForm]="form"
+          (btn1Clicked)="submit($event)"
+          [buttonsToShow]="'two'"
+          [btn1Text]="'Send Invite'"
+          [btn1Icon]="'save'"
+        ></pc-add-btn-row>
+      </div>
 
       <form class="space-y-4" (submit)="submit($event)" novalidate>
         <div class="space-y-1">
@@ -72,19 +83,6 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
         @if (error()) {
           <p class="text-sm text-danger">{{ error() }}</p>
         }
-
-        <div class="flex gap-3 float-right">
-          <button
-            type="submit"
-            class=" btn rounded btn-primary px-4 py-2 text-white"
-            [disabled]="form().invalid() || submitting()"
-          >
-            {{ submitting() ? 'Sending…' : 'Send Invite' }}
-          </button>
-          <button type="button" class=" btn btn-error rounded border border-border px-4 py-2" (click)="cancel()">
-            Cancel
-          </button>
-        </div>
       </form>
     </section>
   `,
@@ -132,9 +130,9 @@ export class UserAddComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  protected async submit(event?: Event) {
-    if (event) {
-      event.preventDefault();
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -150,7 +148,11 @@ export class UserAddComponent implements OnInit {
       this.users.triggerRefresh();
       this.alerts.showSuccess('Invitation sent');
       this.form().reset();
-      await this.router.navigate(['../'], { relativeTo: this.route });
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to invite user';
       this.error.set(message);

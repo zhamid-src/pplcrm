@@ -16,10 +16,11 @@ import { VolunteerEventsFrontendService } from '../../volunteer/services/volunte
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 @Component({
   selector: 'pc-workflow-detail',
-  imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe, VisualNewsletterEditorComponent],
+  imports: [RouterModule, FormsModule, FormField, Icon, RecordActivities, DatePipe, VisualNewsletterEditorComponent, AddBtnRow],
   templateUrl: './workflow-detail.html',
   providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],
 })
@@ -342,9 +343,9 @@ export class WorkflowDetailComponent implements OnInit {
   }
 
   // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
-  protected async saveSettings(event?: Event): Promise<void> {
-    if (event instanceof Event) {
-      event.preventDefault();
+  protected async saveSettings(done?: (() => void) | Event): Promise<void> {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -373,7 +374,11 @@ export class WorkflowDetailComponent implements OnInit {
             await this.workflowsSvc.saveSteps(newId, this.steps());
 
             this.alertSvc.showSuccess('Workflow created successfully!');
-            void this.router.navigate(['../', newId], { relativeTo: this.route });
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['../', newId], { relativeTo: this.route });
+            }
           } else {
             const id = this.workflowId();
             if (id) {
@@ -384,8 +389,12 @@ export class WorkflowDetailComponent implements OnInit {
             }
 
             this.alertSvc.showSuccess('Workflow saved successfully!');
-            void this.loadWorkflowDetails();
-            void this.loadSteps();
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.loadWorkflowDetails();
+              void this.loadSteps();
+            }
           }
         } catch (err: unknown) {
           if (err instanceof TRPCClientError) {

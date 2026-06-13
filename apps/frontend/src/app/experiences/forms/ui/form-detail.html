@@ -5,12 +5,16 @@
       <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
       {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
     </h1>
-    @if (!isNew()) {
-    <button class="btn btn-error btn-outline btn-sm gap-2" type="button" (click)="deleteForm()" [disabled]="saving()">
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      Delete Web Form
-    </button>
-    }
+    <pc-add-btn-row
+      [isLoading]="saving()"
+      [signalForm]="form"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="isNew() ? 'Create Web Form' : 'Save Web Form'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete Web Form'"
+      (deleteClicked)="deleteForm()"
+    ></pc-add-btn-row>
   </header>
 
   <!-- Main Content -->
@@ -232,20 +236,7 @@
                 </p>
               </div>
 
-              <!-- Submit actions -->
-              <div class="card-actions justify-end mt-4 gap-2">
-                <a [routerLink]="isNew() ? ['/forms'] : ['/forms', formId()]" class="btn btn-outline btn-accent gap-2">
-                  <pc-icon name="x-circle" [size]="4"></pc-icon>
-                  Cancel
-                </a>
-                <button type="submit" class="btn btn-primary" [disabled]="saving()">
-                  @if (saving()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else {
-                  <pc-icon name="save" [size]="4"></pc-icon>
-                  } Save Web Form
-                </button>
-              </div>
+
             </div>
           </form>
         </div>

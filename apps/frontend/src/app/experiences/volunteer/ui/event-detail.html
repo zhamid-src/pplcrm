@@ -23,19 +23,18 @@
           </p>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        @if (!isNew()) {
-        <button
-          class="btn btn-error btn-outline btn-sm gap-2"
-          type="button"
-          (click)="deleteEvent()"
-          [disabled]="saving()"
-        >
-          <pc-icon name="trash" [size]="4"></pc-icon>
-          Delete Event
-        </button>
-        }
-      </div>
+      <pc-add-btn-row
+        [isLoading]="saving()"
+        [signalForm]="form"
+        [disabled]="slugChecking() || slugUnique() === false"
+        (btn1Clicked)="save($event)"
+        [buttonsToShow]="'two'"
+        [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+        [btn1Icon]="'save'"
+        [showDelete]="!isNew()"
+        [deleteText]="'Delete Event'"
+        (deleteClicked)="deleteEvent()"
+      ></pc-add-btn-row>
     </div>
 
     <!-- Error alert -->
@@ -539,27 +538,6 @@
             </div>
 
             <div class="divider"></div>
-
-            <div class="flex flex-col gap-2">
-              <button
-                type="submit"
-                class="btn btn-primary w-full gap-2"
-                [disabled]="form().invalid() || saving() || slugChecking() || slugUnique() === false"
-              >
-                @if (saving()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else {
-                <pc-icon name="save" [size]="4"></pc-icon>
-                } {{ isNew() ? 'Create Event' : 'Save Changes' }}
-              </button>
-              <a
-                [routerLink]="isNew() ? ['/schedule'] : ['/schedule', id]"
-                class="btn btn-outline btn-accent w-full gap-2"
-              >
-                <pc-icon name="x-circle" [size]="4"></pc-icon>
-                Cancel
-              </a>
-            </div>
           </div>
         </div>
 

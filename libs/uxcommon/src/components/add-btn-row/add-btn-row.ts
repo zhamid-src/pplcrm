@@ -29,6 +29,26 @@ export class AddBtnRow implements OnInit {
   public signalForm = input<any>();
 
   /**
+   * Additional custom disabled condition for the save buttons.
+   */
+  public disabled = input<boolean>(false);
+
+  /**
+   * Whether to show the Delete button.
+   */
+  public showDelete = input<boolean>(false);
+
+  /**
+   * The text to show on the Delete button.
+   */
+  public deleteText = input<string>('DELETE');
+
+  /**
+   * Emits when the Delete button is clicked.
+   */
+  public readonly deleteClicked = output<void>();
+
+  /**
    * Emits when the first button (e.g., SAVE or SAVE & ADD MORE) is clicked.
    * The parent component should decide what to do next based on whether
    * the stay flag is set.
@@ -39,7 +59,7 @@ export class AddBtnRow implements OnInit {
    * The icon to show on the first button.
    * Default is 'arrow-down-tray'.
    */
-  public btn1Icon = input<PcIconNameType>('arrow-down-tray');
+  public btn1Icon = input<PcIconNameType>('save');
 
   /**
    * The text to show on the first button.
@@ -70,6 +90,7 @@ export class AddBtnRow implements OnInit {
    */
   protected get isSaveDisabled(): boolean {
     if (this.isLoading()) return true;
+    if (this.disabled()) return true;
     const sigF = this.signalForm();
     if (sigF) {
       return sigF().invalid() || !sigF().dirty();
@@ -86,6 +107,13 @@ export class AddBtnRow implements OnInit {
    */
   public cancel() {
     this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  /**
+   * Emits the deleteClicked event when the user clicks Delete.
+   */
+  public handleDeleteClicked() {
+    this.deleteClicked.emit();
   }
 
   /**

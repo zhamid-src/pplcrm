@@ -5,6 +5,7 @@ import { IAuthUser, AddTaskObj } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 import { AuthService } from '../../../auth/auth-service';
 import { TasksService } from '../services/tasks-service';
@@ -12,20 +13,30 @@ import { TeamsService } from '../../teams/services/teams-service';
 
 @Component({
   selector: 'pc-task-add',
-  imports: [FormField, Icon],
+  imports: [FormField, Icon, AddBtnRow],
   template: `
     <section
       class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl"
     >
-      <header class="border-b border-base-200/60 pb-5">
-        <h1 class="text-2xl font-bold text-primary flex items-center gap-3">
-          <span class="p-2 bg-primary/10 rounded-xl">
-            <pc-icon name="plus" class="text-primary"></pc-icon>
-          </span>
-          Create New Task
-        </h1>
-        <p class="text-sm text-neutral-400 mt-2">Add a new task to assign, track priority, status, and deadlines.</p>
-      </header>
+      <div class="flex items-center justify-between border-b border-base-200/60 pb-5">
+        <div>
+          <h1 class="text-2xl font-bold text-primary flex items-center gap-3">
+            <span class="p-2 bg-primary/10 rounded-xl">
+              <pc-icon name="plus" class="text-primary"></pc-icon>
+            </span>
+            Create New Task
+          </h1>
+          <p class="text-sm text-neutral-400 mt-2">Add a new task to assign, track priority, status, and deadlines.</p>
+        </div>
+        <pc-add-btn-row
+          [isLoading]="submitting()"
+          [signalForm]="form"
+          (btn1Clicked)="submit($event)"
+          [buttonsToShow]="'two'"
+          [btn1Text]="'Create Task'"
+          [btn1Icon]="'save'"
+        ></pc-add-btn-row>
+      </div>
 
       <form class="space-y-6" (submit)="submit($event)" novalidate>
         <!-- Task Name -->
@@ -174,25 +185,6 @@ import { TeamsService } from '../../teams/services/teams-service';
             <span>{{ error() }}</span>
           </div>
         }
-
-        <!-- Form Footer Actions -->
-        <div class="flex justify-end gap-3 pt-6 border-t border-base-200/60">
-          <button type="button" class="btn btn-ghost hover:bg-base-200 transition-all duration-200" (click)="cancel()">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="btn btn-primary px-6 hover:scale-102 active:scale-98 transition-all duration-200"
-            [disabled]="form().invalid() || submitting()"
-          >
-            @if (submitting()) {
-              <span class="loading loading-spinner loading-xs mr-1"></span>
-              Creating...
-            } @else {
-              Create Task
-            }
-          </button>
-        </div>
       </form>
     </section>
   `,
@@ -271,9 +263,9 @@ export class TaskAddComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  protected async submit(event?: Event) {
-    if (event) {
-      event.preventDefault();
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -290,7 +282,11 @@ export class TaskAddComponent implements OnInit {
       await this.tasks.add(taskData);
       this.tasks.triggerRefresh();
       this.alertSvc.showSuccess('Task created successfully');
-      await this.router.navigate(['../'], { relativeTo: this.route });
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to create task';
       this.error.set(msg);

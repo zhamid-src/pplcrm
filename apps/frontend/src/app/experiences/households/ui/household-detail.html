@@ -18,17 +18,16 @@
         <pc-icon name="home" [size]="5" class="text-primary"></pc-icon>
         {{ id ? 'Edit Household Details' : 'Add New Household' }}
       </h2>
-      @if (id) {
-      <button
-        class="btn btn-error btn-outline btn-sm gap-2"
-        type="button"
-        (click)="deleteHousehold()"
-        [disabled]="isLoading()"
-      >
-        <pc-icon name="trash" [size]="4"></pc-icon>
-        Delete Household
-      </button>
-      }
+      <pc-add-btn-row
+        [isLoading]="isLoading()"
+        [signalForm]="form"
+        (btn1Clicked)="save($event)"
+        [buttonsToShow]="household()?.id ? 'two' : 'three'"
+        [btn1Text]="household()?.id ? 'Save Household' : 'Create Household'"
+        [showDelete]="!!id"
+        [deleteText]="'Delete Household'"
+        (deleteClicked)="deleteHousehold()"
+      ></pc-add-btn-row>
     </div>
 
     <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
@@ -187,13 +186,7 @@
             } }
           </div>
 
-          <pc-add-btn-row
-            [isLoading]="isLoading()"
-            [signalForm]="form"
-            (btn1Clicked)="save($event)"
-            [buttonsToShow]="household()?.id ? 'two' : 'three'"
-            [btn1Text]="household()?.id ? 'SAVE' : 'ADD HOUSEHOLD'"
-          ></pc-add-btn-row>
+          <div class="h-2"></div>
         </div>
       </fieldset>
     </form>
