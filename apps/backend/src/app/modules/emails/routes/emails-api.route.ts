@@ -616,11 +616,17 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         } catch (err: any) {
           fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
           await db
-            .deleteFrom('emails')
+            .updateTable('emails')
+            .set({
+              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
+              folder_id: '4',
+              updated_at: new Date(),
+            })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Google', 400);
+
+          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
         }
       } else {
         // SMTP Flow
