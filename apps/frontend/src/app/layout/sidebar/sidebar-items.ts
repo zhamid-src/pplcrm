@@ -124,9 +124,9 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'volunteer',
       },
       {
-        name: 'Schedule',
-        route: '/schedule',
-        icon: 'clock',
+        name: 'Events',
+        route: '/events',
+        icon: 'calendar',
       },
     ],
   },

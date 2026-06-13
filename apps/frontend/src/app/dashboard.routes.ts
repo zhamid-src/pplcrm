@@ -154,7 +154,7 @@ export const dashboardRoutes: Routes = [
   },
 
   {
-    path: 'schedule',
+    path: 'events',
     children: [
       {
         path: '',

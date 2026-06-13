@@ -377,7 +377,7 @@ export class EventViewComponent implements OnInit {
       await this.volunteerEventsSvc.delete(this.id);
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/schedule']);
+      await this.router.navigate(['/events']);
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to delete event';
       this.alertSvc.showError(message);
