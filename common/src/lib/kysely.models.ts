@@ -569,7 +569,9 @@ export interface PotentialDuplicates {
   id: Generated<string>;
   tenant_id: string;
   group_key: string;
-  person_id: string;
+  person_id: string | null;
+  household_id?: string | null;
+  company_id?: string | null;
   reason: string;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;

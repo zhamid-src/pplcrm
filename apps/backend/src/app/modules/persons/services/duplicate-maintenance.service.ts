@@ -12,10 +12,7 @@ export class DuplicateMaintenanceService {
     const db = this.personsRepo.db;
 
     // 1. Delete all potential duplicates for the tenant
-    await db
-      .deleteFrom('potential_duplicates')
-      .where('tenant_id', '=', tenantId)
-      .execute();
+    await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
 
     // 2. Fetch the placeholder household id
     const tenantRow = await db
@@ -29,12 +26,8 @@ export class DuplicateMaintenanceService {
     // Email duplicates
     const duplicateEmails = await db
       .selectFrom('persons')
-      .select([
-        sql<string>`lower(email)`.as('email_lower'),
-      ])
-      .select((eb) => [
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
+      .select([sql<string>`lower(email)`.as('email_lower')])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
       .where('tenant_id', '=', tenantId)
       .where('email', 'is not', null)
       .where(sql`trim(email)`, '!=', '')
@@ -50,9 +43,7 @@ export class DuplicateMaintenanceService {
         sql<string>`lower(last_name)`.as('last_name_lower'),
         'household_id',
       ])
-      .select((eb) => [
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
       .where('tenant_id', '=', tenantId)
       .where('first_name', 'is not', null)
       .where('last_name', 'is not', null)
@@ -73,9 +64,7 @@ export class DuplicateMaintenanceService {
         sql<string>`lower(persons.last_name)`.as('last_name_lower'),
         'households.address_fp_full',
       ])
-      .select((eb) => [
-        eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids'),
-      ])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
       .where('persons.tenant_id', '=', tenantId)
       .where('persons.first_name', 'is not', null)
       .where('persons.last_name', 'is not', null)
@@ -134,7 +123,10 @@ export class DuplicateMaintenanceService {
     for (const group of duplicateNamesInSameHousehold) {
       const key = `household:${group.household_id}:${group.first_name_lower}:${group.last_name_lower}`;
       const firstPerson = personsMap.get(String(group.ids[0]));
-      const reason = `Matching Name at Same Household: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`.replace(/\s{2,}/g, ' ').trim();
+      const reason =
+        `Matching Name at Same Household: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
+          .replace(/\s{2,}/g, ' ')
+          .trim();
       for (const id of group.ids) {
         inserts.push({
           tenant_id: tenantId,
@@ -149,7 +141,9 @@ export class DuplicateMaintenanceService {
     for (const group of duplicateNamesInSameAddress) {
       const key = `address:${group.address_fp_full}:${group.first_name_lower}:${group.last_name_lower}`;
       const firstPerson = personsMap.get(String(group.ids[0]));
-      const reason = `Matching Name at Same Address: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`.replace(/\s{2,}/g, ' ').trim();
+      const reason = `Matching Name at Same Address: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
+        .replace(/\s{2,}/g, ' ')
+        .trim();
       for (const id of group.ids) {
         inserts.push({
           tenant_id: tenantId,
@@ -159,233 +153,129 @@ export class DuplicateMaintenanceService {
         });
       }
     }
+    // --- HOUSEHOLDS DUPLICATES ---
+    const duplicateAddresses = await db
+      .selectFrom('households')
+      .select(['address_fp_full'])
+      .select((eb) => [
+        eb.fn.count('households.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenantId)
+      .where('address_fp_full', 'is not', null)
+      .where(sql`trim(address_fp_full)`, '!=', '')
+      .$if(!!placeholderHhId, (qb: any) => qb.where('id', '!=', placeholderHhId!))
+      .groupBy('address_fp_full')
+      .having(sql`count(households.id)`, '>', 1)
+      .execute();
+
+    const hhIds = new Set<string>();
+    for (const group of duplicateAddresses) {
+      if (Array.isArray(group.ids)) {
+        group.ids.forEach((id: any) => hhIds.add(String(id)));
+      }
+    }
+
+    if (hhIds.size > 0) {
+      const dbRows = await db
+        .selectFrom('households')
+        .select(['id', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'apt'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', 'in', Array.from(hhIds))
+        .execute();
+
+      const hhMap = new Map<string, any>();
+      for (const row of dbRows) {
+        hhMap.set(String(row.id), row);
+      }
+
+      for (const group of duplicateAddresses) {
+        const groupHouseholds = group.ids.map((id: any) => hhMap.get(String(id))).filter(Boolean);
+
+        if (groupHouseholds.length > 1) {
+          const first = groupHouseholds[0];
+          const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip]
+            .filter(Boolean)
+            .join(' ');
+          const reason = `Matching Address: "${addrStr}"`;
+          const key = `household:fp:${group.address_fp_full}`;
+
+          for (const hh of groupHouseholds) {
+            inserts.push({
+              tenant_id: tenantId,
+              group_key: key,
+              household_id: String(hh.id),
+              person_id: null,
+              reason,
+            });
+          }
+        }
+      }
+    }
+
+    // --- COMPANIES DUPLICATES ---
+    const duplicateNames = await db
+      .selectFrom('companies')
+      .select([sql<string>`lower(trim(name))`.as('name_lower')])
+      .select((eb) => [
+        eb.fn.count('companies.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['companies.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenantId)
+      .where('name', 'is not', null)
+      .where(sql`trim(name)`, '!=', '')
+      .groupBy(sql`lower(trim(name))`)
+      .having(sql`count(companies.id)`, '>', 1)
+      .execute();
+
+    const companyIds = new Set<string>();
+    for (const group of duplicateNames) {
+      if (Array.isArray(group.ids)) {
+        group.ids.forEach((id: any) => companyIds.add(String(id)));
+      }
+    }
+
+    if (companyIds.size > 0) {
+      const dbRows = await db
+        .selectFrom('companies')
+        .select(['id', 'name'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', 'in', Array.from(companyIds))
+        .execute();
+
+      const companyMap = new Map<string, any>();
+      for (const row of dbRows) {
+        companyMap.set(String(row.id), row);
+      }
+
+      for (const group of duplicateNames) {
+        const groupCompanies = group.ids.map((id: any) => companyMap.get(String(id))).filter(Boolean);
+
+        if (groupCompanies.length > 1) {
+          const first = groupCompanies[0];
+          const reason = `Matching Company Name: "${first.name}"`;
+          const key = `company:name:${group.name_lower}`;
+
+          for (const c of groupCompanies) {
+            inserts.push({
+              tenant_id: tenantId,
+              group_key: key,
+              company_id: String(c.id),
+              person_id: null,
+              reason,
+            });
+          }
+        }
+      }
+    }
 
     if (inserts.length > 0) {
       // Use chunked inserts just in case the list is very large
       const chunkSize = 1000;
       for (let i = 0; i < inserts.length; i += chunkSize) {
         const chunk = inserts.slice(i, i + chunkSize);
-        await db
-          .insertInto('potential_duplicates')
-          .values(chunk)
-          .execute();
+        await db.insertInto('potential_duplicates').values(chunk).execute();
       }
-    }
-  }
-
-  /**
-   * Run incremental duplicate maintenance for a list of modified persons and/or groups.
-   */
-  public async runMaintenance(
-    tenantId: string,
-    personIds: string[],
-    explicitGroupKeys: string[] = []
-  ): Promise<void> {
-    const db = this.personsRepo.db;
-
-    // 1. Fetch the placeholder household id
-    const tenantRow = await db
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    const placeholderHhId = tenantRow?.placeholder_household_id;
-
-    // 2. Identify all affected group keys
-    const affectedGroupKeys = new Set<string>(explicitGroupKeys);
-
-    // If personIds are provided, find their current and former group keys
-    if (personIds.length > 0) {
-      // Find former group keys they belonged to
-      const formerGroupKeys = await db
-        .selectFrom('potential_duplicates')
-        .select('group_key')
-        .where('tenant_id', '=', tenantId)
-        .where('person_id', 'in', personIds)
-        .execute();
-      for (const row of formerGroupKeys) {
-        affectedGroupKeys.add(row.group_key);
-      }
-
-      // Query the persons' current details (including household address fingerprints)
-      const currentPersons = await db
-        .selectFrom('persons')
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .select([
-          'persons.id',
-          'persons.first_name',
-          'persons.last_name',
-          'persons.email',
-          'persons.household_id',
-          'households.address_fp_full',
-        ])
-        .where('persons.tenant_id', '=', tenantId)
-        .where('persons.id', 'in', personIds)
-        .execute();
-
-      // Compute current keys for each person
-      for (const p of currentPersons) {
-        const currentKeys = this.computePersonGroupKeys(p, placeholderHhId);
-        for (const k of currentKeys) {
-          affectedGroupKeys.add(k);
-        }
-      }
-
-      // Delete all existing duplicate entries for these persons (they'll be re-evaluated as part of the affected group keys)
-      await db
-        .deleteFrom('potential_duplicates')
-        .where('tenant_id', '=', tenantId)
-        .where('person_id', 'in', personIds)
-        .execute();
-    }
-
-    // 3. Re-evaluate each affected group key
-    for (const groupKey of affectedGroupKeys) {
-      await this.reevaluateGroupKey(tenantId, groupKey);
-    }
-  }
-
-  /**
-   * Helper to compute all valid duplicate group keys for a single person.
-   */
-  private computePersonGroupKeys(
-    person: {
-      first_name: string | null;
-      last_name: string | null;
-      email: string | null;
-      household_id: string | null;
-      address_fp_full: string | null;
-    },
-    placeholderHhId: string | null | undefined
-  ): string[] {
-    const keys: string[] = [];
-
-    // Email key
-    if (person.email && person.email.trim().length > 0) {
-      keys.push(`email:${person.email.trim().toLowerCase()}`);
-    }
-
-    // Household key
-    if (
-      person.first_name &&
-      person.last_name &&
-      person.first_name.trim().length > 0 &&
-      person.last_name.trim().length > 0 &&
-      person.household_id &&
-      (!placeholderHhId || String(person.household_id) !== String(placeholderHhId))
-    ) {
-      keys.push(`household:${person.household_id}:${person.first_name.trim().toLowerCase()}:${person.last_name.trim().toLowerCase()}`);
-    }
-
-    // Address fingerprint key
-    if (
-      person.first_name &&
-      person.last_name &&
-      person.first_name.trim().length > 0 &&
-      person.last_name.trim().length > 0 &&
-      person.address_fp_full &&
-      person.address_fp_full.trim().length > 0
-    ) {
-      keys.push(`address:${person.address_fp_full.trim().toLowerCase()}:${person.first_name.trim().toLowerCase()}:${person.last_name.trim().toLowerCase()}`);
-    }
-
-    return keys;
-  }
-
-  /**
-   * Re-evaluates a single duplicate group key.
-   * If there is more than 1 matching person, inserts/upserts them.
-   * Otherwise, deletes any entries for that key.
-   */
-  private async reevaluateGroupKey(tenantId: string, groupKey: string): Promise<void> {
-    const db = this.personsRepo.db;
-
-    // Find all matching persons currently in the database for this group key
-    let matchingPersons: Array<{ id: string; first_name: string | null; last_name: string | null }> = [];
-
-    if (groupKey.startsWith('email:')) {
-      const email = groupKey.slice('email:'.length);
-      matchingPersons = await db
-        .selectFrom('persons')
-        .select(['id', 'first_name', 'last_name'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'is not', null)
-        .where(sql`lower(email)`, '=', email)
-        .execute();
-    } else if (groupKey.startsWith('household:')) {
-      const rest = groupKey.slice('household:'.length);
-      const colon1 = rest.indexOf(':');
-      const householdId = rest.slice(0, colon1);
-      const rest2 = rest.slice(colon1 + 1);
-      const colon2 = rest2.indexOf(':');
-      const firstName = rest2.slice(0, colon2);
-      const lastName = rest2.slice(colon2 + 1);
-
-      matchingPersons = await db
-        .selectFrom('persons')
-        .select(['id', 'first_name', 'last_name'])
-        .where('tenant_id', '=', tenantId)
-        .where('household_id', '=', householdId)
-        .where('first_name', 'is not', null)
-        .where('last_name', 'is not', null)
-        .where(sql`lower(first_name)`, '=', firstName)
-        .where(sql`lower(last_name)`, '=', lastName)
-        .execute();
-    } else if (groupKey.startsWith('address:')) {
-      const rest = groupKey.slice('address:'.length);
-      const colon1 = rest.indexOf(':');
-      const addressFp = rest.slice(0, colon1);
-      const rest2 = rest.slice(colon1 + 1);
-      const colon2 = rest2.indexOf(':');
-      const firstName = rest2.slice(0, colon2);
-      const lastName = rest2.slice(colon2 + 1);
-
-      matchingPersons = await db
-        .selectFrom('persons')
-        .innerJoin('households', 'persons.household_id', 'households.id')
-        .select(['persons.id', 'persons.first_name', 'persons.last_name'])
-        .where('persons.tenant_id', '=', tenantId)
-        .where('households.address_fp_full', '=', addressFp)
-        .where('persons.first_name', 'is not', null)
-        .where('persons.last_name', 'is not', null)
-        .where(sql`lower(persons.first_name)`, '=', firstName)
-        .where(sql`lower(persons.last_name)`, '=', lastName)
-        .execute();
-    }
-
-    // Always delete existing entries for this group key
-    await db
-      .deleteFrom('potential_duplicates')
-      .where('tenant_id', '=', tenantId)
-      .where('group_key', '=', groupKey)
-      .execute();
-
-    // If there is still a duplicate group (match count > 1), insert them all
-    if (matchingPersons.length > 1) {
-      let reason = '';
-      if (groupKey.startsWith('email:')) {
-        reason = `Matching Email: "${groupKey.slice('email:'.length)}"`;
-      } else {
-        const firstPerson = matchingPersons[0];
-        const fullName = `${firstPerson.first_name || ''} ${firstPerson.last_name || ''}`.replace(/\s{2,}/g, ' ').trim();
-        if (groupKey.startsWith('household:')) {
-          reason = `Matching Name at Same Household: "${fullName}"`;
-        } else if (groupKey.startsWith('address:')) {
-          reason = `Matching Name at Same Address: "${fullName}"`;
-        }
-      }
-
-      const rowsToInsert = matchingPersons.map((p) => ({
-        tenant_id: tenantId,
-        group_key: groupKey,
-        person_id: String(p.id),
-        reason,
-      }));
-
-      await db
-        .insertInto('potential_duplicates')
-        .values(rowsToInsert)
-        .execute();
     }
   }
 }

@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { DatePipe, LowerCasePipe } from '@angular/common';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -139,10 +139,6 @@ interface DuplicateGroup {
                 {{ getModeDescription() }}
               </p>
             </div>
-            <button class="btn btn-outline btn-sm gap-2" (click)="loadDuplicates()">
-              <pc-icon name="arrow-path" [size]="4"></pc-icon>
-              Scan Again
-            </button>
           </div>
 
           <!-- Loading State -->
@@ -499,6 +495,37 @@ interface DuplicateGroup {
                 </div>
               }
             </div>
+
+            <!-- Pagination Controls -->
+            @if (totalPages() > 1) {
+              <div
+                class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
+              >
+                <div class="text-sm text-base-content/60 font-light">
+                  Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
+                  <span class="font-semibold text-base-content">{{ totalPages() }}</span>
+                  ({{ totalGroups() }} duplicate groups total)
+                </div>
+                <div class="join">
+                  <button
+                    class="join-item btn btn-outline btn-sm gap-1"
+                    [disabled]="currentPage() === 1"
+                    (click)="prevPage()"
+                  >
+                    <pc-icon name="chevron-left" [size]="4"></pc-icon>
+                    Previous
+                  </button>
+                  <button
+                    class="join-item btn btn-outline btn-sm gap-1"
+                    [disabled]="currentPage() >= totalPages()"
+                    (click)="nextPage()"
+                  >
+                    Next
+                    <pc-icon name="chevron-right" [size]="4"></pc-icon>
+                  </button>
+                </div>
+              </div>
+            }
           }
         </div>
       }
@@ -524,6 +551,11 @@ export class DuplicateManager implements OnInit {
   protected readonly isLoading = signal(false);
   protected readonly groups = signal<DuplicateGroup[]>([]);
 
+  protected readonly currentPage = signal(1);
+  protected readonly pageSize = signal(10);
+  protected readonly totalGroups = signal(0);
+  protected readonly totalPages = computed(() => Math.ceil(this.totalGroups() / this.pageSize()));
+
   public ngOnInit() {
     // We start on the selection screen
   }
@@ -531,6 +563,8 @@ export class DuplicateManager implements OnInit {
   protected setMode(mode: 'select' | 'people' | 'households' | 'companies') {
     this.selectedMode.set(mode);
     this.groups.set([]);
+    this.currentPage.set(1);
+    this.totalGroups.set(0);
     if (mode !== 'select') {
       this.loadDuplicates();
     }
@@ -635,16 +669,19 @@ export class DuplicateManager implements OnInit {
     this.isLoading.set(true);
     try {
       const mode = this.selectedMode();
-      let dbGroups: any[] = [];
+      let response: { groups: any[]; total: number } = { groups: [], total: 0 };
+      const options = { page: this.currentPage(), pageSize: this.pageSize() };
       if (mode === 'people') {
-        dbGroups = await this.personsSvc.findPotentialDuplicates();
+        response = await this.personsSvc.findPotentialDuplicates(options);
       } else if (mode === 'households') {
-        dbGroups = await this.householdsSvc.findPotentialDuplicates();
+        response = await this.householdsSvc.findPotentialDuplicates(options);
       } else if (mode === 'companies') {
-        dbGroups = await this.companiesSvc.findPotentialDuplicates();
+        response = await this.companiesSvc.findPotentialDuplicates(options);
       }
 
-      const mappedGroups: DuplicateGroup[] = dbGroups.map((g: any) => {
+      this.totalGroups.set(response.total);
+
+      const mappedGroups: DuplicateGroup[] = response.groups.map((g: any) => {
         let selectedTargetId: string | undefined = undefined;
         let selectedSourceId: string | undefined = undefined;
         const items = g.persons || g.households || g.companies || [];
@@ -665,7 +702,6 @@ export class DuplicateManager implements OnInit {
           ...g,
           selectedTargetId,
           selectedSourceId,
-          ...g,
         };
       });
       this.groups.set(mappedGroups);
@@ -673,6 +709,20 @@ export class DuplicateManager implements OnInit {
       this.alertSvc.showError('Failed to fetch duplicates');
     } finally {
       this.isLoading.set(false);
+    }
+  }
+
+  protected nextPage() {
+    if (this.currentPage() < this.totalPages()) {
+      this.currentPage.update((p) => p + 1);
+      this.loadDuplicates();
+    }
+  }
+
+  protected prevPage() {
+    if (this.currentPage() > 1) {
+      this.currentPage.update((p) => p - 1);
+      this.loadDuplicates();
     }
   }
 
@@ -710,7 +760,6 @@ export class DuplicateManager implements OnInit {
       OKBtn: 'Merge',
       btn2: 'Cancel',
       OKBtnCallback: async () => {
-        this.alertSvc.showInfo('Merging records...');
         try {
           const mode = this.selectedMode();
           if (mode === 'people') {
@@ -721,7 +770,17 @@ export class DuplicateManager implements OnInit {
             await this.companiesSvc.mergeCompanies(targetId, sourceId);
           }
           this.alertSvc.showSuccess(`Successfully merged duplicate records into "${primaryName}"`);
-          await this.loadDuplicates();
+
+          const currentGroups = this.groups().filter((_, idx) => idx !== groupIndex);
+          this.groups.set(currentGroups);
+          this.totalGroups.update((t) => Math.max(0, t - 1));
+
+          if (currentGroups.length === 0 && this.currentPage() > 1) {
+            this.currentPage.update((p) => p - 1);
+            this.loadDuplicates();
+          } else if (currentGroups.length === 0 && this.totalGroups() > 0) {
+            this.loadDuplicates();
+          }
         } catch (err: any) {
           this.alertSvc.showError(err?.message || 'Merge failed');
         }

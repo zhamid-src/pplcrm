@@ -54,7 +54,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           ward,
           geocoding_status,
         };
-      })
+      }),
     );
 
     const createdRows = await super.addMany({ rows: processedRows }, trx);
@@ -462,40 +462,48 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   /**
    * Find potential duplicates within the tenant (sharing identical full address fingerprint).
    */
-  public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
-    const tenantRow = await (BaseRepository as any)['_db']
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', tenant_id)
-      .executeTakeFirst();
-    const placeholderHhId = tenantRow?.placeholder_household_id;
+  public async findPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: any[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
 
-    const duplicateAddresses = await this.getSelect()
-      .select(['address_fp_full'])
-      .select((eb) => [
-        eb.fn.count('households.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
-      ])
+    const countResult = await this.db
+      .selectFrom('potential_duplicates')
+      .select([sql<number>`count(distinct group_key)`.as('total')])
       .where('tenant_id', '=', tenant_id)
-      .where('address_fp_full', 'is not', null)
-      .where(sql`trim(address_fp_full)`, '!=', '')
-      .$if(!!placeholderHhId, (qb) => qb.where('id', '!=', placeholderHhId!))
-      .groupBy('address_fp_full')
-      .having(sql`count(households.id)`, '>', 1)
-      .execute();
+      .where('household_id', 'is not', null)
+      .executeTakeFirst();
+    const total = Number((countResult as any)?.total || 0);
 
-    const hhIds = new Set<string>();
-    for (const group of duplicateAddresses) {
-      const ids = group.ids;
-      if (Array.isArray(ids)) {
-        ids.forEach((id) => hhIds.add(String(id)));
-      }
+    if (total === 0) {
+      return { groups: [], total: 0 };
     }
 
-    if (hhIds.size === 0) return [];
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .select('group_key')
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'is not', null)
+      .groupBy('group_key')
+      .orderBy(sql`min(id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
 
-    const dbRows = await this.getSelect()
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
       .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
         'households.id',
         'households.street_num',
         'households.street1',
@@ -509,24 +517,20 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.notes',
         'households.created_at',
       ])
-      .where('households.tenant_id', '=', tenant_id)
-      .where('households.id', 'in', Array.from(hhIds))
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
 
-    const hhMap = new Map<string, any>();
-    for (const row of dbRows) {
-      hhMap.set(String(row.id), {
-        ...row,
-        id: String(row.id),
-      });
+    const hhIds = rows.map((r) => String(r.id));
+    if (hhIds.length === 0) {
+      return { groups: [], total };
     }
 
-    // Now fetch all persons belonging to these duplicate household IDs
     const persons = await (BaseRepository as any)['_db']
       .selectFrom('persons')
       .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
       .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'in', Array.from(hhIds))
+      .where('household_id', 'in', hhIds)
       .execute();
 
     const hhToPersons = new Map<string, any[]>();
@@ -538,33 +542,25 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       hhToPersons.get(hhId)!.push(p);
     }
 
-    const groups: Array<{ reason: string; households: any[] }> = [];
-    for (const group of duplicateAddresses) {
-      const groupHouseholds = group.ids
-        .map((id) => {
-          const hh = hhMap.get(id);
-          if (hh) {
-            return {
-              ...hh,
-              persons: hhToPersons.get(id) || [],
-            };
-          }
-          return null;
-        })
-        .filter(Boolean);
-
-      if (groupHouseholds.length > 1) {
-        const first = groupHouseholds[0];
-        const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip]
-          .filter(Boolean)
-          .join(' ');
-        groups.push({
-          reason: `Matching Address: "${addrStr}"`,
-          households: groupHouseholds,
+    const groupsMap = new Map<string, { reason: string; households: any[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          households: [],
         });
       }
+      groupsMap.get(groupKey)!.households.push({
+        ...row,
+        id: String(row.id),
+        persons: hhToPersons.get(String(row.id)) || [],
+      });
     }
-    return groups;
+
+    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter(Boolean) as any[];
+
+    return { groups: sortedGroups, total };
   }
 
   /**

@@ -19,7 +19,7 @@ export const CompaniesRouter = router({
         rows: z.array(CompanyInputSchema),
         skipped: z.number().int().nonnegative().optional(),
         file_name: z.string().trim().min(1).max(255).optional(),
-      })
+      }),
     )
     .mutation(async ({ input, ctx }) => {
       ctx.res.status(202);
@@ -27,7 +27,15 @@ export const CompaniesRouter = router({
     }),
 
   findPotentialDuplicates: authProcedure
-    .query(({ ctx }) => companies.findPotentialDuplicates(ctx.auth)),
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.findPotentialDuplicates(ctx.auth, input)),
 
   mergeCompanies: authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))

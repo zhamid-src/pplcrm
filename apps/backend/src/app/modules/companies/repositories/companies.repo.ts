@@ -10,34 +10,48 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
   /**
    * Find potential duplicates within the tenant (sharing identical trimmed, case-insensitive company name).
    */
-  public async findPotentialDuplicates(tenant_id: string): Promise<any[]> {
-    const duplicateNames = await this.getSelect()
-      .select([
-        sql<string>`lower(trim(name))`.as('name_lower'),
-      ])
-      .select((eb) => [
-        eb.fn.count('companies.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['companies.id']).as('ids'),
-      ])
-      .where('tenant_id', '=', tenant_id)
-      .where('name', 'is not', null)
-      .where(sql`trim(name)`, '!=', '')
-      .groupBy(sql`lower(trim(name))`)
-      .having(sql`count(companies.id)`, '>', 1)
-      .execute();
+  public async findPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: any[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
 
-    const companyIds = new Set<string>();
-    for (const group of duplicateNames) {
-      const ids = group.ids;
-      if (Array.isArray(ids)) {
-        ids.forEach((id) => companyIds.add(String(id)));
-      }
+    const countResult = await this.db
+      .selectFrom('potential_duplicates')
+      .select([sql<number>`count(distinct group_key)`.as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('company_id', 'is not', null)
+      .executeTakeFirst();
+    const total = Number((countResult as any)?.total || 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
     }
 
-    if (companyIds.size === 0) return [];
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .select('group_key')
+      .where('tenant_id', '=', tenant_id)
+      .where('company_id', 'is not', null)
+      .groupBy('group_key')
+      .orderBy(sql`min(id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
 
-    const dbRows = await this.getSelect()
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
       .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
         'companies.id',
         'companies.name',
         'companies.description',
@@ -48,23 +62,20 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
         'companies.notes',
         'companies.created_at',
       ])
-      .where('companies.tenant_id', '=', tenant_id)
-      .where('companies.id', 'in', Array.from(companyIds))
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
 
-    const companyMap = new Map<string, any>();
-    for (const row of dbRows) {
-      companyMap.set(String(row.id), {
-        ...row,
-        id: String(row.id),
-      });
+    const companyIds = rows.map((r) => String(r.id));
+    if (companyIds.length === 0) {
+      return { groups: [], total };
     }
 
-    // Fetch all persons associated with these duplicate companies
-    const persons = await (BaseRepository as any)['_db'].selectFrom('persons')
+    const persons = await (BaseRepository as any)['_db']
+      .selectFrom('persons')
       .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
       .where('tenant_id', '=', tenant_id)
-      .where('company_id', 'in', Array.from(companyIds))
+      .where('company_id', 'in', companyIds)
       .execute();
 
     const companyToPersons = new Map<string, any[]>();
@@ -76,38 +87,31 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       companyToPersons.get(compId)!.push(p);
     }
 
-    const groups: Array<{ reason: string; companies: any[] }> = [];
-    for (const group of duplicateNames) {
-      const groupCompanies = group.ids.map((id) => {
-        const comp = companyMap.get(id);
-        if (comp) {
-          return {
-            ...comp,
-            persons: companyToPersons.get(id) || [],
-          };
-        }
-        return null;
-      }).filter(Boolean);
-
-      if (groupCompanies.length > 1) {
-        groups.push({
-          reason: `Matching Company Name: "${groupCompanies[0].name}"`,
-          companies: groupCompanies,
+    const groupsMap = new Map<string, { reason: string; companies: any[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          companies: [],
         });
       }
+      groupsMap.get(groupKey)!.companies.push({
+        ...row,
+        id: String(row.id),
+        persons: companyToPersons.get(String(row.id)) || [],
+      });
     }
-    return groups;
+
+    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter(Boolean) as any[];
+
+    return { groups: sortedGroups, total };
   }
 
   /**
    * Merges a source company record into a target company record in a transaction.
    */
-  public async mergeCompanies(input: {
-    tenant_id: string;
-    target_id: string;
-    source_id: string;
-    user_id: string;
-  }) {
+  public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
       const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
@@ -118,20 +122,16 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
 
       // 1. Merge fields (copy null/empty fields from source to target)
       const targetUpdate: Record<string, any> = {};
-      const fields = [
-        'name',
-        'description',
-        'website',
-        'email',
-        'phone',
-        'industry',
-        'notes',
-      ] as const;
+      const fields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'] as const;
 
       for (const field of fields) {
         const targetVal = target[field];
         const sourceVal = source[field];
-        if ((targetVal == null || String(targetVal).trim() === '') && (sourceVal != null && String(sourceVal).trim() !== '')) {
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
           targetUpdate[field] = sourceVal;
         }
       }
@@ -143,7 +143,8 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       }
 
       // 2. Reassign people (persons.company_id)
-      await trx.updateTable('persons')
+      await trx
+        .updateTable('persons')
         .set({ company_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('company_id', '=', input.source_id)

@@ -71,11 +71,8 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   private readonly importsRepo = new ImportsRepo();
   private readonly storageService = new StorageService();
 
-  /**
-   * Find potential duplicate companies for a tenant.
-   */
-  public async findPotentialDuplicates(auth: IAuthKeyPayload) {
-    return this.getRepo().findPotentialDuplicates(auth.tenant_id);
+  public async findPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().findPotentialDuplicates(auth.tenant_id, options);
   }
 
   /**

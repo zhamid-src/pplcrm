@@ -75,7 +75,6 @@ export class PersonsService {
 
     const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
     if (result && typeof result === 'object') {
-      await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
       try {
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
         await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
@@ -172,8 +171,6 @@ export class PersonsService {
       } as OperationDataType<'persons', 'update'>,
     });
     if (result && typeof result === 'object') {
-      await this.personsRepo.queueDuplicatesJob(auth.tenant_id, [String((result as any).id)]);
-
       const updatedPerson = result as any;
       if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original.assigned_to)) {
         const newAssigneeId = data.assigned_to;
@@ -649,7 +646,13 @@ export class PersonsService {
       const validEntries: ValidEntry[] = [];
       for (const raw of chunk) {
         const sanitized = this.sanitizeRow(raw);
-        if (!sanitized.first_name && !sanitized.last_name && !sanitized.email && !sanitized.mobile && !sanitized.notes) {
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
           results.skipped += 1;
           continue;
         }
@@ -668,7 +671,11 @@ export class PersonsService {
           isBlankAddress,
           fp_street: isBlankAddress
             ? null
-            : fingerprintStreet({ street_num: sanitized.street_num, street1: sanitized.street1, street2: sanitized.street2 }),
+            : fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              }),
           fp_full: isBlankAddress
             ? null
             : fingerprintFull({
@@ -735,9 +742,7 @@ export class PersonsService {
           // 2b. Batch-resolve addressed households with a single IN query
           const fpCache = new Map<string, string>(); // fp_full -> household_id
           const uniqueFps = [
-            ...new Set(
-              validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string),
-            ),
+            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
           ];
           if (uniqueFps.length > 0) {
             const existingHouseholds = await (trx as any)
@@ -919,7 +924,6 @@ export class PersonsService {
 
     if (importedPersonIds.length > 0) {
       try {
-        await this.personsRepo.queueDuplicatesJob(tenant_id, importedPersonIds);
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
         await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
       } catch (err) {
@@ -947,8 +951,8 @@ export class PersonsService {
     });
   }
 
-  public async findPotentialDuplicates(auth: IAuthKeyPayload) {
-    return this.personsRepo.findPotentialDuplicates(auth.tenant_id);
+  public async findPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.findPotentialDuplicates(auth.tenant_id, options);
   }
 
   public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
