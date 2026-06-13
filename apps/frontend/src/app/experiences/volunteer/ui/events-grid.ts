@@ -14,7 +14,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
     <div class="flex flex-col gap-6">
       <!-- Title Header -->
       <pc-grid-header
-        title="Schedule"
+        title="Events"
         description="Manage volunteer shifts, schedule events, and track attendance records."
       ></pc-grid-header>
 

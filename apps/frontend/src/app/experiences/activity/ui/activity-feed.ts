@@ -675,7 +675,7 @@ export class ActivityFeed implements OnInit {
       case 'volunteer_shifts':
       case 'volunteer_shift': {
         const eventId = metadata.event_id || id;
-        return { path: `/schedule/${eventId}`, label: undefined };
+        return { path: `/events/${eventId}`, label: undefined };
       }
       case 'newsletter':
       case 'newsletters':

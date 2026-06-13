@@ -290,7 +290,7 @@ export class EventDetailComponent implements OnInit {
         if (typeof done === 'function') {
           done();
         } else {
-          await this.router.navigate(['/schedule', res.id]);
+          await this.router.navigate(['/events', res.id]);
         }
       } else {
         await this.volunteerEventsSvc.update(this.id!, data as UpdateVolunteerEventType);
@@ -299,7 +299,7 @@ export class EventDetailComponent implements OnInit {
         if (typeof done === 'function') {
           done();
         } else {
-          await this.router.navigate(['/schedule', this.id]);
+          await this.router.navigate(['/events', this.id]);
         }
       }
     } catch (err: any) {
@@ -325,7 +325,7 @@ export class EventDetailComponent implements OnInit {
       await this.volunteerEventsSvc.delete(this.id);
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/schedule']);
+      await this.router.navigate(['/events']);
     } catch (err: any) {
       this.alerts.showError(err?.message || 'Failed to delete event');
     } finally {
