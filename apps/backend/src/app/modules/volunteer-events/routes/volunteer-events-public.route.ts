@@ -1,8 +1,36 @@
 import { FastifyPluginCallback } from 'fastify';
 import { VolunteerEventsController } from '../controller';
 import formBody from '@fastify/formbody';
+import { TRPCError } from '@trpc/server';
 
 const ctrl = new VolunteerEventsController();
+
+function getStatusFromError(err: any): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'UNAUTHORIZED':
+        return 401;
+      case 'FORBIDDEN':
+        return 403;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'PRECONDITION_FAILED':
+        return 412;
+      case 'PAYLOAD_TOO_LARGE':
+        return 413;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      case 'INTERNAL_SERVER_ERROR':
+      default:
+        return 500;
+    }
+  }
+  return err.statusCode || 500;
+}
 
 // Shared CSS/Design Tokens block
 const SHARED_STYLES = `
@@ -628,7 +656,8 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </html>
       `);
     } catch (err: any) {
-      reply.status(500).type('text/html');
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
       return reply.send(renderErrorHtml(err.message || 'Failed to load volunteer events.'));
     }
   });
@@ -1028,7 +1057,8 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </html>
       `);
     } catch (err: any) {
-      reply.status(500).type('text/html');
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
       return reply.send(renderErrorHtml(err.message || 'Failed to load event details.'));
     }
   });
@@ -1073,7 +1103,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
     } catch (err: any) {
       fastify.log.error(err);
-      const statusCode = err.statusCode || 500;
+      const statusCode = getStatusFromError(err);
       const message = err.message || 'An unexpected error occurred during signup.';
 
       if (isJsonExpected) {
