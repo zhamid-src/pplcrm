@@ -33,14 +33,6 @@ export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.count.query();
   }
 
-  public override delete(_id: string): Promise<boolean> {
-    return Promise.resolve(false);
-  }
-
-  public override deleteMany(_ids: string[]): Promise<boolean> {
-    return Promise.resolve(false);
-  }
-
   public detachTag(_id: string, _tag_name: string) {
     return Promise.resolve(false);
   }

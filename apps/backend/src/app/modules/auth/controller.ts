@@ -199,6 +199,22 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         trx,
       );
 
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'create',
+          entity: 'authusers',
+          entity_id: String(user.id),
+          quantity: 1,
+          metadata: {
+            id: String(user.id),
+            entity_label: `${user.first_name} ${input.last_name || ''}`.trim(),
+          },
+        },
+        trx,
+      );
+
       return user;
     });
 
@@ -654,6 +670,72 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
   }
 
+  public async deleteUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can delete users.');
+    }
+
+    const userIdToDelete = String(userId);
+    if (userIdToDelete === auth.user_id) {
+      throw new BadRequestError('You cannot delete yourself.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: userIdToDelete });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot delete owner accounts.');
+    }
+
+    return await repo.transaction().execute(async (trx) => {
+      const profile = (await this.profiles.getOneByAuthId(userIdToDelete)) as any;
+      if (profile?.avatar_file_id) {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('id', '=', profile.avatar_file_id)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx.deleteFrom('files').where('id', '=', profile.avatar_file_id).execute();
+        } catch (err) {
+          console.error('Failed to clean up user avatar on delete', err);
+        }
+      }
+
+      await trx.deleteFrom('profiles').where('auth_id', '=', userIdToDelete).execute();
+      await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
+      await trx
+        .deleteFrom('authusers')
+        .where('id', '=', userIdToDelete)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, userIdToDelete);
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'authusers',
+          entity_id: userIdToDelete,
+          quantity: 1,
+          metadata: {
+            id: userIdToDelete,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+          },
+        },
+        trx,
+      );
+
+      return { success: true };
+    });
+  }
+
   private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
     if (!ipAddress) return false;
     const existing = await this.sessions.db
@@ -916,6 +998,34 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
               trx,
             );
           }
+
+          const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at', 'password'];
+          const changes: Record<string, any> = {};
+          for (const key of Object.keys(row)) {
+            if (skipKeys.includes(key)) continue;
+            const oldVal = (existingUser as any)[key];
+            const newVal = (row as any)[key];
+            if (oldVal !== newVal) {
+              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+            }
+          }
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: 'update',
+              entity: 'authusers',
+              entity_id: userId,
+              quantity: 1,
+              metadata: {
+                id: userId,
+                entity_label: `${updatedUser.first_name} ${updatedUser.last_name || ''}`.trim(),
+                changes,
+              },
+            },
+            trx,
+          );
+
           return updatedUser;
         });
     }

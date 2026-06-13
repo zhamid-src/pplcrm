@@ -1,0 +1,144 @@
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+    <div class="flex items-center justify-between border-b border-base-300 pb-4">
+      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+        <pc-icon name="user-circle" class="text-primary" [size]="6"></pc-icon>
+        User Profile
+      </h1>
+      <pc-add-btn-row
+        [isLoading]="loading()"
+        [btn1Text]="'Edit User'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete User'"
+        (deleteClicked)="deleteUser()"
+        (btn1Clicked)="editUser()"
+      ></pc-add-btn-row>
+    </div>
+
+    @if (error() && !detail()) {
+    <div class="p-6 alert alert-error">
+      <span>{{ error() }}</span>
+    </div>
+    } @else if (loading() && !detail()) {
+    <div class="flex justify-center items-center py-20">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+    } @else if (detail()) {
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left Column: User Card -->
+      <div class="lg:col-span-1 flex flex-col gap-6">
+        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
+          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+
+          <div class="px-6 pb-6 relative flex flex-col items-center">
+            <div class="avatar placeholder -mt-12 mb-3">
+              <div
+                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
+              >
+                @if (detail()?.avatar_url) {
+                <img [src]="detail()?.avatar_url" alt="Avatar" />
+                } @else {
+                <pc-icon name="user-circle" [size]="10"></pc-icon>
+                }
+              </div>
+            </div>
+
+            <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
+            <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
+
+            <div class="badge badge-lg badge-neutral gap-2 mb-6 font-medium capitalize">
+              <pc-icon name="identification" [size]="4"></pc-icon>
+              {{ detail()?.role }}
+            </div>
+
+            <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                <div class="flex items-center gap-2">
+                  <pc-icon
+                    name="check-circle"
+                    [size]="4"
+                    [class]="detail()?.verified ? 'text-success' : 'text-base-content/40'"
+                  ></pc-icon>
+                  <span>Verified:</span>
+                </div>
+                <span class="font-bold">{{ detail()?.verified ? 'Yes' : 'No' }}</span>
+              </div>
+            </div>
+
+            <div
+              class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex flex-col gap-1 leading-normal"
+            >
+              <span>Created: {{ detail()?.created_at | date: 'medium' }}</span>
+              <span>Last updated: {{ detail()?.updated_at | date: 'medium' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Stats & Metadata & Activity -->
+      <div class="lg:col-span-2 flex flex-col gap-6">
+        <!-- Stats Cards Grid -->
+        @if (stats()) {
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          @for (card of activityCards(); track card.key) {
+          <div class="stats stats-vertical rounded border border-base-300 bg-base-100 shadow-sm">
+            <div class="stat">
+              <div class="stat-title text-sm text-base-content/70">{{ card.title }}</div>
+              <div class="stat-value text-2xl font-semibold">{{ card.value }}</div>
+              <div class="stat-desc text-xs text-base-content/60">
+                {{ card.subtitle }} @if (card.asOf) {
+                <span class="block">As of {{ formatAsOf(card.asOf) }}</span>
+                }
+              </div>
+            </div>
+          </div>
+          }
+        </div>
+        }
+
+        <!-- Account Metadata -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 p-6">
+          <h3 class="text-lg font-semibold border-b border-base-200 pb-2 mb-4">Account Metadata</h3>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p class="text-xs uppercase tracking-wide text-base-content/60">User ID</p>
+              <p class="text-sm font-medium text-base-content/90">{{ detail()?.id }}</p>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-base-content/60">Role</p>
+              <p class="text-sm font-medium text-base-content/90">{{ detail()?.role || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-base-content/60">Created</p>
+              <p class="text-sm font-medium text-base-content/90">
+                {{ detail()?.created_at ? (detail()?.created_at | date: 'medium') : '—' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-base-content/60">Last updated</p>
+              <p class="text-sm font-medium text-base-content/90">
+                {{ detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : '—' }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity log track -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col">
+          <h3 class="text-lg font-semibold border-b border-base-200 pb-2 mb-4">Activity Log</h3>
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'authusers'" [entityId]="id"></pc-record-activities>
+          </div>
+        </div>
+      </div>
+    </div>
+    } @else {
+    <div class="alert alert-error">
+      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+      <span>User not found or failed to load.</span>
+    </div>
+    }
+  </div>
+</div>
