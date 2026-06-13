@@ -5,7 +5,7 @@ import { IAuthUser, AddTaskObj } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 
 import { AuthService } from '../../../auth/auth-service';
 import { TasksService } from '../services/tasks-service';
@@ -13,7 +13,7 @@ import { TeamsService } from '../../teams/services/teams-service';
 
 @Component({
   selector: 'pc-task-add',
-  imports: [FormField, Icon, AddBtnRow],
+  imports: [FormField, Icon, FormActions],
   template: `
     <section
       class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl"
@@ -28,14 +28,14 @@ import { TeamsService } from '../../teams/services/teams-service';
           </h1>
           <p class="text-sm text-neutral-400 mt-2">Add a new task to assign, track priority, status, and deadlines.</p>
         </div>
-        <pc-add-btn-row
+        <pc-form-actions
           [isLoading]="submitting()"
           [signalForm]="form"
           (btn1Clicked)="submit($event)"
           [buttonsToShow]="'two'"
           [btn1Text]="'Create Task'"
           [btn1Icon]="'save'"
-        ></pc-add-btn-row>
+        ></pc-form-actions>
       </div>
 
       <form class="space-y-6" (submit)="submit($event)" novalidate>

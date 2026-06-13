@@ -2,7 +2,7 @@ import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { TRPCClientError } from '@trpc/client';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
@@ -14,7 +14,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-add-tag',
-  imports: [FormField, AddBtnRow],
+  imports: [FormField, FormActions],
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
@@ -30,7 +30,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
             <span class="text-error text-xs">Use a value like #3366ff</span>
           }
         </div>
-        <pc-add-btn-row [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-add-btn-row>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
       </div>
     </form>
   </div>`,
@@ -66,15 +66,15 @@ export class AddTag {
   protected isLoading = this._loading.visible;
 
   /**
-   * Reference to the `AddBtnRow` component used for handling UI state like "stay or cancel".
+   * Reference to the `FormActions` component used for handling UI state like "stay or cancel".
    * Populated after view initialization.
    */
-  public readonly addBtnRow = viewChild(AddBtnRow);
+  public readonly formActions = viewChild(FormActions);
 
   /**
    * Submits the form to create a new tag.
    * Shows success or error messages based on result.
-   * If successful, resets the `AddBtnRow` component's state.
+   * If successful, resets the `FormActions` component's state.
    */
   protected async add(event?: any) {
     if (event instanceof Event) {
@@ -109,7 +109,7 @@ export class AddTag {
             color: '#0ea5e9',
           });
 
-          this.addBtnRow()?.stayOrCancel();
+          this.formActions()?.stayOrCancel();
         } catch (err: unknown) {
           if (err instanceof TRPCClientError) {
             this.alertSvc.showError(err.message);

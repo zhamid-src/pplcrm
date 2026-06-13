@@ -6,7 +6,7 @@
         Household Details
       </h1>
       @if (household() && !household()?.is_placeholder) {
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="isLoading()"
         [btn1Text]="'Edit Household'"
         [btn1Icon]="'pencil-square'"
@@ -14,7 +14,7 @@
         [deleteText]="'Delete Household'"
         (deleteClicked)="deleteHousehold()"
         (btn1Clicked)="editHousehold()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
       }
     </div>
 

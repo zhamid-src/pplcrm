@@ -2,14 +2,14 @@ import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { form, required, email, FormField } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-add',
-  imports: [FormField, AddBtnRow],
+  imports: [FormField, FormActions],
   template: `
     <section class="max-w-3xl mx-auto w-full p-6">
       <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
@@ -17,14 +17,14 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
           <h1 class="text-2xl font-semibold">Invite User</h1>
           <p class="text-sm text-base-content/60">Send an invitation to add a new teammate to this tenant.</p>
         </div>
-        <pc-add-btn-row
+        <pc-form-actions
           [isLoading]="submitting()"
           [signalForm]="form"
           (btn1Clicked)="submit($event)"
           [buttonsToShow]="'two'"
           [btn1Text]="'Send Invite'"
           [btn1Icon]="'save'"
-        ></pc-add-btn-row>
+        ></pc-form-actions>
       </div>
 
       <form class="space-y-4" (submit)="submit($event)" novalidate>

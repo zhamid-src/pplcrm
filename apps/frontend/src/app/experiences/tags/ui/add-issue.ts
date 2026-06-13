@@ -3,7 +3,7 @@ import { form, submit, FormField, validateStandardSchema } from '@angular/forms/
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AddTagObj } from '@common';
 import { TRPCClientError } from '@trpc/client';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
@@ -14,7 +14,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-add-issue',
-  imports: [FormField, AddBtnRow],
+  imports: [FormField, FormActions],
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
@@ -59,7 +59,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
             }
           }
         </div>
-        <pc-add-btn-row [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-add-btn-row>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
       </div>
     </form>
   </div>`,
@@ -83,7 +83,7 @@ export class AddIssue {
 
   protected isLoading = this._loading.visible;
 
-  public readonly addBtnRow = viewChild(AddBtnRow);
+  public readonly formActions = viewChild(FormActions);
 
   protected async add(event?: any) {
     if (event instanceof Event) {
@@ -106,7 +106,7 @@ export class AddIssue {
           this.alertSvc.showSuccess('Issue added successfully.');
 
           this.payload.set({ name: '', description: '', color: '#ef4444' });
-          this.addBtnRow()?.stayOrCancel();
+          this.formActions()?.stayOrCancel();
         } catch (err: unknown) {
           if (err instanceof TRPCClientError) {
             this.alertSvc.showError(err.message);

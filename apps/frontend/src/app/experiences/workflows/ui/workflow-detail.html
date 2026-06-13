@@ -15,7 +15,7 @@
         </p>
       </div>
     </div>
-    <pc-add-btn-row
+    <pc-form-actions
       [isLoading]="isLoading()"
       [signalForm]="form"
       (btn1Clicked)="saveSettings($event)"
@@ -26,7 +26,7 @@
       [deleteText]="'Delete Automation'"
       (deleteClicked)="deleteWorkflow()"
       [disabled]="!triggerSelected()"
-    ></pc-add-btn-row>
+    ></pc-form-actions>
   </div>
 
   <!-- TRIGGER SELECTOR SCREEN FOR NEW WORKFLOWS -->

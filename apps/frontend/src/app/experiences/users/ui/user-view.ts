@@ -6,14 +6,14 @@ import { IAuthUserDetail, IUserStatsSnapshot } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
   templateUrl: './user-view.html',
 })
 export class UserViewComponent implements OnInit {

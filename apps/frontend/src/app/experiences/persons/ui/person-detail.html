@@ -9,7 +9,7 @@
         <pc-icon [name]="person()?.id ? 'pencil-square' : 'user-plus'" [size]="5" class="text-primary"></pc-icon>
         {{ person()?.id ? 'Edit Person Details' : 'Add New Person' }}
       </h2>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="isLoading()"
         [signalForm]="form"
         (btn1Clicked)="save($event)"
@@ -18,7 +18,7 @@
         [showDelete]="!!person()?.id"
         [deleteText]="'Delete Person'"
         (deleteClicked)="deletePerson()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
 
     <form (submit)="save()" novalidate class="flex flex-col gap-5">

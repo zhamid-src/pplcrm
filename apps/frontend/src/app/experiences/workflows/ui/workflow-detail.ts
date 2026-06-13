@@ -16,7 +16,7 @@ import { VolunteerEventsFrontendService } from '../../volunteer/services/volunte
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
@@ -29,7 +29,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
     RecordActivities,
     DatePipe,
     VisualNewsletterEditorComponent,
-    AddBtnRow,
+    FormActions,
   ],
   templateUrl: './workflow-detail.html',
   providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],

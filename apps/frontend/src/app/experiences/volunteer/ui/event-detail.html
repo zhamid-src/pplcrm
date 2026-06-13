@@ -23,7 +23,7 @@
           </p>
         </div>
       </div>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="saving()"
         [signalForm]="form"
         [disabled]="slugChecking() || slugUnique() === false"
@@ -34,7 +34,7 @@
         [showDelete]="!isNew()"
         [deleteText]="'Delete Event'"
         (deleteClicked)="deleteEvent()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
 
     <!-- Error alert -->

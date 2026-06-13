@@ -8,13 +8,16 @@
   </button>
 
   @if (showDelete()) {
-  <button type="button" class="btn btn-error btn-outline btn-sm gap-2" (click)="handleDeleteClicked()" [disabled]="isLoading()">
+  <button
+    type="button"
+    class="btn btn-error btn-outline btn-sm gap-2"
+    (click)="handleDeleteClicked()"
+    [disabled]="isLoading()"
+  >
     <pc-icon name="trash" [size]="4" />
     {{ deleteText() }}
   </button>
-  }
-
-  @if (buttonsToShow() === 'three' && !showDelete()) {
+  } @if (buttonsToShow() === 'three' && !showDelete()) {
   <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
     @if (isLoading()) {
     <span class="loading loading-spinner loading-xs text-primary-content"></span>

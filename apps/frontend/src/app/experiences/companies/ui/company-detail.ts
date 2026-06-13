@@ -8,12 +8,12 @@ import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule, AddBtnRow],
+  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule, FormActions],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
@@ -36,7 +36,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                 {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
               </p>
             </div>
-            <pc-add-btn-row
+            <pc-form-actions
               [isLoading]="isLoading()"
               [signalForm]="form"
               (btn1Clicked)="save($event)"
@@ -45,7 +45,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
               [showDelete]="!isNewMode()"
               [deleteText]="'Delete Company'"
               (deleteClicked)="deleteCompany()"
-            ></pc-add-btn-row>
+            ></pc-form-actions>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

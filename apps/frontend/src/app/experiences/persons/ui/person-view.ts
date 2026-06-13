@@ -14,12 +14,12 @@ import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-person-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
   templateUrl: './person-view.html',
 })
 export class PersonView implements OnInit {

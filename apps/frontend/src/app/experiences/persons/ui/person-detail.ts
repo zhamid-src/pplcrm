@@ -6,7 +6,7 @@ import { form, FormField, validateStandardSchema } from '@angular/forms/signals'
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@uxcommon/components/tags/tags';
@@ -29,7 +29,7 @@ import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-op
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [FormField, Tags, AddBtnRow, RouterModule, Icon],
+  imports: [FormField, Tags, FormActions, RouterModule, Icon],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {

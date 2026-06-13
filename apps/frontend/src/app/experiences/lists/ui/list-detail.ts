@@ -10,7 +10,7 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { Icon } from '@icons/icon';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -119,7 +119,7 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
 /** Component for creating new lists. Allows building static or dynamic lists using filters. */
 @Component({
   selector: 'pc-list-detail',
-  imports: [ReactiveFormsModule, AddBtnRow, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
+  imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
   templateUrl: './list-detail.html',
 })
 export class ListDetail implements OnInit {

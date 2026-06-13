@@ -5,7 +5,7 @@
       <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
       {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
     </h1>
-    <pc-add-btn-row
+    <pc-form-actions
       [isLoading]="saving()"
       [signalForm]="form"
       (btn1Clicked)="save($event)"
@@ -14,7 +14,7 @@
       [showDelete]="!isNew()"
       [deleteText]="'Delete Web Form'"
       (deleteClicked)="deleteForm()"
-    ></pc-add-btn-row>
+    ></pc-form-actions>
   </header>
 
   <!-- Main Content -->

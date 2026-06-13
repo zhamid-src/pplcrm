@@ -1,17 +1,18 @@
 import { Component } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { AddBtnRow } from './add-btn-row';
+import { FormActions } from './form-actions';
 import { By } from '@angular/platform-browser';
+import { ActivatedRoute, Router } from '@angular/router';
 
 @Component({
   template: `
     <form [formGroup]="form">
       <input formControlName="name" />
-      <pc-add-btn-row [isLoading]="isLoading"></pc-add-btn-row>
+      <pc-form-actions [isLoading]="isLoading"></pc-form-actions>
     </form>
   `,
-  imports: [ReactiveFormsModule, AddBtnRow],
+  imports: [ReactiveFormsModule, FormActions],
 })
 class TestHostComponent {
   form: FormGroup;
@@ -24,9 +25,7 @@ class TestHostComponent {
   }
 }
 
-import { ActivatedRoute, Router } from '@angular/router';
-
-describe('AddBtnRow', () => {
+describe('FormActions', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let hostComponent: TestHostComponent;
 
