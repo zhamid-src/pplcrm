@@ -8,10 +8,11 @@ import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule],
+  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule, AddBtnRow],
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <!-- Loading State -->
@@ -34,17 +35,16 @@ import { PeopleInCompany } from './people-in-company';
                 {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
               </p>
             </div>
-            @if (!isNewMode()) {
-              <button
-                class="btn btn-error btn-outline btn-sm gap-2"
-                type="button"
-                (click)="deleteCompany()"
-                [disabled]="isLoading()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-                Delete Company
-              </button>
-            }
+            <pc-add-btn-row
+              [isLoading]="isLoading()"
+              [signalForm]="form"
+              (btn1Clicked)="save($event)"
+              [buttonsToShow]="'two'"
+              [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
+              [showDelete]="!isNewMode()"
+              [deleteText]="'Delete Company'"
+              (deleteClicked)="deleteCompany()"
+            ></pc-add-btn-row>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -194,16 +194,7 @@ import { PeopleInCompany } from './people-in-company';
                   }
                 </label>
 
-                <div class="card-actions justify-end pt-4 border-t border-base-300 gap-2">
-                  <a [routerLink]="id ? ['/companies', id] : ['/companies']" class="btn btn-outline btn-accent gap-2">
-                    <pc-icon name="x-circle" [size]="4"></pc-icon>
-                    Cancel
-                  </a>
-                  <button class="btn btn-primary" [disabled]="form().invalid()" (click)="save()">
-                    <pc-icon name="save" [size]="4"></pc-icon>
-                    Save Company
-                  </button>
-                </div>
+
               </div>
             </div>
 
@@ -335,7 +326,10 @@ export class CompanyDetail implements OnInit {
     }
   }
 
-  protected save() {
+  protected save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
     const raw = this.payload();
     if (this.id) {
       const end = this._loading.begin();
@@ -344,7 +338,11 @@ export class CompanyDetail implements OnInit {
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company updated successfully');
-          this.router.navigate(['/companies', this.id]);
+          if (typeof done === 'function') {
+            done();
+          } else {
+            this.router.navigate(['/companies', this.id]);
+          }
         })
         .finally(() => end());
     } else {
@@ -354,7 +352,11 @@ export class CompanyDetail implements OnInit {
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company added successfully');
-          this.router.navigate(['/companies']);
+          if (typeof done === 'function') {
+            done();
+          } else {
+            this.router.navigate(['/companies']);
+          }
         })
         .finally(() => end());
     }

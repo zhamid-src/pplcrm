@@ -9,10 +9,11 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, AddBtnRow],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {
@@ -195,9 +196,9 @@ ${
     }
   }
 
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -228,12 +229,20 @@ ${
           if (this.isNew()) {
             const result = (await this.formsSvc.add(payload)) as { id: string };
             this.alertSvc.showSuccess('Form created successfully!');
-            void this.router.navigate(['../', result.id], { relativeTo: this.route });
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['../', result.id], { relativeTo: this.route });
+            }
           } else {
             const id = this.formId()!;
             await this.formsSvc.update(id, payload);
             this.alertSvc.showSuccess('Form updated successfully!');
-            void this.router.navigate(['/forms', id]);
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['/forms', id]);
+            }
           }
         } catch (err: any) {
           const msg = err.message || 'An error occurred while saving the form.';

@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
@@ -22,7 +23,7 @@ import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe],
+  imports: [FormField, RouterModule, Icon, DatePipe, AddBtnRow],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {
@@ -199,9 +200,9 @@ export class TeamDetailComponent implements OnInit {
     }
   }
 
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -227,7 +228,11 @@ export class TeamDetailComponent implements OnInit {
         };
         result = await this.teams.add(payload);
         this.teams.triggerRefresh();
-        await this.router.navigate(['/teams']);
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams']);
+        }
       } else if (this.id) {
         const payload: UpdateTeamType = {
           name: raw.name?.trim() ?? null,
@@ -243,7 +248,11 @@ export class TeamDetailComponent implements OnInit {
         this.setForm(result);
         this.form().reset();
         this.alerts.showSuccess('Team updated');
-        await this.router.navigate(['/teams', this.id]);
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams', this.id]);
+        }
         return;
       } else {
         throw new Error('Missing team identifier');

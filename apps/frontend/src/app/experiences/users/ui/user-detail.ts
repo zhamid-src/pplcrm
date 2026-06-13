@@ -6,13 +6,14 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [DatePipe, FormField, RouterModule, Icon],
+  imports: [DatePipe, FormField, RouterModule, Icon, AddBtnRow],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent implements OnInit {
@@ -101,9 +102,9 @@ export class UserDetailComponent implements OnInit {
     void this.load();
   }
 
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
     }
 
     this.form().markAsTouched();
@@ -121,6 +122,9 @@ export class UserDetailComponent implements OnInit {
       this.users.triggerRefresh();
       await this.load();
       this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      }
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to update user';
       this.error.set(message);

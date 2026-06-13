@@ -1,22 +1,29 @@
-<div class="flex flex-col sm:flex-row gap-2 sm:pr-3 justify-end">
-  <button type="button" class="btn btn-primary" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
+<div class="flex flex-col sm:flex-row gap-2 justify-end items-center">
+  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
     @if (isLoading()) {
-    <span class="loading loading-dots loading-lg text-primary"></span>
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
     } @else {
-    <pc-icon [name]="btn1Icon()" />
-    {{ btn1Text() }} }
+    <pc-icon [name]="btn1Icon()" [size]="4" />
+    } {{ btn1Text() }}
   </button>
 
-  @if (buttonsToShow() === 'three') {
-  <button type="button" class="btn btn-primary" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
+  @if (showDelete()) {
+  <button type="button" class="btn btn-error btn-outline btn-sm gap-2" (click)="handleDeleteClicked()" [disabled]="isLoading()">
+    <pc-icon name="trash" [size]="4" />
+    {{ deleteText() }}
+  </button>
+  }
+
+  @if (buttonsToShow() === 'three' && !showDelete()) {
+  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
     @if (isLoading()) {
-    <span class="loading loading-dots loading-lg text-primary"></span>
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
     } @else { {{ btn2Text() }} }
   </button>
   }
 
-  <button type="button" class="btn btn-accent" (click)="cancel()" [disabled]="isLoading()">
-    <pc-icon name="x-circle" />
-    CANCEL
+  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
+    <pc-icon name="x-mark" [size]="4" />
+    Cancel
   </button>
 </div>

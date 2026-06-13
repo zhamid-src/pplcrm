@@ -8,6 +8,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
@@ -15,7 +16,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon],
+  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, AddBtnRow],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
@@ -247,8 +248,10 @@ export class EventDetailComponent implements OnInit {
     }
   }
 
-  protected async save(event?: Event) {
-    if (event) event.preventDefault();
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
     this.form().markAsTouched();
     if (this.form().invalid()) return;
 
@@ -282,12 +285,20 @@ export class EventDetailComponent implements OnInit {
         const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
         this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/schedule', res.id]);
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/schedule', res.id]);
+        }
       } else {
         await this.volunteerEventsSvc.update(this.id!, data as UpdateVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
         this.alerts.showSuccess('Event updated successfully');
-        await this.router.navigate(['/schedule', this.id]);
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/schedule', this.id]);
+        }
       }
     } catch (err: any) {
       this.error.set(err?.message || 'Failed to save event');

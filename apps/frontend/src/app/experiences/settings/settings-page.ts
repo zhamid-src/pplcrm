@@ -385,7 +385,7 @@ export class SettingsPage implements OnInit {
 
     (section.form as any)['integrations_webhook_api_key']().markAsDirty();
     (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save Changes" at the bottom to store them.');
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
   }
 
   private randomHex(len: number): string {
