@@ -107,7 +107,7 @@
           <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
             @if (notifications().length === 0) {
             <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" class="opacity-20 mb-2 w-6 h-6"></pc-icon>
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
               <p
                 class="text-xs font-light"
                 i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"

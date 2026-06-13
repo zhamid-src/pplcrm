@@ -75,7 +75,7 @@
                 >
                   {{ t.name || '(No Name)' }}
                   <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                    <pc-icon name="pencil-square" [size]="4.5" class="text-base-content/40 inline"></pc-icon>
+                    <pc-icon name="pencil-square" [size]="4" class="text-base-content/40 inline"></pc-icon>
                   </span>
                 </h1>
                 <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -418,7 +418,7 @@
                 class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
               >
                 <div class="flex items-center gap-2">
-                  <pc-icon name="clock" [size]="4.5" class="text-teal-500"></pc-icon>
+                  <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
                   <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
                 </div>
                 <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
