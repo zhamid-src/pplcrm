@@ -72,7 +72,7 @@ export const SidebarItems: ISidebarItem[] = [
       },
       {
         name: `Duplicates`,
-        route: '/people/duplicates',
+        route: '/duplicates',
         icon: 'document-duplicate',
       },
       {

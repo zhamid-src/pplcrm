@@ -22,10 +22,6 @@ export const dashboardRoutes: Routes = [
         loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
       },
       {
-        path: 'duplicates',
-        loadComponent: () => import('./experiences/persons/ui/duplicate-manager').then((m) => m.DuplicateManager),
-      },
-      {
         path: ':id',
         loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
       },
@@ -58,7 +54,31 @@ export const dashboardRoutes: Routes = [
       },
     ],
   },
-
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
   {
     path: 'tags',
     children: [
