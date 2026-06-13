@@ -14,10 +14,12 @@ import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-person-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, AddBtnRow],
   templateUrl: './person-view.html',
 })
 export class PersonView implements OnInit {
@@ -27,6 +29,7 @@ export class PersonView implements OnInit {
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
 
   protected id: string | null = null;
@@ -40,9 +43,8 @@ export class PersonView implements OnInit {
   protected readonly volunteerHistory = signal<any[]>([]);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
   protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter(
-      (n: any) => n.event_type === 'open' || n.event_type === 'click'
-    ).length;
+    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
+      .length;
   });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
@@ -136,6 +138,33 @@ export class PersonView implements OnInit {
       }
     } catch (err) {
       this.alertSvc.showError('Failed to load person details: ' + String(err));
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected editPerson() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deletePerson() {
+    if (!this.id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.isLoading.set(true);
+    try {
+      await this.personsSvc.delete(this.id);
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete person';
+      this.alertSvc.showError(message);
     } finally {
       this.isLoading.set(false);
     }

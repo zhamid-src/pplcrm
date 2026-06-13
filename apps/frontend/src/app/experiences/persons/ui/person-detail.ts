@@ -205,7 +205,12 @@ export class PersonDetail implements OnInit {
 
   protected async deletePerson() {
     if (!this.id) return;
-    const confirmed = confirm('Delete this person?');
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
     if (!confirmed) return;
     const end = this._loading.begin();
     try {

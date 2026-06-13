@@ -1,6 +1,6 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
@@ -8,26 +8,29 @@ import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { AuthService } from '../../../auth/auth-service';
 import { type IAuthUser } from '@common';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
         <div class="flex items-center justify-between border-b border-base-300 pb-4">
-          <div class="flex items-center gap-3">
-            <a routerLink="/forms" class="btn btn-sm btn-ghost gap-1">
-              <pc-icon name="arrow-left" [size]="4"></pc-icon>
-              Close
-            </a>
-          </div>
-          <div class="flex items-center gap-2">
-            <a [routerLink]="['edit']" class="btn btn-primary btn-sm gap-2">
-              <pc-icon name="pencil-square" [size]="4"></pc-icon>
-              EDIT FORM
-            </a>
-          </div>
+          <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+            <pc-icon name="clipboard-document-list" class="text-primary" [size]="6"></pc-icon>
+            Web Form Details
+          </h1>
+          <pc-add-btn-row
+            [isLoading]="isLoading()"
+            [btn1Text]="'Edit Form'"
+            [btn1Icon]="'pencil-square'"
+            [showDelete]="true"
+            [deleteText]="'Delete Form'"
+            (deleteClicked)="deleteForm()"
+            (btn1Clicked)="editForm()"
+          ></pc-add-btn-row>
         </div>
 
         @if (isLoading()) {
@@ -332,6 +335,7 @@ export class FormViewComponent implements OnInit {
   private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected id: string | null = null;
   protected readonly isLoading = signal(false);
@@ -339,6 +343,7 @@ export class FormViewComponent implements OnInit {
   protected readonly submissionsCount = signal(0);
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
   private usersById = new Map<string, IAuthUser>();
 
   // Active tab state
@@ -460,6 +465,33 @@ ${
       this.submissionsCount.set(subCount);
     } catch (err) {
       this.alertSvc.showError('Failed to load form details: ' + String(err));
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected editForm() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteForm() {
+    if (!this.id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.isLoading.set(true);
+    try {
+      await this.formsSvc.delete(this.id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate(['/forms']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+      this.alertSvc.showError(message);
     } finally {
       this.isLoading.set(false);
     }

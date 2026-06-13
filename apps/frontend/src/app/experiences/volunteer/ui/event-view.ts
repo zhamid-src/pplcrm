@@ -1,32 +1,35 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-event-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
         <div class="flex items-center justify-between border-b border-base-300 pb-4">
-          <div class="flex items-center gap-3">
-            <a routerLink="/schedule" class="btn btn-sm btn-ghost gap-1">
-              <pc-icon name="arrow-left" [size]="4"></pc-icon>
-              Close
-            </a>
-          </div>
-          <div class="flex items-center gap-2">
-            <a [routerLink]="['edit']" class="btn btn-primary btn-sm gap-2">
-              <pc-icon name="pencil-square" [size]="4"></pc-icon>
-              EDIT EVENT
-            </a>
-          </div>
+          <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+            <pc-icon name="calendar" class="text-primary" [size]="6"></pc-icon>
+            Event Details
+          </h1>
+          <pc-add-btn-row
+            [isLoading]="isLoading()"
+            [btn1Text]="'Edit Event'"
+            [btn1Icon]="'pencil-square'"
+            [showDelete]="true"
+            [deleteText]="'Delete Event'"
+            (deleteClicked)="deleteEvent()"
+            (btn1Clicked)="editEvent()"
+          ></pc-add-btn-row>
         </div>
 
         @if (isLoading()) {
@@ -298,6 +301,8 @@ export class EventViewComponent implements OnInit {
   private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected id: string | null = null;
   protected readonly isLoading = signal(false);
@@ -349,6 +354,33 @@ export class EventViewComponent implements OnInit {
       this.roster.set(rosterData || []);
     } catch (err) {
       this.alertSvc.showError('Failed to load event details: ' + String(err));
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected editEvent() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteEvent() {
+    if (!this.id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.isLoading.set(true);
+    try {
+      await this.volunteerEventsSvc.delete(this.id);
+      this.volunteerEventsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Event deleted');
+      await this.router.navigate(['/schedule']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete event';
+      this.alertSvc.showError(message);
     } finally {
       this.isLoading.set(false);
     }

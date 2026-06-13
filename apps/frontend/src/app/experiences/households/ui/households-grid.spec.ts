@@ -58,19 +58,20 @@ describe('HouseholdsGrid', () => {
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
-        { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } } },
+        {
+          provide: DATA_GRID_CONFIG,
+          useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } },
+        },
         { provide: AbstractAPIService, useValue: mockHouseholdsSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ],
     })
-    .overrideComponent(HouseholdsGrid, {
-      set: {
-        providers: [
-          { provide: AbstractAPIService, useValue: mockHouseholdsSvc },
-        ],
-      },
-    })
-    .compileComponents();
+      .overrideComponent(HouseholdsGrid, {
+        set: {
+          providers: [{ provide: AbstractAPIService, useValue: mockHouseholdsSvc }],
+        },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(HouseholdsGrid);
     component = fixture.componentInstance;
@@ -93,9 +94,7 @@ describe('HouseholdsGrid', () => {
     const selected = [{ id: '9999', persons_count: 3, is_placeholder: true }];
     const result = await component['confirmDelete'](selected);
     expect(result).toBe(true); // Handled — blocked
-    expect(mockAlertSvc.showError).toHaveBeenCalledWith(
-      expect.stringContaining('placeholder'),
-    );
+    expect(mockAlertSvc.showError).toHaveBeenCalledWith(expect.stringContaining('placeholder'));
     expect(mockDialogSvc.choose).not.toHaveBeenCalled();
     expect(mockHouseholdsSvc.deleteMany).not.toHaveBeenCalled();
   });
@@ -143,7 +142,7 @@ describe('HouseholdsGrid', () => {
   });
 
   it('should format street1 as "People with no addresses" for placeholder households', () => {
-    const street1Col = component['col'].find(c => c.field === 'street1');
+    const street1Col = component['col'].find((c) => c.field === 'street1');
     expect(street1Col).toBeDefined();
     expect(street1Col?.valueFormatter).toBeDefined();
 
@@ -164,7 +163,7 @@ describe('HouseholdsGrid', () => {
     fixture.componentRef.setInput('rowCanSelect', component.rowCanSelectFn);
     fixture.detectChanges();
 
-    const street1Col = component['col'].find(c => c.field === 'street1');
+    const street1Col = component['col'].find((c) => c.field === 'street1');
     expect(street1Col).toBeDefined();
 
     // With a placeholder household, editing should be disabled

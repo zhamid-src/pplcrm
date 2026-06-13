@@ -252,9 +252,9 @@ export class NewsletterAddComponent implements OnInit {
         : null;
 
     // Compile audience description
-    const includeListsDesc = rest.includeLists?.map(id => this.listName(id)).join(', ');
+    const includeListsDesc = rest.includeLists?.map((id) => this.listName(id)).join(', ');
     const includeTagsDesc = rest.includeTags?.join(', ');
-    const excludeListsDesc = rest.excludeLists?.map(id => this.listName(id)).join(', ');
+    const excludeListsDesc = rest.excludeLists?.map((id) => this.listName(id)).join(', ');
     const excludeTagsDesc = rest.excludeTags?.join(', ');
 
     let audienceDesc = '';
@@ -290,9 +290,7 @@ export class NewsletterAddComponent implements OnInit {
         this.alertSvc.showSuccess('Newsletter sent successfully!');
       } else {
         this.alertSvc.showSuccess(
-          rest.timingMode === 'schedule'
-            ? 'Newsletter scheduled successfully.'
-            : 'Newsletter draft saved.'
+          rest.timingMode === 'schedule' ? 'Newsletter scheduled successfully.' : 'Newsletter draft saved.',
         );
       }
       this.close();

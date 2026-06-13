@@ -1,12 +1,13 @@
 import { Component, OnInit, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsType } from '@common';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
@@ -31,6 +32,8 @@ export class ListView implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder);
   private readonly lists = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected form = this.fb.group({
     name: ['', Validators.required],
@@ -133,6 +136,33 @@ export class ListView implements OnInit, OnDestroy {
     } catch (e) {
       this.alerts.showError('Save failed');
       done();
+    }
+  }
+
+  protected editList() {
+    this.activeTab.set('settings');
+  }
+
+  protected async deleteList() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete List',
+      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.loading.set(true);
+    try {
+      await this.lists.delete(this.id());
+      this.lists.triggerRefresh();
+      this.alerts.showSuccess('List deleted');
+      await this.router.navigate(['/lists']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete list';
+      this.alerts.showError(message);
+    } finally {
+      this.loading.set(false);
     }
   }
 

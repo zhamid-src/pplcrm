@@ -2,11 +2,12 @@ import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -19,8 +20,10 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 export class UserDetailComponent implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
   private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -154,6 +157,30 @@ export class UserDetailComponent implements OnInit {
       this.alerts.showError(message);
     } finally {
       this.resettingPassword.set(false);
+    }
+  }
+
+  protected async deleteUser() {
+    if (!this.id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      const success = await this.users.delete(this.id);
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Unable to delete user');
+    } finally {
+      this.saving.set(false);
     }
   }
 

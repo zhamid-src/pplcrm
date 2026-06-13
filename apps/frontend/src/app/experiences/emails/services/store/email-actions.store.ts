@@ -32,10 +32,15 @@ export class EmailActionsStore {
   /** Assign/unassign with optimistic update and refreshes */
   public async assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null): Promise<void> {
     const key = String(emailId);
-    await this.updateProperty(key, { assigned_to: userId ?? undefined }, () => this.svc.assign(key, userId, assigneeName), {
-      refreshFolder: true,
-      refreshCounts: true,
-    });
+    await this.updateProperty(
+      key,
+      { assigned_to: userId ?? undefined },
+      () => this.svc.assign(key, userId, assigneeName),
+      {
+        refreshFolder: true,
+        refreshCounts: true,
+      },
+    );
   }
 
   /** Delete a comment (optimistic remove + rollback on failure) */
@@ -141,15 +146,18 @@ export class EmailActionsStore {
 
       // Trigger automatic background sync shortly after sending to give the dispatch time to process.
       setTimeout(() => {
-        this.svc.syncEmails().then(async () => {
-          const fid = this.folders.currentSelectedFolderId();
-          if (fid) {
-            await this.folders.loadEmailsForFolder(fid);
-          }
-          await this.folders.refreshFolderCounts();
-        }).catch((err) => {
-          console.warn('Auto-sync after send failed:', err);
-        });
+        this.svc
+          .syncEmails()
+          .then(async () => {
+            const fid = this.folders.currentSelectedFolderId();
+            if (fid) {
+              await this.folders.loadEmailsForFolder(fid);
+            }
+            await this.folders.refreshFolderCounts();
+          })
+          .catch((err) => {
+            console.warn('Auto-sync after send failed:', err);
+          });
       }, 4000);
 
       // Optional: warm header cache (if your API returns header)

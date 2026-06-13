@@ -223,7 +223,12 @@ export class HouseholdDetail implements OnInit {
           await this.personsSvc.deleteMany(personIds);
         }
       } else {
-        const confirmed = confirm('Delete this household?');
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
         if (!confirmed) return;
       }
 

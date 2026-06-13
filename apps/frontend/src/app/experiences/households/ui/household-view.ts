@@ -3,7 +3,7 @@
  */
 import { DatePipe } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 import { type IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -13,18 +13,24 @@ import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from 'common/src/lib/kysely.models';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { PersonsService } from '@experiences/persons/services/persons-service';
 
 @Component({
   selector: 'pc-household-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, AddBtnRow],
   templateUrl: './household-view.html',
 })
 export class HouseholdView implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly auth = inject(AuthService);
   private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly loader = inject(Loader);
+  private readonly dialogSvc = inject(ConfirmDialogService);
 
   protected id: string | null = null;
   protected readonly isLoading = signal(false);
@@ -110,6 +116,63 @@ export class HouseholdView implements OnInit {
       this.peopleCount.set(count);
     } catch (err) {
       this.alertSvc.showError('Failed to load household details: ' + String(err));
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected editHousehold() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id) return;
+    this.isLoading.set(true);
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id, { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id);
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete household';
+      this.alertSvc.showError(message);
     } finally {
       this.isLoading.set(false);
     }

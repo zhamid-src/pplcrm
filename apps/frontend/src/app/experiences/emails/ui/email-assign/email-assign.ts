@@ -24,11 +24,11 @@ import { EmailType } from 'common/src/lib/models';
       <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
         @for (user of users(); track user.id) {
           <li>
-            <button type="button" (click)="assign(user.id); closeDropdown()"> {{ user.first_name }} </button>
+            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
           </li>
         }
         @if (assignedTo()) {
-          <li><button type="button" (click)="assign(null); closeDropdown()"> Unassign </button></li>
+          <li><button type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
         }
       </ul>
     </div>
@@ -67,7 +67,7 @@ export class EmailAssign {
 
     const normalizedUserId = userId != null ? String(userId) : null;
     const assigneeName = normalizedUserId
-      ? this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null
+      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
       : null;
 
     try {

@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
@@ -8,26 +8,29 @@ import { TeamsService } from '../services/teams-service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { AuthService } from '../../../auth/auth-service';
 import { type IAuthUser } from '@common';
+import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-team-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
         <div class="flex items-center justify-between border-b border-base-300 pb-4">
-          <div class="flex items-center gap-3">
-            <a routerLink="/teams" class="btn btn-sm btn-ghost gap-1">
-              <pc-icon name="arrow-left" [size]="4"></pc-icon>
-              Close
-            </a>
-          </div>
-          <div class="flex items-center gap-2">
-            <a [routerLink]="['edit']" class="btn btn-primary btn-sm gap-2">
-              <pc-icon name="pencil-square" [size]="4"></pc-icon>
-              EDIT TEAM
-            </a>
-          </div>
+          <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+            <pc-icon name="user-group" class="text-primary" [size]="6"></pc-icon>
+            Team Details
+          </h1>
+          <pc-add-btn-row
+            [isLoading]="isLoading()"
+            [btn1Text]="'Edit Team'"
+            [btn1Icon]="'pencil-square'"
+            [showDelete]="true"
+            [deleteText]="'Delete Team'"
+            (deleteClicked)="deleteTeam()"
+            (btn1Clicked)="editTeam()"
+          ></pc-add-btn-row>
         </div>
 
         @if (isLoading()) {
@@ -313,7 +316,9 @@ export class TeamViewComponent implements OnInit {
   private readonly teamsSvc = inject(TeamsService);
   private readonly tasksSvc = inject(TasksService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected id: string | null = null;
   protected readonly isLoading = signal(false);
@@ -376,6 +381,33 @@ export class TeamViewComponent implements OnInit {
       this.teamTasks.set(res?.rows ?? []);
     } catch (err) {
       this.alertSvc.showError('Failed to load team details: ' + String(err));
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected editTeam() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteTeam() {
+    if (!this.id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.isLoading.set(true);
+    try {
+      await this.teamsSvc.delete(this.id);
+      this.teamsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete team';
+      this.alertSvc.showError(message);
     } finally {
       this.isLoading.set(false);
     }

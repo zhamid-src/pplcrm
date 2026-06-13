@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 export interface DNSVerificationRecord {
   host: string;
@@ -38,6 +39,7 @@ export interface VerifiedDomain {
 export class DomainSettingsComponent implements OnInit {
   private readonly settingsSvc = inject(SettingsService);
   private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly newDomain = signal('');
   protected readonly addingDomain = signal(false);
@@ -123,7 +125,13 @@ export class DomainSettingsComponent implements OnInit {
   }
 
   protected async deleteDomain(domainName: string) {
-    if (!confirm(`Are you sure you want to remove the domain ${domainName}?`)) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Domain',
+      message: `Are you sure you want to remove the domain ${domainName}?`,
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
 
     try {
       await this.settingsSvc.deleteVerifiedDomain(domainName);

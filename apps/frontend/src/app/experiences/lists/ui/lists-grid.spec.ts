@@ -28,7 +28,7 @@ describe('ListsGridComponent', () => {
     refreshCount = signal(0);
 
     mockRefreshSvc = {
-      refreshCount
+      refreshCount,
     };
 
     mockApiSvc = {
@@ -44,16 +44,18 @@ describe('ListsGridComponent', () => {
       imports: [ListsGridComponent],
       providers: [
         provideRouter([]),
-        
+
         { provide: ConfirmDialogService, useValue: { confirm: vi.fn() } },
         { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load' } } },
         { provide: ListsRefreshService, useValue: mockRefreshSvc },
         { provide: AbstractAPIService, useValue: mockApiSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
-      ]
+      ],
     })
-    .overrideComponent(ListsGridComponent, { set: { providers: [{ provide: AbstractAPIService, useClass: MockApiService }] } }) // Override component provider
-    .compileComponents();
+      .overrideComponent(ListsGridComponent, {
+        set: { providers: [{ provide: AbstractAPIService, useClass: MockApiService }] },
+      }) // Override component provider
+      .compileComponents();
 
     fixture = TestBed.createComponent(ListsGridComponent);
     component = fixture.componentInstance;
@@ -66,7 +68,7 @@ describe('ListsGridComponent', () => {
   });
 
   it('should format list_size correctly for dynamic vs static lists', () => {
-    const listSizeCol = component['col'].find(c => c.field === 'list_size');
+    const listSizeCol = component['col'].find((c) => c.field === 'list_size');
     const formatter = listSizeCol?.valueFormatter as (params: any) => any;
 
     expect(formatter).toBeDefined();

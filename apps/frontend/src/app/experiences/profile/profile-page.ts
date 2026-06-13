@@ -336,7 +336,7 @@ export class ProfilePage implements OnInit {
       if (!currentUser) {
         throw new Error('Not logged in');
       }
-  
+
       const user = await this.auth.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);

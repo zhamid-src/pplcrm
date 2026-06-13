@@ -50,19 +50,31 @@ describe('PersonsGrid', () => {
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
         { provide: AlertService, useValue: mockAlertSvc },
-        { provide: DATA_GRID_CONFIG, useValue: { messages: { deleteConfirmTitle: 'Delete rows', deleteConfirmMessage: 'Confirm delete', deleteConfirmVariant: 'danger', deleteConfirmIcon: 'trash', deleteConfirmText: 'Delete', deleteCancelText: 'Cancel', deleteSuccess: 'Deleted successfully', deleteFailed: 'Delete failed' } } },
+        {
+          provide: DATA_GRID_CONFIG,
+          useValue: {
+            messages: {
+              deleteConfirmTitle: 'Delete rows',
+              deleteConfirmMessage: 'Confirm delete',
+              deleteConfirmVariant: 'danger',
+              deleteConfirmIcon: 'trash',
+              deleteConfirmText: 'Delete',
+              deleteCancelText: 'Cancel',
+              deleteSuccess: 'Deleted successfully',
+              deleteFailed: 'Delete failed',
+            },
+          },
+        },
         { provide: AbstractAPIService, useValue: mockPersonsSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ],
     })
-    .overrideComponent(PersonsGrid, {
-      set: {
-        providers: [
-          { provide: AbstractAPIService, useValue: mockPersonsSvc },
-        ],
-      },
-    })
-    .compileComponents();
+      .overrideComponent(PersonsGrid, {
+        set: {
+          providers: [{ provide: AbstractAPIService, useValue: mockPersonsSvc }],
+        },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(PersonsGrid);
     component = fixture.componentInstance;
@@ -99,14 +111,16 @@ describe('PersonsGrid', () => {
   it('should show team captain warning on exception and retry with force if approved', async () => {
     const selected = [{ id: 'p1', first_name: 'Captain Jack' }];
     mockDialogSvc.confirm
-      .mockResolvedValueOnce(true)  // Initial confirm
-      .mockResolvedValueOnce(true);  // Captain warning confirm
+      .mockResolvedValueOnce(true) // Initial confirm
+      .mockResolvedValueOnce(true); // Captain warning confirm
 
     // Simulate TRPC failure for team captain
-    const captainError = new Error('One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?');
+    const captainError = new Error(
+      'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+    );
     mockPersonsSvc.deleteMany
       .mockRejectedValueOnce(captainError) // First call fails
-      .mockResolvedValueOnce(true);        // Second forced call succeeds
+      .mockResolvedValueOnce(true); // Second forced call succeeds
 
     const result = await component['confirmDelete'](selected);
 
@@ -120,10 +134,12 @@ describe('PersonsGrid', () => {
   it('should not retry deletion if team captain warning is rejected', async () => {
     const selected = [{ id: 'p1', first_name: 'Captain Jack' }];
     mockDialogSvc.confirm
-      .mockResolvedValueOnce(true)   // Initial confirm
-      .mockResolvedValueOnce(false);  // Captain warning reject
+      .mockResolvedValueOnce(true) // Initial confirm
+      .mockResolvedValueOnce(false); // Captain warning reject
 
-    const captainError = new Error('One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?');
+    const captainError = new Error(
+      'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+    );
     mockPersonsSvc.deleteMany.mockRejectedValueOnce(captainError);
 
     const result = await component['confirmDelete'](selected);

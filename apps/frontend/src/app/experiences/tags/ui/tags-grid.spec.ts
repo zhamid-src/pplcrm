@@ -17,19 +17,21 @@ describe('TagsGridComponent', () => {
   let component: TagsGridComponent;
 
   beforeEach(() => {
-    // We only test the unit-level methods of TagsGridComponent itself, 
+    // We only test the unit-level methods of TagsGridComponent itself,
     // DataGrid is tested separately. So we can just instantiate it directly.
     TestBed.configureTestingModule({
       imports: [TagsGridComponent],
       providers: [
         provideRouter([]),
-        
+
         { provide: ConfirmDialogService, useValue: { confirm: vi.fn() } },
-        { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load' } } }
-      ]
+        { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load' } } },
+      ],
     })
-    .overrideComponent(TagsGridComponent, { set: { providers: [{ provide: AbstractAPIService, useClass: MockApiService }] } })
-    .compileComponents();
+      .overrideComponent(TagsGridComponent, {
+        set: { providers: [{ provide: AbstractAPIService, useClass: MockApiService }] },
+      })
+      .compileComponents();
 
     component = TestBed.createComponent(TagsGridComponent).componentInstance;
   });
@@ -62,9 +64,9 @@ describe('TagsGridComponent', () => {
     });
 
     it('should extract color from the column definition renderer parameters', () => {
-      const colorDef = component['col'].find(c => c.field === 'color');
+      const colorDef = component['col'].find((c) => c.field === 'color');
       const renderer = colorDef?.cellRenderer as (params: any) => string;
-      
+
       const htmlFromValue = renderer({ value: '#00ff00' });
       expect(htmlFromValue).toContain('#00ff00');
 

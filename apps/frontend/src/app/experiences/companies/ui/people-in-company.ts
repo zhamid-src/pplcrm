@@ -92,10 +92,10 @@ export class PeopleInCompany {
     this.isLoading.set(true);
 
     try {
-      const people = await this.personsSvc.getByCompanyId(id, {
+      const people = (await this.personsSvc.getByCompanyId(id, {
         limit: this.pageSize,
         offset,
-      }) as any[];
+      })) as any[];
 
       if (requestId !== this.requestSequence) {
         return;

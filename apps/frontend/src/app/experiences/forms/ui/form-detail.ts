@@ -10,6 +10,7 @@ import { Tags } from '@uxcommon/components/tags/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-form-detail',
@@ -22,6 +23,7 @@ export class FormDetailComponent implements OnInit {
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
   private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -180,7 +182,12 @@ ${
   protected async deleteForm() {
     const id = this.formId();
     if (!id) return;
-    const confirmed = confirm('Delete this web form?');
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
     if (!confirmed) return;
     this.saving.set(true);
     try {

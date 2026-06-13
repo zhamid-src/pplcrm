@@ -9,6 +9,7 @@ import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
@@ -27,6 +28,7 @@ export class EventDetailComponent implements OnInit {
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected id: string | null = null;
   protected slugManuallyEdited = false;
@@ -310,7 +312,13 @@ export class EventDetailComponent implements OnInit {
 
   protected async deleteEvent() {
     if (!this.id) return;
-    if (!confirm('Are you sure you want to delete this event? This will also delete all signed up shifts.')) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     this.saving.set(true);
     try {
@@ -378,7 +386,13 @@ export class EventDetailComponent implements OnInit {
   }
 
   protected async removeVolunteer(shift: any) {
-    if (!confirm('Remove this person from the event roster?')) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Volunteer',
+      message: 'Remove this person from the event roster?',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
     try {
       await this.volunteerSvc.deleteShift(shift.id);
       this.alerts.showSuccess('Volunteer removed');

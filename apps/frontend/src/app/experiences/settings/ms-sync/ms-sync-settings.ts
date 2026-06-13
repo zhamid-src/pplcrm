@@ -8,6 +8,7 @@ import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TRPCService } from '../../../services/api/trpc-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-ms-sync-settings',
@@ -85,11 +86,11 @@ import { TRPCService } from '../../../services/api/trpc-service';
             <span class="loading loading-spinner loading-xs"></span>
           } @else {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-              <path fill="#f3f3f3" d="M1 1h10v10H1z"/>
-              <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9"/>
-              <path fill="#81bc06" d="M12 1h10v10H12z"/>
-              <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-              <path fill="#ffba08" d="M12 12h10v10H12z"/>
+              <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+              <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+              <path fill="#81bc06" d="M12 1h10v10H12z" />
+              <path fill="#05a6f0" d="M1 12h10v10H1z" />
+              <path fill="#ffba08" d="M12 12h10v10H12z" />
             </svg>
           }
           Connect Office 365
@@ -108,8 +109,14 @@ import { TRPCService } from '../../../services/api/trpc-service';
 export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDestroy {
   private readonly alertSvc = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  protected readonly status = signal<{ connected: boolean; msEmail: string | null; syncedAt: string | null; syncing?: boolean } | null>(null);
+  protected readonly status = signal<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: string | null;
+    syncing?: boolean;
+  } | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly isConnecting = signal(false);
   protected readonly isSyncing = signal(false);
@@ -158,8 +165,21 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
   }
 
   protected async disconnect() {
-    if (!confirm('Are you sure you want to disconnect your Office 365 account?')) return;
-    const removeLocal = confirm('Would you also like to delete all locally stored emails that were synced from this account?');
+    const confirmed = await this.dialogs.confirm({
+      title: 'Disconnect Office 365',
+      message: 'Are you sure you want to disconnect your Office 365 account?',
+      variant: 'warning',
+      confirmText: 'Disconnect',
+    });
+    if (!confirmed) return;
+
+    const removeLocal = await this.dialogs.confirm({
+      title: 'Delete Synced Emails',
+      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
+      variant: 'danger',
+      confirmText: 'Delete Emails',
+      cancelText: 'Keep Emails',
+    });
     try {
       await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
       this.status.set({ connected: false, msEmail: null, syncedAt: null });

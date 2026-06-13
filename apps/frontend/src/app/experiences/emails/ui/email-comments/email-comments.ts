@@ -1,20 +1,20 @@
 /**
  * @file Component handling comments for an email.
  */
-import { DatePipe, SlicePipe } from "@angular/common";
+import { DatePipe, SlicePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { FormsModule } from "@angular/forms";
-import type { IAuthUser } from "@common";
-import { Icon } from "@uxcommon/components/icons/icon";
-import { TimeAgoPipe } from "@uxcommon/pipes/timeago.pipe";
+import { FormsModule } from '@angular/forms';
+import type { IAuthUser } from '@common';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
-import { AuthService } from "../../../../auth/auth-service";
-import { ConfirmDialogService } from "../../../../services/shared-dialog.service";
-import { MentionController, userDisplay } from "@uxcommon/mentions/mention-controller";
-import { MentionifyPipe } from "@uxcommon/pipes/mention.pipe";
-import { SanitizeHtmlPipe } from "@uxcommon/pipes/sanitize-html.pipe";
-import { EmailsStore } from "../../services/store/emailstore";
-import type { EmailCommentType, EmailType } from "common/src/lib/models";
+import { AuthService } from '../../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
+import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
+import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
+import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
+import { EmailsStore } from '../../services/store/emailstore';
+import type { EmailCommentType, EmailType } from 'common/src/lib/models';
 
 @Component({
   selector: 'pc-email-comments',
