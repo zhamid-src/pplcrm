@@ -98,8 +98,8 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'queue-list',
       },
       {
-        name: 'Newsletter',
-        route: '/newsletter',
+        name: 'Newsletters',
+        route: '/newsletters',
         icon: 'megaphone',
       },
       {
@@ -147,7 +147,7 @@ export const SidebarItems: ISidebarItem[] = [
       },
       {
         name: 'Exports',
-        route: '/export',
+        route: '/exports',
         icon: 'arrow-down-tray',
       },
       {
@@ -162,7 +162,7 @@ export const SidebarItems: ISidebarItem[] = [
       },
       {
         name: 'Activity Feed',
-        route: '/activity',
+        route: '/activities',
         icon: 'clipboard-document-list',
       },
       {

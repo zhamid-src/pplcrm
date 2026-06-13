@@ -679,7 +679,7 @@ export class ActivityFeed implements OnInit {
       }
       case 'newsletter':
       case 'newsletters':
-        return { path: `/newsletter/${id}`, label: undefined };
+        return { path: `/newsletters/${id}`, label: undefined };
       case 'web_forms':
       case 'web_form':
       case 'form':
