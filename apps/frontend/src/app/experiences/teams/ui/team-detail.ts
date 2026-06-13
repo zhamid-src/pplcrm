@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { PersonsService } from '../../persons/services/persons-service';
@@ -24,7 +24,7 @@ import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe, AddBtnRow],
+  imports: [FormField, RouterModule, Icon, DatePipe, FormActions],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {

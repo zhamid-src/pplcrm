@@ -28,7 +28,7 @@
         <pc-icon name="lock-closed"></pc-icon>
         {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
       </button>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="saving()"
         [signalForm]="form"
         (btn1Clicked)="save($event)"
@@ -38,7 +38,7 @@
         [showDelete]="true"
         [deleteText]="'Delete User'"
         (deleteClicked)="deleteUser()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
   </div>
 

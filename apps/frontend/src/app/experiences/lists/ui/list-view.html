@@ -38,7 +38,7 @@
         Refresh Now }
       </button>
       }
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="loading()"
         [btn1Text]="'Edit List'"
         [btn1Icon]="'pencil-square'"
@@ -46,7 +46,7 @@
         [deleteText]="'Delete List'"
         (deleteClicked)="deleteList()"
         (btn1Clicked)="editList()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
   </div>
 

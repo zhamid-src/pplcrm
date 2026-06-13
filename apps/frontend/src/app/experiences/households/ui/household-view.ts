@@ -14,12 +14,12 @@ import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from 'common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 
 @Component({
   selector: 'pc-household-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
   templateUrl: './household-view.html',
 })
 export class HouseholdView implements OnInit {

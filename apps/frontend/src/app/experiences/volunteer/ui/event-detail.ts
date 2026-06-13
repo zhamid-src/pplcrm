@@ -8,7 +8,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { PersonsService } from '../../persons/services/persons-service';
@@ -17,7 +17,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, AddBtnRow],
+  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, FormActions],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })

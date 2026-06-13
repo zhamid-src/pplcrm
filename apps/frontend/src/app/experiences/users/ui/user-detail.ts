@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { AuthUsersService } from '../services/authusers-service';
@@ -13,7 +13,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [FormField, RouterModule, Icon, AddBtnRow],
+  imports: [FormField, RouterModule, Icon, FormActions],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent implements OnInit {

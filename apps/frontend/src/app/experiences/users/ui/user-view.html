@@ -5,7 +5,7 @@
         <pc-icon name="user-circle" class="text-primary" [size]="6"></pc-icon>
         User Profile
       </h1>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="loading()"
         [btn1Text]="'Edit User'"
         [btn1Icon]="'pencil-square'"
@@ -13,7 +13,7 @@
         [deleteText]="'Delete User'"
         (deleteClicked)="deleteUser()"
         (btn1Clicked)="editUser()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
 
     @if (error() && !detail()) {

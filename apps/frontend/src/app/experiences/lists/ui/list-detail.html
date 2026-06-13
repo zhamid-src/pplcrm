@@ -10,7 +10,7 @@
           <p class="text-sm text-base-content/60 mt-0.5">Modify the name and description of this list.</p>
         </div>
       </div>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="isLoading()"
         (btn1Clicked)="save($event)"
         [btn1Text]="'Save List'"
@@ -18,7 +18,7 @@
         [deleteText]="'Delete List'"
         (deleteClicked)="deleteList()"
         buttonsToShow="two"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
 
     <section class="grid gap-6 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -230,12 +230,12 @@
       </div>
       <div class="flex items-center justify-between">
         <button type="button" class="btn" (click)="back()">Back</button>
-        <pc-add-btn-row
+        <pc-form-actions
           [isLoading]="isLoading()"
           [btn1Text]="btnLabel()"
           (btn1Clicked)="save($event)"
           buttonsToShow="two"
-        ></pc-add-btn-row>
+        ></pc-form-actions>
       </div>
     </div>
     }

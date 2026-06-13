@@ -9,12 +9,12 @@ import { CompaniesService } from '../services/companies-service';
 import { AuthService } from '../../../auth/auth-service';
 import { type IAuthUser } from '@common';
 import { PersonsService } from '../../persons/services/persons-service';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-company-view',
-  imports: [DatePipe, RouterModule, PeopleInCompany, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, PeopleInCompany, Icon, RecordActivities, FormActions],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
@@ -23,7 +23,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             <pc-icon name="briefcase" class="text-primary" [size]="6"></pc-icon>
             Company Details
           </h1>
-          <pc-add-btn-row
+          <pc-form-actions
             [isLoading]="isLoading()"
             [btn1Text]="'Edit Company'"
             [btn1Icon]="'pencil-square'"
@@ -31,7 +31,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             [deleteText]="'Delete Company'"
             (deleteClicked)="deleteCompany()"
             (btn1Clicked)="editCompany()"
-          ></pc-add-btn-row>
+          ></pc-form-actions>
         </div>
 
         @if (isLoading()) {

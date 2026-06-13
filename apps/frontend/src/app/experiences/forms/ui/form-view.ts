@@ -8,12 +8,12 @@ import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { AuthService } from '../../../auth/auth-service';
 import { type IAuthUser } from '@common';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
@@ -22,7 +22,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             <pc-icon name="clipboard-document-list" class="text-primary" [size]="6"></pc-icon>
             Web Form Details
           </h1>
-          <pc-add-btn-row
+          <pc-form-actions
             [isLoading]="isLoading()"
             [btn1Text]="'Edit Form'"
             [btn1Icon]="'pencil-square'"
@@ -30,7 +30,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             [deleteText]="'Delete Form'"
             (deleteClicked)="deleteForm()"
             (btn1Clicked)="editForm()"
-          ></pc-add-btn-row>
+          ></pc-form-actions>
         </div>
 
         @if (isLoading()) {

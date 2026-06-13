@@ -7,11 +7,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
 
 @Component({
-  selector: 'pc-add-btn-row',
+  selector: 'pc-form-actions',
   imports: [ReactiveFormsModule, Icon],
-  templateUrl: './add-btn-row.html',
+  templateUrl: './form-actions.html',
 })
-export class AddBtnRow implements OnInit {
+export class FormActions implements OnInit {
   private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);

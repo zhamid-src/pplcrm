@@ -5,7 +5,7 @@ import { Component, OnInit, inject, input, signal, computed } from '@angular/cor
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '@common';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
@@ -24,7 +24,7 @@ import { PersonsService } from '../../persons/services/persons-service';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormField, AddressAutocomplete, Tags, AddBtnRow, Icon, RouterModule],
+  imports: [FormField, AddressAutocomplete, Tags, FormActions, Icon, RouterModule],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {

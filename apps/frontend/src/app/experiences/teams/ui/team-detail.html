@@ -17,7 +17,7 @@
         <p class="text-sm text-base-content/60 mt-0.5">Teams group volunteers for easier coordination.</p>
       </div>
     </div>
-    <pc-add-btn-row
+    <pc-form-actions
       [isLoading]="saving()"
       [signalForm]="form"
       (btn1Clicked)="save($event)"
@@ -27,7 +27,7 @@
       [showDelete]="!isNew()"
       [deleteText]="'Delete Team'"
       (deleteClicked)="deleteTeam()"
-    ></pc-add-btn-row>
+    ></pc-form-actions>
   </div>
 
   @if (error()) {

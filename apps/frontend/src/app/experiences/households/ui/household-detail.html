@@ -18,7 +18,7 @@
         <pc-icon name="home" [size]="5" class="text-primary"></pc-icon>
         {{ id ? 'Edit Household Details' : 'Add New Household' }}
       </h2>
-      <pc-add-btn-row
+      <pc-form-actions
         [isLoading]="isLoading()"
         [signalForm]="form"
         (btn1Clicked)="save($event)"
@@ -27,7 +27,7 @@
         [showDelete]="!!id"
         [deleteText]="'Delete Household'"
         (deleteClicked)="deleteHousehold()"
-      ></pc-add-btn-row>
+      ></pc-form-actions>
     </div>
 
     <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>

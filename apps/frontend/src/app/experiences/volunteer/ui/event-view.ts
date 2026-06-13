@@ -7,12 +7,12 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-event-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, AddBtnRow],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
       <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
@@ -21,7 +21,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             <pc-icon name="calendar" class="text-primary" [size]="6"></pc-icon>
             Event Details
           </h1>
-          <pc-add-btn-row
+          <pc-form-actions
             [isLoading]="isLoading()"
             [btn1Text]="'Edit Event'"
             [btn1Icon]="'pencil-square'"
@@ -29,7 +29,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             [deleteText]="'Delete Event'"
             (deleteClicked)="deleteEvent()"
             (btn1Clicked)="editEvent()"
-          ></pc-add-btn-row>
+          ></pc-form-actions>
         </div>
 
         @if (isLoading()) {

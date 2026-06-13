@@ -74,9 +74,9 @@ The following components live in `uxcommon/components/`.
 * **Path**: [`uxcommon/components/not-found/not-found.ts`](../apps/frontend/src/app/uxcommon/components/not-found/not-found.ts)
 * **Description**: The default fallback error page component displayed when a route matching fails.
 
-### 11. `AddBtnRow` (`pc-add-btn-row`)
-* **Path**: [`uxcommon/components/add-btn-row/add-btn-row.ts`](../apps/frontend/src/app/uxcommon/components/add-btn-row/add-btn-row.ts)
-* **Description**: Standard layout container containing quick-action buttons for adding items to collections.
+### 11. `FormActions` (`pc-form-actions`)
+* **Path**: [`uxcommon/components/form-actions/form-actions.ts`](../apps/frontend/src/app/uxcommon/components/form-actions/form-actions.ts)
+* **Description**: Standard layout container containing quick-action buttons for saving, deleting, or cancelling form/detail pages.
 
 ---
 

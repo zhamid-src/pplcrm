@@ -9,12 +9,12 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@uxcommon/components/tags/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
-import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, AddBtnRow],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {
