@@ -33,24 +33,23 @@ export class NewsletterEmailService {
       return options.recipients.length;
     }
 
-    if (options.recipients.length === 0) {
-      return 0;
-    }
+    const uniqueRecipients = [...new Set(options.recipients)];
+    if (uniqueRecipients.length === 0) return 0;
 
     // SendGrid allows up to 1000 personalizations per API request
     const CHUNK_SIZE = 1000;
     let deliveredCount = 0;
 
-    for (let i = 0; i < options.recipients.length; i += CHUNK_SIZE) {
-      const chunk = options.recipients.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
+      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
       const personalizations = chunk.map((email) => ({
         to: [{ email }],
       }));
 
       const headers: Record<string, string> = {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       };
 
       if (options.subuserUsername) {
@@ -69,17 +68,23 @@ export class NewsletterEmailService {
             type: 'text/html',
             value: options.html,
           },
-          ...(options.text ? [{
-            type: 'text/plain',
-            value: options.text,
-          }] : []),
+          ...(options.text
+            ? [
+                {
+                  type: 'text/plain',
+                  value: options.text,
+                },
+              ]
+            : []),
         ],
-        ...(options.newsletterId && options.tenantId ? {
-          custom_args: {
-            newsletter_id: options.newsletterId,
-            tenant_id: options.tenantId,
-          }
-        } : {}),
+        ...(options.newsletterId && options.tenantId
+          ? {
+              custom_args: {
+                newsletter_id: options.newsletterId,
+                tenant_id: options.tenantId,
+              },
+            }
+          : {}),
       };
 
       try {

@@ -279,11 +279,8 @@ export class PersonDetail implements OnInit {
     const end = this._loading.begin();
     try {
       if (applyToAll && currentHousehold) {
-        // Move all people from current household to the selected one
-        const people = (await this.personsSvc.getByHouseholdId(currentHousehold, { columns: ['id'] })) as {
-          id: string;
-        }[];
-        await Promise.all(people.map((p) => this.personsSvc.update(p.id, { household_id } as UpdatePersonsType)));
+        // Single atomic tRPC call to the backend
+        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
       } else {
         // Only move this person
         await this.personsSvc.update(this.id, { household_id } as UpdatePersonsType);

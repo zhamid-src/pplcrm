@@ -70,6 +70,24 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
   }
 
+  /**
+   * TODO: test
+   * Move entire household to another household.
+   */
+  public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        return await trx
+          .updateTable('persons')
+          .set({ household_id: newHouseholdId })
+          .where('household_id', '=', oldHouseholdId)
+          .where('tenant_id', '=', tenantId)
+          .returningAll()
+          .execute();
+      });
+  }
+
   /** Override deleteMany to clear dependent mappings before deleting persons */
   public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
     if (!idsToDelete?.length) return false;
