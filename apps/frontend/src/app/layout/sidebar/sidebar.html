@@ -7,8 +7,13 @@
     [class.font-bold]="this.router.url === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="pl-2 group-hover:md:visible text-sm" [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()">
-      {{ nav.name }}
+    <span
+      class="indicator pl-2 group-hover:md:visible text-sm"
+      [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
+    >
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      }
     </span>
   </a>
 </ng-template>

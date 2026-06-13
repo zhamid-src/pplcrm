@@ -8,8 +8,7 @@ import { PcIconNameType } from '@icons/icons.index';
  */
 export interface ISidebarItem {
   adminOnly?: boolean;
-  badge?: string;
-  badgeColor?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
+  indicator?: boolean;
   children?: ISidebarItem[];
   collapsed?: boolean;
   favourite?: boolean;
