@@ -130,9 +130,11 @@ export class BaseRepository<T extends keyof Models> {
     }
 
     const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
-    return this.getSelect(trx).selectAll().where(lhs, '=', matchValue).executeTakeFirst() as unknown as
-      | Selectable<Models[T]>
-      | undefined;
+    return this.getSelect(trx)
+      .selectAll()
+      .where(lhs, '=', matchValue)
+      .where('tenant_id', '=', input.row.tenant_id as any)
+      .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
   }
 
   /**
@@ -574,13 +576,9 @@ export class BaseRepository<T extends keyof Models> {
       case 'equals':
         return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
       case 'startsWith':
-        return isCast
-          ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}`
-          : eb(column, 'ilike', `${normalized}%`);
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}` : eb(column, 'ilike', `${normalized}%`);
       case 'endsWith':
-        return isCast
-          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}`
-          : eb(column, 'ilike', `%${normalized}`);
+        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}` : eb(column, 'ilike', `%${normalized}`);
       case 'notContains':
         return isCast
           ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
