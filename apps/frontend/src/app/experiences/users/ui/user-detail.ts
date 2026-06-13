@@ -1,9 +1,8 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
+import { IAuthUserDetail, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { AddBtnRow } from '@uxcommon/components/add-btn-row/add-btn-row';
@@ -14,7 +13,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [DatePipe, FormField, RouterModule, Icon, AddBtnRow],
+  imports: [FormField, RouterModule, Icon, AddBtnRow],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent implements OnInit {
@@ -29,7 +28,6 @@ export class UserDetailComponent implements OnInit {
   protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
   protected readonly detail = signal<IAuthUserDetail | null>(null);
 
   protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
@@ -57,41 +55,6 @@ export class UserDetailComponent implements OnInit {
     const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
     const name = tokens.join(' ').trim();
     return name || user.email;
-  });
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
   });
 
   private id = '';
@@ -184,25 +147,12 @@ export class UserDetailComponent implements OnInit {
     }
   }
 
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(date);
-    } catch {
-      return date.toString();
-    }
-  }
-
   private async load() {
     const end = this._loading.begin();
     this.error.set(null);
     try {
       const user = await this.users.getById(this.id);
       this.detail.set(user);
-      this.stats.set(user.stats);
       this.setForm(user);
       this.form().reset();
     } catch (err: any) {

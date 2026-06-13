@@ -112,49 +112,5 @@
       </div>
     </form>
   </section>
-
-  @if (stats()) {
-  <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-    @for (card of activityCards(); track card.key) {
-    <div class="stats stats-vertical rounded border border-base-300 bg-base-100 shadow-sm">
-      <div class="stat">
-        <div class="stat-title text-sm text-base-content/70">{{ card.title }}</div>
-        <div class="stat-value text-2xl font-semibold">{{ card.value }}</div>
-        <div class="stat-desc text-xs text-base-content/60">
-          {{ card.subtitle }} @if (card.asOf) {
-          <span class="block">As of {{ formatAsOf(card.asOf) }}</span>
-          }
-        </div>
-      </div>
-    </div>
-    }
-  </section>
-  }
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Account Metadata</h2>
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <div>
-        <p class="text-xs uppercase tracking-wide text-base-content/60">User ID</p>
-        <p class="text-sm font-medium text-base-content/90">{{ detail()?.id }}</p>
-      </div>
-      <div>
-        <p class="text-xs uppercase tracking-wide text-base-content/60">Role</p>
-        <p class="text-sm font-medium text-base-content/90">{{ detail()?.role || '—' }}</p>
-      </div>
-      <div>
-        <p class="text-xs uppercase tracking-wide text-base-content/60">Created</p>
-        <p class="text-sm font-medium text-base-content/90">
-          {{ detail()?.created_at ? (detail()?.created_at | date: 'medium') : '—' }}
-        </p>
-      </div>
-      <div>
-        <p class="text-xs uppercase tracking-wide text-base-content/60">Last updated</p>
-        <p class="text-sm font-medium text-base-content/90">
-          {{ detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : '—' }}
-        </p>
-      </div>
-    </div>
-  </section>
 </section>
 }

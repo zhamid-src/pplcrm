@@ -205,6 +205,10 @@ function signUp() {
   return publicProcedure.input(signUpInputObj).mutation(({ input }) => controller.signUp(input));
 }
 
+function deleteOne() {
+  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
+}
+
 function verifyEmail() {
   return publicProcedure
     .input(z.object({ code: z.string() }))
@@ -238,6 +242,7 @@ export const AuthRouter = router({
   getById: getById(),
   invite: invite(),
   update: update(),
+  delete: deleteOne(),
   count: count(),
   resetPassword: resetPassword(),
   renewAuthToken: renewAuthToken(),
