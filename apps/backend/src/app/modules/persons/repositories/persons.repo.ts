@@ -439,6 +439,24 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
   }
 
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number((countResult as any)?.total || 0);
+  }
+
   /**
    * Find potential duplicates within the tenant (querying pre-computed potential_duplicates table).
    */
@@ -449,6 +467,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

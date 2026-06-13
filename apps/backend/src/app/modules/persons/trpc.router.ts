@@ -190,6 +190,10 @@ function getPotentialDuplicates() {
     .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
 }
 
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
 function mergePersons() {
   return authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))
@@ -216,5 +220,6 @@ export const PersonsRouter = router({
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
   getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
   mergePersons: mergePersons(),
 });

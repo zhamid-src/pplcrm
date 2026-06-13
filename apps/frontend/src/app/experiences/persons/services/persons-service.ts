@@ -310,6 +310,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.getPotentialDuplicates.query(options);
   }
 
+  public getDuplicateCounts(): Promise<{ people: number; households: number; companies: number }> {
+    return this.api.persons.getDuplicateCounts.query();
+  }
+
   /**
    * Merge a source duplicate contact into a target primary contact.
    */

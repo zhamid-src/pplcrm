@@ -7,6 +7,7 @@ import { SettingsController } from '../../settings/controller';
 import { TagsRepo } from '../../tags/repositories/tags.repo';
 import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
 import { PersonsRepo } from '../repositories/persons.repo';
+import { CompaniesRepo } from '../../companies/repositories/companies.repo';
 import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
 import { TeamsRepo } from '../../teams/repositories/teams.repo';
 import { OperationDataType } from 'common/src/lib/kysely.models';
@@ -26,6 +27,8 @@ export class PersonsService {
   private personsRepo = new PersonsRepo();
   private userActivity = new UserActivityRepo();
   private storageService = new StorageService();
+  private householdRepo = new HouseholdRepo();
+  private companiesRepo = new CompaniesRepo();
 
   public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
     // Enforce email uniqueness within the tenant
@@ -954,6 +957,15 @@ export class PersonsService {
 
   public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
     return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async getDuplicateCounts(auth: IAuthKeyPayload) {
+    const [people, households, companies] = await Promise.all([
+      this.personsRepo.getDuplicateCount(auth.tenant_id),
+      this.householdRepo.getDuplicateCount(auth.tenant_id),
+      this.companiesRepo.getDuplicateCount(auth.tenant_id),
+    ]);
+    return { people, households, companies };
   }
 
   public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
