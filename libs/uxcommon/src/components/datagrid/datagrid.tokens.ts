@@ -1,5 +1,6 @@
 import { InjectionToken, Provider } from '@angular/core';
 import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
+import type { QueueExportInputType } from '@common';
 
 export interface DataGridConfig {
   filterToolPanelId: string;
@@ -31,7 +32,7 @@ export interface DataGridConfig {
     exportNavigateWarning: string;
     exportFileName: string;
     /** Entity key sent to the background export job (e.g. 'persons', 'households'). */
-    exportEntity: string;
+    exportEntity: QueueExportInputType['entity'] | '';
   };
   pageSize: number;
 }
