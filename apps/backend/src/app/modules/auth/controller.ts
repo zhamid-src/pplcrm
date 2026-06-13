@@ -697,16 +697,25 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           const oldFile = await trx
             .selectFrom('files')
             .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
             .where('id', '=', profile.avatar_file_id)
             .executeTakeFirst();
           if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx.deleteFrom('files').where('id', '=', profile.avatar_file_id).execute();
+          await trx
+            .deleteFrom('files')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', profile.avatar_file_id)
+            .execute();
         } catch (err) {
           console.error('Failed to clean up user avatar on delete', err);
         }
       }
 
-      await trx.deleteFrom('profiles').where('auth_id', '=', userIdToDelete).execute();
+      await trx
+        .deleteFrom('profiles')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('auth_id', '=', userIdToDelete)
+        .execute();
       await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
       await trx
         .deleteFrom('authusers')
@@ -1331,10 +1340,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             const oldFile = await trx
               .selectFrom('files')
               .select('storage_key')
+              .where('tenant_id', '=', auth.tenant_id)
               .where('id', '=', existingProfile.avatar_file_id)
               .executeTakeFirst();
             if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-            await trx.deleteFrom('files').where('id', '=', existingProfile.avatar_file_id).execute();
+            await trx
+              .deleteFrom('files')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('id', '=', existingProfile.avatar_file_id)
+              .execute();
           } catch {
             /* non-critical */
           }
@@ -1363,6 +1377,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           await trx
             .updateTable('profiles')
             .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
+            .where('tenant_id', '=', auth.tenant_id)
             .where('auth_id', '=', auth.user_id)
             .execute();
         } else {
@@ -1398,10 +1413,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           const oldFile = await trx
             .selectFrom('files')
             .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
             .where('id', '=', fileId)
             .executeTakeFirst();
           if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx.deleteFrom('files').where('id', '=', fileId).execute();
+          await trx
+            .deleteFrom('files')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', fileId)
+            .execute();
         } catch {
           /* non-critical */
         }
@@ -1409,6 +1429,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         await trx
           .updateTable('profiles')
           .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('tenant_id', '=', auth.tenant_id)
           .where('auth_id', '=', auth.user_id)
           .execute();
       });

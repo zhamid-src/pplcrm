@@ -35,7 +35,7 @@ module.exports = [
    *   - kyselyinit*.ts        (migration runner)
    * ─────────────────────────────────────────────────────────────────────── */
   {
-    files: ['src/app/modules/**/*.ts'],
+    files: ['**/src/app/modules/**/*.ts'],
     ignores: ['**/*.spec.ts'],
     plugins: { local: localRules },
     rules: {

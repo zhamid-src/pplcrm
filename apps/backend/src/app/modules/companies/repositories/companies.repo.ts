@@ -7,6 +7,24 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     super('companies');
   }
 
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number((countResult as any)?.total || 0);
+  }
+
   /**
    * Find potential duplicates within the tenant (sharing identical trimmed, case-insensitive company name).
    */
@@ -17,6 +35,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

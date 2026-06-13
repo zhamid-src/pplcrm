@@ -9,6 +9,8 @@ const nxPlugin = require('@nx/eslint-plugin');
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 
+const localRules = require('./tools/eslint-rules/index.cjs');
+
 const compat = new FlatCompat({ baseDirectory: __dirname, recommendedConfig: js.configs.recommended });
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
@@ -62,7 +64,10 @@ module.exports = [
         ...globals.node,
       },
     },
-    plugins: { '@typescript-eslint': tsPlugin },
+    plugins: { 
+      '@typescript-eslint': tsPlugin,
+      local: localRules,
+    },
     rules: {
       /* Shared TS best practices */
       '@typescript-eslint/consistent-type-imports': 'warn',

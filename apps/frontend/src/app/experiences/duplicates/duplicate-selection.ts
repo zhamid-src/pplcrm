@@ -1,7 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { CompaniesService } from '@experiences/companies/services/companies-service';
-import { HouseholdsService } from '@experiences/households/services/households-service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Icon } from '@icons/icon';
 
@@ -139,8 +137,6 @@ interface DuplicateCounts {
 })
 export class DuplicateSelectionComponent implements OnInit {
   private personsSvc = inject(PersonsService);
-  private householdsSvc = inject(HouseholdsService);
-  private companiesSvc = inject(CompaniesService);
 
   public isLoading = signal(true);
   public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
@@ -148,23 +144,9 @@ export class DuplicateSelectionComponent implements OnInit {
   async ngOnInit() {
     this.isLoading.set(true);
 
-    // Use page: 1, pageSize: 1 just to get the 'total' metadata quickly without pulling heavy arrays
-    const options = { page: 1, pageSize: 1 };
-
     try {
-      // Fetch all three concurrently so the user isn't waiting for a waterfall
-      // TODO: Implement a dedicated getDuplicateCounts call
-      const [peopleRes, householdsRes, companiesRes] = await Promise.allSettled([
-        this.personsSvc.getPotentialDuplicates(options),
-        this.householdsSvc.getPotentialDuplicates(options),
-        this.companiesSvc.getPotentialDuplicates(options),
-      ]);
-
-      this.counts.set({
-        people: peopleRes.status === 'fulfilled' ? peopleRes.value.total : 0,
-        households: householdsRes.status === 'fulfilled' ? householdsRes.value.total : 0,
-        companies: companiesRes.status === 'fulfilled' ? companiesRes.value.total : 0,
-      });
+      const countsRes = await this.personsSvc.getDuplicateCounts();
+      this.counts.set(countsRes);
     } catch (error) {
       console.error('Failed to load duplicate counts', error);
       // In case of error, we default to 0 (already set), but you could also show an error badge state
