@@ -42,7 +42,7 @@ export class AnimateIfDirective {
    * Duration in milliseconds to wait before destroying the element after the exit animation.
    * Default: `300`.
    */
-  public readonly duration = input(300);
+  public readonly duration = input(300, { alias: 'pcAnimateIfDuration' });
 
   /**
    * CSS class applied on element entry (insertion).
@@ -107,6 +107,13 @@ export class AnimateIfDirective {
 
     // Remove entry animation in case it's still applied
     el.classList.remove(enterClass);
+
+    // If exit animation is 'animate-none', clear the view immediately without delay
+    if (exitClass === 'animate-none') {
+      this.vcr.clear();
+      this.view = null;
+      return;
+    }
 
     // Add exit animation
     el.classList.add(exitClass);
