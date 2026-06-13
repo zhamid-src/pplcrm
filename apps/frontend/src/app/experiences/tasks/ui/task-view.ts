@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
 import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IAuthUser } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
@@ -52,7 +53,8 @@ export class TaskView implements OnInit {
   protected readonly comments = signal<any[]>([]);
   protected readonly attachments = signal<any[]>([]);
   protected readonly subtasks = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly assignedTo = signal<string>('');
   protected readonly teamsList = signal<any[]>([]);
@@ -101,7 +103,7 @@ export class TaskView implements OnInit {
 
   // Load task and its children
   private async load() {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       const [t, us, ts] = await Promise.all([
         this.tasks.getById(this.id()),
@@ -125,7 +127,7 @@ export class TaskView implements OnInit {
     } catch (err) {
       this.alertSvc.showError('Failed to load task details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -220,19 +222,19 @@ export class TaskView implements OnInit {
   protected async addSubtask() {
     const name = this.subtaskName().trim();
     if (!name) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await (this.tasks as any).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
       this.subtaskName.set('');
       await this.loadSubtasks();
       this.refreshActivities();
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
   protected async toggleSubtask(s: any, isDone: boolean) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await (this.tasks as any).api.tasks.updateSubtask.mutate({
         id: String(s.id),
@@ -241,7 +243,7 @@ export class TaskView implements OnInit {
       await this.loadSubtasks();
       this.refreshActivities();
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -249,14 +251,14 @@ export class TaskView implements OnInit {
   protected async addComment() {
     const plain = this.newComment().trim();
     if (!plain) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
       this.newComment.set('');
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
       this.refreshActivities();
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -265,7 +267,7 @@ export class TaskView implements OnInit {
     const name = this.attName().trim();
     const url = this.attUrl().trim();
     if (!name) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await (this.tasks as any).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
       this.attName.set('');
@@ -273,7 +275,7 @@ export class TaskView implements OnInit {
       await this.loadAttachments();
       this.refreshActivities();
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -325,7 +327,7 @@ export class TaskView implements OnInit {
     });
 
     if (confirmed) {
-      this.isLoading.set(true);
+      const end = this._loading.begin();
       try {
         const deleted = await this.tasks.delete(this.id());
         if (deleted) {
@@ -338,7 +340,7 @@ export class TaskView implements OnInit {
       } catch (err) {
         this.alertSvc.showError('Failed to delete task: ' + String(err));
       } finally {
-        this.isLoading.set(false);
+        end();
       }
     }
   }

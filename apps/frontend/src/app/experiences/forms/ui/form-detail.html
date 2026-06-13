@@ -30,7 +30,7 @@
     <div class="mx-auto max-w-5xl">
       @if (error()) {
       <div class="alert alert-error mb-6 shadow-sm">
-        <pc-icon name="shield-exclamation" class="h-6 w-6"></pc-icon>
+        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
         <span>{{ error() }}</span>
       </div>
       }
@@ -235,8 +235,6 @@
                   applied automatically.
                 </p>
               </div>
-
-
             </div>
           </form>
         </div>
@@ -252,7 +250,7 @@
             <div class="card-body gap-4 p-6">
               <div>
                 <h3 class="font-bold text-base flex items-center gap-2">
-                  <pc-icon name="eye" class="h-5 w-5 text-primary"></pc-icon>
+                  <pc-icon name="eye" [size]="5" class="text-primary"></pc-icon>
                   Live Form Preview
                 </h3>
                 <p class="text-xs text-base-content/50">Real-time preview of the landing page form layout.</p>
@@ -327,7 +325,7 @@
           @if (isNew()) {
           <div class="card bg-base-200 border border-base-300 text-center">
             <div class="card-body items-center py-12">
-              <pc-icon name="clipboard-document-list" class="h-12 w-12 text-base-content/40 mb-3"></pc-icon>
+              <pc-icon name="clipboard-document-list" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
               <h3 class="font-bold text-lg">Snippet Generator</h3>
               <p class="text-sm text-base-content/60 max-w-sm mt-1">
                 Once you save the form definition, we will generate the copy-paste HTML snippet you can embed on your

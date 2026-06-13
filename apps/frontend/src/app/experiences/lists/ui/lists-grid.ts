@@ -110,17 +110,19 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
         const isLocallyRefreshing = this.refreshingIds.has(p?.data?.id);
         if (status === 'refreshing' || isLocallyRefreshing) {
           return `
-           <span class="loading loading-ring loading-lg text-primary"></span>
+            <div class="flex items-center justify-center h-full w-full">
+              <span class="loading loading-ring loading-lg text-primary"></span>
+            </div>
           `;
         }
-        // TODO: In the code below, hovering over the cell should change the SVG color to primary. The svg should be centered in the cell and the cell should not have any text.
-        // TODO: instead of SVG, use <pc-icon
         return `
-          <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-            </svg>
-          </button>
+          <div class="flex items-center justify-center h-full w-full">
+            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          </div>
         `;
       },
       onCellClicked: (p: any) => {

@@ -346,7 +346,7 @@
           >
             <li>
               <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
-                <pc-icon name="envelope" class="w-4 h-4 text-primary"></pc-icon>
+                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
                 Add Email Step
               </a>
             </li>
@@ -439,7 +439,7 @@
             >
               <li>
                 <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
-                  <pc-icon name="envelope" class="w-4 h-4 text-primary"></pc-icon>
+                  <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
                   Add Email Step
                 </a>
               </li>

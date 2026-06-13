@@ -37,7 +37,7 @@
         >
           <div class="card-body flex-row items-center gap-4">
             <div class="rounded-full bg-primary/10 p-3 text-primary">
-              <pc-icon name="star" class="h-6 w-6"></pc-icon>
+              <pc-icon name="star" [size]="6"></pc-icon>
             </div>
             <div class="flex-1 text-left">
               <h3 class="text-lg font-semibold">Regular</h3>
@@ -45,7 +45,7 @@
                 Build a one-time newsletter, design it, choose who receives it, and decide when it goes out.
               </p>
             </div>
-            <pc-icon name="chevron-right" class="h-5 w-5 text-base-content/60"></pc-icon>
+            <pc-icon name="chevron-right" [size]="5" class="text-base-content/60"></pc-icon>
           </div>
         </button>
 
@@ -56,7 +56,7 @@
         >
           <div class="card-body flex-row items-center gap-4">
             <div class="rounded-full bg-base-300/70 p-3 text-base-content/70">
-              <pc-icon name="arrow-path" class="h-6 w-6"></pc-icon>
+              <pc-icon name="arrow-path" [size]="6"></pc-icon>
             </div>
             <div class="flex-1 text-left">
               <h3 class="text-lg font-semibold">Automated</h3>
@@ -64,7 +64,7 @@
                 Set up drip campaigns or recurring sends triggered by events. (Coming soon)
               </p>
             </div>
-            <pc-icon name="information-circle" class="h-5 w-5 text-base-content/50"></pc-icon>
+            <pc-icon name="information-circle" [size]="5" class="text-base-content/50"></pc-icon>
           </div>
         </button>
       </div>
@@ -105,7 +105,8 @@
         <div class="rounded border border-base-300 bg-base-100 p-4">
           <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Layout Templates</h3>
           <p class="mt-1 text-sm text-base-content/70">
-            Choose a starting design template for your newsletter. You will customize its contents and styling in the next step.
+            Choose a starting design template for your newsletter. You will customize its contents and styling in the
+            next step.
           </p>
         </div>
 
@@ -120,7 +121,9 @@
             [class.bg-base-100]="selectedTemplate() !== 'welcome'"
             (click)="selectTemplate('welcome')"
           >
-            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+            <div
+              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
+            >
               <img
                 src="assets/newsletters/welcome.png"
                 alt="Welcome Email Preview"
@@ -131,7 +134,9 @@
               <div class="rounded-lg bg-primary/10 p-2.5 text-primary text-xl">👋</div>
               <div>
                 <h4 class="text-base font-bold text-base-content">Welcome Email</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Warm greeting, hero image, social links & footer.</p>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
+                  Warm greeting, hero image, social links & footer.
+                </p>
               </div>
             </div>
           </button>
@@ -146,7 +151,9 @@
             [class.bg-base-100]="selectedTemplate() !== 'product'"
             (click)="selectTemplate('product')"
           >
-            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+            <div
+              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
+            >
               <img
                 src="assets/newsletters/product.png"
                 alt="Product Announcement Preview"
@@ -157,7 +164,9 @@
               <div class="rounded-lg bg-success/10 p-2.5 text-success text-xl">🚀</div>
               <div>
                 <h4 class="text-base font-bold text-base-content">Product Announcement</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Hero image, list of updates, CTA button & footer.</p>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
+                  Hero image, list of updates, CTA button & footer.
+                </p>
               </div>
             </div>
           </button>
@@ -172,7 +181,9 @@
             [class.bg-base-100]="selectedTemplate() !== 'newsletter'"
             (click)="selectTemplate('newsletter')"
           >
-            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+            <div
+              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
+            >
               <img
                 src="assets/newsletters/newsletter.png"
                 alt="Weekly Digest Preview"
@@ -183,7 +194,9 @@
               <div class="rounded-lg bg-warning/10 p-2.5 text-warning text-xl">📰</div>
               <div>
                 <h4 class="text-base font-bold text-base-content">Weekly Digest</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Heading divider, weekly digest content & footer.</p>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
+                  Heading divider, weekly digest content & footer.
+                </p>
               </div>
             </div>
           </button>
@@ -198,7 +211,9 @@
             [class.bg-base-100]="selectedTemplate() !== 'empty'"
             (click)="selectTemplate('empty')"
           >
-            <div class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors">
+            <div
+              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
+            >
               <img
                 src="assets/newsletters/empty.png"
                 alt="Empty Canvas Preview"
@@ -209,7 +224,9 @@
               <div class="rounded-lg bg-base-300/70 p-2.5 text-base-content text-xl">📄</div>
               <div>
                 <h4 class="text-base font-bold text-base-content">Empty Canvas</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">Start from scratch with a single heading block.</p>
+                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
+                  Start from scratch with a single heading block.
+                </p>
               </div>
             </div>
           </button>
@@ -230,7 +247,7 @@
         <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
           <div class="border-b border-base-200 pb-3 mb-2">
             <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/75 flex items-center gap-2">
-              <pc-icon name="document-text" class="h-4 w-4 text-primary"></pc-icon>
+              <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
               Email Details
             </h3>
             <p class="text-xs text-base-content/50 mt-1">Specify subject and sender info.</p>
@@ -245,18 +262,30 @@
           </div>
           <div>
             <label class="label text-xs font-semibold py-1">Preview text</label>
-            <input class="input input-bordered w-full input-sm" formControlName="previewText" placeholder="Optional preview text" />
+            <input
+              class="input input-bordered w-full input-sm"
+              formControlName="previewText"
+              placeholder="Optional preview text"
+            />
           </div>
           <div>
             <label class="label text-xs font-semibold py-1">From name</label>
-            <input class="input input-bordered w-full input-sm" formControlName="fromName" placeholder="Who is sending?" />
+            <input
+              class="input input-bordered w-full input-sm"
+              formControlName="fromName"
+              placeholder="Who is sending?"
+            />
             @if (isInvalid('fromName')) {
             <p class="mt-1 text-xs text-error">From name is required.</p>
             }
           </div>
           <div>
             <label class="label text-xs font-semibold py-1">From address</label>
-            <input class="input input-bordered w-full input-sm" formControlName="fromAddress" placeholder="sender@example.com" />
+            <input
+              class="input input-bordered w-full input-sm"
+              formControlName="fromAddress"
+              placeholder="sender@example.com"
+            />
             @if (isInvalid('fromAddress')) {
             <p class="mt-1 text-xs text-error">Enter a valid email address.</p>
             }
@@ -267,7 +296,7 @@
         <div class="space-y-6 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
           <div class="border-b border-base-200 pb-3">
             <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/75 flex items-center gap-2">
-              <pc-icon name="user-group" class="h-4 w-4 text-primary"></pc-icon>
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
               Target Audience
             </h3>
             <p class="text-xs text-base-content/50 mt-1">Select recipient lists and tags.</p>
@@ -281,9 +310,7 @@
               <div class="skeleton h-4 w-2/3"></div>
             </div>
             } @else if (!availableLists().length) {
-            <p class="mt-2 text-xs text-base-content/60">
-              No lists available yet. Create a list to target contacts.
-            </p>
+            <p class="mt-2 text-xs text-base-content/60">No lists available yet. Create a list to target contacts.</p>
             } @else {
             <select class="select select-bordered select-sm mt-2 w-full" (change)="handleIncludeListSelect($event)">
               <option value="">Select a list to include</option>
@@ -403,7 +430,7 @@
               (click)="toggleDatePicker()"
             >
               <span>{{ scheduledDateDisplay() }}</span>
-              <pc-icon name="chevron-down" class="h-4 w-4"></pc-icon>
+              <pc-icon name="chevron-down" [size]="4"></pc-icon>
             </button>
             @if (showDatePicker()) {
             <div class="absolute left-0 top-full z-20 mt-2">
@@ -471,7 +498,7 @@
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
     <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
-      <pc-icon name="information-circle" class="mx-auto h-10 w-10 text-base-content/50"></pc-icon>
+      <pc-icon name="information-circle" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
       <h3 class="mt-4 text-lg font-semibold">Automations coming soon</h3>
       <p class="mt-2 text-sm text-base-content/70">
         We’re working on automated journeys. Until then, create a regular newsletter.

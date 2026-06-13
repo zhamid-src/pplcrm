@@ -120,7 +120,7 @@
         (click)="form.get('object')?.setValue('people'); next()"
       >
         <div class="flex items-center gap-4">
-          <pc-icon name="users" class="w-10 h-10"></pc-icon>
+          <pc-icon name="users" [size]="10"></pc-icon>
           <div>
             <div class="font-semibold">People List</div>
             <div class="text-sm text-base-content/70">Individuals with contact and tag data.</div>
@@ -135,7 +135,7 @@
         (click)="form.get('object')?.setValue('households'); next()"
       >
         <div class="flex items-center gap-4">
-          <pc-icon name="house-modern" class="w-10 h-10"></pc-icon>
+          <pc-icon name="house-modern" [size]="10"></pc-icon>
           <div>
             <div class="font-semibold">Household List</div>
             <div class="text-sm text-base-content/70">Households grouped by address.</div>

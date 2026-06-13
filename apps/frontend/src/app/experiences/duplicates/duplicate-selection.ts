@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 interface DuplicateCounts {
   people: number;
@@ -138,11 +139,12 @@ interface DuplicateCounts {
 export class DuplicateSelectionComponent implements OnInit {
   private personsSvc = inject(PersonsService);
 
-  public isLoading = signal(true);
+  private readonly _loading = createLoadingGate();
+  public readonly isLoading = this._loading.visible;
   public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
 
   async ngOnInit() {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
 
     try {
       const countsRes = await this.personsSvc.getDuplicateCounts();
@@ -151,7 +153,7 @@ export class DuplicateSelectionComponent implements OnInit {
       console.error('Failed to load duplicate counts', error);
       // In case of error, we default to 0 (already set), but you could also show an error badge state
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 }
