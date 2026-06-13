@@ -240,7 +240,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     // Inside the background job processor:
     const shift = await db
       .selectFrom('volunteer_shifts')
-      .select('status')
+      .select(['id', 'status', 'event_id', 'person_id'])
       .where('id', '=', payload.shiftId)
       .executeTakeFirst();
 
