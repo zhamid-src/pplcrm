@@ -288,7 +288,8 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   {
     id: 'sla',
     title: 'SLA Configuration',
-    description: 'Configure Service Level Agreements (SLAs) for tasks and emails, including working days and hours.',
+    description:
+      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
     icon: 'clock',
     fields: [
       {
@@ -296,30 +297,64 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         label: 'Task SLA Target (working hours)',
         type: 'number',
         defaultValue: 24,
+        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
       },
       {
         key: 'sla.emails_hours',
         label: 'Email SLA Target (working hours)',
         type: 'number',
         defaultValue: 24,
+        helper:
+          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.email_warning_threshold',
+        label: 'Email SLA Warning Threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.email_critical_threshold',
+        label: 'Email SLA Critical Threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_warning_threshold',
+        label: 'Task SLA Warning Threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_critical_threshold',
+        label: 'Task SLA Critical Threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
       },
       {
         key: 'sla.working_days',
         label: 'Working Days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
         type: 'text',
         defaultValue: '1,2,3,4,5',
+        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
       },
       {
         key: 'sla.working_hours_start',
         label: 'Working Hours Start (HH:MM)',
         type: 'text',
         defaultValue: '09:00',
+        helper: 'Beginning of the business day for working time tracking.',
       },
       {
         key: 'sla.working_hours_end',
         label: 'Working Hours End (HH:MM)',
         type: 'text',
         defaultValue: '17:00',
+        helper: 'End of the business day for working time tracking.',
       },
     ],
   },
