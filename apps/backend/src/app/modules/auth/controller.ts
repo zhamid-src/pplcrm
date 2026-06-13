@@ -315,6 +315,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.getRepo()
       .transaction()
       .execute(async (trx) => {
+        // Invalidate all active sessions for this user
+        const u = await trx
+          .selectFrom('authusers')
+          .select('id')
+          .where('password_reset_code', '=', hashToken(code))
+          .executeTakeFirst();
+        if (u) {
+          await trx.deleteFrom('sessions').where('user_id', '=', u.id).execute();
+        }
+
         const result = await this.getRepo().updatePassword(password, code, trx);
         if (result.numUpdatedRows === BigInt(0)) {
           throw new UnauthorizedError();

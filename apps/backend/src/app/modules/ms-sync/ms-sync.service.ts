@@ -79,7 +79,7 @@ export class MsSyncService {
       { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
       { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
       { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
-    ].filter(f => allowedFolderIds.has(f.pplcrmId));
+    ].filter((f) => allowedFolderIds.has(f.pplcrmId));
 
     // Read stored delta map
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
@@ -98,10 +98,12 @@ export class MsSyncService {
 
     for (const folder of syncFolders) {
       const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
-      let pageUrl: string | null = folderDeltaLink ?? `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+      let pageUrl: string | null =
+        folderDeltaLink ??
+        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
 
       const allMessages: any[] = [];
-      let isInitialSync = (folderDeltaLink === null);
+      let isInitialSync = folderDeltaLink === null;
       let hasMore = true;
 
       while (pageUrl && hasMore) {
@@ -157,7 +159,7 @@ export class MsSyncService {
       // we have retrieved the entire list of active server messages.
       // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
       if (isInitialSync) {
-        const serverMsIds = new Set(allMessages.filter(m => !m['@removed']).map(m => String(m.id)));
+        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
         const localEmails = await this.db
           .selectFrom('emails')
           .select(['id', 'preview'])
@@ -205,7 +207,10 @@ export class MsSyncService {
     const fromEmail = msg.from?.emailAddress?.address ?? null;
     const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
     const subject = msg.subject ?? null;
-    const dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
+    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
     const bodyHtml = msg.body?.content ?? '';
 
     // Fetch Graph attachments if any
