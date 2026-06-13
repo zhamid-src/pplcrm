@@ -1,5 +1,4 @@
 import { Component, OnInit, OnDestroy, computed, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -15,30 +14,15 @@ import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
 
 @Component({
   selector: 'pc-list-view',
-  imports: [
-    ReactiveFormsModule,
-    AddBtnRow,
-    Icon,
-    RouterLink,
-    CommonModule,
-    RecordActivities,
-    PersonsGrid,
-    HouseholdsGrid,
-  ],
+  imports: [AddBtnRow, Icon, RouterLink, CommonModule, RecordActivities, PersonsGrid, HouseholdsGrid],
   templateUrl: './list-view.html',
 })
 export class ListView implements OnInit, OnDestroy {
   private readonly alerts = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
   private readonly lists = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-
-  protected form = this.fb.group({
-    name: ['', Validators.required],
-    description: [''],
-  });
   protected id = signal<string>('');
   protected loading = signal<boolean>(false);
   protected refreshing = signal<boolean>(false);
@@ -46,7 +30,7 @@ export class ListView implements OnInit, OnDestroy {
   protected object = signal<'people' | 'households' | null>(null);
   protected listData = signal<ListsType | null>(null);
   protected stats = signal<any>(null);
-  protected activeTab = signal<'members' | 'newsletters' | 'settings'>('members');
+  protected activeTab = signal<'members' | 'newsletters'>('members');
   protected isPeople = computed(() => this.object() === 'people');
 
   public async ngOnInit() {
@@ -64,7 +48,6 @@ export class ListView implements OnInit, OnDestroy {
       const list = (await this.lists.getById(id)) as ListsType;
       this.listData.set(list);
       this.object.set(list.object as 'people' | 'households');
-      this.form.patchValue({ name: list.name ?? '', description: list.description ?? '' });
 
       // Fetch list membership count efficiently
       const count = await this.lists.getMemberCount(id);
@@ -126,21 +109,8 @@ export class ListView implements OnInit, OnDestroy {
     }
   }
 
-  protected async save(done: () => void) {
-    try {
-      const val = this.form.getRawValue();
-      await this.lists.update(this.id(), { name: val.name!, description: val.description ?? null });
-      this.alerts.showSuccess('Saved');
-      done();
-      await this.loadListDetails();
-    } catch (e) {
-      this.alerts.showError('Save failed');
-      done();
-    }
-  }
-
   protected editList() {
-    this.activeTab.set('settings');
+    this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteList() {
