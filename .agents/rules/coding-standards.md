@@ -35,6 +35,7 @@ This rules file defines the coding guidelines, framework paradigms, and architec
 - **Icons**:
   - Use `<pc-icon name="...">` (validated by `PcIconNameType`).
   - Do NOT use width/height utility classes on `<pc-icon>`. Use the `[size]` input instead (e.g., `[size]="4"`).
+  - Do use full integers with <pc-icon [size]>, instead of decimals (eg. do NOT use [size]="3.5)
 - **Loading States (`createLoadingGate`)**:
   - Wrap all asynchronous API/tRPC requests in `createLoadingGate()` to prevent spinner flickering on fast loads (under 300ms).
   - Wrap async sequences in `const end = this._loading.begin(); try { ... } finally { end(); }`.

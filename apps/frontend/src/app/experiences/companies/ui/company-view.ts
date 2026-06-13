@@ -102,7 +102,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                           data-tip="Copy Email"
                           (click)="copyToClipboard(company().email, 'Email')"
                         >
-                          <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
                         </button>
                       </div>
                     }
@@ -121,7 +121,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                           data-tip="Copy Phone"
                           (click)="copyToClipboard(company().phone, 'Phone')"
                         >
-                          <pc-icon name="document-duplicate" [size]="3.5"></pc-icon>
+                          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
                         </button>
                       </div>
                     }
