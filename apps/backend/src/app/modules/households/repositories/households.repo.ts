@@ -462,7 +462,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   /**
    * Find potential duplicates within the tenant (sharing identical full address fingerprint).
    */
-  public async findPotentialDuplicates(
+  public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
   ): Promise<{ groups: any[]; total: number }> {
@@ -470,10 +470,17 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const pageSize = options?.pageSize ?? 20;
 
     const countResult = await this.db
-      .selectFrom('potential_duplicates')
-      .select([sql<number>`count(distinct group_key)`.as('total')])
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'is not', null)
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
     const total = Number((countResult as any)?.total || 0);
 
@@ -483,11 +490,12 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     const keysRows = await this.db
       .selectFrom('potential_duplicates')
-      .select('group_key')
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'is not', null)
-      .groupBy('group_key')
-      .orderBy(sql`min(id)`)
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .execute();
@@ -558,7 +566,9 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       });
     }
 
-    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter(Boolean) as any[];
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g) => g && g.households.length > 1) as any[];
 
     return { groups: sortedGroups, total };
   }

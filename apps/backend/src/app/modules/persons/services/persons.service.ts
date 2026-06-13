@@ -951,8 +951,8 @@ export class PersonsService {
     });
   }
 
-  public async findPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.personsRepo.findPotentialDuplicates(auth.tenant_id, options);
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
   }
 
   public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {

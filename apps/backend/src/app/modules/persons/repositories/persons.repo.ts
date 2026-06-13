@@ -441,7 +441,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   /**
    * Find potential duplicates within the tenant (querying pre-computed potential_duplicates table).
    */
-  public async findPotentialDuplicates(
+  public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
   ): Promise<{ groups: any[]; total: number }> {
@@ -449,10 +449,17 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const pageSize = options?.pageSize ?? 20;
 
     const countResult = await this.db
-      .selectFrom('potential_duplicates')
-      .select([sql<number>`count(distinct group_key)`.as('total')])
-      .where('tenant_id', '=', tenant_id)
-      .where('person_id', 'is not', null)
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
     const total = Number((countResult as any)?.total || 0);
 
@@ -462,11 +469,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
     const keysRows = await this.db
       .selectFrom('potential_duplicates')
-      .select('group_key')
-      .where('tenant_id', '=', tenant_id)
-      .where('person_id', 'is not', null)
-      .groupBy('group_key')
-      .orderBy(sql`min(id)`)
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .execute();
@@ -513,7 +521,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       });
     }
 
-    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter(Boolean) as any[];
+    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter((g) => g && g.persons.length > 1) as any[];
 
     return { groups: sortedGroups, total };
   }

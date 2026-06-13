@@ -56,11 +56,11 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.exportCsv.mutate(input);
   }
 
-  public findPotentialDuplicates(options?: {
+  public getPotentialDuplicates(options?: {
     page?: number;
     pageSize?: number;
   }): Promise<{ groups: any[]; total: number }> {
-    return this.api.companies.findPotentialDuplicates.query(options);
+    return this.api.companies.getPotentialDuplicates.query(options);
   }
 
   /**

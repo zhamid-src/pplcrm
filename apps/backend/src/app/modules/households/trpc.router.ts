@@ -64,7 +64,7 @@ export const HouseholdsRouter = router({
 
   getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
 
-  findPotentialDuplicates: authProcedure
+  getPotentialDuplicates: authProcedure
     .input(
       z
         .object({
@@ -73,7 +73,7 @@ export const HouseholdsRouter = router({
         })
         .optional(),
     )
-    .query(({ input, ctx }) => households.findPotentialDuplicates(ctx.auth, input)),
+    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
 
   mergeHouseholds: authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))

@@ -177,7 +177,7 @@ function importMany() {
   });
 }
 
-function findPotentialDuplicates() {
+function getPotentialDuplicates() {
   return authProcedure
     .input(
       z
@@ -187,7 +187,7 @@ function findPotentialDuplicates() {
         })
         .optional(),
     )
-    .query(({ input, ctx }) => personsService.findPotentialDuplicates(ctx.auth, input));
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
 }
 
 function mergePersons() {
@@ -215,6 +215,6 @@ export const PersonsRouter = router({
   getByCompanyId: getByCompanyId(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
-  findPotentialDuplicates: findPotentialDuplicates(),
+  getPotentialDuplicates: getPotentialDuplicates(),
   mergePersons: mergePersons(),
 });
