@@ -87,9 +87,16 @@ export class TagsRepo extends BaseRepository<'tags'> {
         .where('tag_id', 'in', deletableIds)
         .where('tenant_id', '=', input.tenant_id)
         .execute();
-
       await trx
         .deleteFrom('map_peoples_tags')
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+
+      // Fix: Nullify the tag association on past imports before deleting the tag
+      await trx
+        .updateTable('data_imports' as any)
+        .set({ tag_id: null })
         .where('tag_id', 'in', deletableIds)
         .where('tenant_id', '=', input.tenant_id)
         .execute();
@@ -104,10 +111,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
     });
   }
 
-  public async ensureSystemTags(
-    input: { tenant_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
+  public async ensureSystemTags(input: { tenant_id: string; user_id: string }, trx?: Transaction<Models>) {
     for (const seed of SYSTEM_TAG_SEED_DATA) {
       const existing = await this.getSelect(trx)
         .select(['id', 'deletable', 'color'])
@@ -164,7 +168,9 @@ export class TagsRepo extends BaseRepository<'tags'> {
   public override async getAllWithCounts(
     input: {
       tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'> & { type?: 'tag' | 'issue' };
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'> & {
+        type?: 'tag' | 'issue';
+      };
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
@@ -191,7 +197,8 @@ export class TagsRepo extends BaseRepository<'tags'> {
             sql<boolean>`(
             LOWER(tags.name) LIKE ${text} OR
             LOWER(tags.description) LIKE ${text}
-          )`);
+          )`,
+          );
         })
         .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
@@ -228,7 +235,10 @@ export class TagsRepo extends BaseRepository<'tags'> {
       ])
       .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),
+        options.sortModel!.reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
       )
       .offset(startRow)
       .limit(endRow - startRow)
@@ -250,17 +260,17 @@ export class TagsRepo extends BaseRepository<'tags'> {
    * @returns Tag row containing only the `id`, or undefined if not found
    */
   public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
-    let q = this.getSelect(trx)
-      .select('id')
-      .where('name', '=', input.name)
-      .where('tenant_id', '=', input.tenant_id);
+    let q = this.getSelect(trx).select('id').where('name', '=', input.name).where('tenant_id', '=', input.tenant_id);
     if (input.type) {
       q = q.where('type', '=', input.type);
     }
     return q.executeTakeFirst();
   }
 
-  public findByNameAndType(input: { tenant_id: string; name: string; type: 'tag' | 'issue' }, trx?: Transaction<Models>) {
+  public findByNameAndType(
+    input: { tenant_id: string; name: string; type: 'tag' | 'issue' },
+    trx?: Transaction<Models>,
+  ) {
     return this.getSelect(trx)
       .select(['name'])
       .where('tenant_id', '=', input.tenant_id)
