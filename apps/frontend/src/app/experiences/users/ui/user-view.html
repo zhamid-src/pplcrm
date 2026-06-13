@@ -37,8 +37,8 @@
               <div
                 class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
               >
-                @if (detail()?.avatar_url) {
-                <img [src]="detail()?.avatar_url" alt="Avatar" />
+                @if (avatarUrl()) {
+                <img [src]="avatarUrl()!" alt="Avatar" />
                 } @else {
                 <pc-icon name="user-circle" [size]="10"></pc-icon>
                 }

@@ -4,6 +4,7 @@ import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AuthUsersService } from '../services/authusers-service';
+import { AuthService } from '@frontend/auth/auth-service';
 import { UserViewComponent } from './user-view';
 
 describe('UserViewComponent', () => {
@@ -42,6 +43,11 @@ describe('UserViewComponent', () => {
       confirm: vi.fn().mockResolvedValue(true),
     };
 
+    const mockAuthSvc = {
+      getUser: vi.fn().mockReturnValue({ id: 'current-user-id', role: 'admin' }),
+      resolveAvatarUrl: vi.fn().mockImplementation((url: string | null) => (url ? `resolved-${url}` : null)),
+    };
+
     mockUsersSvc.getById.mockResolvedValue({
       id: 'user-123',
       email: 'john@example.com',
@@ -61,6 +67,7 @@ describe('UserViewComponent', () => {
       imports: [UserViewComponent],
       providers: [
         { provide: AuthUsersService, useValue: mockUsersSvc },
+        { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
@@ -80,6 +87,38 @@ describe('UserViewComponent', () => {
     expect(component['loading']()).toBe(false);
     expect(component['detail']()?.id).toBe('user-123');
     expect(component['displayName']()).toBe('John Doe');
+  });
+
+  it('should compute resolved avatarUrl when user has avatar', () => {
+    component['detail'].set({
+      id: 'user-123',
+      email: 'john@example.com',
+      first_name: 'John',
+      last_name: 'Doe',
+      role: 'editor',
+      verified: true,
+      avatar_url: '/uploads/avatar-123.png',
+      stats: {} as any,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    expect(component['avatarUrl']()).toBe('resolved-/uploads/avatar-123.png');
+  });
+
+  it('should return null for avatarUrl when user has no avatar', () => {
+    component['detail'].set({
+      id: 'user-123',
+      email: 'john@example.com',
+      first_name: 'John',
+      last_name: 'Doe',
+      role: 'editor',
+      verified: true,
+      avatar_url: null,
+      stats: {} as any,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    expect(component['avatarUrl']()).toBeNull();
   });
 
   it('should navigate to edit view on editUser', () => {
