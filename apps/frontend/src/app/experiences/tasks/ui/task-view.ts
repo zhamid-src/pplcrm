@@ -1,8 +1,8 @@
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, OnInit, inject, signal, viewChild } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { IAuthUser } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
@@ -39,16 +39,16 @@ import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avata
   templateUrl: './task-view.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
-export class TaskView implements OnInit {
+export class TaskView {
+  readonly id = input.required<string>();
+
   private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly tasks = inject(TasksService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
   private readonly teams = inject(TeamsService);
 
-  protected id = signal<string>('');
   protected readonly task = signal<any | null>(null);
   protected readonly comments = signal<any[]>([]);
   protected readonly attachments = signal<any[]>([]);
@@ -95,10 +95,10 @@ export class TaskView implements OnInit {
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
   protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
 
-  public ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id') ?? '';
-    this.id.set(id);
-    this.load();
+  constructor() {
+    effect(() => {
+      untracked(() => this.load());
+    });
   }
 
   // Load task and its children

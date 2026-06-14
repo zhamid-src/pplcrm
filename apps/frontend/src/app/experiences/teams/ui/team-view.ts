@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -192,7 +192,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                   <!-- Panel: General Activity Feed -->
                   @if (activeTab() === 'activity') {
                     <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-                      <pc-record-activities [entity]="'teams'" [entityId]="id!"></pc-record-activities>
+                      <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
                     </div>
                   }
 
@@ -311,7 +311,9 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
     </div>
   `,
 })
-export class TeamViewComponent implements OnInit {
+export class TeamViewComponent {
+  readonly id = input.required<string>();
+
   private readonly alertSvc = inject(AlertService);
   private readonly teamsSvc = inject(TeamsService);
   private readonly tasksSvc = inject(TasksService);
@@ -320,7 +322,6 @@ export class TeamViewComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected id: string | null = null;
   protected readonly isLoading = signal(false);
   protected readonly team = signal<any>(null);
   protected readonly teamTasks = signal<any[]>([]);
@@ -350,7 +351,10 @@ export class TeamViewComponent implements OnInit {
   });
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
 
     // Load users
     this.auth
@@ -362,21 +366,16 @@ export class TeamViewComponent implements OnInit {
       .catch(() => void 0);
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load team detail
-      const data = await this.teamsSvc.getById(this.id);
+      const data = await this.teamsSvc.getById(id);
       this.team.set(data);
 
       // 2. Load associated tasks
       const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id } },
+        filterModel: { team_id: { value: id } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
     } catch (err) {
@@ -391,7 +390,7 @@ export class TeamViewComponent implements OnInit {
   }
 
   protected async deleteTeam() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Team',
       message: 'Are you sure you want to delete this team? This action cannot be undone.',
@@ -401,7 +400,7 @@ export class TeamViewComponent implements OnInit {
     if (!confirmed) return;
     this.isLoading.set(true);
     try {
-      await this.teamsSvc.delete(this.id);
+      await this.teamsSvc.delete(this.id());
       this.teamsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);

@@ -1,8 +1,8 @@
-import { Component, OnInit, computed, inject, signal, effect, untracked } from '@angular/core';
+import { Component, computed, inject, input, signal, effect, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { AddVolunteerEventType, UpdateVolunteerEventType, AddVolunteerEventObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -21,16 +21,16 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
-export class EventDetailComponent implements OnInit {
+export class EventDetailComponent {
+  readonly id = input<string>();
+
   private readonly alerts = inject(AlertService);
   private readonly personsSvc = inject(PersonsService);
   private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
   private readonly volunteerSvc = inject(VolunteerService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected id: string | null = null;
   protected slugManuallyEdited = false;
   protected readonly slugChecking = signal(false);
   protected readonly slugUnique = signal<boolean | null>(null);
@@ -38,57 +38,51 @@ export class EventDetailComponent implements OnInit {
 
   constructor() {
     const nameSignal = computed(() => this.payload().name);
-    effect(
-      () => {
-        const name = nameSignal();
-        if (this.isNew() && !this.slugManuallyEdited) {
-          const suggested = this.slugify(name);
-          if (untracked(this.payload).slug !== suggested) {
-            this.payload.update((p) => ({
-              ...p,
-              slug: suggested,
-            }));
-          }
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({
+            ...p,
+            slug: suggested,
+          }));
         }
-      },
-      { allowSignalWrites: true },
-    );
+      }
+    });
 
     const slugSignal = computed(() => this.payload().slug);
-    effect(
-      () => {
-        const slug = slugSignal();
-        if (this.slugTimeoutId) {
-          clearTimeout(this.slugTimeoutId);
-          this.slugTimeoutId = null;
-        }
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
 
-        if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-          this.slugUnique.set(null);
-          this.slugChecking.set(false);
-          return;
-        }
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
 
-        this.slugChecking.set(true);
-        this.slugTimeoutId = setTimeout(() => {
-          void (async () => {
-            try {
-              const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : this.id);
-              if (untracked(slugSignal) === slug) {
-                this.slugUnique.set(res.unique);
-              }
-            } catch (err) {
-              console.error('Failed to check slug uniqueness', err);
-            } finally {
-              if (untracked(slugSignal) === slug) {
-                this.slugChecking.set(false);
-              }
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
             }
-          })();
-        }, 300);
-      },
-      { allowSignalWrites: true },
-    );
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
   }
 
   protected slugify(text: string): string {
@@ -108,7 +102,7 @@ export class EventDetailComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
-  protected readonly isNew = signal(false);
+  protected readonly isNew = computed(() => !this.id());
   protected readonly eventPassed = computed(() => {
     const end = this.payload().end_time;
     if (!end) return false;
@@ -159,14 +153,6 @@ export class EventDetailComponent implements OnInit {
   public ngOnInit(): void {
     const end = this._loading.begin();
     try {
-      const idParam = this.route.snapshot.paramMap.get('id');
-      if (idParam === 'add' || !idParam) {
-        this.isNew.set(true);
-      } else {
-        this.id = idParam;
-        this.isNew.set(false);
-      }
-
       void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
     } catch {
       end();
@@ -215,7 +201,7 @@ export class EventDetailComponent implements OnInit {
     }
 
     try {
-      const event = await this.volunteerEventsSvc.getById(this.id!);
+      const event = await this.volunteerEventsSvc.getById(this.id()!);
       this.detail.set(event);
       this.payload.set({
         name: event.name ?? '',
@@ -241,9 +227,9 @@ export class EventDetailComponent implements OnInit {
   }
 
   protected async loadRoster() {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      const roster = await this.volunteerSvc.getShiftsForEvent(this.id);
+      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
       this.roster.set(roster || []);
     } catch (err) {
       console.error('Failed to load event roster', err);
@@ -293,13 +279,13 @@ export class EventDetailComponent implements OnInit {
           await this.router.navigate(['/events', res.id]);
         }
       } else {
-        await this.volunteerEventsSvc.update(this.id!, data as UpdateVolunteerEventType);
+        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
         this.alerts.showSuccess('Event updated successfully');
         if (typeof done === 'function') {
           done();
         } else {
-          await this.router.navigate(['/events', this.id]);
+          await this.router.navigate(['/events', this.id()]);
         }
       }
     } catch (err: any) {
@@ -311,7 +297,7 @@ export class EventDetailComponent implements OnInit {
   }
 
   protected async deleteEvent() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Event',
       message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
@@ -322,7 +308,7 @@ export class EventDetailComponent implements OnInit {
 
     this.saving.set(true);
     try {
-      await this.volunteerEventsSvc.delete(this.id);
+      await this.volunteerEventsSvc.delete(this.id()!);
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events']);
@@ -337,7 +323,7 @@ export class EventDetailComponent implements OnInit {
   protected async addVolunteer(person: any) {
     try {
       await this.volunteerSvc.signupVolunteer({
-        event_id: this.id!,
+        event_id: this.id()!,
         person_id: String(person.id),
         status: 'signed_up',
       });

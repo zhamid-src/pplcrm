@@ -3,7 +3,7 @@
  */
 import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
@@ -40,7 +40,6 @@ export class PersonDetail implements OnInit {
   private readonly personsSvc = inject(PersonsService);
   private readonly teamsSvc = inject(TeamsService);
   private readonly companiesSvc = inject(CompaniesService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
@@ -118,7 +117,7 @@ export class PersonDetail implements OnInit {
   });
 
   /** ID of the person being edited (if in edit mode) */
-  protected id: string | null = null;
+  protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
 
@@ -126,7 +125,7 @@ export class PersonDetail implements OnInit {
 
   /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
   /** Reactive display name derived from live form values — avoids method calls in template */
   protected readonly formName = computed(() => {
@@ -152,8 +151,6 @@ export class PersonDetail implements OnInit {
    * Initializes the component and determines edit mode via route params.
    */
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
-
     // Load users once for display names
     this.auth
       .getUsers()
@@ -204,7 +201,7 @@ export class PersonDetail implements OnInit {
   }
 
   protected async deletePerson() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.confirmDlg.confirm({
       title: 'Delete Person',
       message: 'Are you sure you want to delete this person? This action cannot be undone.',
@@ -214,7 +211,7 @@ export class PersonDetail implements OnInit {
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      await this.personsSvc.delete(this.id);
+      await this.personsSvc.delete(this.id()!);
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
@@ -239,7 +236,7 @@ export class PersonDetail implements OnInit {
       company_id: raw.company_id || null,
       assigned_to: raw.assigned_to || null,
     } as any;
-    return this.id ? this.update(data, done) : this.add(data, done);
+    return this.id() ? this.update(data, done) : this.add(data, done);
   }
 
   /**
@@ -258,7 +255,7 @@ export class PersonDetail implements OnInit {
   /** Assign current person to the selected household */
   protected async assignToHousehold(household_id: string) {
     // NEW PERSON: just store the pending selection; it will be sent on save
-    if (!this.id) {
+    if (!this.id()) {
       this.pendingHouseholdId.set(household_id);
       this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
       this.closeAssignDrawer();
@@ -283,7 +280,7 @@ export class PersonDetail implements OnInit {
         await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
       } else {
         // Only move this person
-        await this.personsSvc.update(this.id, { household_id } as UpdatePersonsType);
+        await this.personsSvc.update(this.id()!, { household_id } as UpdatePersonsType);
       }
 
       // update local state for current person and UI
@@ -371,7 +368,7 @@ export class PersonDetail implements OnInit {
    */
   protected async removeAddress() {
     // New person: just clear the pending household — no API call needed yet
-    if (!this.id) {
+    if (!this.id()) {
       this.pendingHouseholdId.set(null);
       return;
     }
@@ -389,7 +386,7 @@ export class PersonDetail implements OnInit {
 
     const end = this._loading.begin();
     try {
-      await this.personsSvc.removeHousehold(this.id);
+      await this.personsSvc.removeHousehold(this.id()!);
       this.person.update((p) => (p ? { ...p, household_id: null as any } : p));
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
@@ -401,9 +398,9 @@ export class PersonDetail implements OnInit {
 
   /** Attaches a tag to the person */
   protected async tagAdded(tag: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.personsSvc.attachTag(this.id, tag, 'tag');
+      await this.personsSvc.attachTag(this.id()!, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to attach tag:', err);
@@ -412,7 +409,7 @@ export class PersonDetail implements OnInit {
 
   /** Detaches a tag from the person */
   protected async tagRemoved(tag: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
 
     const normalized = tag.trim().toLowerCase();
     const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
@@ -421,7 +418,7 @@ export class PersonDetail implements OnInit {
       if (normalized === 'volunteer') {
         let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
         try {
-          teams = await this.teamsSvc.getTeamsForVolunteer(this.id);
+          teams = await this.teamsSvc.getTeamsForVolunteer(this.id()!);
         } catch (err) {
           console.error('Failed to load teams for volunteer tag removal', err);
         }
@@ -446,7 +443,7 @@ export class PersonDetail implements OnInit {
           }
         }
 
-        const result = await this.personsSvc.detachTag(this.id, tag, 'tag');
+        const result = await this.personsSvc.detachTag(this.id()!, tag, 'tag');
         await this.updateTags();
         await this.tagOptionsSvc.invalidate('tag');
         if (result?.removed_teams && result.removed_teams.length > 0) {
@@ -456,7 +453,7 @@ export class PersonDetail implements OnInit {
         return;
       }
 
-      await this.personsSvc.detachTag(this.id, tag, 'tag');
+      await this.personsSvc.detachTag(this.id()!, tag, 'tag');
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
@@ -467,9 +464,9 @@ export class PersonDetail implements OnInit {
 
   /** Attaches an issue to the person */
   protected async issueAdded(issue: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.personsSvc.attachTag(this.id, issue, 'issue');
+      await this.personsSvc.attachTag(this.id()!, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to attach issue:', err);
@@ -478,12 +475,12 @@ export class PersonDetail implements OnInit {
 
   /** Detaches an issue from the person */
   protected async issueRemoved(issue: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
 
     const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
 
     try {
-      await this.personsSvc.detachTag(this.id, issue, 'issue');
+      await this.personsSvc.detachTag(this.id()!, issue, 'issue');
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
@@ -597,11 +594,11 @@ export class PersonDetail implements OnInit {
    * Loads the person data from the backend if ID is available
    */
   private async loadPerson() {
-    if (!this.id) return;
+    if (!this.id()) return;
 
     const end = this._loading.begin();
     try {
-      this.person.set((await this.personsSvc.getById(this.id)) as Persons);
+      this.person.set((await this.personsSvc.getById(this.id()!)) as Persons);
 
       await this.updateTags();
       await this.loadVolunteerInfo();
@@ -642,12 +639,12 @@ export class PersonDetail implements OnInit {
    * @param data - Partial person data to update
    */
   private update(data: Partial<UpdatePersonsType>, done?: () => void) {
-    if (!this.id) return;
+    if (!this.id()) return;
 
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .update(this.id, data, { meta: { skipErrorHandler: true } })
+      .update(this.id()!, data, { meta: { skipErrorHandler: true } })
       .then(() => {
         this.alertSvc.showSuccess('Person updated successfully.');
         this.form().reset();
@@ -672,19 +669,19 @@ export class PersonDetail implements OnInit {
   private async updateTags() {
     if (!this.person()) return;
 
-    const tags = this.id ? await this.personsSvc.getTags(this.id, 'tag') : [];
+    const tags = this.id() ? await this.personsSvc.getTags(this.id()!, 'tag') : [];
     this.tags.set(tags);
 
-    const issues = this.id ? await this.personsSvc.getTags(this.id, 'issue') : [];
+    const issues = this.id() ? await this.personsSvc.getTags(this.id()!, 'issue') : [];
     this.issues.set(issues);
   }
 
   private async loadVolunteerInfo() {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      const stats = await this.volunteerSvc.getVolunteerStats(this.id);
+      const stats = await this.volunteerSvc.getVolunteerStats(this.id()!);
       this.volunteerStats.set(stats);
-      const history = await this.volunteerSvc.getHistoryForPerson(this.id);
+      const history = await this.volunteerSvc.getHistoryForPerson(this.id()!);
       this.volunteerHistory.set(history || []);
     } catch (err) {
       console.error('Failed to load volunteer info', err);

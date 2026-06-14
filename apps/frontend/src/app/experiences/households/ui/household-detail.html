@@ -16,7 +16,7 @@
     <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
       <h2 class="text-xl font-bold text-base-content flex items-center gap-2">
         <pc-icon name="home" [size]="5" class="text-primary"></pc-icon>
-        {{ id ? 'Edit Household Details' : 'Add New Household' }}
+        {{ id() ? 'Edit Household Details' : 'Add New Household' }}
       </h2>
       <pc-form-actions
         [isLoading]="isLoading()"

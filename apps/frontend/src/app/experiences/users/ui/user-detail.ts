@@ -1,7 +1,7 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, UpdateAuthUserType } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -16,9 +16,10 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   imports: [FormField, RouterModule, Icon, FormActions],
   templateUrl: './user-detail.html',
 })
-export class UserDetailComponent implements OnInit {
+export class UserDetailComponent {
+  readonly id = input.required<string>();
+
   private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly users = inject(AuthUsersService);
   private readonly auth = inject(AuthService);
@@ -57,15 +58,17 @@ export class UserDetailComponent implements OnInit {
     return name || user.email;
   });
 
-  private id = '';
-
-  public ngOnInit(): void {
-    this.id = this.route.snapshot.paramMap.get('id') ?? '';
-    if (!this.id) {
-      this.error.set('Missing user identifier.');
-      return;
-    }
-    void this.load();
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -74,7 +77,7 @@ export class UserDetailComponent implements OnInit {
     }
 
     this.form().markAsTouched();
-    if (this.form().invalid() || !this.id) {
+    if (this.form().invalid() || !this.id()) {
       return;
     }
 
@@ -83,7 +86,7 @@ export class UserDetailComponent implements OnInit {
     this.saving.set(true);
     this.error.set(null);
     try {
-      await this.users.update(this.id, payload);
+      await this.users.update(this.id(), payload);
       this.alerts.showSuccess('User updated');
       this.users.triggerRefresh();
       await this.load();
@@ -110,10 +113,10 @@ export class UserDetailComponent implements OnInit {
   protected readonly resettingPassword = signal(false);
 
   protected async triggerPasswordReset() {
-    if (!this.id) return;
+    if (!this.id()) return;
     this.resettingPassword.set(true);
     try {
-      await this.users.adminTriggerPasswordReset(this.id);
+      await this.users.adminTriggerPasswordReset(this.id());
       this.alerts.showSuccess('Password reset email sent to user');
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to trigger password reset';
@@ -124,7 +127,7 @@ export class UserDetailComponent implements OnInit {
   }
 
   protected async deleteUser() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete User',
       message: 'Are you sure you want to delete this user? This action cannot be undone.',
@@ -134,7 +137,7 @@ export class UserDetailComponent implements OnInit {
     if (!confirmed) return;
     this.saving.set(true);
     try {
-      const success = await this.users.delete(this.id);
+      const success = await this.users.delete(this.id());
       if (!success) {
         throw new Error('User deletion is not supported');
       }
@@ -151,7 +154,7 @@ export class UserDetailComponent implements OnInit {
     const end = this._loading.begin();
     this.error.set(null);
     try {
-      const user = await this.users.getById(this.id);
+      const user = await this.users.getById(this.id());
       this.detail.set(user);
       this.setForm(user);
       this.form().reset();

@@ -1,7 +1,7 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -28,9 +28,10 @@ import { DatePipe } from '@angular/common';
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {
+  readonly id = input<string>();
+
   private readonly alerts = inject(AlertService);
   private readonly persons = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly teams = inject(TeamsService);
   private readonly lists = inject(ListsService);
@@ -38,7 +39,7 @@ export class TeamDetailComponent implements OnInit {
   private readonly tasksSvc = inject(TasksService);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected id: string | null = null;
+  protected readonly isNew = computed(() => !this.id());
 
   protected readonly detail = signal<TeamDetail | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -56,7 +57,6 @@ export class TeamDetailComponent implements OnInit {
     validateStandardSchema(p, AddTeamObj);
   });
 
-  protected readonly isNew = signal(false);
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
   protected signalPeople = signal<PersonOption[]>([]);
@@ -101,11 +101,6 @@ export class TeamDetailComponent implements OnInit {
   public async ngOnInit(): Promise<void> {
     const end = this._loading.begin();
     try {
-      const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
-      this.isNew.set(mode === 'new');
-      if (!this.isNew()) {
-        this.id = this.route.snapshot.paramMap.get('id');
-      }
       await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
 
       if (this.isNew()) {
@@ -184,7 +179,7 @@ export class TeamDetailComponent implements OnInit {
   }
 
   protected async deleteTeam() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Team',
       message: 'Are you sure you want to delete this team? This action cannot be undone.',
@@ -194,7 +189,7 @@ export class TeamDetailComponent implements OnInit {
     if (!confirmed) return;
     this.saving.set(true);
     try {
-      await this.teams.delete(this.id);
+      await this.teams.delete(this.id()!);
       this.teams.triggerRefresh();
       this.alerts.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
@@ -240,7 +235,7 @@ export class TeamDetailComponent implements OnInit {
         } else {
           await this.router.navigate(['/teams']);
         }
-      } else if (this.id) {
+      } else if (this.id()) {
         const payload: UpdateTeamType = {
           name: raw.name?.trim() ?? null,
           description: raw.description?.trim()?.length ? raw.description.trim() : null,
@@ -249,7 +244,7 @@ export class TeamDetailComponent implements OnInit {
           volunteer_ids: raw.volunteer_ids ?? [],
           list_ids: raw.list_ids ?? [],
         };
-        result = await this.teams.update(this.id, payload);
+        result = await this.teams.update(this.id()!, payload);
         this.teams.triggerRefresh();
         this.detail.set(result);
         this.setForm(result);
@@ -258,7 +253,7 @@ export class TeamDetailComponent implements OnInit {
         if (typeof done === 'function') {
           done();
         } else {
-          await this.router.navigate(['/teams', this.id]);
+          await this.router.navigate(['/teams', this.id()]);
         }
         return;
       } else {
@@ -318,17 +313,17 @@ export class TeamDetailComponent implements OnInit {
       this.setForm(null);
       return;
     }
-    if (!this.id) {
+    if (!this.id()) {
       this.error.set('Missing team identifier');
       return;
     }
 
     try {
-      const team = await this.teams.getById(this.id);
+      const team = await this.teams.getById(this.id()!);
       this.detail.set(team);
       this.setForm(team);
       const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id } },
+        filterModel: { team_id: { value: this.id() } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
     } catch (err: any) {

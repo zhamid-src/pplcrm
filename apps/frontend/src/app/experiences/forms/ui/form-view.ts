@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -221,7 +221,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                   <!-- Panel: General Activity Feed -->
                   @if (activeTab() === 'activity') {
                     <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-                      <pc-record-activities [entity]="'web_forms'" [entityId]="id!"></pc-record-activities>
+                      <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
                     </div>
                   }
 
@@ -329,7 +329,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
     </div>
   `,
 })
-export class FormViewComponent implements OnInit {
+export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
@@ -337,7 +337,7 @@ export class FormViewComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected id: string | null = null;
+  readonly id = input.required<string>();
   protected readonly isLoading = signal(false);
   protected readonly formRecord = signal<any | null>(null);
   protected readonly submissionsCount = signal(0);
@@ -377,11 +377,11 @@ export class FormViewComponent implements OnInit {
 
   protected readonly embedSnippet = computed(() => {
     const record = this.formRecord();
-    if (!record || !this.id) return '';
+    if (!record || !this.id()) return '';
     const apiOrigin = window.location.origin.replace(':4200', ':5000');
     const fields = this.selectedFields();
     return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
   fields.includes('first_name')
@@ -421,12 +421,15 @@ ${
   });
 
   protected readonly formUrl = computed(() => {
-    if (!this.id) return '';
-    return window.location.origin.replace(':4200', ':5000') + `/api/forms/view/${this.id}`;
+    if (!this.id()) return '';
+    return window.location.origin.replace(':4200', ':5000') + `/api/forms/view/${this.id()}`;
   });
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
 
     // Load users
     this.auth
@@ -438,16 +441,11 @@ ${
       .catch(() => void 0);
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load Form details
-      const record = await this.formsSvc.getById(this.id);
+      const record = await this.formsSvc.getById(id);
       this.formRecord.set(record);
 
       // 2. Load available Lists to resolve list names
@@ -461,7 +459,7 @@ ${
       );
 
       // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(this.id);
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
       this.submissionsCount.set(subCount);
     } catch (err) {
       this.alertSvc.showError('Failed to load form details: ' + String(err));
@@ -475,7 +473,7 @@ ${
   }
 
   protected async deleteForm() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Web Form',
       message: 'Are you sure you want to delete this web form? This action cannot be undone.',
@@ -485,7 +483,7 @@ ${
     if (!confirmed) return;
     this.isLoading.set(true);
     try {
-      await this.formsSvc.delete(this.id);
+      await this.formsSvc.delete(this.id());
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate(['/forms']);
