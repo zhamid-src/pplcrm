@@ -42,8 +42,7 @@ export class ListView implements OnDestroy {
     });
   }
 
-  protected async loadListDetails() {
-    const id = this.id();
+  protected async loadListDetails(id = this.id()) {
     try {
       this.loading.set(true);
 
