@@ -4,7 +4,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { type IAuthUser } from '@common';
 import { type AddressType } from 'common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -16,6 +15,7 @@ import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-person-view',
@@ -34,10 +34,17 @@ export class PersonView {
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
 
-  protected readonly isLoading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
   protected readonly person = signal<any | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
+
+  private readonly usersResource = resource({
+    loader: () => this.auth.getUsers(),
+  });
+  private readonly usersById = computed(
+    () => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])),
+  );
 
   // Analytics & Lists
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
@@ -94,19 +101,10 @@ export class PersonView {
       const currentId = this.id();
       untracked(() => this.loadAllData(currentId));
     });
-
-    // Load users for addedby/updatedby display names
-    this.auth
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
   }
 
   protected async loadAllData(id: string) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // 1. Load person details
       const personData = await this.personsSvc.getById(id);
@@ -138,7 +136,7 @@ export class PersonView {
     } catch (err) {
       this.alertSvc.showError('Failed to load person details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -155,7 +153,7 @@ export class PersonView {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await this.personsSvc.delete(this.id());
       this.personsSvc.triggerRefresh();
@@ -165,7 +163,7 @@ export class PersonView {
       const message = err?.message || err?.data?.message || 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 
@@ -195,7 +193,7 @@ export class PersonView {
 
   protected getUserName(id: string | null | undefined): string {
     if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
   }
 
   protected navigateToHousehold() {
