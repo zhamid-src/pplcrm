@@ -603,9 +603,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       );
     });
 
-    // React to limitToTags and limitToIssues input signal changes
+    // React to limitToTags input signal changes
     effect(() => {
-      const tags = this.limitToTags();
+      // Fallback to an empty array if the input is undefined or null
+      const tags = this.limitToTags() || [];
+
       untracked(() => {
         this.tagFilter.selectedTags.set([...tags]);
         if (this._initialized) {
@@ -614,8 +616,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       });
     });
 
+    // React to limitToIssues input signal changes
     effect(() => {
-      const issues = this.limitToIssues();
+      // Fallback to an empty array if the input is undefined or null
+      const issues = this.limitToIssues() || [];
+
       untracked(() => {
         this.tagFilter.selectedIssues.set([...issues]);
         if (this._initialized) {
