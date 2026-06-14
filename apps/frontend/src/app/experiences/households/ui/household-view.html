@@ -161,17 +161,21 @@
 
           <div class="relative w-full h-64 bg-base-200 flex items-center justify-center">
             @if (hasMap()) {
-            <div #mapContainer id="household-map" class="w-full h-full"></div>
+              @defer (on viewport) {
+                <div #mapContainer id="household-map" class="w-full h-full"></div>
+              } @placeholder {
+                <div class="skeleton w-full h-full"></div>
+              }
             } @else {
-            <!-- Unverified Map Placeholder -->
-            <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
-              <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-              <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
-              <p class="text-xs max-w-[220px] font-light leading-snug">
-                Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-                address.
-              </p>
-            </div>
+              <!-- Unverified Map Placeholder -->
+              <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+                <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+                <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+                <p class="text-xs max-w-[220px] font-light leading-snug">
+                  Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+                  address.
+                </p>
+              </div>
             }
           </div>
         </div>

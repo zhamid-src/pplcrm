@@ -219,7 +219,11 @@
                   <!-- Panel: Associated Employees List -->
                   @if (activeTab() === 'employees') {
                     <div class="flex flex-col gap-4">
-                      <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+                      @defer (on viewport) {
+                        <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+                      } @placeholder {
+                        <div class="skeleton w-full h-32"></div>
+                      }
                     </div>
                   }
 
