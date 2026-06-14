@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -7,7 +7,6 @@ import { RecordActivities } from '@uxcommon/components/record-activities/record-
 import { PeopleInCompany } from './people-in-company';
 import { CompaniesService } from '../services/companies-service';
 import { AuthService } from '../../../auth/auth-service';
-import { type IAuthUser } from '@common';
 import { PersonsService } from '../../persons/services/persons-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -34,8 +33,13 @@ export class CompanyView {
 
   protected readonly company = signal<any | null>(null);
   protected readonly employeeCount = signal(0);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
+
+  private readonly usersResource = resource({
+    loader: () => this.auth.getUsers(),
+  });
+  private readonly usersById = computed(
+    () => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])),
+  );
 
   // Active tab state
   protected activeTab = signal<'activity' | 'employees' | 'details'>('activity');
@@ -63,15 +67,6 @@ export class CompanyView {
       const currentId = this.id();
       untracked(() => this.loadAllData(currentId));
     });
-
-    // Load users for addedby/updatedby display names
-    this.auth
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
   }
 
   protected async loadAllData(id: string) {
@@ -142,6 +137,6 @@ export class CompanyView {
 
   protected getUserName(id: string | null | undefined): string {
     if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
   }
 }
