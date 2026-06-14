@@ -676,9 +676,11 @@
             <!-- Panel: Household members -->
             @if (activeTab() === 'household') {
             <div class="flex flex-col gap-4">
-              @if (householdId() && !isPlaceholderHousehold()) {
+              @if (householdId() && !isPlaceholderHousehold()) { @defer {
               <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id"></pc-people-in-household>
-              } @else {
+              } @placeholder {
+              <div class="skeleton w-full h-32"></div>
+              } } @else {
               <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
               }
             </div>
