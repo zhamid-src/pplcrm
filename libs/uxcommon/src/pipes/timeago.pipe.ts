@@ -1,103 +1,134 @@
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
 
 export interface TimeAgoOptions {
-  /** Absolute date format for fallback (Intl options) */
-  dateStyle?: 'full' | 'long' | 'medium' | 'short';
-
-  /** Locale for absolute date fallback (default: browser/Angular default) */
-  locale?: string;
-
-  /** 'long' => "2 minutes ago", 'short' => "2m ago" (default: 'long') */
-  style?: TimeAgoStyle;
-
-  /** After this many days, switch to absolute date (default: 7) */
   thresholdDays?: number;
-  timeStyle?: 'full' | 'long' | 'medium' | 'short';
+  style?: 'long' | 'short' | 'compact' | string;
+  compact?: boolean;
+  hideSuffix?: boolean;
+  // Index signature ensures any other existing options in your codebase are accepted
+  [key: string]: any;
 }
 
 @Pipe({
-  name: 'timeAgo',
-  pure: false, // update when change detection runs + we also markForCheck on our own timer
+  name: 'timeAgo', // Matched to your template casing
+  pure: false, // Must be false to update the UI over time
 })
 export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private readonly cdr = inject(ChangeDetectorRef);
-  private timerId: any;
+  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private lastValue?: string | number | Date | null;
+  private lastOptsJson?: string;
+  private lastResult = '';
 
-  public ngOnDestroy(): void {
-    if (this.timerId) clearTimeout(this.timerId);
-  }
+  constructor(private cdr: ChangeDetectorRef) {}
 
   public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    if (!value) return '';
-    const options: Required<TimeAgoOptions> = {
-      thresholdDays: opts?.thresholdDays ?? 7,
-      style: opts?.style ?? 'long',
-      locale: opts?.locale ?? (undefined as unknown as string), // allow default locale
-      dateStyle: opts?.dateStyle ?? 'short',
-      timeStyle: opts?.timeStyle ?? 'short',
-    };
+    // Stringify options to avoid pure:false memory reference loops
+    const optsJson = opts ? JSON.stringify(opts) : '';
 
-    const date = value instanceof Date ? value : new Date(value);
-    if (isNaN(date.getTime())) return '';
+    // Only recalculate if the date OR the options have actually changed
+    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
+      return this.lastResult;
+    }
 
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    this.lastValue = value;
+    this.lastOptsJson = optsJson;
+    this.clearTimer();
 
-    // schedule updates based on the magnitude to avoid extra work
+    if (!value) {
+      this.lastResult = '';
+      return this.lastResult;
+    }
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+      this.lastResult = String(value);
+      return this.lastResult;
+    }
+
+    const diffMs = new Date().getTime() - date.getTime();
+
+    // Calculate and cache the result
+    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
     this.setupTimer(diffMs);
 
-    const diffSec = Math.max(1, Math.floor(diffMs / 1000));
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHr = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHr / 24);
+    return this.lastResult;
+  }
 
-    // Switch to absolute after threshold
-    if (diffDay >= options.thresholdDays) {
-      const formatter = new Intl.DateTimeFormat(options.locale, {
-        dateStyle: options.dateStyle,
-        timeStyle: options.timeStyle,
+  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    // If a threshold is set and exceeded, fallback to a standard date string
+    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
+      return date.toLocaleDateString(undefined, {
+        month: opts.style === 'short' ? 'short' : 'long',
+        day: 'numeric',
+        year: 'numeric',
       });
-      return formatter.format(date);
     }
 
-    // Relative (time ago)
-    if (options.style === 'short') {
-      if (diffSec < 60) return 'now';
-      if (diffMin < 60) return `${diffMin}m`;
-      if (diffHr < 24) return `${diffHr}h`;
-      return `${diffDay}d`;
-    } else if (options.style === 'medium') {
-      if (diffSec < 60) return 'now';
-      if (diffMin < 60) return `${diffMin}m ago`;
-      if (diffHr < 24) return `${diffHr}h ago`;
-      return `${diffDay}d ago`;
+    const suffix = opts?.hideSuffix ? '' : ' ago';
+
+    // Handle compact/short styles
+    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
+      if (seconds < 60) return 'now';
+      if (minutes < 60) return `${minutes}m`;
+      if (hours < 24) return `${hours}h`;
+      return `${days}d`;
+    }
+
+    // Default long style
+    if (seconds < 60) return 'just now';
+    if (minutes === 1) return `a minute${suffix}`;
+    if (minutes < 60) return `${minutes} minutes${suffix}`;
+    if (hours === 1) return `an hour${suffix}`;
+    if (hours < 24) return `${hours} hours${suffix}`;
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days${suffix}`;
+
+    const months = Math.floor(days / 30);
+    if (months === 1) return `a month${suffix}`;
+    if (months < 12) return `${months} months${suffix}`;
+
+    const years = Math.floor(days / 365);
+    if (years === 1) return `a year${suffix}`;
+    return `${years} years${suffix}`;
+  }
+
+  private setupTimer(diffMs: number): void {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+
+    let timeoutMs = 60000;
+
+    // Scale update frequency based on age to save CPU
+    if (seconds < 60) {
+      timeoutMs = 10000; // 10 seconds
+    } else if (minutes < 60) {
+      timeoutMs = 60000; // 1 minute
+    } else if (minutes < 1440) {
+      timeoutMs = 3600000; // 1 hour
     } else {
-      // long
-      if (diffSec < 60) return 'just now';
-      if (diffMin < 60) return `${diffMin} minute${diffMin !== 1 ? 's' : ''} ago`;
-      if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? 's' : ''} ago`;
-      return `${diffDay} day${diffDay !== 1 ? 's' : ''} ago`;
+      timeoutMs = 86400000; // 1 day
+    }
+
+    // Native setTimeout triggers Angular's zoneless scheduler internally
+    // when markForCheck is called inside it.
+    this.timerId = setTimeout(() => {
+      this.cdr.markForCheck();
+    }, timeoutMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
     }
   }
 
-  /** Update more frequently for fresh times, less frequently for old ones */
-  private setupTimer(diffMs: number) {
-    if (this.timerId) clearTimeout(this.timerId);
-
-    let nextTickMs = 60000; // default 1 minute
-    if (diffMs < 60_000)
-      nextTickMs = 1000; // < 1 min -> update every second
-    else if (diffMs < 3_600_000)
-      nextTickMs = 15_000; // < 1 hr -> every 15s
-    else if (diffMs < 86_400_000)
-      nextTickMs = 60_000; // < 1 day -> every 1m
-    else nextTickMs = 15 * 60_000; // >= 1 day -> every 15m
-
-    this.timerId = setTimeout(() => {
-      // Trigger change detection so the pipe recomputes
-      this.cdr.markForCheck();
-    }, nextTickMs);
+  public ngOnDestroy(): void {
+    this.clearTimer();
   }
 }
-
-export type TimeAgoStyle = 'long' | 'short' | 'medium';
