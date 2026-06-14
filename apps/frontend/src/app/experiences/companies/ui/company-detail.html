@@ -190,7 +190,11 @@
                       <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
                       Associated Employees
                     </h3>
-                    <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+                    @defer (on viewport) {
+                      <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+                    } @placeholder {
+                      <div class="skeleton w-full h-32"></div>
+                    }
                   </div>
                 </div>
               }
