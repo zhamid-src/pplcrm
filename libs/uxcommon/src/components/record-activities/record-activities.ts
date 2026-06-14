@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, effect, untracked } from '@angular/core';
+import { Component, computed, inject, input, signal, effect, linkedSignal, resource, untracked } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { ActivityService } from '@experiences/activity/services/activity.service';
@@ -19,64 +19,74 @@ export class RecordActivities {
   public entity = input.required<string>();
   public entityId = input.required<string>();
 
-  protected readonly isLoading = signal(false);
-  protected readonly isLoadingMore = signal(false);
   protected readonly activities = signal<any[]>([]);
   protected readonly hasMore = signal(false);
-  protected readonly currentOffset = signal(0);
   protected readonly pageSize = 10;
 
+  protected readonly offset = linkedSignal({
+    source: () => ({ entity: this.entity(), entityId: this.entityId() }),
+    computation: () => 0,
+  });
+
+  protected readonly activitiesResource = resource({
+    params: () => ({
+      entity: this.entity(),
+      entityId: this.entityId(),
+      offset: this.offset(),
+    }),
+    loader: async ({ params }) => {
+      if (!params.entity || !params.entityId) {
+        return { rows: [] } as any;
+      }
+      return (await this.activitySvc.getActivities(params.entity, params.entityId, {
+        startRow: params.offset,
+        endRow: params.offset + this.pageSize,
+      })) as any;
+    },
+  });
+
+  protected readonly isLoading = computed(() => this.activitiesResource.isLoading() && this.offset() === 0);
+  protected readonly isLoadingMore = computed(() => this.activitiesResource.isLoading() && this.offset() > 0);
   protected readonly activityCount = computed(() => this.activities().length);
 
   constructor() {
     effect(() => {
-      // Access signals to subscribe to updates
-      this.entityId();
+      // Clear activities and hasMore immediately when entity or entityId changes
       this.entity();
-
+      this.entityId();
       untracked(() => {
-        void this.loadActivities(true);
+        this.activities.set([]);
+        this.hasMore.set(false);
       });
+    });
+
+    effect(() => {
+      const res = this.activitiesResource.value() as any;
+      if (res) {
+        const newRows = res.rows || [];
+        if (this.offset() === 0) {
+          this.activities.set(newRows);
+        } else {
+          this.activities.update((curr) => {
+            const existingIds = new Set(curr.map((r: any) => r.id));
+            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
+            return [...curr, ...filteredNew];
+          });
+        }
+        this.hasMore.set(newRows.length === this.pageSize);
+      }
     });
   }
 
-  public async loadActivities(replace = true): Promise<void> {
-    const ent = this.entity();
-    const id = this.entityId();
-    if (!ent || !id) return;
-
+  public loadActivities(replace = true): void {
     if (replace) {
-      this.isLoading.set(true);
-      this.currentOffset.set(0);
-    } else {
-      this.isLoadingMore.set(true);
+      this.offset.set(0);
     }
-
-    try {
-      const offset = this.currentOffset();
-      const res = await this.activitySvc.getActivities(ent, id, {
-        startRow: offset,
-        endRow: offset + this.pageSize,
-      });
-
-      const newRows = res?.rows || [];
-      if (replace) {
-        this.activities.set(newRows);
-      } else {
-        this.activities.update((curr) => [...curr, ...newRows]);
-      }
-      this.currentOffset.update((c) => c + newRows.length);
-      this.hasMore.set(newRows.length === this.pageSize);
-    } catch (e) {
-      console.error('Failed to load record activities', e);
-    } finally {
-      this.isLoading.set(false);
-      this.isLoadingMore.set(false);
-    }
+    this.activitiesResource.reload();
   }
 
-  protected async loadMore(): Promise<void> {
-    await this.loadActivities(false);
+  protected loadMore(): void {
+    this.offset.update((c) => c + this.pageSize);
   }
 
   protected getActivityIcon(activity: string): PcIconNameType {
