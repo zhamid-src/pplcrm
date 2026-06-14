@@ -19,7 +19,7 @@ export class EmailCacheStore {
   private readonly emailActivitiesCache = signal<Record<string, any[] | null>>({});
 
   /** Track emails currently being loaded to prevent duplicate requests */
-  private readonly loadingEmails = signal<Set<string>>(new Set());
+  private readonly activeRequests = new Map<string, Promise<{ body: string; header: any }>>();
   private readonly svc = inject(EmailsService);
 
   /** Factory: computed body by id */
@@ -61,39 +61,42 @@ export class EmailCacheStore {
    * Load combined body + headers (cached). De-dupes concurrent loads.
    * Always refreshes cache from server when called.
    */
-  public async loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
+  public loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
     const key = String(emailId);
-    const cachedBody = this.emailBodiesCache()[key];
-    const cachedHeader = this.emailHeadersCache()[key];
 
-    // Another call in-flight? return what we have (even if empty/null)
-    if (this.loadingEmails().has(key)) {
-      return { body: cachedBody ?? '', header: typeof cachedHeader === 'undefined' ? null : cachedHeader };
+    // If another component is already fetching this exact email, await the exact same network request
+    if (this.activeRequests.has(key)) {
+      return this.activeRequests.get(key)!;
     }
 
-    this.markLoading(key);
-    try {
-      const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
-        body?: { body_html?: string } | null;
-        header?: any;
-      };
-      const bodyHtml = res?.body?.body_html ?? '';
-      const header = (res as any)?.header ?? null;
+    const fetchPromise = (async () => {
+      try {
+        const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
+          body?: { body_html?: string } | null;
+          header?: any;
+        };
+        const bodyHtml = res?.body?.body_html ?? '';
+        const header = (res as any)?.header ?? null;
 
-      // IMPORTANT: cache regardless of truthiness ('' or null still mean "loaded")
-      this.setInCache(this.emailBodiesCache, key, bodyHtml);
-      this.setInCache(this.emailHeadersCache, key, header);
+        // IMPORTANT: cache regardless of truthiness ('' or null still mean "loaded")
+        this.setInCache(this.emailBodiesCache, key, bodyHtml);
+        this.setInCache(this.emailHeadersCache, key, header);
 
-      return { body: bodyHtml, header };
-    } catch (err) {
-      console.error(`Failed to load email data for ${key}:`, err);
-      // Cache empty values to avoid endless re-fetch loops on subsequent calls
-      this.setInCache(this.emailBodiesCache, key, '');
-      this.setInCache(this.emailHeadersCache, key, null);
-      return { body: '', header: null };
-    } finally {
-      this.unmarkLoading(key);
-    }
+        return { body: bodyHtml, header };
+      } catch (err) {
+        console.error(`Failed to load email data for ${key}:`, err);
+        // Cache empty values to avoid endless re-fetch loops on subsequent calls
+        this.setInCache(this.emailBodiesCache, key, '');
+        this.setInCache(this.emailHeadersCache, key, null);
+        return { body: '', header: null };
+      } finally {
+        // Always clean up the promise map when the request finishes or fails
+        this.activeRequests.delete(key);
+      }
+    })();
+
+    this.activeRequests.set(key, fetchPromise);
+    return fetchPromise;
   }
 
   /** Load activity log for an email (always fetches fresh) */
@@ -130,14 +133,6 @@ export class EmailCacheStore {
     this.setInCache(this.emailHeadersCache, key, header);
   }
 
-  private markLoading(key: string): void {
-    this.loadingEmails.update((s) => {
-      const n = new Set(s);
-      n.add(key);
-      return n;
-    });
-  }
-
   /** Internal helpers */
   private setInCache<T extends Record<string, unknown>>(
     cacheSig: { (): T; update: (fn: (v: T) => T) => void },
@@ -145,13 +140,5 @@ export class EmailCacheStore {
     value: unknown,
   ): void {
     cacheSig.update((cache) => ({ ...(cache as Record<string, unknown>), [key]: value }) as T);
-  }
-
-  private unmarkLoading(key: string): void {
-    this.loadingEmails.update((s) => {
-      const n = new Set(s);
-      n.delete(key);
-      return n;
-    });
   }
 }
