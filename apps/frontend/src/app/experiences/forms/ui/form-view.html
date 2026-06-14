@@ -1,0 +1,313 @@
+    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
+      <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+        <div class="flex items-center justify-between border-b border-base-300 pb-4">
+          <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+            <pc-icon name="clipboard-document-list" class="text-primary" [size]="6"></pc-icon>
+            Web Form Details
+          </h1>
+          <pc-form-actions
+            [isLoading]="isLoading()"
+            [btn1Text]="'Edit Form'"
+            [btn1Icon]="'pencil-square'"
+            [showDelete]="true"
+            [deleteText]="'Delete Form'"
+            (deleteClicked)="deleteForm()"
+            (btn1Clicked)="editForm()"
+          ></pc-form-actions>
+        </div>
+
+        @if (isLoading()) {
+          <div class="flex justify-center items-center py-20">
+            <progress class="progress w-56"></progress>
+          </div>
+        } @else if (formRecord()) {
+          <!-- Main Content Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Column: Form Info & Embed Code -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+              <!-- Elegant Form Details Card -->
+              <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
+                <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+
+                <div class="px-6 pb-6 relative flex flex-col items-center">
+                  <!-- Form Icon Avatar -->
+                  <div class="avatar placeholder -mt-12 mb-3">
+                    <div
+                      class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
+                    >
+                      <pc-icon name="clipboard-document-list" [size]="8"></pc-icon>
+                    </div>
+                  </div>
+
+                  <!-- Name & Status -->
+                  <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
+                  <div class="flex gap-2 mb-4">
+                    <span
+                      class="badge font-semibold uppercase text-xs"
+                      [class.badge-success]="formRecord().status === 'active'"
+                      [class.badge-warning]="formRecord().status === 'archived'"
+                    >
+                      {{ formRecord().status }}
+                    </span>
+                  </div>
+
+                  <!-- Details and settings list -->
+                  <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+                    @if (formRecord().description) {
+                      <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">
+                        {{ formRecord().description }}
+                      </div>
+                    }
+
+                    @if (formRecord().redirect_url) {
+                      <div class="flex items-center gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                        <pc-icon name="arrow-top-right-on-square" [size]="4" class="text-indigo-500 shrink-0"></pc-icon>
+                        <span class="truncate"
+                          >Redirect: <strong>{{ formRecord().redirect_url }}</strong></span
+                        >
+                      </div>
+                    }
+
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                      <div class="flex items-center gap-2">
+                        <pc-icon name="envelope" [size]="4" class="text-teal-500"></pc-icon>
+                        <span>Send Confirmation:</span>
+                      </div>
+                      <span class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                      <div class="flex items-center gap-2">
+                        <pc-icon name="bell" [size]="4" class="text-purple-500"></pc-icon>
+                        <span>Send Admin Alert:</span>
+                      </div>
+                      <span class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
+                    </div>
+                  </div>
+
+                  <!-- System Metadata -->
+                  <div
+                    class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+                  >
+                    <span
+                      >Created by {{ getUserName(formRecord().createdby_id) }} on
+                      {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
+                    >
+                    <span
+                      >Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by
+                      {{ getUserName(formRecord().updatedby_id) }}</span
+                    >
+                  </div>
+                </div>
+              </div>
+
+              <!-- HTML Embed Snippet Card -->
+              <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-base-200 pb-2">
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Deploy & Embed</h3>
+                  <button class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+                    <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
+                  </button>
+                </div>
+
+                <div class="form-control text-xs">
+                  <label class="label font-semibold py-1">Public Landing Page URL</label>
+                  <div class="flex gap-2">
+                    <input
+                      type="text"
+                      [value]="formUrl()"
+                      readonly
+                      class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+                    />
+                    <a [href]="formUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+                      <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+                    </a>
+                  </div>
+                </div>
+
+                <div class="form-control text-xs">
+                  <label class="label font-semibold py-1">Embed HTML Code</label>
+                  <pre
+                    class="bg-neutral text-neutral-content p-3 rounded-lg text-[10px] font-mono max-h-40 overflow-y-auto select-all leading-snug"
+                    >{{ embedSnippet() }}</pre
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Stats & Tabs -->
+            <div class="lg:col-span-2 flex flex-col gap-6">
+              <!-- Stats Panel -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="card bg-base-100 border border-base-300 shadow-md">
+                  <div class="card-body p-5 flex flex-row items-center justify-between">
+                    <div>
+                      <span class="text-xs text-base-content/50 uppercase font-semibold">Submissions</span>
+                      <h3 class="text-2xl font-bold text-indigo-500 mt-1">{{ submissionsCount() }}</h3>
+                      <p class="text-[10px] text-base-content/40 mt-0.5">Total lead contacts collected</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center text-indigo-500">
+                      <pc-icon name="envelope" [size]="6"></pc-icon>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card bg-base-100 border border-base-300 shadow-md">
+                  <div class="card-body p-5 flex flex-row items-center justify-between">
+                    <div>
+                      <span class="text-xs text-base-content/50 uppercase font-semibold">Fields Included</span>
+                      <h3 class="text-2xl font-bold text-amber-500 mt-1">{{ fieldsCount() }}</h3>
+                      <p class="text-[10px] text-base-content/40 mt-0.5">Active field inputs</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-500">
+                      <pc-icon name="queue-list" [size]="6"></pc-icon>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tabs Panel -->
+              <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
+                <!-- Tabs Header -->
+                <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
+                  <a
+                    role="tab"
+                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    [class.tab-active]="activeTab() === 'activity'"
+                    (click)="activeTab.set('activity')"
+                  >
+                    <pc-icon name="adjustments-horizontal" [size]="4" class="flex-shrink-0"></pc-icon>
+                    <span>Activity Feed</span>
+                  </a>
+                  <a
+                    role="tab"
+                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    [class.tab-active]="activeTab() === 'targetActions'"
+                    (click)="activeTab.set('targetActions')"
+                  >
+                    <pc-icon name="paper-airplane" [size]="4" class="flex-shrink-0"></pc-icon>
+                    <span>Actions & Mapping</span>
+                  </a>
+                  <a
+                    role="tab"
+                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    [class.tab-active]="activeTab() === 'fieldsPreview'"
+                    (click)="activeTab.set('fieldsPreview')"
+                  >
+                    <pc-icon name="pencil-square" [size]="4" class="flex-shrink-0"></pc-icon>
+                    <span>Fields Configuration</span>
+                  </a>
+                </div>
+
+                <!-- Tab Panels -->
+                <div class="p-6">
+                  <!-- Panel: General Activity Feed -->
+                  @if (activeTab() === 'activity') {
+                    <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+                      <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
+                    </div>
+                  }
+
+                  <!-- Panel: Target Actions / Lists / Tags -->
+                  @if (activeTab() === 'targetActions') {
+                    <div class="flex flex-col gap-5 text-sm">
+                      <div>
+                        <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
+                        @if (targetListsNames().length > 0) {
+                          <div class="flex flex-wrap gap-1.5">
+                            @for (list of targetListsNames(); track list) {
+                              <span class="badge badge-neutral px-3 py-2.5">{{ list }}</span>
+                            }
+                          </div>
+                        } @else {
+                          <span class="text-xs text-base-content/40 italic">No specific list assigned.</span>
+                        }
+                      </div>
+
+                      <div>
+                        <h4 class="font-semibold text-base-content mb-1">Apply Tags</h4>
+                        <div class="flex flex-wrap gap-1.5">
+                          @if (formRecord().target_tags?.length > 0) {
+                            @for (tag of formRecord().target_tags; track tag) {
+                              <span class="badge badge-outline badge-primary px-3 py-2.5">{{ tag }}</span>
+                            }
+                          }
+                          <!-- Automatic system tag -->
+                          <span class="badge badge-outline badge-secondary px-3 py-2.5"
+                            >Source: {{ formRecord().name }}</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  }
+
+                  <!-- Panel: Fields Configuration Preview -->
+                  @if (activeTab() === 'fieldsPreview') {
+                    <div class="flex flex-col gap-4">
+                      <h4 class="font-semibold text-base-content">Form Input Preview</h4>
+                      <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
+                        @if (selectedFields().includes('first_name')) {
+                          <div class="form-control mb-3">
+                            <span class="text-[10px] font-semibold uppercase text-base-content/50">First Name</span>
+                            <input
+                              type="text"
+                              class="input input-bordered input-xs"
+                              placeholder="First Name"
+                              disabled
+                            />
+                          </div>
+                        }
+                        @if (selectedFields().includes('last_name')) {
+                          <div class="form-control mb-3">
+                            <span class="text-[10px] font-semibold uppercase text-base-content/50">Last Name</span>
+                            <input type="text" class="input input-bordered input-xs" placeholder="Last Name" disabled />
+                          </div>
+                        }
+                        <div class="form-control mb-3">
+                          <span class="text-[10px] font-semibold uppercase text-base-content/50">Email Address *</span>
+                          <input
+                            type="text"
+                            class="input input-bordered input-xs"
+                            placeholder="you@example.com"
+                            disabled
+                          />
+                        </div>
+                        @if (selectedFields().includes('mobile')) {
+                          <div class="form-control mb-3">
+                            <span class="text-[10px] font-semibold uppercase text-base-content/50">Mobile / Phone</span>
+                            <input
+                              type="text"
+                              class="input input-bordered input-xs"
+                              placeholder="Phone Number"
+                              disabled
+                            />
+                          </div>
+                        }
+                        @if (selectedFields().includes('notes')) {
+                          <div class="form-control mb-3">
+                            <span class="text-[10px] font-semibold uppercase text-base-content/50"
+                              >Notes / Message</span
+                            >
+                            <textarea
+                              class="textarea textarea-bordered textarea-xs"
+                              placeholder="How can we help?"
+                              disabled
+                            ></textarea>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="alert alert-error">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>Web form not found or failed to load.</span>
+          </div>
+        }
+      </div>
+    </div>
+  

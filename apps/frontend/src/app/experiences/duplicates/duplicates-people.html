@@ -1,0 +1,93 @@
+    <pc-duplicate-page-shell
+      title="People"
+      icon="identification"
+      description="Review and merge duplicate people records to keep your database clean."
+      entityRoute="people"
+      [isLoading]="isLoading()"
+      [isEmpty]="groups().length === 0"
+      [currentPage]="currentPage()"
+      [totalPages]="totalPages()"
+      [totalGroups]="totalGroups()"
+      (onNext)="nextPage()"
+      (onPrev)="prevPage()"
+    >
+      @for (group of groups(); track group; let gIdx = $index) {
+        <div
+          class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
+        >
+          <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-warning badge-sm">Warning</span>
+              <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
+            </div>
+            <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+          </div>
+
+          <div class="card-body p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              @for (person of group.items; track person.id) {
+                <div
+                  [class]="
+                    'card bg-base-200/40 border transition-all duration-200 ' +
+                    (group.selectedTargetId === person.id
+                      ? 'border-success bg-success/5 shadow'
+                      : group.selectedSourceId === person.id
+                        ? 'border-error bg-error/5 opacity-80'
+                        : 'border-base-300')
+                  "
+                >
+                  <div class="card-body p-4 justify-between h-full">
+                    <div>
+                      <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
+                        <span>{{ person.first_name }} {{ person.last_name }}</span>
+                        <span class="text-xs font-light text-base-content/40">ID: {{ person.id }}</span>
+                      </h4>
+                      <div class="mt-3 space-y-1.5 text-sm">
+                        <div class="flex items-center gap-2 text-base-content/70">
+                          <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
+                          <span class="truncate">{{ person.email || '—' }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-base-content/70">
+                          <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
+                          <span>{{ person.mobile || '—' }}</span>
+                        </div>
+                        <div class="text-[11px] text-base-content/40 mt-2">
+                          Created: {{ person.created_at | date: 'short' }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
+                      <button
+                        [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline')
+                        "
+                        (click)="selectRole(gIdx, person.id, 'target')"
+                      >
+                        Keep (Primary)
+                      </button>
+                      <button
+                        [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline')
+                        "
+                        (click)="selectRole(gIdx, person.id, 'source')"
+                      >
+                        Delete (Merge)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <pc-merge-summary
+                mergeDescription="The duplicate record will be removed, transferring tags, lists, and empty fields to the primary record."
+                [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
+                [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
+                [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
+                (onMerge)="mergeGroup(gIdx)"
+              ></pc-merge-summary>
+            </div>
+          </div>
+        </div>
+      }
+    </pc-duplicate-page-shell>
+  
