@@ -7,8 +7,8 @@ export class ActivityService extends TRPCService<any> {
     return this.api.activity.getFeed.query(options);
   }
 
-  public getActivities(entity: string, entityId: string) {
-    return this.api.activity.getActivities.query({ entity, entityId });
+  public getActivities(entity: string, entityId: string, options?: { startRow?: number; endRow?: number }) {
+    return this.api.activity.getActivities.query({ entity, entityId, ...options });
   }
 
   public exportCsv(input: any) {

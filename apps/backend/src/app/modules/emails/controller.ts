@@ -119,7 +119,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   /** Get all activity log entries for a specific email */
   public async getActivitiesForEmail(tenant_id: string, email_id: string) {
     try {
-      return await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
+      const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
+      return res.rows;
     } catch (err) {
       throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
     }

@@ -64,7 +64,12 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
    * Get all activity entries for a specific entity record (e.g. all events on email #123).
    * Returns rows joined with the acting user's name, ordered newest-first.
    */
-  public async getForEntity(tenant_id: string, entity: string, entity_id: string) {
+  public async getForEntity(
+    tenant_id: string,
+    entity: string,
+    entity_id: string,
+    options?: { startRow?: number; endRow?: number }
+  ) {
     let entities = [entity];
     const ent = entity.toLowerCase();
     if (ent === 'person' || ent === 'persons' || ent === 'people') {
@@ -83,7 +88,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       entities = ['volunteer_shift', 'volunteer_shifts'];
     }
 
-    return (this.getSelect() as SelectQueryBuilder<Models, 'user_activity', any>)
+    let query = (this.getSelect() as SelectQueryBuilder<Models, 'user_activity', any>)
       .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
       .select([
         'user_activity.id',
@@ -99,8 +104,25 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       .where('user_activity.tenant_id', '=', tenant_id)
       .where('user_activity.entity', 'in', entities)
       .where('user_activity.entity_id', '=', entity_id)
-      .orderBy('user_activity.created_at', 'desc')
-      .execute();
+      .orderBy('user_activity.created_at', 'desc');
+
+    const countQuery = this.db.selectFrom('user_activity')
+      .select(({ fn }) => [fn.count('user_activity.id').as('total')])
+      .where('user_activity.tenant_id', '=', tenant_id)
+      .where('user_activity.entity', 'in', entities)
+      .where('user_activity.entity_id', '=', entity_id);
+
+    if (options && typeof options.startRow === 'number' && typeof options.endRow === 'number') {
+      query = query.offset(options.startRow).limit(options.endRow - options.startRow);
+    }
+
+    const [rows, countResult] = await Promise.all([
+      query.execute(),
+      countQuery.executeTakeFirst(),
+    ]);
+
+    const count = Number(countResult?.total ?? 0);
+    return { rows, count };
   }
 
   public async getAllWithUser(
