@@ -18,7 +18,9 @@
       @for (metric of coreMetrics(); track metric.label) {
       <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
         <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ metric.label }}</div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            {{ metric.label }}
+          </div>
           <div class="stat-value text-lg font-extrabold text-base-content mt-1 sm:text-xl">{{ metric.value }}</div>
           @if (metric.help) {
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">{{ metric.help }}</div>
@@ -34,15 +36,21 @@
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
       <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
         <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Target lists / segments</div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Target lists / segments
+          </div>
           <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ audienceLabel() }}</div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Primary audience selection</div>
         </div>
       </div>
       <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
         <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Audience summary</div>
-          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ email()?.audience_description || '—' }}</div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Audience summary
+          </div>
+          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">
+            {{ email()?.audience_description || '—' }}
+          </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Short description of the send</div>
         </div>
       </div>
@@ -51,13 +59,15 @@
 
   <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
     <h2 class="text-lg font-semibold">Engagement Analytics</h2>
-    
+
     <!-- Stats Cards + Funnel Grid -->
     <div class="mt-4 grid gap-6 lg:grid-cols-3">
       <!-- Stats Cards (2 cols on lg) -->
       <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2">
         <!-- Open Rate Radial Card -->
-        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
             <div class="stat-value text-xl font-extrabold text-success mt-1">
@@ -67,13 +77,21 @@
               {{ formatNumber(email()?.unique_opens) }} unique opens
             </div>
           </div>
-          <div class="radial-progress text-success font-bold text-xs flex-shrink-0" [style.--value]="email()?.open_rate || 0" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+          <div
+            class="radial-progress text-success font-bold text-xs flex-shrink-0"
+            [style.--value]="email()?.open_rate || 0"
+            [style.--size]="'3.5rem'"
+            [style.--thickness]="'4px'"
+            role="progressbar"
+          >
             {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(0) : '0' }}%
           </div>
         </div>
 
         <!-- Click Rate Radial Card -->
-        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
             <div class="stat-value text-xl font-extrabold text-accent mt-1">
@@ -83,13 +101,21 @@
               {{ formatNumber(email()?.unique_clicks) }} unique clicks
             </div>
           </div>
-          <div class="radial-progress text-accent font-bold text-xs flex-shrink-0" [style.--value]="email()?.click_rate || 0" [style.--size]="'3.5rem'" [style.--thickness]="'4px'" role="progressbar">
+          <div
+            class="radial-progress text-accent font-bold text-xs flex-shrink-0"
+            [style.--value]="email()?.click_rate || 0"
+            [style.--size]="'3.5rem'"
+            [style.--thickness]="'4px'"
+            role="progressbar"
+          >
             {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(0) : '0' }}%
           </div>
         </div>
 
         <!-- Delivered Card -->
-        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
             <div class="stat-value text-xl font-extrabold text-info mt-1">
@@ -105,15 +131,15 @@
         </div>
 
         <!-- Bounces Card -->
-        <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4">
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
             <div class="stat-value text-xl font-extrabold text-warning mt-1">
               {{ formatNumber(email()?.bounce_count) }}
             </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              Undelivered / dropped
-            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">Undelivered / dropped</div>
           </div>
           <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
             <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
@@ -131,13 +157,17 @@
           <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
             <div class="stat p-0">
               <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70">{{ formatNumber(email()?.unsubscribe_count) }}</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70">
+                {{ formatNumber(email()?.unsubscribe_count) }}
+              </div>
             </div>
           </div>
           <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
             <div class="stat p-0">
               <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-error">{{ formatNumber(email()?.spam_complaint_count) }}</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-error">
+                {{ formatNumber(email()?.spam_complaint_count) }}
+              </div>
             </div>
           </div>
         </div>
@@ -146,7 +176,7 @@
       <!-- Funnel Chart Card -->
       <div class="flex flex-col gap-3 p-4 border border-base-200 rounded-xl bg-base-100/50 shadow-sm">
         <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Delivery Funnel</h3>
-        
+
         <!-- Sent -->
         <div class="flex flex-col gap-1">
           <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
@@ -184,7 +214,9 @@
         <div class="flex flex-col gap-1">
           <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
             <span>Clicked</span>
-            <span>{{ formatNumber(funnelMetrics()?.clicked) }} ({{ funnelMetrics()?.clPct?.toFixed(1) }}% of open)</span>
+            <span
+              >{{ formatNumber(funnelMetrics()?.clicked) }} ({{ funnelMetrics()?.clPct?.toFixed(1) }}% of open)</span
+            >
           </div>
           <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
             <div class="bg-accent h-full rounded-full" [style.width.%]="funnelMetrics()?.clPct"></div>
@@ -210,55 +242,104 @@
             </div>
           </div>
         </div>
-        
+
         <div class="relative w-full h-[150px]">
           @if (timelinePoints().points.length > 0) {
-            <svg viewBox="0 0 600 150" width="100%" height="100%" class="overflow-visible">
-              <defs>
-                <linearGradient id="openAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--color-success, #10b981)" stop-opacity="0.25"/>
-                  <stop offset="100%" stop-color="var(--color-success, #10b981)" stop-opacity="0"/>
-                </linearGradient>
-                <linearGradient id="clickAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0.25"/>
-                  <stop offset="100%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0"/>
-                </linearGradient>
-              </defs>
+          <svg viewBox="0 0 600 150" width="100%" height="100%" class="overflow-visible">
+            <defs>
+              <linearGradient id="openAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--color-success, #10b981)" stop-opacity="0.25" />
+                <stop offset="100%" stop-color="var(--color-success, #10b981)" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient id="clickAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0.25" />
+                <stop offset="100%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0" />
+              </linearGradient>
+            </defs>
 
-              <!-- Horizontal Grid Lines -->
-              <g stroke="var(--fallback-bc,oklch(var(--bc)/0.05))" stroke-width="1">
-                @for (line of timelinePoints().gridLines; track line.y) {
-                  <line x1="50" [attr.y1]="line.y" x2="580" [attr.y2]="line.y" [attr.stroke-dasharray]="line.y === 120 ? 'none' : '3,3'"></line>
-                  <text x="42" [attr.y]="line.y + 3" text-anchor="end" class="text-[9px] fill-base-content/40 font-sans font-medium" stroke="none">{{ line.label }}</text>
-                }
-              </g>
-
-              <!-- Area Under Line -->
-              <path [attr.d]="timelinePoints().opensArea" fill="url(#openAreaGrad)" stroke="none"></path>
-              <path [attr.d]="timelinePoints().clicksArea" fill="url(#clickAreaGrad)" stroke="none"></path>
-
-              <!-- Line Plots -->
-              <path [attr.d]="timelinePoints().opensPath" fill="none" class="stroke-success" stroke-width="2" stroke-linecap="round"></path>
-              <path [attr.d]="timelinePoints().clicksPath" fill="none" class="stroke-accent" stroke-width="2" stroke-linecap="round"></path>
-
-              <!-- Data points (circles) -->
-              @for (pt of timelinePoints().points; track pt.label) {
-                <g>
-                  <circle [attr.cx]="pt.x" [attr.cy]="pt.yOpens" r="3" class="fill-success stroke-base-100" stroke-width="1">
-                    <title>{{ pt.label }} - Opens: {{ pt.opens }}</title>
-                  </circle>
-                  <circle [attr.cx]="pt.x" [attr.cy]="pt.yClicks" r="3" class="fill-accent stroke-base-100" stroke-width="1">
-                    <title>{{ pt.label }} - Clicks: {{ pt.clicks }}</title>
-                  </circle>
-                  <text [attr.x]="pt.x" y="142" text-anchor="middle" class="text-[8px] fill-base-content/40 font-sans font-semibold">{{ pt.label }}</text>
-                </g>
+            <!-- Horizontal Grid Lines -->
+            <g stroke="var(--fallback-bc,oklch(var(--bc)/0.05))" stroke-width="1">
+              @for (line of timelinePoints().gridLines; track line.y) {
+              <line
+                x1="50"
+                [attr.y1]="line.y"
+                x2="580"
+                [attr.y2]="line.y"
+                [attr.stroke-dasharray]="line.y === 120 ? 'none' : '3,3'"
+              ></line>
+              <text
+                x="42"
+                [attr.y]="line.y + 3"
+                text-anchor="end"
+                class="text-[9px] fill-base-content/40 font-sans font-medium"
+                stroke="none"
+              >
+                {{ line.label }}
+              </text>
               }
-            </svg>
+            </g>
+
+            <!-- Area Under Line -->
+            <path [attr.d]="timelinePoints().opensArea" fill="url(#openAreaGrad)" stroke="none"></path>
+            <path [attr.d]="timelinePoints().clicksArea" fill="url(#clickAreaGrad)" stroke="none"></path>
+
+            <!-- Line Plots -->
+            <path
+              [attr.d]="timelinePoints().opensPath"
+              fill="none"
+              class="stroke-success"
+              stroke-width="2"
+              stroke-linecap="round"
+            ></path>
+            <path
+              [attr.d]="timelinePoints().clicksPath"
+              fill="none"
+              class="stroke-accent"
+              stroke-width="2"
+              stroke-linecap="round"
+            ></path>
+
+            <!-- Data points (circles) -->
+            @for (pt of timelinePoints().points; track pt.label) {
+            <g>
+              <circle
+                [attr.cx]="pt.x"
+                [attr.cy]="pt.yOpens"
+                r="3"
+                class="fill-success stroke-base-100"
+                stroke-width="1"
+              >
+                <title>{{ pt.label }} - Opens: {{ pt.opens }}</title>
+              </circle>
+              <circle
+                [attr.cx]="pt.x"
+                [attr.cy]="pt.yClicks"
+                r="3"
+                class="fill-accent stroke-base-100"
+                stroke-width="1"
+              >
+                <title>{{ pt.label }} - Clicks: {{ pt.clicks }}</title>
+              </circle>
+              <text
+                [attr.x]="pt.x"
+                y="142"
+                text-anchor="middle"
+                class="text-[8px] fill-base-content/40 font-sans font-semibold"
+              >
+                {{ pt.label }}
+              </text>
+            </g>
+            }
+          </svg>
           } @else {
-            <div class="flex h-full w-full items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200">
-              <span class="text-xs font-semibold text-base-content/40">No engagement history yet</span>
-              <span class="text-[10px] text-base-content/30">History will record hourly opens and clicks since campaign send.</span>
-            </div>
+          <div
+            class="flex h-full w-full items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+          >
+            <span class="text-xs font-semibold text-base-content/40">No engagement history yet</span>
+            <span class="text-[10px] text-base-content/30"
+              >History will record hourly opens and clicks since campaign send.</span
+            >
+          </div>
           }
         </div>
       </div>
@@ -267,20 +348,20 @@
       <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
         <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Top Links Clicked</h3>
         @if (topLinks().length) {
-          <div class="grid gap-2 overflow-y-auto max-h-[160px]">
-            @for (link of topLinks(); track link.url) {
-              <div class="rounded border border-base-200 bg-base-100 p-2.5 shadow-xs flex flex-col gap-1">
-                <div class="truncate text-[10px] font-semibold text-base-content/80" [title]="link.url">
-                  {{ link.url }}
-                </div>
-                <div class="text-xs font-bold text-accent">{{ formatNumber(link.clicks) }} clicks</div>
-              </div>
-            }
+        <div class="grid gap-2 overflow-y-auto max-h-[160px]">
+          @for (link of topLinks(); track link.url) {
+          <div class="rounded border border-base-200 bg-base-100 p-2.5 shadow-xs flex flex-col gap-1">
+            <div class="truncate text-[10px] font-semibold text-base-content/80" [title]="link.url">{{ link.url }}</div>
+            <div class="text-xs font-bold text-accent">{{ formatNumber(link.clicks) }} clicks</div>
           </div>
+          }
+        </div>
         } @else {
-          <div class="flex h-36 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200">
-            <span class="text-xs font-semibold text-base-content/40">No links clicked</span>
-          </div>
+        <div
+          class="flex h-36 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+        >
+          <span class="text-xs font-semibold text-base-content/40">No links clicked</span>
+        </div>
         }
       </div>
     </div>
@@ -288,54 +369,71 @@
     <!-- Activity Log -->
     <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 mt-6 shadow-sm">
       <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Recent Engagement Activity</h3>
-      
+
       @if (stats()?.activities?.length) {
-        <div class="overflow-x-auto max-h-80">
-          <table class="table table-xs table-zebra w-full text-left">
-            <thead>
-              <tr class="text-base-content/50 border-b border-base-200">
-                <th class="py-2">Recipient Email</th>
-                <th class="py-2">Action</th>
-                <th class="py-2">Time</th>
-                <th class="py-2">Detail</th>
-                <th class="py-2">IP / User Agent</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (act of stats()?.activities; track act.timestamp) {
-                <tr class="hover">
-                  <td class="font-medium text-base-content">{{ act.email }}</td>
-                  <td>
-                    <span 
-                      class="badge badge-sm py-1 capitalize font-semibold"
-                      [ngClass]="{
-                        'badge-success text-success-content': act.event_type === 'open',
-                        'badge-accent text-accent-content': act.event_type === 'click',
-                        'badge-warning text-warning-content': act.event_type === 'bounce' || act.event_type === 'dropped',
-                        'badge-error text-error-content': act.event_type === 'spamreport',
-                        'badge-neutral text-neutral-content': act.event_type === 'unsubscribe'
-                      }"
-                    >
-                      {{ act.event_type }}
-                    </span>
-                  </td>
-                  <td class="text-base-content/70 whitespace-nowrap">{{ formatActivityDate(act.timestamp) }}</td>
-                  <td class="max-w-[200px] truncate text-base-content/60" [title]="act.url || ''">
-                    {{ act.url ? act.url : '—' }}
-                  </td>
-                  <td class="max-w-[150px] truncate text-[10px] text-base-content/40" [title]="act.user_agent || ''">
-                    {{ act.ip || '—' }} <span class="hidden sm:inline" *ngIf="act.user_agent">/ {{ act.user_agent }}</span>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+      <div class="overflow-x-auto max-h-80">
+        <table class="table table-xs table-zebra w-full text-left">
+          <thead>
+            <tr class="text-base-content/50 border-b border-base-200">
+              <th class="py-2">Recipient Email</th>
+              <th class="py-2">Action</th>
+              <th class="py-2">Time</th>
+              <th class="py-2">Detail</th>
+              <th class="py-2">IP / User Agent</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (act of stats()?.activities; track act.timestamp) {
+            <tr class="hover">
+              <td class="font-medium text-base-content">{{ act.email }}</td>
+              <td>
+                <span
+                  class="badge badge-sm py-1 capitalize font-semibold"
+                  [class.badge-success]="act.event_type === 'open'"
+                  ,
+                  [class.text-success-content]="act.event_type === 'open'"
+                  ,
+                  [class.badge-accent]="act.event_type === 'click'"
+                  ,
+                  [class.text-accent-content]="act.event_type === 'click'"
+                  ,
+                  [class.badge-warning]="act.event_type === 'bounce' || act.event_type === 'dropped'"
+                  ,
+                  [class.text-warning-content]="act.event_type === 'bounce' || act.event_type === 'dropped'"
+                  ,
+                  [class.badge-error]="act.event_type === 'spamreport'"
+                  ,
+                  [class.text-error-content]="act.event_type === 'spamreport'"
+                  ,
+                  [class.badge-neutral]="act.event_type === 'unsubscribe'"
+                  ,
+                  [class.text-neutral-content]="act.event_type === 'unsubscribe'"
+                >
+                  {{ act.event_type }}
+                </span>
+              </td>
+              <td class="text-base-content/70 whitespace-nowrap">{{ formatActivityDate(act.timestamp) }}</td>
+              <td class="max-w-[200px] truncate text-base-content/60" [title]="act.url || ''">
+                {{ act.url ? act.url : '—' }}
+              </td>
+              <td class="max-w-[150px] truncate text-[10px] text-base-content/40" [title]="act.user_agent || ''">
+                @if (act.user_agent) { {{ act.ip || '—' }}
+                <span class="hidden sm:inline">/ {{ act.user_agent }}</span> }
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
       } @else {
-        <div class="flex h-32 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200">
-          <span class="text-xs font-semibold text-base-content/40">No activity logged yet</span>
-          <span class="text-[10px] text-base-content/30">Opens, clicks, bounces, and other actions will list here in real time.</span>
-        </div>
+      <div
+        class="flex h-32 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+      >
+        <span class="text-xs font-semibold text-base-content/40">No activity logged yet</span>
+        <span class="text-[10px] text-base-content/30"
+          >Opens, clicks, bounces, and other actions will list here in real time.</span
+        >
+      </div>
       }
     </div>
   </section>
