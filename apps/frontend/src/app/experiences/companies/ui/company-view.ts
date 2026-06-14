@@ -11,6 +11,7 @@ import { type IAuthUser } from '@common';
 import { PersonsService } from '../../persons/services/persons-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-company-view',
@@ -27,7 +28,10 @@ export class CompanyView {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
-  protected readonly isLoading = signal(false);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
   protected readonly company = signal<any | null>(null);
   protected readonly employeeCount = signal(0);
   protected readonly users = signal<IAuthUser[]>([]);
