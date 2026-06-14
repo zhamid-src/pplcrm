@@ -192,6 +192,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.getByCompanyId.query({ id: id, options });
   }
 
+  /** Return a scalar count of persons in a company without fetching all rows. */
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
   /**
    * Get a single person by ID.
    *

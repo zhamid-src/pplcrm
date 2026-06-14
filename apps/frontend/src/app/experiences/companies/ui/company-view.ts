@@ -81,10 +81,9 @@ export class CompanyView {
       const data = await this.companiesSvc.getById(id);
       this.company.set(data);
 
-      // 2. Compute/Load employee count
-      // Query the people count using standard PersonsService byCompanyId
-      const allEmployees = await this.personsSvc.getByCompanyId(id, { limit: 1000 });
-      this.employeeCount.set(allEmployees.length);
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
     } catch (err) {
       this.alertSvc.showError('Failed to load company details: ' + String(err));
     } finally {

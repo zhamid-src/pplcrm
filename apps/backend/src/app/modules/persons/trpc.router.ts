@@ -103,6 +103,12 @@ function getByCompanyId() {
     .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
 }
 
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
 function getById() {
   return authProcedure
     .input(idSchema)
@@ -217,6 +223,7 @@ export const PersonsRouter = router({
   getDistinctTags: getDistinctTags(),
   getByHouseholdId: getByHouseholdId(),
   getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
   getPotentialDuplicates: getPotentialDuplicates(),
