@@ -325,13 +325,13 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
 
       if (choice === 'keep-people') {
         // Detach each person from their household (moves to blank household)
-        for (const pid of personIds) {
-          try {
-            await this.personsSvc.removeHousehold(pid);
-          } catch {
-            // best-effort; continue
-          }
-        }
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
       } else if (choice === 'delete-people') {
         // Delete all people in those households first
         if (personIds.length) {
