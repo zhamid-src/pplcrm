@@ -308,6 +308,7 @@ export class ActivityFeed implements OnInit {
 
   private readonly pageSize = 25;
   private currentOffset = 0;
+  private requestSequence = 0;
   private searchTimeout: any;
 
   public ngOnInit() {
@@ -325,13 +326,14 @@ export class ActivityFeed implements OnInit {
   }
 
   protected async refreshFeed() {
+    this.requestSequence++; // Increment sequence to invalidate any currently running fetches
     this.activities.set([]);
     this.currentOffset = 0;
-    await this.fetchPage(true);
+    await this.fetchPage(true, this.requestSequence);
   }
 
   protected async loadMore() {
-    await this.fetchPage(false);
+    await this.fetchPage(false, this.requestSequence);
   }
 
   protected async exportFeed() {
@@ -369,7 +371,7 @@ export class ActivityFeed implements OnInit {
     }
   }
 
-  private async fetchPage(replace: boolean) {
+  private async fetchPage(replace: boolean, reqSeq: number) {
     this.isLoading.set(true);
     try {
       const res = await this.activitySvc.getFeed({
@@ -381,18 +383,29 @@ export class ActivityFeed implements OnInit {
         searchStr: this.searchStr() || undefined,
       });
 
-      if (replace) {
-        this.activities.set(res.rows || []);
-      } else {
-        this.activities.update((curr) => [...curr, ...(res.rows || [])]);
+      // BUG FIX: Ignore this response if the user changed filters while the network request was in flight
+      if (reqSeq !== this.requestSequence) {
+        return;
       }
 
-      this.currentOffset += (res.rows || []).length;
+      if (replace) {
+        this.activities.set(res.rows || []);
+        // BUG FIX: Explicitly set the offset on a fresh load rather than adding to it
+        this.currentOffset = (res.rows || []).length;
+      } else {
+        this.activities.update((curr) => [...curr, ...(res.rows || [])]);
+        // Additively increase offset only when loading more
+        this.currentOffset += (res.rows || []).length;
+      }
+
       this.hasMore.set((res.rows || []).length === this.pageSize);
     } catch (err: any) {
       this.alertSvc.showError('Failed to fetch activity logs');
     } finally {
-      this.isLoading.set(false);
+      // Only turn off the loading spinner if a newer request hasn't already started
+      if (reqSeq === this.requestSequence) {
+        this.isLoading.set(false);
+      }
     }
   }
 
