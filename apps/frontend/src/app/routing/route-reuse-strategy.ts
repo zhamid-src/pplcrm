@@ -58,14 +58,18 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    */
   private handlers: { [key: string]: DetachedRouteHandle } = {};
 
+  private getKey(route: ActivatedRouteSnapshot): string {
+    return route.data['key'] || route.routeConfig?.path || 'unknown';
+  }
+
   /**
    * Retrieves a previously stored route handle if reuse is enabled for the route.
    *
    * @param route - The route snapshot to retrieve the handle for.
    * @returns The stored route handle, or `false` if reuse is not enabled.
    */
-  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null | false {
-    return route.data['shouldReuse'] ? this.handlers[route.data['key']] : false;
+  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
+    return route.data['shouldReuse'] ? this.handlers[this.getKey(route)] || null : null;
   }
 
   /**
@@ -106,7 +110,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
    */
   public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle): void {
     if (route.data['shouldReuse']) {
-      this.handlers[route.data['key']] = handle;
+      this.handlers[this.getKey(route)] = handle;
     }
   }
 }
