@@ -507,7 +507,7 @@
             <!-- Panel: General Activity Feed -->
             @if (activeTab() === 'activity') {
             <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-              <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id!"></pc-record-activities>
+              <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
             </div>
             }
 
@@ -677,7 +677,7 @@
             @if (activeTab() === 'household') {
             <div class="flex flex-col gap-4">
               @if (householdId() && !isPlaceholderHousehold()) { @defer {
-              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id"></pc-people-in-household>
+              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
               } @placeholder {
               <div class="skeleton w-full h-32"></div>
               } } @else {

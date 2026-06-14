@@ -2,7 +2,7 @@
  * @file Component for viewing individual person records (read-only mode).
  */
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, resource, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type IAuthUser } from '@common';
 import { type AddressType } from 'common/src/lib/kysely.models';
@@ -22,7 +22,9 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
   imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
   templateUrl: './person-view.html',
 })
-export class PersonView implements OnInit {
+export class PersonView {
+  readonly id = input.required<string>();
+
   private readonly alertSvc = inject(AlertService);
   private readonly auth = inject(AuthService);
   private readonly householdsSvc = inject(HouseholdsService);
@@ -32,7 +34,6 @@ export class PersonView implements OnInit {
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
 
-  protected id: string | null = null;
   protected readonly isLoading = signal(false);
   protected readonly person = signal<any | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
@@ -89,7 +90,10 @@ export class PersonView implements OnInit {
   protected activeTab = signal<'activity' | 'emails' | 'newsletters' | 'volunteer' | 'household'>('activity');
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
 
     // Load users for addedby/updatedby display names
     this.auth
@@ -101,29 +105,24 @@ export class PersonView implements OnInit {
       .catch(() => void 0);
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load person details
-      const personData = await this.personsSvc.getById(this.id);
+      const personData = await this.personsSvc.getById(id);
       this.person.set(personData);
 
       // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(this.id, 'tag');
+      const tagList = await this.personsSvc.getTags(id, 'tag');
       this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(this.id, 'issue');
+      const issueList = await this.personsSvc.getTags(id, 'issue');
       this.issues.set(issueList);
 
       // 3. Load volunteer stats and history
       try {
-        const stats = await this.volunteerSvc.getVolunteerStats(this.id);
+        const stats = await this.volunteerSvc.getVolunteerStats(id);
         this.volunteerStats.set(stats);
-        const history = await this.volunteerSvc.getHistoryForPerson(this.id);
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
         this.volunteerHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load volunteer details', err);
@@ -131,7 +130,7 @@ export class PersonView implements OnInit {
 
       // 4. Load interactions (emails + newsletters)
       try {
-        const activity = await this.personsSvc.getActivity(this.id);
+        const activity = await this.personsSvc.getActivity(id);
         this.activityData.set(activity || { emails: [], newsletters: [] });
       } catch (err) {
         console.error('Failed to load activity log', err);
@@ -158,7 +157,7 @@ export class PersonView implements OnInit {
     if (!confirmed) return;
     this.isLoading.set(true);
     try {
-      await this.personsSvc.delete(this.id);
+      await this.personsSvc.delete(this.id());
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
