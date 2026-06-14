@@ -108,6 +108,10 @@ export class NewPasswordPage implements OnInit {
             this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
             this.router.navigateByUrl('signin');
           }
+        } catch (err: any) {
+          // Catch backend/network rejections properly
+          this.alertSvc.showError(err?.message || 'Failed to reset password. Please try again.');
+          this.error.set(true);
         } finally {
           end();
         }
@@ -115,7 +119,7 @@ export class NewPasswordPage implements OnInit {
       },
       onInvalid: () => {
         this.alertSvc.showError('Please check the password.');
-      }
+      },
     });
   }
 }
