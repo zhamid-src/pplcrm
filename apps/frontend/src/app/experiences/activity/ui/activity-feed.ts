@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, linkedSignal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
@@ -307,9 +307,13 @@ export class ActivityFeed implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
 
   private readonly pageSize = 25;
-  private currentOffset = 0;
   private requestSequence = 0;
   private searchTimeout: any;
+
+  readonly currentOffset = linkedSignal({
+    source: () => ({ user: this.selectedUser(), entity: this.selectedEntity() }),
+    computation: () => 0, // When the source changes, compute the new offset as 0
+  });
 
   public ngOnInit() {
     this.loadUsers();
@@ -328,11 +332,11 @@ export class ActivityFeed implements OnInit {
   protected async refreshFeed() {
     this.requestSequence++; // Increment sequence to invalidate any currently running fetches
     this.activities.set([]);
-    this.currentOffset = 0;
     await this.fetchPage(true, this.requestSequence);
   }
 
   protected async loadMore() {
+    this.currentOffset.update((c) => c + this.pageSize);
     await this.fetchPage(false, this.requestSequence);
   }
 
@@ -375,8 +379,8 @@ export class ActivityFeed implements OnInit {
     this.isLoading.set(true);
     try {
       const res = await this.activitySvc.getFeed({
-        startRow: this.currentOffset,
-        endRow: this.currentOffset + this.pageSize,
+        startRow: this.currentOffset(),
+        endRow: this.currentOffset() + this.pageSize,
         userId: this.selectedUser() || undefined,
         entity: this.selectedEntity() || undefined,
         activity: this.selectedActivity() || undefined,
@@ -391,11 +395,11 @@ export class ActivityFeed implements OnInit {
       if (replace) {
         this.activities.set(res.rows || []);
         // BUG FIX: Explicitly set the offset on a fresh load rather than adding to it
-        this.currentOffset = (res.rows || []).length;
+        this.currentOffset.set((res.rows || []).length);
       } else {
         this.activities.update((curr) => [...curr, ...(res.rows || [])]);
         // Additively increase offset only when loading more
-        this.currentOffset += (res.rows || []).length;
+        this.currentOffset.update((current) => current + (res.rows || []).length);
       }
 
       this.hasMore.set((res.rows || []).length === this.pageSize);
