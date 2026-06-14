@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, linkedSignal } from '@angular/core';
+import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
@@ -27,7 +27,6 @@ export class ActivityFeed implements OnInit {
   private readonly authSvc = inject(AuthService);
 
   protected readonly activities = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
   protected readonly isLoadingExport = signal(false);
   protected readonly hasMore = signal(false);
 
@@ -38,17 +37,84 @@ export class ActivityFeed implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
 
   private readonly pageSize = 25;
-  private requestSequence = 0;
   private searchTimeout: any;
 
-  readonly currentOffset = linkedSignal({
-    source: () => ({ user: this.selectedUser(), entity: this.selectedEntity() }),
-    computation: () => 0, // When the source changes, compute the new offset as 0
+  private readonly refreshTrigger = signal(0);
+
+  protected readonly currentOffset = linkedSignal({
+    source: () => ({
+      user: this.selectedUser(),
+      entity: this.selectedEntity(),
+      activity: this.selectedActivity(),
+      search: this.searchStr(),
+      refresh: this.refreshTrigger(),
+    }),
+    computation: () => 0,
   });
+
+  protected readonly activitiesResource = resource({
+    params: () => ({
+      offset: this.currentOffset(),
+      user: this.selectedUser(),
+      entity: this.selectedEntity(),
+      activity: this.selectedActivity(),
+      search: this.searchStr(),
+    }),
+    loader: async ({ params }) => {
+      return (await this.activitySvc.getFeed({
+        startRow: params.offset,
+        endRow: params.offset + this.pageSize,
+        userId: params.user || undefined,
+        entity: params.entity || undefined,
+        activity: params.activity || undefined,
+        searchStr: params.search || undefined,
+      })) as any;
+    },
+  });
+
+  protected readonly isLoading = computed(() => this.activitiesResource.isLoading());
+
+  constructor() {
+    effect(() => {
+      // Clear activities and hasMore immediately when filters or search change
+      this.selectedUser();
+      this.selectedEntity();
+      this.selectedActivity();
+      this.searchStr();
+      this.refreshTrigger();
+      untracked(() => {
+        this.activities.set([]);
+        this.hasMore.set(false);
+      });
+    });
+
+    effect(() => {
+      const res = this.activitiesResource.value() as any;
+      if (res) {
+        const newRows = res.rows || [];
+        if (this.currentOffset() === 0) {
+          this.activities.set(newRows);
+        } else {
+          this.activities.update((curr) => {
+            const existingIds = new Set(curr.map((r: any) => r.id));
+            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
+            return [...curr, ...filteredNew];
+          });
+        }
+        this.hasMore.set(newRows.length === this.pageSize);
+      }
+    });
+
+    effect(() => {
+      const err = this.activitiesResource.error();
+      if (err) {
+        this.alertSvc.showError('Failed to fetch activity logs');
+      }
+    });
+  }
 
   public ngOnInit() {
     this.loadUsers();
-    this.refreshFeed();
   }
 
   private async loadUsers() {
@@ -60,15 +126,12 @@ export class ActivityFeed implements OnInit {
     }
   }
 
-  protected async refreshFeed() {
-    this.requestSequence++; // Increment sequence to invalidate any currently running fetches
-    this.activities.set([]);
-    await this.fetchPage(true, this.requestSequence);
+  protected refreshFeed() {
+    this.refreshTrigger.update((n) => n + 1);
   }
 
-  protected async loadMore() {
+  protected loadMore() {
     this.currentOffset.update((c) => c + this.pageSize);
-    await this.fetchPage(false, this.requestSequence);
   }
 
   protected async exportFeed() {
@@ -103,44 +166,6 @@ export class ActivityFeed implements OnInit {
       this.alertSvc.showError('Failed to export activity feed');
     } finally {
       this.isLoadingExport.set(false);
-    }
-  }
-
-  private async fetchPage(replace: boolean, reqSeq: number) {
-    this.isLoading.set(true);
-    try {
-      const res = await this.activitySvc.getFeed({
-        startRow: this.currentOffset(),
-        endRow: this.currentOffset() + this.pageSize,
-        userId: this.selectedUser() || undefined,
-        entity: this.selectedEntity() || undefined,
-        activity: this.selectedActivity() || undefined,
-        searchStr: this.searchStr() || undefined,
-      });
-
-      // BUG FIX: Ignore this response if the user changed filters while the network request was in flight
-      if (reqSeq !== this.requestSequence) {
-        return;
-      }
-
-      if (replace) {
-        this.activities.set(res.rows || []);
-        // BUG FIX: Explicitly set the offset on a fresh load rather than adding to it
-        this.currentOffset.set((res.rows || []).length);
-      } else {
-        this.activities.update((curr) => [...curr, ...(res.rows || [])]);
-        // Additively increase offset only when loading more
-        this.currentOffset.update((current) => current + (res.rows || []).length);
-      }
-
-      this.hasMore.set((res.rows || []).length === this.pageSize);
-    } catch (err: any) {
-      this.alertSvc.showError('Failed to fetch activity logs');
-    } finally {
-      // Only turn off the loading spinner if a newer request hasn't already started
-      if (reqSeq === this.requestSequence) {
-        this.isLoading.set(false);
-      }
     }
   }
 
