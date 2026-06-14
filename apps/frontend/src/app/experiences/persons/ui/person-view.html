@@ -20,7 +20,7 @@
     <div class="flex justify-center items-center py-20">
       <progress class="progress w-56"></progress>
     </div>
-    } @else if (person()) {
+    } @else { @if (person()) {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: Contact Card & Bio -->
@@ -689,11 +689,11 @@
         </div>
       </div>
     </div>
-    } @else {
+    } @else if (initialized()) {
     <div class="alert alert-error">
       <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
       <span>Record not found or failed to load.</span>
     </div>
-    }
+    } }
   </div>
 </div>
