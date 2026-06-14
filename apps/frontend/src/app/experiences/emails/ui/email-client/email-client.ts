@@ -1,6 +1,8 @@
 import { Component, DestroyRef, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { filter, switchMap } from 'rxjs/operators';
+import { from } from 'rxjs';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsService } from '../../services/emails-service';
@@ -38,54 +40,68 @@ export class EmailClient {
   protected isComposing = signal(false);
 
   constructor() {
-    this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(async (params) => {
-      const emailId = params['email'];
-      if (emailId) {
-        try {
-          // 1. Fetch the email header/details from backend to know its folder_id
-          const res = await this.emailSvc.getEmailHeader(emailId);
-          if (res && res.email) {
-            const folderId = res.email.folder_id;
+    // Listen to URL changes and safely manage concurrent requests
+    this.route.queryParams
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        filter((params) => !!params['email']), // Only run if an email ID is in the URL
+        switchMap((params) => {
+          // switchMap automatically cancels the previous from() promise
+          // if the user clicks a new email before this one finishes loading
+          return from(this.loadEmailData(params['email']));
+        }),
+      )
+      .subscribe();
+  }
 
-            // 2. Ensure folders list is loaded
-            let folders = this.store.allFolders();
-            if (!folders || folders.length === 0) {
-              folders = await this.store.loadAllFoldersWithCounts();
-            }
+  /**
+   * Dedicated async method to handle the fetching and state updates.
+   * Prevents race conditions when navigated rapidly.
+   */
+  private async loadEmailData(emailId: string): Promise<void> {
+    try {
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
 
-            // 3. Find the folder
-            const folder = folders.find((f) => String(f.id) === String(folderId));
-            if (folder) {
-              const emailObj: EmailType = {
-                id: String(res.email.id),
-                folder_id: String(res.email.folder_id),
-                updated_at: new Date(res.email.updated_at),
-                date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-                is_favourite: !!res.email.is_favourite,
-                attachment_count: res.email.attachment_count ?? 0,
-                status: res.email.status || 'open',
-                from_email: res.email.from_email ?? undefined,
-                to_email: res.email.to_email ?? undefined,
-                subject: res.email.subject ?? undefined,
-                preview: res.email.preview ?? undefined,
-                assigned_to: res.email.assigned_to ?? undefined,
-                has_attachment: !!res.email.has_attachment,
-                is_read: !!(res.email as any).is_read,
-              };
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
 
-              // Add to store's normalized map so it is available immediately
-              this.stateStore.replaceEmail(emailObj.id, emailObj);
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
 
-              // Select the folder and email
-              this.store.selectFolder(folder);
-              this.store.selectEmail(emailObj);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to pre-select email from notification link', err);
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
         }
       }
-    });
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
+    }
   }
 
   /** Emails in the currently selected folder */
