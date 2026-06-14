@@ -36,6 +36,7 @@ export class PersonView {
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
   protected readonly person = signal<any | null>(null);
 
@@ -137,6 +138,7 @@ export class PersonView {
       this.alertSvc.showError('Failed to load person details: ' + String(err));
     } finally {
       end();
+      this.initialized.set(true);
     }
   }
 
