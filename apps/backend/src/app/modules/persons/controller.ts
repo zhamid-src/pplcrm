@@ -57,6 +57,13 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   }
 
   /**
+   * Return a scalar count of persons belonging to a given company.
+   */
+  public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
+  }
+
+  /**
    * Get all distinct tags assigned to any person in the tenant.
    */
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {

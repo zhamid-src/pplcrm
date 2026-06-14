@@ -397,6 +397,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   /**
+   * Return a scalar count of persons belonging to a specific company.
+   * More efficient than fetching all rows when only the count is needed.
+   */
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  /**
    * Get all unique tag names assigned to people in the tenant.
    *
    * @param tenant_id - The tenant ID
