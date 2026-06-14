@@ -1,5 +1,4 @@
 import { Component, input, computed, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 
 interface DashboardStats {
   totalSent: number;
@@ -12,7 +11,6 @@ interface DashboardStats {
 @Component({
   selector: 'pc-newsletters-dashboard',
   standalone: true,
-  imports: [CommonModule],
   templateUrl: './newsletters-dashboard.html',
   styles: [
     `

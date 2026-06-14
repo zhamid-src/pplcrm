@@ -1,6 +1,5 @@
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { CommonModule } from '@angular/common';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsType } from '@common';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
@@ -14,7 +13,7 @@ import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
 
 @Component({
   selector: 'pc-list-view',
-  imports: [FormActions, Icon, RouterLink, CommonModule, RecordActivities, PersonsGrid, HouseholdsGrid],
+  imports: [FormActions, Icon, RouterLink, RecordActivities, PersonsGrid, HouseholdsGrid],
   templateUrl: './list-view.html',
 })
 export class ListView implements OnDestroy {
