@@ -129,6 +129,10 @@ export class CompanyDetail implements OnInit {
             this.router.navigate(['/companies', this.id()]);
           }
         })
+        .catch((err: any) => {
+          const message = err?.message || err?.data?.message || 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
         .finally(() => end());
     } else {
       const end = this._loading.begin();
@@ -142,6 +146,10 @@ export class CompanyDetail implements OnInit {
           } else {
             this.router.navigate(['/companies']);
           }
+        })
+        .catch((err: any) => {
+          const message = err?.message || err?.data?.message || 'Unable to save company';
+          this.alertSvc.showError(message);
         })
         .finally(() => end());
     }
