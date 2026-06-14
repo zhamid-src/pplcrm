@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
 import { Icon } from '@icons/icon';
 
@@ -13,7 +13,7 @@ interface DetailMetric {
 
 @Component({
   selector: 'pc-newsletter-detail',
-  imports: [Icon, CommonModule],
+  imports: [Icon],
   templateUrl: './newsletter-detail.html',
 })
 export class NewsletterDetailComponent {
