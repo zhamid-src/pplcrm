@@ -503,11 +503,11 @@
           </div>
 
           <!-- Tab Panels -->
-          <div class="p-6">
+          <div class="p-6 flex flex-col flex-1 min-h-0">
             <!-- Panel: General Activity Feed -->
             @if (activeTab() === 'activity') {
-            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-              <pc-record-activities [entity]="'persons'" [entityId]="id!"></pc-record-activities>
+            <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+              <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id!"></pc-record-activities>
             </div>
             }
 

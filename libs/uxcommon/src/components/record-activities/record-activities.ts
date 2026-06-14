@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, effect } from '@angular/core';
+import { Component, computed, inject, input, signal, effect, untracked } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { ActivityService } from '@experiences/activity/services/activity.service';
@@ -8,8 +8,8 @@ import { ActivityService } from '@experiences/activity/services/activity.service
   selector: 'pc-record-activities',
   imports: [DatePipe, Icon],
   template: `
-    <div class="min-h-0 flex flex-col rounded-lg bg-base-100 text-base-content">
-      <div id="activities-panel" class="overflow-auto email-scrollbar ">
+    <div class="flex flex-col flex-1 h-full rounded-lg bg-base-100 text-base-content">
+      <div id="activities-panel" class="flex-1 min-h-0 overflow-auto email-scrollbar ">
         @if (isLoading()) {
           <div class="flex items-center justify-center py-6">
             <span
@@ -31,7 +31,7 @@ import { ActivityService } from '@experiences/activity/services/activity.service
                   class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-base-100"
                   [class]="getActivityDotClass(act.activity)"
                 >
-                  <pc-icon [name]="getActivityIcon(act.activity)" [size]="2.5"></pc-icon>
+                  <pc-icon [name]="getActivityIcon(act.activity)" [size]="2"></pc-icon>
                 </span>
 
                 <!-- Content -->
@@ -49,10 +49,27 @@ import { ActivityService } from '@experiences/activity/services/activity.service
               </li>
             }
           </ol>
+
+          @if (hasMore()) {
+            <div class="flex justify-center pt-2 pb-3">
+              <button class="btn btn-ghost btn-xs text-primary gap-1" [disabled]="isLoadingMore()" (click)="loadMore()">
+                @if (isLoadingMore()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                } @else {
+                  <pc-icon name="arrow-path" [size]="3"></pc-icon>
+                }
+                <span>Load More</span>
+              </button>
+            </div>
+          }
         }
       </div>
     </div>
   `,
+  host: {
+    // Make the host a flex column that takes up 100% of its parent's height
+    class: 'flex flex-col h-full w-full',
+  },
 })
 export class RecordActivities {
   private readonly activitySvc = inject(ActivityService);
@@ -61,7 +78,11 @@ export class RecordActivities {
   public entityId = input.required<string>();
 
   protected readonly isLoading = signal(false);
+  protected readonly isLoadingMore = signal(false);
   protected readonly activities = signal<any[]>([]);
+  protected readonly hasMore = signal(false);
+  protected readonly currentOffset = signal(0);
+  protected readonly pageSize = 10;
 
   protected readonly activityCount = computed(() => this.activities().length);
 
@@ -71,25 +92,52 @@ export class RecordActivities {
         // Access signals to subscribe to updates
         this.entityId();
         this.entity();
-        void this.loadActivities();
+
+        untracked(() => {
+          void this.loadActivities(true);
+        });
       },
       { allowSignalWrites: true },
     );
   }
 
-  public async loadActivities(): Promise<void> {
+  public async loadActivities(replace = true): Promise<void> {
     const ent = this.entity();
     const id = this.entityId();
     if (!ent || !id) return;
-    this.isLoading.set(true);
+
+    if (replace) {
+      this.isLoading.set(true);
+      this.currentOffset.set(0);
+    } else {
+      this.isLoadingMore.set(true);
+    }
+
     try {
-      const rows = await this.activitySvc.getActivities(ent, id);
-      this.activities.set(rows || []);
+      const offset = this.currentOffset();
+      const res = await this.activitySvc.getActivities(ent, id, {
+        startRow: offset,
+        endRow: offset + this.pageSize,
+      });
+
+      const newRows = res?.rows || [];
+      if (replace) {
+        this.activities.set(newRows);
+      } else {
+        this.activities.update((curr) => [...curr, ...newRows]);
+      }
+      this.currentOffset.update((c) => c + newRows.length);
+      this.hasMore.set(newRows.length === this.pageSize);
     } catch (e) {
       console.error('Failed to load record activities', e);
     } finally {
       this.isLoading.set(false);
+      this.isLoadingMore.set(false);
     }
+  }
+
+  protected async loadMore(): Promise<void> {
+    await this.loadActivities(false);
   }
 
   protected getActivityIcon(activity: string): PcIconNameType {

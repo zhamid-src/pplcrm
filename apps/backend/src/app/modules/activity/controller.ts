@@ -12,8 +12,13 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     return this.getRepo().getAllWithUser(auth.tenant_id, options || {});
   }
 
-  public async getActivities(tenant_id: string, entity: string, entityId: string) {
-    return this.getRepo().getForEntity(tenant_id, entity, entityId);
+  public async getActivities(
+    tenant_id: string,
+    entity: string,
+    entityId: string,
+    options?: { startRow?: number; endRow?: number }
+  ) {
+    return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
   }
 
   public async deleteOldActivities(): Promise<void> {

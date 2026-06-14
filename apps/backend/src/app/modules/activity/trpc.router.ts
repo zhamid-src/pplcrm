@@ -10,8 +10,20 @@ export const ActivityRouter = router({
     .input(getAllOptions)
     .query(({ input, ctx }) => activity.getFeed(ctx.auth, input)),
   getActivities: authProcedure
-    .input(z.object({ entity: z.string(), entityId: z.string().min(1) }))
-    .query(({ input, ctx }) => activity.getActivities(ctx.auth.tenant_id, input.entity, input.entityId)),
+    .input(
+      z.object({
+        entity: z.string(),
+        entityId: z.string().min(1),
+        startRow: z.number().optional(),
+        endRow: z.number().optional(),
+      })
+    )
+    .query(({ input, ctx }) =>
+      activity.getActivities(ctx.auth.tenant_id, input.entity, input.entityId, {
+        startRow: input.startRow,
+        endRow: input.endRow,
+      })
+    ),
   exportCsv: authProcedure
     .input(exportCsvInput)
     .output(exportCsvResponse)
