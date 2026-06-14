@@ -6,7 +6,7 @@ import {
   provideZonelessChangeDetection,
 } from '@angular/core';
 import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, provideRouter } from '@angular/router';
+import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
 import { environment } from '../environments/environment';
@@ -81,6 +81,7 @@ export const appConfig: ApplicationConfig = {
       provide: RouteReuseStrategy,
       useClass: CustomRouteReuseStrategy,
     },
+    provideRouter(appRoutes, withComponentInputBinding()),
 
     /**
      * Make it zoneless

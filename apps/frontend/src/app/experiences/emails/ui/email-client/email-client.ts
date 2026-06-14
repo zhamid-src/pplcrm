@@ -1,8 +1,4 @@
-import { Component, DestroyRef, inject, signal, viewChild } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { filter, switchMap } from 'rxjs/operators';
-import { from } from 'rxjs';
+import { Component, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsService } from '../../services/emails-service';
@@ -31,28 +27,22 @@ export class EmailClient {
   /** App-level email store */
   protected readonly store = inject(EmailsStore);
   private readonly stateStore = inject(EmailStateStore);
-  private readonly route = inject(ActivatedRoute);
   private readonly emailSvc = inject(EmailsService);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected composePrefill = signal<ComposeInitial | null>(null);
   protected draftIdToLoad = signal<string | null>(null);
   protected isComposing = signal(false);
 
   constructor() {
-    // Listen to URL changes and safely manage concurrent requests
-    this.route.queryParams
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        filter((params) => !!params['email']), // Only run if an email ID is in the URL
-        switchMap((params) => {
-          // switchMap automatically cancels the previous from() promise
-          // if the user clicks a new email before this one finishes loading
-          return from(this.loadEmailData(params['email']));
-        }),
-      )
-      .subscribe();
+    effect(() => {
+      const id = this.emailId();
+      if (id) {
+        untracked(() => this.loadEmailData(id));
+      }
+    });
   }
+
+  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
 
   /**
    * Dedicated async method to handle the fetching and state updates.
