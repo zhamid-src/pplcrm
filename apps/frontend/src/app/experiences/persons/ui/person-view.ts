@@ -147,7 +147,7 @@ export class PersonView {
   }
 
   protected async deletePerson() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Person',
       message: 'Are you sure you want to delete this person? This action cannot be undone.',
