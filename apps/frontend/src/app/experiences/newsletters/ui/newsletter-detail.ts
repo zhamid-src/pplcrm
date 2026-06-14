@@ -1,5 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
 import { Icon } from '@icons/icon';
@@ -17,8 +16,9 @@ interface DetailMetric {
   imports: [Icon, CommonModule],
   templateUrl: './newsletter-detail.html',
 })
-export class NewsletterDetailComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+export class NewsletterDetailComponent {
+  readonly id = input.required<string>();
+
   private readonly service = inject(NewslettersService);
 
   protected readonly email = signal<MarketingEmailType | null>(null);
@@ -87,6 +87,13 @@ export class NewsletterDetailComponent implements OnInit {
     ];
   });
   protected readonly error = signal<string | null>(null);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.load(currentId));
+    });
+  }
   protected readonly topLinks = computed<MarketingEmailTopLinkType[]>(() => {
     const data = this.email();
     if (!data?.top_links) return [];
@@ -223,8 +230,7 @@ export class NewsletterDetailComponent implements OnInit {
     window.history.back();
   }
 
-  public async ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id');
+  private async load(id: string) {
     if (!id) {
       this.error.set('Newsletter not found.');
       return;

@@ -87,18 +87,15 @@ export class RecordActivities {
   protected readonly activityCount = computed(() => this.activities().length);
 
   constructor() {
-    effect(
-      () => {
-        // Access signals to subscribe to updates
-        this.entityId();
-        this.entity();
+    effect(() => {
+      // Access signals to subscribe to updates
+      this.entityId();
+      this.entity();
 
-        untracked(() => {
-          void this.loadActivities(true);
-        });
-      },
-      { allowSignalWrites: true },
-    );
+      untracked(() => {
+        void this.loadActivities(true);
+      });
+    });
   }
 
   public async loadActivities(replace = true): Promise<void> {

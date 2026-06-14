@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { CompanyInputObj } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -200,14 +200,14 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
             <!-- Members & Info Panel -->
             <div class="space-y-6">
               <!-- Employee List (Only when edit mode) -->
-              @if (!isNewMode() && id) {
+              @if (!isNewMode() && id()) {
                 <div class="card bg-base-100 border border-base-300 shadow-xl">
                   <div class="card-body p-6">
                     <h3 class="font-bold text-lg text-base-content mb-4 flex items-center gap-2">
                       <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
                       Associated Employees
                     </h3>
-                    <pc-people-in-company [companyId]="id"></pc-people-in-company>
+                    <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
                   </div>
                 </div>
               }
@@ -237,7 +237,6 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 export class CompanyDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
 
@@ -257,14 +256,13 @@ export class CompanyDetail implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, CompanyInputObj);
   });
-  protected id: string | null = null;
+  protected id = input<string>();
   protected isLoading = this._loading.visible;
 
   public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
   public async ngOnInit() {
-    this.id = this.route.snapshot.paramMap.get('id');
     await this.loadCompany();
     if (this.isNewMode()) {
       const state = window.history.state;
@@ -284,10 +282,10 @@ export class CompanyDetail implements OnInit {
   }
 
   private async loadCompany() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const end = this._loading.begin();
     try {
-      const data = await this.companiesSvc.getById(this.id);
+      const data = await this.companiesSvc.getById(this.id()!);
       this.company.set(data);
       if (data) {
         this.payload.set({
@@ -309,7 +307,7 @@ export class CompanyDetail implements OnInit {
   }
 
   protected async deleteCompany() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Company',
       message: 'Are you sure you want to delete this company? This action cannot be undone.',
@@ -319,7 +317,7 @@ export class CompanyDetail implements OnInit {
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      await this.companiesSvc.delete(this.id);
+      await this.companiesSvc.delete(this.id()!);
       this.companiesSvc.triggerRefresh();
       this.alertSvc.showSuccess('Company deleted');
       await this.router.navigate(['/companies']);
@@ -336,17 +334,17 @@ export class CompanyDetail implements OnInit {
       done.preventDefault();
     }
     const raw = this.payload();
-    if (this.id) {
+    if (this.id()) {
       const end = this._loading.begin();
       this.companiesSvc
-        .update(this.id, raw)
+        .update(this.id()!, raw)
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company updated successfully');
           if (typeof done === 'function') {
             done();
           } else {
-            this.router.navigate(['/companies', this.id]);
+            this.router.navigate(['/companies', this.id()]);
           }
         })
         .finally(() => end());

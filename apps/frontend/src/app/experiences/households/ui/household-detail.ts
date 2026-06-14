@@ -3,7 +3,7 @@
  */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '@common';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -31,7 +31,6 @@ export class HouseholdDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
@@ -100,12 +99,12 @@ export class HouseholdDetail implements OnInit {
   });
 
   /** ID of the household being edited */
-  protected id: string | null = null;
+  protected id = input<string>();
   protected isLoading = this._loading.visible;
 
   /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id);
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
   /**
    * Handles address selection and parses Google Places data into form.
@@ -144,7 +143,6 @@ export class HouseholdDetail implements OnInit {
    * Lifecycle hook that initializes the component.
    */
   public async ngOnInit() {
-    this.id = this.route.snapshot.paramMap.get('id');
     await this.loadHousehold();
     if (this.isNewMode()) {
       const state = window.history.state;
@@ -192,11 +190,11 @@ export class HouseholdDetail implements OnInit {
   }
 
   protected async deleteHousehold() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const end = this._loading.begin();
     try {
       // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id, { columns: ['id'] })) as Array<{ id: string }>;
+      const people = (await this.personsSvc.getByHouseholdId(this.id()!, { columns: ['id'] })) as Array<{ id: string }>;
       const personIds = people.map((p) => p.id);
       const peopleCount = personIds.length;
 
@@ -232,7 +230,7 @@ export class HouseholdDetail implements OnInit {
         if (!confirmed) return;
       }
 
-      await this.householdsSvc.delete(this.id);
+      await this.householdsSvc.delete(this.id()!);
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
@@ -262,7 +260,14 @@ export class HouseholdDetail implements OnInit {
       lat: raw.lat || null,
       lng: raw.lng || null,
     };
-    return this.id ? this.update(data, done) : this.add(data, done);
+    if (!this.id()) {
+      return this.householdsSvc.add(data).then(async (result: any) => {
+        this.alertSvc.showSuccess('Household added successfully.');
+        done?.();
+        await this.router.navigate(['/households', result.id]);
+      });
+    }
+    return this.update(data, done);
   }
 
   /**
@@ -270,9 +275,9 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to attach to the household
    */
   protected async tagAdded(tag: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.householdsSvc.attachTag(this.id, tag, 'tag');
+      await this.householdsSvc.attachTag(this.id()!, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to attach tag:', err);
@@ -284,9 +289,9 @@ export class HouseholdDetail implements OnInit {
    * @param tag - The tag to detach from the household
    */
   protected async tagRemoved(tag: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.householdsSvc.detachTag(this.id, tag, 'tag');
+      await this.householdsSvc.detachTag(this.id()!, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to detach tag:', err);
@@ -298,9 +303,9 @@ export class HouseholdDetail implements OnInit {
    * @param issue - The issue to attach to the household
    */
   protected async issueAdded(issue: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.householdsSvc.attachTag(this.id, issue, 'issue');
+      await this.householdsSvc.attachTag(this.id()!, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to attach issue:', err);
@@ -312,9 +317,9 @@ export class HouseholdDetail implements OnInit {
    * @param issue - The issue to detach from the household
    */
   protected async issueRemoved(issue: string) {
-    if (!this.id) return;
+    if (!this.id()) return;
     try {
-      await this.householdsSvc.detachTag(this.id, issue, 'issue');
+      await this.householdsSvc.detachTag(this.id()!, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to detach issue:', err);
@@ -322,44 +327,26 @@ export class HouseholdDetail implements OnInit {
   }
 
   /**
-   * Add a new household using the backend service
-   * @param data - The household data to submit
-   */
-  private add(data: UpdateHouseholdsType, done?: () => void) {
-    const end = this._loading.begin();
-    this.householdsSvc
-      .add(data)
-      .then(() => {
-        this.alertSvc.showSuccess('Household added');
-        this.householdsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .finally(() => end());
-  }
-
-  /**
    * Loads tags and issues associated with the current household
    */
   private async getTags() {
-    if (!this.household || !this.id) {
+    if (!this.household() || !this.id()) {
       return;
     }
-    this.tags = await this.householdsSvc.getTags(this.id, 'tag');
-    this.issues = await this.householdsSvc.getTags(this.id, 'issue');
+    this.tags = await this.householdsSvc.getTags(this.id()!, 'tag');
+    this.issues = await this.householdsSvc.getTags(this.id()!, 'issue');
   }
 
   /**
    * Loads the household data from the backend and initializes the form
    */
   private async loadHousehold() {
-    if (!this.id) return;
+    if (!this.id()) return;
 
     const end = this._loading.begin();
 
     try {
-      this.household.set((await this.householdsSvc.getById(this.id)) as Households);
+      this.household.set((await this.householdsSvc.getById(this.id()!)) as Households);
       await this.getTags();
       this.refreshForm();
     } finally {
@@ -398,13 +385,13 @@ export class HouseholdDetail implements OnInit {
    * @param data - Partial update object for the household
    */
   private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
-    if (!this.id) {
+    if (!this.id()) {
       return;
     }
 
     const end = this._loading.begin();
     this.householdsSvc
-      .update(this.id, data)
+      .update(this.id()!, data)
       .then(() => {
         this.alertSvc.showSuccess('Household updated successfully.');
         this.form().reset();

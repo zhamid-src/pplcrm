@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -278,7 +278,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                   <!-- Panel: General Activity Feed -->
                   @if (activeTab() === 'activity') {
                     <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-                      <pc-record-activities [entity]="'volunteer_events'" [entityId]="id!"></pc-record-activities>
+                      <pc-record-activities [entity]="'volunteer_events'" [entityId]="id()!"></pc-record-activities>
                     </div>
                   }
                 </div>
@@ -296,15 +296,15 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
   `,
   providers: [VolunteerService],
 })
-export class EventViewComponent implements OnInit {
+export class EventViewComponent {
+  readonly id = input.required<string>();
+
   private readonly alertSvc = inject(AlertService);
   private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-
-  protected id: string | null = null;
   protected readonly isLoading = signal(false);
   protected readonly event = signal<any | null>(null);
   protected readonly roster = signal<any[]>([]);
@@ -334,23 +334,21 @@ export class EventViewComponent implements OnInit {
   });
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load Event details
-      const detail = await this.volunteerEventsSvc.getById(this.id);
+      const detail = await this.volunteerEventsSvc.getById(id);
       this.event.set(detail);
 
       // 2. Load associated shifts/roster
-      const rosterData = await this.volunteerSvc.getShiftsForEvent(this.id);
+      const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
       this.roster.set(rosterData || []);
     } catch (err) {
       this.alertSvc.showError('Failed to load event details: ' + String(err));
@@ -364,7 +362,7 @@ export class EventViewComponent implements OnInit {
   }
 
   protected async deleteEvent() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Event',
       message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
@@ -374,7 +372,7 @@ export class EventViewComponent implements OnInit {
     if (!confirmed) return;
     this.isLoading.set(true);
     try {
-      await this.volunteerEventsSvc.delete(this.id);
+      await this.volunteerEventsSvc.delete(this.id());
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events']);

@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -16,7 +16,9 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
   imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
   templateUrl: './user-view.html',
 })
-export class UserViewComponent implements OnInit {
+export class UserViewComponent {
+  readonly id = input.required<string>();
+
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -82,15 +84,17 @@ export class UserViewComponent implements OnInit {
     ];
   });
 
-  protected id = '';
-
-  public ngOnInit(): void {
-    this.id = this.route.snapshot.paramMap.get('id') ?? '';
-    if (!this.id) {
-      this.error.set('Missing user identifier.');
-      return;
-    }
-    void this.load();
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
   }
 
   protected editUser() {
@@ -98,8 +102,8 @@ export class UserViewComponent implements OnInit {
   }
 
   protected async deleteUser() {
-    if (!this.id) return;
-    if (String(this.id) === String(this.currentUserId())) {
+    if (!this.id()) return;
+    if (String(this.id()) === String(this.currentUserId())) {
       this.alerts.showError('You cannot delete yourself.');
       return;
     }
@@ -117,7 +121,7 @@ export class UserViewComponent implements OnInit {
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      const success = await this.users.delete(this.id);
+      const success = await this.users.delete(this.id());
       if (!success) {
         throw new Error('User deletion is not supported');
       }
@@ -147,7 +151,7 @@ export class UserViewComponent implements OnInit {
     const end = this._loading.begin();
     this.error.set(null);
     try {
-      const user = await this.users.getById(this.id);
+      const user = await this.users.getById(this.id());
       this.detail.set(user);
       this.stats.set(user.stats);
     } catch (err: any) {

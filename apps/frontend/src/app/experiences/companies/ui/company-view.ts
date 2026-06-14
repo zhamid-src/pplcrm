@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -230,14 +230,14 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
                   <!-- Panel: General Activity Feed -->
                   @if (activeTab() === 'activity') {
                     <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-                      <pc-record-activities [entity]="'companies'" [entityId]="id!"></pc-record-activities>
+                      <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
                     </div>
                   }
 
                   <!-- Panel: Associated Employees List -->
                   @if (activeTab() === 'employees') {
                     <div class="flex flex-col gap-4">
-                      <pc-people-in-company [companyId]="id!"></pc-people-in-company>
+                      <pc-people-in-company [companyId]="id()"></pc-people-in-company>
                     </div>
                   }
 
@@ -274,7 +274,9 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
     </div>
   `,
 })
-export class CompanyView implements OnInit {
+export class CompanyView {
+  readonly id = input.required<string>();
+
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);
   private readonly personsSvc = inject(PersonsService);
@@ -282,8 +284,6 @@ export class CompanyView implements OnInit {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
-
-  protected id: string | null = null;
   protected readonly isLoading = signal(false);
   protected readonly company = signal<any | null>(null);
   protected readonly employeeCount = signal(0);
@@ -312,7 +312,10 @@ export class CompanyView implements OnInit {
   });
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
 
     // Load users for addedby/updatedby display names
     this.auth
@@ -324,21 +327,16 @@ export class CompanyView implements OnInit {
       .catch(() => void 0);
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(this.id);
+      const data = await this.companiesSvc.getById(id);
       this.company.set(data);
 
       // 2. Compute/Load employee count
       // Query the people count using standard PersonsService byCompanyId
-      const allEmployees = await this.personsSvc.getByCompanyId(this.id, { limit: 1000 });
+      const allEmployees = await this.personsSvc.getByCompanyId(id, { limit: 1000 });
       this.employeeCount.set(allEmployees.length);
     } catch (err) {
       this.alertSvc.showError('Failed to load company details: ' + String(err));
@@ -352,7 +350,7 @@ export class CompanyView implements OnInit {
   }
 
   protected async deleteCompany() {
-    if (!this.id) return;
+    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Company',
       message: 'Are you sure you want to delete this company? This action cannot be undone.',
@@ -362,7 +360,7 @@ export class CompanyView implements OnInit {
     if (!confirmed) return;
     this.isLoading.set(true);
     try {
-      await this.companiesSvc.delete(this.id);
+      await this.companiesSvc.delete(this.id());
       this.companiesSvc.triggerRefresh();
       this.alertSvc.showSuccess('Company deleted');
       await this.router.navigate(['/companies']);

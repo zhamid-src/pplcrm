@@ -2,7 +2,7 @@
  * @file Component for viewing individual household records (read-only mode).
  */
 import { DatePipe } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 import { type IAuthUser } from '@common';
@@ -22,7 +22,9 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
   imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
   templateUrl: './household-view.html',
 })
-export class HouseholdView implements OnInit {
+export class HouseholdView {
+  readonly id = input.required<string>();
+
   private readonly alertSvc = inject(AlertService);
   private readonly auth = inject(AuthService);
   private readonly householdsSvc = inject(HouseholdsService);
@@ -31,8 +33,6 @@ export class HouseholdView implements OnInit {
   private readonly router = inject(Router);
   private readonly loader = inject(Loader);
   private readonly dialogSvc = inject(ConfirmDialogService);
-
-  protected id: string | null = null;
   protected readonly isLoading = signal(false);
   protected readonly household = signal<Households | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
@@ -81,7 +81,10 @@ export class HouseholdView implements OnInit {
   protected activeTab = signal<'members' | 'activity' | 'details'>('activity');
 
   constructor() {
-    this.id = this.route.snapshot.paramMap.get('id');
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
 
     // Load users for addedby/updatedby display names
     this.auth
@@ -93,26 +96,21 @@ export class HouseholdView implements OnInit {
       .catch(() => void 0);
   }
 
-  public ngOnInit() {
-    void this.loadAllData();
-  }
-
-  protected async loadAllData() {
-    if (!this.id) return;
+  protected async loadAllData(id: string) {
     this.isLoading.set(true);
     try {
       // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(this.id)) as Households;
+      const householdData = (await this.householdsSvc.getById(id)) as Households;
       this.household.set(householdData);
 
       // 2. Load tags and issues
-      const tagList = await this.householdsSvc.getTags(this.id, 'tag');
+      const tagList = await this.householdsSvc.getTags(id, 'tag');
       this.tags.set(tagList);
-      const issueList = await this.householdsSvc.getTags(this.id, 'issue');
+      const issueList = await this.householdsSvc.getTags(id, 'issue');
       this.issues.set(issueList);
 
       // 3. Load people in household count
-      const count = await this.householdsSvc.getPeopleCount(this.id);
+      const count = await this.householdsSvc.getPeopleCount(id);
       this.peopleCount.set(count);
     } catch (err) {
       this.alertSvc.showError('Failed to load household details: ' + String(err));
@@ -126,11 +124,11 @@ export class HouseholdView implements OnInit {
   }
 
   protected async deleteHousehold() {
-    if (!this.id) return;
+    if (!this.id()) return;
     this.isLoading.set(true);
     try {
       // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id, { columns: ['id'] })) as Array<{ id: string }>;
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
       const personIds = people.map((p) => p.id);
       const peopleCount = personIds.length;
 
@@ -166,7 +164,7 @@ export class HouseholdView implements OnInit {
         if (!confirmed) return;
       }
 
-      await this.householdsSvc.delete(this.id);
+      await this.householdsSvc.delete(this.id());
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);

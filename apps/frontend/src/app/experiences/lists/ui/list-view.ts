@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -17,13 +17,14 @@ import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
   imports: [FormActions, Icon, RouterLink, CommonModule, RecordActivities, PersonsGrid, HouseholdsGrid],
   templateUrl: './list-view.html',
 })
-export class ListView implements OnInit, OnDestroy {
+export class ListView implements OnDestroy {
+  readonly id = input.required<string>();
+
   private readonly alerts = inject(AlertService);
   private readonly lists = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-  protected id = signal<string>('');
   protected loading = signal<boolean>(false);
   protected refreshing = signal<boolean>(false);
   protected memberCount = signal<number>(0);
@@ -33,11 +34,13 @@ export class ListView implements OnInit, OnDestroy {
   protected activeTab = signal<'members' | 'newsletters'>('members');
   protected isPeople = computed(() => this.object() === 'people');
 
-  public async ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (!id) return;
-    this.id.set(id);
-    await this.loadListDetails();
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (currentId) void this.loadListDetails();
+      });
+    });
   }
 
   protected async loadListDetails() {
