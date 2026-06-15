@@ -1,3 +1,4 @@
+import { env } from '../../../env';
 import { Kysely, sql } from 'kysely';
 import { ALL_FOLDERS } from 'common/src/lib/emails';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
@@ -222,7 +223,7 @@ async function sendLimitEmail(
     adminsCache.push(...(admins as any));
   }
 
-  const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+  const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
   const planNameUpper = planName.toUpperCase();
   const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
   const prefix = pct === 100 ? 'reached' : 'approaching';

@@ -407,7 +407,7 @@ export class BillingController {
             }
 
             const mailService = new TransactionalEmailService();
-            const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+            const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
             const amountDue = (invoice.amount_due || 0) / 100;
             await mailService.sendMail({
               to: admin.email,
@@ -513,7 +513,7 @@ export class BillingController {
 
     if (admin && admin.email) {
       const planLimits = getPlanLimits(planName);
-      const billingPageUrl = `http://localhost:4200/settings?tab=billing`;
+      const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
       const mockPrefix = isMock ? '[MOCK] ' : '';
 
       const mailService = new TransactionalEmailService();

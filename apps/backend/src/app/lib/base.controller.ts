@@ -1,4 +1,5 @@
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
+import { env } from '../../env';
 
 import { ReferenceExpression, Transaction } from 'kysely';
 
@@ -390,8 +391,8 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
             await mailService.sendMail({
               to: user.email,
               subject: `Your Export is Ready: ${response.fileName}`,
-              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: http://localhost:4200/downloads/${response.fileName}`,
-              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="http://localhost:4200/downloads/${response.fileName}">Download CSV</a></p>`,
+              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
+              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
             });
           }
         }

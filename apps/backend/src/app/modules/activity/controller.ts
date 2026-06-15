@@ -1,3 +1,4 @@
+import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
@@ -86,8 +87,8 @@ export class ActivityController extends BaseController<'user_activity', UserActi
           await mailService.sendMail({
             to: user.email,
             subject: `Your Export is Ready: ${response.fileName}`,
-            text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the Activity Feed is ready.\n\nFile Name: ${response.fileName}\nDownload Link: http://localhost:4200/downloads/${response.fileName}`,
-            html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>Activity Feed</strong> is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="http://localhost:4200/downloads/${response.fileName}">Download CSV</a></p>`,
+            text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the Activity Feed is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
+            html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>Activity Feed</strong> is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
           });
         }
       } catch (err) {

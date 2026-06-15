@@ -474,8 +474,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             await mailService.sendMail({
               to: user.email,
               subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
-              text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: http://localhost:4200/imports/${payload.import_id}`,
-              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="http://localhost:4200/imports/${payload.import_id}">View Imported Rows</a></p>`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
+              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
             });
           }
         }
@@ -1264,8 +1264,8 @@ export async function checkDueTasks(db: any): Promise<void> {
 
         for (const t of tasks) {
           const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: http://localhost:4200/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="http://localhost:4200/tasks/${t.task_id}">Resolve</a></li>`;
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
         }
 
         htmlContent += `</ul>`;
