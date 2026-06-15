@@ -5,43 +5,22 @@ import { Component } from '@angular/core';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
-/**
- * `TagsGridComponent` displays a data grid of tags with editable fields.
- *
- * ## Description
- * Extends the reusable `DataGrid` component to show a list of tags and their usage counts
- * in people and households. Allows inline editing of the tag name and description.
- *
- * ## Template
- * Renders a `<pc-datagrid>` component with column definitions.
- * The `addRoute` is set to `"add"` to link to the tag creation view.
- *
- * ## Providers
- * - Binds `TagsService` to `AbstractAPIService` to handle backend communication for tags.
- *
- * ## Columns
- * - `name`: Tag name (editable)
- * - `description`: Tag description (editable)
- * - `use_count_people`: Number of people using this tag (read-only)
- * - `use_count_households`: Number of households using this tag (read-only)
- */
 @Component({
   selector: 'pc-tags-grid',
-  imports: [DataGrid, GridHeaderComponent],
+  imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Tags"
         description="Manage custom categorization tags used across people, households."
-      ></pc-grid-header>
-
-      <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-label"></pc-datagrid>
+        [colDefs]="col"
+        [disableDelete]="false"
+        addRoute="add"
+        plusIcon="add-label"
+      ></pc-datagrid>
     </div>
   `,
   providers: [

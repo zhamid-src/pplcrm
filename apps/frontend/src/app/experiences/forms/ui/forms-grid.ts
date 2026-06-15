@@ -2,22 +2,17 @@ import { Component } from '@angular/core';
 import { AddWebFormType } from '@common';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-forms-grid',
-  imports: [DataGrid, GridHeaderComponent],
+  imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Forms"
         description="Manage public and internal web forms, configure fields, and view submission statistics."
-      ></pc-grid-header>
-
-      <pc-datagrid
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"

@@ -148,9 +148,9 @@
   @if (activeTab() === 'members') {
   <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
     @if (isPeople()) {
-    <pc-persons-grid [listId]="id()" [showHeader]="false" [showToolbar]="false"></pc-persons-grid>
+    <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
     } @else {
-    <pc-households-grid [listId]="id()" [showHeader]="false" [showToolbar]="false"></pc-households-grid>
+    <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
     }
   </div>
   }

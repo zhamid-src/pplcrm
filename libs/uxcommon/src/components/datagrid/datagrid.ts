@@ -62,6 +62,7 @@ import { FetchController } from './controllers/fetch.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { GridHeaderComponent } from '../grid-header/grid-header';
 
 @Component({
   selector: 'pc-datagrid',
@@ -74,6 +75,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
     EditableCellDirective,
     HeaderResizeDirective,
     QueryBuilderComponent,
+    GridHeaderComponent,
   ],
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',
@@ -395,13 +397,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
   public rowCanSelect = input<(row: any) => boolean>(() => true);
-  // gridOptions removed (unused)
   public limitToTags = input<string[]>([]);
   public limitToIssues = input<string[]>([]);
   public plusIcon = input<PcIconNameType>('plus');
+
   public showToolbar = input<boolean>(true);
+
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
   public listId = input<string | null>(null);
+  public title = input<string | null>(null);
+  public description = input<string | null>(null);
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
@@ -648,6 +653,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
     // Virtualizer count sync handled by controller
     // Pin offsets recompute centralized in PinningController
+
+    effect(() => {
+      const tool = this.showToolbar();
+      console.log(tool, this.showToolbar(), this.title());
+    });
   }
 
   public getCountRowSelected() {

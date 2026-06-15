@@ -1,24 +1,18 @@
 import { Component } from '@angular/core';
 import { UpdateWorkflowType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { WorkflowsService } from '../services/workflows-service';
 
 @Component({
   selector: 'pc-workflows-grid',
-  imports: [DataGrid, GridHeaderComponent],
+  imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Automated Workflows"
         description="Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list signups, or manual enrollment."
-      ></pc-grid-header>
-
-      <pc-datagrid
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"

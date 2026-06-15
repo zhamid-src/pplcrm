@@ -1,24 +1,18 @@
 import { Component } from '@angular/core';
 import { UpdateVolunteerEventType } from '@common';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 
 @Component({
   selector: 'pc-events-grid',
-  imports: [DataGrid, GridHeaderComponent],
+  imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Events"
         description="Manage volunteer shifts, schedule events, and track attendance records."
-      ></pc-grid-header>
-
-      <pc-datagrid
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
