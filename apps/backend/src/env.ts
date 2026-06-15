@@ -13,6 +13,7 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === 'true'),
   API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
   SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
   MS_CLIENT_ID: z.string().optional(),
   MS_CLIENT_SECRET: z.string().optional(),
@@ -47,6 +48,7 @@ export const env = {
     ssl: parsedEnv.DB_SSL,
   },
   apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,

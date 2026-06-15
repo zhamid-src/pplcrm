@@ -192,13 +192,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           to: email,
           tenant_id: auth.tenant_id,
           subject: `You've been invited to join ${auth.name} on CampaignRaven`,
-          text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: http://localhost:4200/new-password?code=${code}`,
+          text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}`,
           html: `<h2>You've Been Invited!</h2>
 <p>Hi ${input.first_name},</p>
 <p>You have been invited to join the campaign team by <strong>${auth.name}</strong>.</p>
 <p>To join the team, activate your account, and set up your password, click the button below:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Activate Account</a>
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Activate Account</a>
 </div>
 <p>Your temporary password is: <code>${tempPassword}</code></p>
 <p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
@@ -402,11 +402,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
             subject: 'Verify Your Email - CampaignRaven',
-            text: `Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${code}`,
+            text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
             html: `<h2>Verify Your Email</h2>
 <p>To verify your email address and activate your login, please click the button below:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/verify-email?code=${code}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
 </div>
 <p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
           },
@@ -436,11 +436,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
             subject: 'Reset Your Password',
-            text: `Hey there, please click this link to reset your password: http://localhost:4200/new-password?code=${code}`,
+            text: `Hey there, please click this link to reset your password: ${env.appUrl}/new-password?code=${code}`,
             html: `<h2>Reset Your Password</h2>
 <p>We received a request to reset the password for your CampaignRaven account. Click the button below to choose a new password:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Reset Password</a>
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
 </div>
 <p>If you did not request a password reset, no further action is required.</p>
 <p class="warning">This reset link is single-use and will expire in 15 minutes.</p>`,
@@ -695,13 +695,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: authUser.email,
             tenant_id: auth.tenant_id,
             subject: 'Password Reset Request',
-            text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\nhttp://localhost:4200/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
+            text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
             html: `<h2>Password Reset Request</h2>
 <p>Hi ${authUser.first_name},</p>
 <p>An administrator has initiated a password reset for your account.</p>
 <p>Please click the button below to reset your password and select a new one:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/new-password?code=${code}" class="btn">Reset Password</a>
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
 </div>
 <p class="warning">For security reasons, this reset link is single-use and will expire in 15 minutes.</p>`,
           },
@@ -894,11 +894,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: email,
             tenant_id,
             subject: 'Welcome to CampaignRaven - Verify Your Email',
-            text: `Welcome to CampaignRaven! Please verify your email by clicking this link: http://localhost:4200/verify-email?code=${verificationCode}`,
+            text: `Welcome to CampaignRaven! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
             html: `<h2>Verify Your Email</h2>
 <p>Welcome to CampaignRaven! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
 </div>
 <p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
           },
@@ -1023,11 +1023,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
                 to: nextEmail,
                 tenant_id: auth.tenant_id,
                 subject: 'Verify Your New Email Address - CampaignRaven',
-                text: `Please verify your new email address by clicking this link: http://localhost:4200/verify-email?code=${code}`,
+                text: `Please verify your new email address by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
                 html: `<h2>Verify Your New Email</h2>
 <p>Please verify your new email address to complete the update and activate your login:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/verify-email?code=${code}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
 </div>
 <p class="warning">This verification link will expire in 24 hours.</p>`,
               },

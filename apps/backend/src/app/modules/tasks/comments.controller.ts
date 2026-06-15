@@ -1,3 +1,4 @@
+import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import { Transaction } from 'kysely';
 import type { OperationDataType, Models } from 'common/src/lib/kysely.models';
@@ -29,7 +30,7 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
         }, trx);
       }
 
-      const commentLink = `http://localhost:4200/tasks/${row.task_id}`;
+      const commentLink = `${env.appUrl}/tasks/${row.task_id}`;
       processMentions(
         this.getRepo().db,
         String(row.tenant_id),

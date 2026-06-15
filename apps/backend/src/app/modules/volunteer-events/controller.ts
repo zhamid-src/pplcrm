@@ -31,10 +31,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
    * Create a new volunteer event.
    */
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const existing = await this.getRepo()
       .db.selectFrom('volunteer_events')
       .select('id')
+      .where('tenant_id', '=', auth.tenant_id as any)
       .where('slug', '=', payload.slug)
       .executeTakeFirst();
     if (existing) {
@@ -70,7 +70,11 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
    */
   public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
     if (!slug) return { unique: true };
-    let query = this.getRepo().db.selectFrom('volunteer_events').select('id').where('slug', '=', slug);
+    let query = this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', _auth.tenant_id as any)
+      .where('slug', '=', slug);
     if (excludeId) {
       query = query.where('id', '!=', excludeId as any);
     }
@@ -83,10 +87,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
    */
   public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
     if (payload.slug) {
-      // eslint-disable-next-line local/no-unscoped-db-query
       const existing = await this.getRepo()
         .db.selectFrom('volunteer_events')
         .select('id')
+        .where('tenant_id', '=', auth.tenant_id as any)
         .where('slug', '=', payload.slug)
         .where('id', '!=', id as any)
         .executeTakeFirst();

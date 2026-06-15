@@ -138,7 +138,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       purpose: 'verify-sender-email',
     });
 
-    const verificationLink = `http://localhost:4200/verify-sender-email?token=${token}`;
+    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
 
     await this.mailService.enqueueMail({
       to: normalized,
@@ -260,7 +260,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 <p>The organization <strong>${tenant.name}</strong> (Tenant ID: ${auth.tenant_id}) has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
 <p>All data including campaigns, contacts, lists, workflows, and user accounts under this tenant will be permanently deleted. If you did not make this request or wish to cancel it, please click the button below to cancel the deletion:</p>
 <div class="btn-container">
-  <a href="http://localhost:4200/settings" class="btn">Manage Organization Settings</a>
+  <a href="${env.appUrl}/settings" class="btn">Manage Organization Settings</a>
 </div>
 <p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
       });

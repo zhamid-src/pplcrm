@@ -1,3 +1,4 @@
+import { env } from '../../../env';
 import { getAllEmailFolders } from '../../config/email-folders.config';
 import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
 import { EmailAttachmentsRepo } from './repositories/email-attachments.repo';
@@ -43,7 +44,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       });
       if (!row) throw new InternalError('Failed to add comment');
       
-      const commentLink = `http://localhost:4200/emails/${email_id}`;
+      const commentLink = `${env.appUrl}/emails/${email_id}`;
       processMentions(
         this.commentsRepo.db,
         tenant_id,

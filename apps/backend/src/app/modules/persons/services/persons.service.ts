@@ -1,3 +1,4 @@
+import { env } from '../../../../env';
 import { IAuthKeyPayload, UpdatePersonsType } from '@common';
 import { TRPCError } from '@trpc/server';
 
@@ -112,7 +113,7 @@ export class PersonsService {
               const createdPerson = result as any;
               const personName =
                 `${createdPerson.first_name || ''} ${createdPerson.last_name || ''}`.trim() || 'unnamed contact';
-              const link = `http://localhost:4200/persons/${createdPerson.id}`;
+              const link = `${env.appUrl}/persons/${createdPerson.id}`;
               const mailService = new TransactionalEmailService();
               await mailService.sendMail({
                 to: assignee.email,
@@ -199,7 +200,7 @@ export class PersonsService {
               if (optedIn) {
                 const personName =
                   `${updatedPerson.first_name || ''} ${updatedPerson.last_name || ''}`.trim() || 'unnamed contact';
-                const link = `http://localhost:4200/persons/${updatedPerson.id}`;
+                const link = `${env.appUrl}/persons/${updatedPerson.id}`;
                 const mailService = new TransactionalEmailService();
                 await mailService.sendMail({
                   to: assignee.email,
