@@ -4,24 +4,18 @@ import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule, GridHeaderComponent],
+  imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Tasks"
         description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-      ></pc-grid-header>
-
-      <pc-datagrid
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"

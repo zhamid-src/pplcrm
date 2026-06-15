@@ -1,16 +1,10 @@
 <!-- Template for persons grid -->
 <div class="flex flex-col gap-6">
-  <!-- Title Header -->
-  @if (showHeader()) {
-  <pc-grid-header
+  <pc-datagrid
+    [showToolbar]="!inline()"
     [title]="limitTags.includes('volunteer') ? 'Volunteers' : 'People'"
     [description]="limitTags.includes('volunteer') ? 'Manage volunteer records, track signups, and coordinate volunteer tags.' : 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.'"
-  ></pc-grid-header>
-  }
-
-  <pc-datagrid
     [listId]="listId()"
-    [showToolbar]="showToolbar()"
     [colDefs]="col"
     [disableDelete]="false"
     [confirmDeleteOverride]="onConfirmDeleteBind"

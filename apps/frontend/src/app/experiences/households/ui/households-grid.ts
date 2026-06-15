@@ -8,7 +8,6 @@ import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -23,20 +22,14 @@ interface ParamsType {
 
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule, GridHeaderComponent],
+  imports: [DataGrid, CsvImportComponent, FormsModule],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      @if (showHeader()) {
-        <pc-grid-header
-          title="Households"
-          description="Manage household groups, track shared addresses, and organize family relationships."
-        ></pc-grid-header>
-      }
-
       <pc-datagrid
+        [showToolbar]="!inline()"
+        title="Households"
+        description="Manage household groups, track shared addresses, and organize family relationships."
         [listId]="listId()"
-        [showToolbar]="showToolbar()"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -93,6 +86,8 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
   private issueOptionValues: string[] = [];
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
   public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
 
   protected readonly mappableFields: string[] = [
     'street_num',

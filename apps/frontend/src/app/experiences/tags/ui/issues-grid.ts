@@ -5,9 +5,7 @@ import { Component, inject } from '@angular/core';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import type { getAllOptionsType } from '@common';
-
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
 
@@ -28,30 +26,19 @@ class IssuesService extends TagsService {
   }
 }
 
-/**
- * `IssuesGridComponent` displays a data grid of issues with editable fields.
- *
- * Issues are tags with `type = 'issue'`. This grid filters by that type so only
- * issue-typed tags are shown.
- *
- * ## Columns
- * - `name`: Issue name (editable)
- * - `description`: Issue description (editable)
- * - `use_count_people`: Number of people with this issue (read-only)
- * - `use_count_households`: Number of households with this issue (read-only)
- */
 @Component({
   selector: 'pc-issues-grid',
-  imports: [DataGrid, GridHeaderComponent],
+  imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
-      <!-- Title Header -->
-      <pc-grid-header
+      <pc-datagrid
         title="Issues"
         description="Manage political or support issues to track contact stances and interests."
-      ></pc-grid-header>
-
-      <pc-datagrid [colDefs]="col" [disableDelete]="false" addRoute="add" plusIcon="add-issue"></pc-datagrid>
+        [colDefs]="col"
+        [disableDelete]="false"
+        addRoute="add"
+        plusIcon="add-issue"
+      ></pc-datagrid>
     </div>
   `,
   providers: [

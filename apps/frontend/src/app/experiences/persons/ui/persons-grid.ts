@@ -13,7 +13,6 @@ import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
 import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
 
@@ -25,49 +24,9 @@ interface ParamsType {
   value: string[];
 }
 
-/**
- * Advanced data grid component for comprehensive person record management.
- *
- * This component extends the base DataGrid to provide specialized functionality for
- * managing person records within the CRM system. It offers a rich set of features
- * including inline editing, tag management, and address handling with confirmation workflows.
- *
- * **Key Features:**
- * - **High-Performance Grid**: Efficient rendering for large datasets
- * - **Inline Editing**: Direct editing of person fields (name, email, mobile)
- * - **Tag Management**: Visual tag display and management with custom renderer
- * - **Address Integration**: Address fields with confirmation dialogs for changes
- * - **Advanced Filtering**: Tag-based filtering and column-specific filters
- * - **Responsive Design**: Optimized for various screen sizes
- * - **Smart Interactions**: Double-click editing with context-aware confirmations
- *
- * **Column Types:**
- * - **Editable Fields**: first_name, last_name, email, mobile (direct editing)
- * - **Address Fields**: street_num, apt, street1, street2, city (confirmation required)
- * - **Tags Column**: Custom renderer with filtering and management capabilities
- * - **Read-only Fields**: home_phone and other computed/derived fields
- *
- * **Address Confirmation Workflow:**
- * When users attempt to edit address fields, a confirmation dialog appears because
- * address changes affect the entire household, not just the individual person.
- *
- * @example
- * ```html
- * <!-- Basic usage -->
- * <pc-persons-grid></pc-persons-grid>
- *
- * <!-- With tag filtering -->
- * <pc-persons-grid [limitTags]="['VIP', 'Active']"></pc-persons-grid>
- * ```
- *
- * @extends DataGrid<DATA_TYPE, UpdatePersonsType>
- * @see {@link DataGrid} for base grid functionality
- * @see tag valueFormatter in column defs for tag display
- * @see {@link PersonsService} for data operations
- */
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent, GridHeaderComponent],
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
   templateUrl: './persons-grid.html',
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
@@ -79,6 +38,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
 
   /**
    * Stores the household ID when a user tries to change an address,
@@ -249,7 +210,6 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   protected importSummary = signal<CsvImportSummary | null>(null);
 
   public override listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
 
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
@@ -285,6 +245,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     super();
     const route = inject(ActivatedRoute);
     this.limitTags = route.snapshot.data['tags'] ?? [];
+    console.log(this.showToolbar());
   }
 
   protected getPlusIcon(): PcIconNameType {
