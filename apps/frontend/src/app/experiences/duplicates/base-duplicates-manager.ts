@@ -97,8 +97,8 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
       title: 'Confirm Merge',
       text: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
       type: 'warning',
-      OKBtn: 'Merge',
       btn2: 'Cancel',
+      duration: 0,
       OKBtnCallback: async () => {
         try {
           await this.mergeInService(targetId, sourceId);

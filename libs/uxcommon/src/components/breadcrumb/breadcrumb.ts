@@ -101,7 +101,7 @@ export class Breadcrumb {
 
   protected getIcon() {
     if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
-    return 'bookmark';
+    else return this.hovered() ? 'bookmark-plus' : 'bookmark';
   }
 
   private handleNavigationChange(url: string) {

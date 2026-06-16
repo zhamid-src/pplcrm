@@ -75,6 +75,7 @@ export const icons = {
   'bars-4': 'assets/icons/bars-4.svg',
   bell: 'assets/icons/bell.svg',
   bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
   'bookmark-filled': 'assets/icons/bookmark-filled.svg',
   'bookmark-slash': 'assets/icons/bookmark-slash.svg',
   briefcase: 'assets/icons/briefcase.svg',
