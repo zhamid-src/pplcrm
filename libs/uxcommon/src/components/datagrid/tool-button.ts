@@ -15,7 +15,7 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.cursor-not-allowed]="!enabled() || spinning()"
       [class.text-neutral-400]="!enabled() || spinning()"
       [class.opacity-50]="spinning()"
-      class="tooltip tooltip-accent [&:not(.disabled)]:hover:text-primary"
+      class="tooltip tooltip-accent "
       [class.text-primary]="active()"
       [attr.data-tip]="tip()"
       (click)="onLiClick($event)"
@@ -41,7 +41,13 @@ import { PcIconNameType } from '@icons/icons.index';
           <ng-content></ng-content>
         </details>
       } @else {
-        <a><pc-icon [name]="icon()" [class]="spinning() ? 'animate-spin inline-block' : ''"></pc-icon></a>
+        <a
+          ><pc-icon
+            [name]="icon()"
+            class="group-hover:text-primary"
+            [class]="spinning() ? 'animate-spin inline-block' : ''"
+          ></pc-icon
+        ></a>
       }
     </li>
   `,
