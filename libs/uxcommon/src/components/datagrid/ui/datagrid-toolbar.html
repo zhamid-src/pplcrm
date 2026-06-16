@@ -1,4 +1,4 @@
-<ul class="menu menu-horizontal flex flex-row pt-0 relative z-30">
+<ul class="menu menu-horizontal flex flex-row pl-0 relative z-30">
   <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
   <pc-grid-tool-btn
     [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
@@ -8,7 +8,23 @@
     (action)="onClone()"
   />
 
-  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Deleted selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+
+  @if (!grid.disableMerge()) {
+  <pc-grid-tool-btn
+    [enabled]="grid.getCountRowSelected() === 2"
+    [tip]="'Merge selected rows'"
+    icon="merge"
+    (action)="onMergeSelected()"
+  />
+  }
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn
     [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
@@ -20,16 +36,7 @@
   <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
   <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
-  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Deleted selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-
-  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn
     [enabled]="!grid.disableImport()"
@@ -45,10 +52,10 @@
     (action)="onExportCsv()"
   />
 
-  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
-
   <!-- Tag Filter Dropdown -->
   @if (grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
   <pc-grid-tool-btn
     [icon]="'tag'"
     [tip]="'Filter by Tags'"
@@ -235,13 +242,13 @@
   <pc-grid-tool-btn
     icon="adjustments-horizontal"
     tip="Advanced Query Builder"
-    [hidden]="grid.disableAdvancedFilter()"
+    [hidden]="!grid.allowFilter()"
     [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
     [enabled]="!grid.hasActiveFilters()"
     (action)="grid.openAdvancedFilterBuilder()"
   />
 
-  <li class="w-px h-6 bg-base-300 self-center mx-1.5"></li>
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">

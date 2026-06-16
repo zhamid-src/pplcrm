@@ -18,6 +18,7 @@ import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.to
         description="Manage custom categorization tags used across people, households."
         [colDefs]="col"
         [disableDelete]="false"
+        [allowFilter]="false"
         addRoute="add"
         plusIcon="add-label"
       ></pc-datagrid>

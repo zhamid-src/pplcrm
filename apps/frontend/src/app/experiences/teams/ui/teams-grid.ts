@@ -18,6 +18,7 @@ import { TeamsService } from '../services/teams-service';
         [disableView]="false"
         [disableExport]="true"
         [disableImport]="true"
+        [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-group"
       ></pc-datagrid>

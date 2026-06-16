@@ -389,7 +389,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public allowFilter = input<boolean>(true);
   public colDefs = input<ColDef[]>([]);
   public disableDelete = input<boolean>(true);
-  public disableAdvancedFilter = input<boolean>(false);
+  public disableMerge = input<boolean>(true);
   public disableExport = input<boolean>(false);
   public confirmDeleteOverride = input<((selected: any[]) => Promise<boolean | void>) | null>(null);
   public disableImport = input<boolean>(false);
@@ -979,6 +979,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.editingCell.set(null);
   }
 
+  protected async confirmMerge() {
+    const selectedRows = this.getSelectedRows();
+    console.log('selectedRows', selectedRows);
+  }
+
   /** Confirm and then delete selected rows */
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean | void> {
     if (this.disableDelete()) {
@@ -1015,6 +1020,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     void this.confirmDelete();
   }
 
+  public doConfirmMerge() {
+    void this.confirmMerge();
+  }
   /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
     await this.actionsSvc.doExportCsv({

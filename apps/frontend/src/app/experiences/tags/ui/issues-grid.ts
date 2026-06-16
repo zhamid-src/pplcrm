@@ -36,6 +36,7 @@ class IssuesService extends TagsService {
         description="Manage political or support issues to track contact stances and interests."
         [colDefs]="col"
         [disableDelete]="false"
+        [allowFilter]="false"
         addRoute="add"
         plusIcon="add-issue"
       ></pc-datagrid>

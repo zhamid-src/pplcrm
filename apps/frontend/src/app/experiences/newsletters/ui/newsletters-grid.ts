@@ -20,6 +20,7 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
         [disableView]="false"
         [disableImport]="true"
         [disableExport]="false"
+        [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-newsletter"
       ></pc-datagrid>

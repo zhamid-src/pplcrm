@@ -19,6 +19,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
         [disableView]="false"
         [disableExport]="true"
         [disableImport]="true"
+        [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-users"
       ></pc-datagrid>
