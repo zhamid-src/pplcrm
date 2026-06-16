@@ -22,7 +22,6 @@ import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.to
         [disableDelete]="false"
         [disableView]="false"
         [allowFilter]="false"
-        [disableAdvancedFilter]="true"
         plusIcon="add-list"
         addRoute="add"
       ></pc-datagrid>

@@ -1,10 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
 import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
 
 @Component({
   selector: 'pc-dg-toolbar',
-  imports: [GridActionComponent],
+  imports: [GridActionComponent, Icon],
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
@@ -16,6 +17,10 @@ export class DataGridToolbarComponent {
 
   public onClone() {
     this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
   }
 
   public onDeleteSelected() {

@@ -6,7 +6,6 @@ import { PcIconNameType } from '@icons/icons.index';
   selector: 'pc-grid-tool-btn',
   template: `
     <li
-      class="tooltip tooltip-accent"
       [class.tooltip-left]="placement() === 'left'"
       [class.tooltip-right]="placement() === 'right'"
       [class.tooltip-top]="placement() === 'top'"
@@ -16,16 +15,21 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.cursor-not-allowed]="!enabled() || spinning()"
       [class.text-neutral-400]="!enabled() || spinning()"
       [class.opacity-50]="spinning()"
+      class="tooltip tooltip-accent [&:not(.disabled)]:hover:text-primary"
       [class.text-primary]="active()"
       [attr.data-tip]="tip()"
       (click)="onLiClick($event)"
     >
       @if (hasDropdown()) {
-        <details class="dropdown" [class.dropdown-end]="dropdownEnd()">
+        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
           <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
-            <div class="flex items-center justify-center">
-              <a role="button" class="relative pointer-events-none">
-                <pc-icon [name]="icon()" [class]="spinning() ? 'animate-spin inline-block' : ''"></pc-icon>
+            <div class="flex items-center justify-center ">
+              <a role="button" class="relative pointer-events-none ">
+                <pc-icon
+                  [name]="icon()"
+                  class="group-hover:text-primary"
+                  [class]="spinning() ? 'animate-spin inline-block' : ''"
+                ></pc-icon>
                 @if (badge() && badge()! > 0) {
                   <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
                     {{ badge() }}

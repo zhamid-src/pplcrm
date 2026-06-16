@@ -18,6 +18,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
         [disableView]="false"
         [disableExport]="true"
         [disableImport]="true"
+        [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-schedule"
         [showArchiveIcon]="true"

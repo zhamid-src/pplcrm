@@ -15,6 +15,7 @@ import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.to
         description="Manage public and internal web forms, configure fields, and view submission statistics."
         [colDefs]="col"
         [disableDelete]="false"
+        [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
         plusIcon="add-form"

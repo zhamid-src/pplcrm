@@ -32,6 +32,7 @@ interface ParamsType {
         [listId]="listId()"
         [colDefs]="col"
         [disableDelete]="false"
+        [disableMerge]="false"
         [disableView]="false"
         [disableImport]="false"
         [confirmDeleteOverride]="onConfirmDeleteBind"

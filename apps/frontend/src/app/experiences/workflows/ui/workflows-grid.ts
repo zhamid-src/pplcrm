@@ -19,6 +19,7 @@ import { WorkflowsService } from '../services/workflows-service';
         [disableImport]="true"
         [disableExport]="true"
         [addRoute]="'add'"
+        [allowFilter]="false"
         plusIcon="plus"
       ></pc-datagrid>
     </div>
