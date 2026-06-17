@@ -1,4 +1,4 @@
-import { computed, inject, signal, Service, debounced, effect } from '@angular/core';
+import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmailStatus } from '@common';
@@ -82,19 +82,20 @@ export class EmailsStore {
   private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
 
   constructor() {
-    // Set up an effect that automatically reacts when the debounced ID settles
     effect(() => {
-      // Because debounced() returns a Resource, we read it via .value()
+      // The effect tracks this because it's OUTSIDE untracked()
       const targetId = this.debouncedSelectedEmailId.value();
 
       if (targetId) {
-        // Look up the email directly from state
-        const emailObj = this.state.readEmail(targetId);
+        // Run the email lookup and update INSIDE untracked()
+        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
+        untracked(() => {
+          const emailObj = this.state.readEmail(targetId);
 
-        // If it exists and is unread, mark it as read
-        if (emailObj && !emailObj.is_read) {
-          void this.actions.toggleEmailReadStatus(targetId, true);
-        }
+          if (emailObj && !emailObj.is_read) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+        });
       }
     });
   }
