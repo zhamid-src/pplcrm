@@ -18,3 +18,4 @@ vitest.config.*.timestamp*
 test-results/*
 repomix-output.xml
 apps/.DS_Store
+apps/.DS_Store

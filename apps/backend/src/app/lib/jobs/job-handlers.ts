@@ -1009,11 +1009,29 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const exportId = String(payload.export_id);
     const tenantId = String(payload.tenant_id);
     try {
+      // Make sure we're exporting one of the allowed tables
+      const table = String(payload.table || payload.entity);
+      const ALLOWED_EXPORT_TABLES = [
+        'persons',
+        'households',
+        'companies',
+        'forms',
+        'workflows',
+        'teams',
+        'events',
+        'newsletters',
+        'tasks',
+        'tags',
+        'issues',
+        'users',
+      ];
+      if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
+
       // Mark as processing
       await exportsRepo.updateStatus(exportId, tenantId, 'processing');
 
       // Fetch all rows for the entity
-      const table = String(payload.table || payload.entity);
+
       let query = db
         .selectFrom(table as any)
         .selectAll()
