@@ -1,4 +1,4 @@
-import { computed, inject, signal, Service } from '@angular/core';
+import { computed, inject, signal, Service, debounced, effect } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmailStatus } from '@common';
@@ -79,6 +79,26 @@ export class EmailsStore {
   /** Whether the email body is expanded to fill the window */
   public readonly isBodyExpanded = this.state.isBodyExpanded;
 
+  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
+
+  constructor() {
+    // Set up an effect that automatically reacts when the debounced ID settles
+    effect(() => {
+      // Because debounced() returns a Resource, we read it via .value()
+      const targetId = this.debouncedSelectedEmailId.value();
+
+      if (targetId) {
+        // Look up the email directly from state
+        const emailObj = this.state.readEmail(targetId);
+
+        // If it exists and is unread, mark it as read
+        if (emailObj && !emailObj.is_read) {
+          void this.actions.toggleEmailReadStatus(targetId, true);
+        }
+      }
+    });
+  }
+
   // ----------------- Mutations (actions) -----------------
   public addComment(emailId: EmailId, authorId: string, commentText: string) {
     return this.actions.addComment(emailId, authorId, commentText);
@@ -153,28 +173,8 @@ export class EmailsStore {
     return this.actions.restoreFromTrash(emailId);
   }
 
-  // ----------------- Read/selection helpers -----------------
-  private readTimer?: any;
-
   public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    if (this.readTimer) {
-      clearTimeout(this.readTimer);
-      this.readTimer = undefined;
-    }
-
     this.state.selectEmail(email);
-    if (email) {
-      const emailObj = this.state.readEmail(String(email.id));
-      if (emailObj && !emailObj.is_read) {
-        const targetId = email.id;
-        this.readTimer = setTimeout(() => {
-          if (this.currentSelectedEmailId() === String(targetId)) {
-            void this.actions.toggleEmailReadStatus(targetId, true);
-          }
-          this.readTimer = undefined;
-        }, 1000);
-      }
-    }
   }
 
   public selectFolder(folder: EmailFolderType | null): void {
