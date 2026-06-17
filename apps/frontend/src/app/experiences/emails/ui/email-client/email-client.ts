@@ -11,6 +11,7 @@ import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
 import { ALL_FOLDERS } from 'common/src/lib/emails';
 import type { EmailFolderType, EmailType } from 'common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
   selector: 'pc-email-client',
@@ -23,6 +24,8 @@ import type { EmailFolderType, EmailType } from 'common/src/lib/models';
 })
 export class EmailClient {
   private readonly composer = viewChild<ComposeEmailComponent>('composer');
+
+  private authService = inject(AuthService);
 
   /** App-level email store */
   protected readonly store = inject(EmailsStore);
@@ -169,13 +172,26 @@ export class EmailClient {
     this.openCompose({ to: email.from_email || '', subject });
   }
 
-  public onReplyAll(email: EmailType) {
+  public async onReplyAll(email: EmailType) {
     const header = this.store.getEmailHeaderById(email.id)();
     const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
     if (email.from_email) recipients.add(email.from_email);
-    header?.email?.to_list?.forEach((r: any) => recipients.add(r.email));
-    header?.email?.cc_list?.forEach((r: any) => recipients.add(r.email));
-    const to = Array.from(recipients).join(', ');
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
     const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
     this.openCompose({ to, subject });
   }
