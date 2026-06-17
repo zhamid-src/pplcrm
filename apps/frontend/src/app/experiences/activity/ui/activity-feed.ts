@@ -59,6 +59,7 @@ export class ActivityFeed implements OnInit {
 
   protected readonly currentOffset = linkedSignal({
     source: () => ({
+      source: this.filterState,
       user: this.selectedUser(),
       entity: this.selectedEntity(),
       activity: this.selectedActivity(),
