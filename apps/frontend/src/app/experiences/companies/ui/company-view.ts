@@ -37,9 +37,7 @@ export class CompanyView {
   private readonly usersResource = resource({
     loader: () => this.auth.getUsers(),
   });
-  private readonly usersById = computed(
-    () => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])),
-  );
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Active tab state
   protected activeTab = signal<'activity' | 'employees' | 'details'>('activity');
@@ -58,7 +56,14 @@ export class CompanyView {
   protected readonly isEnriched = computed(() => {
     const rawJson = this.company()?.json;
     if (!rawJson) return false;
-    const json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+
+    let json = null;
+
+    try {
+      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    } catch {
+      return false;
+    }
     return !!json.google_enriched;
   });
 
