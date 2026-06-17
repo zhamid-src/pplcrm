@@ -35,7 +35,6 @@ export class ActivityFeed implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
 
   private readonly pageSize = 25;
-  private searchTimeout: any;
 
   private readonly refreshTrigger = signal(0);
 
@@ -43,7 +42,6 @@ export class ActivityFeed implements OnInit {
     user: this.selectedUser(),
     entity: this.selectedEntity(),
     activity: this.selectedActivity(),
-    search: this.searchStr(),
     refresh: this.refreshTrigger(),
   }));
 
@@ -63,7 +61,6 @@ export class ActivityFeed implements OnInit {
       user: this.selectedUser(),
       entity: this.selectedEntity(),
       activity: this.selectedActivity(),
-      search: this.searchStr(),
       refresh: this.refreshTrigger(),
     }),
     computation: () => 0,
@@ -75,7 +72,6 @@ export class ActivityFeed implements OnInit {
       user: this.selectedUser(),
       entity: this.selectedEntity(),
       activity: this.selectedActivity(),
-      search: this.searchStr(),
     }),
     loader: async ({ params }) => {
       return (await this.activitySvc.getFeed({
@@ -84,7 +80,6 @@ export class ActivityFeed implements OnInit {
         userId: params.user || undefined,
         entity: params.entity || undefined,
         activity: params.activity || undefined,
-        searchStr: params.search || undefined,
       })) as any;
     },
   });
@@ -146,7 +141,6 @@ export class ActivityFeed implements OnInit {
           userId: this.selectedUser() || undefined,
           entity: this.selectedEntity() || undefined,
           activity: this.selectedActivity() || undefined,
-          searchStr: this.searchStr() || undefined,
         },
         fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
       });
@@ -494,26 +488,14 @@ export class ActivityFeed implements OnInit {
     this.refreshFeed();
   }
 
-  protected onSearch(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.searchStr.set(val);
-    if (this.searchTimeout) {
-      clearTimeout(this.searchTimeout);
-    }
-    this.searchTimeout = setTimeout(() => {
-      this.refreshFeed();
-    }, 300);
-  }
-
   protected hasActiveFilters(): boolean {
-    return !!(this.selectedUser() || this.selectedEntity() || this.selectedActivity() || this.searchStr());
+    return !!(this.selectedUser() || this.selectedEntity() || this.selectedActivity());
   }
 
   protected clearFilters() {
     this.selectedUser.set('');
     this.selectedEntity.set('');
     this.selectedActivity.set('');
-    this.searchStr.set('');
     this.refreshFeed();
   }
 }
