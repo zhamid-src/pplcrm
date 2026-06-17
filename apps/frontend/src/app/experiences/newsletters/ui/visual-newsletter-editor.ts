@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, model, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
@@ -28,11 +28,8 @@ import {
   ],
 })
 export class VisualNewsletterEditorComponent implements OnInit {
-  public readonly htmlContent = input<string>('');
-  public readonly plainTextContent = input<string>('');
-
-  public readonly htmlContentChange = output<string>();
-  public readonly plainTextContentChange = output<string>();
+  public readonly htmlContent = model<string>('');
+  public readonly plainTextContent = model<string>('');
 
   protected readonly blocks = signal<EmailBlock[]>([]);
   protected readonly selectedBlockId = signal<string | null>(null);
@@ -285,13 +282,13 @@ export class VisualNewsletterEditorComponent implements OnInit {
   }
 
   protected handleRawHtmlEdit(html: string): void {
-    this.htmlContentChange.emit(html);
+    this.htmlContent.set(html);
     // Simple text version conversion from html tags
     const text = html
       .replace(/<[^>]*>/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-    this.plainTextContentChange.emit(text);
+    this.plainTextContent.set(text);
   }
 
   protected loadTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty', triggerPropagate = true): void {
@@ -309,7 +306,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     const html = this.compiledHtml();
     const text = compileBlocksToPlainText(this.blocks());
 
-    this.htmlContentChange.emit(html);
-    this.plainTextContentChange.emit(text);
+    this.htmlContent.set(html);
+    this.plainTextContent.set(text);
   }
 }
