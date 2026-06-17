@@ -69,14 +69,22 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
   public selectRole(groupIndex: number, itemId: string, role: 'target' | 'source') {
     this.groups.update((current) => {
       const updated = [...current];
-      const group = updated[groupIndex];
+
+      // 1. Create a shallow copy of the group to avoid mutating the original reference
+      const updatedGroup = { ...updated[groupIndex] };
+
+      // 2. Apply your logic to the NEW object
       if (role === 'target') {
-        group.selectedTargetId = itemId;
-        if (group.selectedSourceId === itemId) group.selectedSourceId = undefined;
+        updatedGroup.selectedTargetId = itemId;
+        if (updatedGroup.selectedSourceId === itemId) updatedGroup.selectedSourceId = undefined;
       } else {
-        group.selectedSourceId = itemId;
-        if (group.selectedTargetId === itemId) group.selectedTargetId = undefined;
+        updatedGroup.selectedSourceId = itemId;
+        if (updatedGroup.selectedTargetId === itemId) updatedGroup.selectedTargetId = undefined;
       }
+
+      // 3. Assign the new object back to the array
+      updated[groupIndex] = updatedGroup;
+
       return updated;
     });
   }
