@@ -136,6 +136,10 @@ export class EmailClient {
         }
       } catch (e) {
         console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
       }
       this.closeCompose();
     }
