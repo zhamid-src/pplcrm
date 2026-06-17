@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect, untracked } from '@angular/core';
+import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
@@ -26,9 +26,7 @@ export class ActivityFeed implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly authSvc = inject(AuthService);
 
-  protected readonly activities = signal<any[]>([]);
   protected readonly isLoadingExport = signal(false);
-  protected readonly hasMore = signal(false);
 
   protected readonly selectedUser = signal<string>('');
   protected readonly selectedEntity = signal<string>('');
@@ -40,6 +38,24 @@ export class ActivityFeed implements OnInit {
   private searchTimeout: any;
 
   private readonly refreshTrigger = signal(0);
+
+  protected readonly filterState = computed(() => ({
+    user: this.selectedUser(),
+    entity: this.selectedEntity(),
+    activity: this.selectedActivity(),
+    search: this.searchStr(),
+    refresh: this.refreshTrigger(),
+  }));
+
+  protected readonly activities = linkedSignal({
+    source: this.filterState,
+    computation: () => [] as any[], // Automatically resets to [] when filterState changes
+  });
+
+  protected readonly hasMore = linkedSignal({
+    source: this.filterState,
+    computation: () => false, // Automatically resets to false when filterState changes
+  });
 
   protected readonly currentOffset = linkedSignal({
     source: () => ({
@@ -75,19 +91,6 @@ export class ActivityFeed implements OnInit {
   protected readonly isLoading = computed(() => this.activitiesResource.isLoading());
 
   constructor() {
-    effect(() => {
-      // Clear activities and hasMore immediately when filters or search change
-      this.selectedUser();
-      this.selectedEntity();
-      this.selectedActivity();
-      this.searchStr();
-      this.refreshTrigger();
-      untracked(() => {
-        this.activities.set([]);
-        this.hasMore.set(false);
-      });
-    });
-
     effect(() => {
       const res = this.activitiesResource.value() as any;
       if (res) {
