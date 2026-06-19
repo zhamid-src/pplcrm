@@ -14,6 +14,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 
 @Component({
   selector: 'pc-company-view',
@@ -28,6 +29,7 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
     Tabs,
     TabPanel,
     ProfileCard,
+    DetailRow,
   ],
   templateUrl: './company-view.html',
 })

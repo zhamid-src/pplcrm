@@ -39,19 +39,15 @@
           </pc-status-badge>
 
           <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon
-                  name="check-circle"
-                  [size]="4"
-                  [class]="detail()?.verified ? 'text-success' : 'text-base-content/40'"
-                ></pc-icon>
-                <span>Verified:</span>
-              </div>
-              <pc-status-badge [type]="detail()?.verified ? 'success' : 'neutral'">
+            <pc-detail-row
+              icon="check-circle"
+              [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'"
+            >
+              <span>Verified:</span>
+              <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
                 {{ detail()?.verified ? 'Yes' : 'No' }}
               </pc-status-badge>
-            </div>
+            </pc-detail-row>
           </div>
 
           <div

@@ -22,6 +22,7 @@ export * from './components/side-drawer/side-drawer';
 export * from './components/tabs/tabs';
 export * from './components/status-badge/status-badge';
 export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
 
 // Directives
 export * from './directives/animate-if.directive';

@@ -21,6 +21,7 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 
 @Component({
   selector: 'pc-person-view',
@@ -37,6 +38,7 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
     StatusBadge,
     StatCard,
     ProfileCard,
+    DetailRow,
   ],
   templateUrl: './person-view.html',
 })

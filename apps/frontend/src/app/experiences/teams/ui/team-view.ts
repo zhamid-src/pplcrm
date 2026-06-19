@@ -14,6 +14,7 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 
 @Component({
   selector: 'pc-team-view',
@@ -28,6 +29,7 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
     TabPanel,
     StatusBadge,
     ProfileCard,
+    DetailRow,
   ],
   templateUrl: './team-view.html',
 })

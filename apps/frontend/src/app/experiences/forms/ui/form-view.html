@@ -44,27 +44,20 @@
             @if (formRecord().description) {
             <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
             } @if (formRecord().redirect_url) {
-            <div class="flex items-center gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <pc-icon name="arrow-top-right-on-square" [size]="4" class="text-indigo-500 shrink-0"></pc-icon>
+            <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
               <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
-            </div>
+            </pc-detail-row>
             }
 
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="envelope" [size]="4" class="text-teal-500"></pc-icon>
-                <span>Send Confirmation:</span>
-              </div>
-              <span class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
-            </div>
+            <pc-detail-row icon="envelope" iconClass="text-teal-500">
+              <span>Send Confirmation:</span>
+              <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
+            </pc-detail-row>
 
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="bell" [size]="4" class="text-purple-500"></pc-icon>
-                <span>Send Admin Alert:</span>
-              </div>
-              <span class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
-            </div>
+            <pc-detail-row icon="bell" iconClass="text-purple-500">
+              <span>Send Admin Alert:</span>
+              <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
+            </pc-detail-row>
           </div>
 
           <!-- System Metadata -->

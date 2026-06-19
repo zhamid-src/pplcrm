@@ -39,54 +39,37 @@
           <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
             <!-- Website -->
             @if (company().website) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
-            >
-              <div class="flex items-center gap-2 overflow-hidden">
-                <pc-icon name="globe-americas" [size]="4" class="text-indigo-500 flex-shrink-0"></pc-icon>
-                <a [href]="company().website" target="_blank" class="truncate font-medium text-primary hover:underline">
-                  {{ company().website }}
-                </a>
-              </div>
-            </div>
+            <pc-detail-row icon="globe-americas" iconClass="text-indigo-500">
+              <a [href]="company().website" target="_blank" class="truncate font-medium text-primary hover:underline">
+                {{ company().website }}
+              </a>
+            </pc-detail-row>
             }
 
             <!-- Email -->
             @if (company().email) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="envelope"
+              iconClass="text-teal-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Email"
+              (actionClick)="copyToClipboard(company().email, 'Email')"
             >
-              <div class="flex items-center gap-2 overflow-hidden">
-                <pc-icon name="envelope" [size]="4" class="text-teal-500 flex-shrink-0"></pc-icon>
-                <span class="truncate font-medium text-base-content">{{ company().email }}</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-teal-500 tooltip"
-                data-tip="Copy Email"
-                (click)="copyToClipboard(company().email, 'Email')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="truncate font-medium text-base-content">{{ company().email }}</span>
+            </pc-detail-row>
             }
 
             <!-- Phone -->
             @if (company().phone) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="identification"
+              iconClass="text-purple-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Phone"
+              (actionClick)="copyToClipboard(company().phone, 'Phone')"
             >
-              <div class="flex items-center gap-2">
-                <pc-icon name="identification" [size]="4" class="text-purple-500"></pc-icon>
-                <span class="font-medium text-base-content">{{ company().phone }}</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-purple-500 tooltip"
-                data-tip="Copy Phone"
-                (click)="copyToClipboard(company().phone, 'Phone')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="font-medium text-base-content">{{ company().phone }}</span>
+            </pc-detail-row>
             }
           </div>
 
