@@ -23,7 +23,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
+import { QueryBuilderField, QueryBuilderComponent } from '@frontend/shared/components/query-builder/query-builder';
 import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '../../../../../../../libs/common/src';
 
 /** Grid component for filtering households when creating lists */
