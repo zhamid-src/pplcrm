@@ -1,9 +1,9 @@
 import { Component, OnInit, inject, input, output, signal } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-import { TagItem } from './tagitem';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { TagPaletteService } from './tag-palette.service';
 
 interface TagView {
@@ -130,21 +130,7 @@ export class Tags implements OnInit {
     return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
   }
 
-  constructor() {
-    /*
-    effect(() => {
-      console.log('effect: ', this.tagNames);
-      const tags = this.tagNames();
-      const added = tags.filter((tag) => !this.displayedTags.includes(tag));
-      const removed = this.displayedTags.filter((tag) => !tags.includes(tag));
-
-      added.forEach((tag) => this.add(tag));
-      removed.forEach((tag) => this.remove(tag));
-
-      this.displayedTags = tags;
-    });
-    */
-  }
+  constructor() {}
 
   /**
    * Fetch tag suggestions based on user input using the backend TagsService.

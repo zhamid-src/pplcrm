@@ -1,9 +1,9 @@
 import { Component } from '@angular/core';
 import { AddWebFormType } from '@common';
 import { FormsService } from '@experiences/forms/services/forms-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-forms-grid',

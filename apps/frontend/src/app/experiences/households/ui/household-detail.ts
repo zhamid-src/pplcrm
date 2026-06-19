@@ -9,12 +9,12 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from 'common/src/lib/kysely.models';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 

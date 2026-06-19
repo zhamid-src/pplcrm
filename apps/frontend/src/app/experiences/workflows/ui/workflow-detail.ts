@@ -8,7 +8,7 @@ import { WorkflowsService } from '../services/workflows-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TRPCClientError } from '@trpc/client';
 import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';

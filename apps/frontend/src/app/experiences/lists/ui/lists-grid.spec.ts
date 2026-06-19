@@ -2,11 +2,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ListsGridComponent } from './lists-grid';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 class MockApiService {

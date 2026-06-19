@@ -5,11 +5,12 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { IAuthUserDetail, IUserStatsSnapshot } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
 
 @Component({
   selector: 'pc-user-view',
@@ -25,6 +26,7 @@ export class UserViewComponent {
   private readonly users = inject(AuthUsersService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -34,7 +36,7 @@ export class UserViewComponent {
 
   protected readonly avatarUrl = computed(() => {
     const user = this.detail();
-    return user ? this.auth.resolveAvatarUrl(user.avatar_url) : null;
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
   });
 
   protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);

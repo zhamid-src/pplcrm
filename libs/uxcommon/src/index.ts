@@ -7,10 +7,7 @@ export * from './components/icons/icon';
 export * from './components/icons/icons.index';
 export * from './components/confirm-dialog-host';
 export * from './components/user-avatar/user-avatar';
-export * from './components/record-activities/record-activities';
-export * from './components/datagrid/datagrid';
-export * from './components/datagrid/datagrid.tokens';
-export * from './components/datagrid/types';
+export * from './components/tags/tagitem';
 
 // Directives
 export * from './directives/animate-if.directive';

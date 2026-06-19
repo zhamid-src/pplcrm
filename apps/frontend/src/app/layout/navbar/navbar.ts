@@ -10,6 +10,7 @@ import { FullScreenService } from '../../services/fullscreen.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
 import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
 import { NotificationsService } from '../../services/api/notifications-service';
 
@@ -27,6 +28,7 @@ import { NotificationsService } from '../../services/api/notifications-service';
 export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly fullscreen = inject(FullScreenService);
   private readonly searchSvc = inject(SearchService);
   private readonly sideBarSvc = inject(SidebarService);
@@ -36,7 +38,7 @@ export class Navbar implements OnDestroy {
   protected readonly currentUser = this.auth.getUserSignal();
   protected readonly currentUserAvatar = computed(() => {
     const user = this.currentUser();
-    return user ? this.auth.resolveAvatarUrl(user.avatar_url) : null;
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
   });
 
   private pollInterval?: ReturnType<typeof setInterval>;

@@ -5,7 +5,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { Breadcrumb } from '@uxcommon/components/breadcrumb/breadcrumb';
+import { Breadcrumb } from '../breadcrumb/breadcrumb';
 import { Icon } from '@icons/icon';
 import { AuthService } from '../../auth/auth-service';
 

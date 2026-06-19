@@ -7,7 +7,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
 import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
 

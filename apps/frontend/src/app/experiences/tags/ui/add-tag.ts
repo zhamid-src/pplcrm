@@ -5,7 +5,7 @@ import { TRPCClientError } from '@trpc/client';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
 /**
  * A component for adding new tags to the system.

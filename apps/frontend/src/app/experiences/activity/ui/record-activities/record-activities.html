@@ -23,7 +23,7 @@
                 >
                   <pc-icon [name]="getActivityIcon(act.activity)" [size]="2"></pc-icon>
                 </span>
-
+ 
                 <!-- Content -->
                 <div class="pl-1">
                   <p class="text-xs text-base-content/80 leading-snug">
@@ -39,7 +39,7 @@
               </li>
             }
           </ol>
-
+ 
           @if (hasMore()) {
             <div class="flex justify-center pt-2 pb-3">
               <button class="btn btn-ghost btn-xs text-primary gap-1" [disabled]="isLoadingMore()" (click)="loadMore()">
@@ -55,4 +55,3 @@
         }
       </div>
     </div>
-  

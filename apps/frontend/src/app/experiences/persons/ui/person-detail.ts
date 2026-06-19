@@ -9,7 +9,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { ColumnType } from 'kysely';
@@ -21,7 +21,7 @@ import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { AddressType, Persons } from 'common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
 /**
  * Component for displaying and editing a single person's details.

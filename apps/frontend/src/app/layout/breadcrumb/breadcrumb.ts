@@ -1,9 +1,9 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
-import { Icon } from '../icons/icon';
-import { ISidebarItem } from 'apps/frontend/src/app/layout/sidebar/sidebar-items';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { Icon } from '@icons/icon';
+import { ISidebarItem } from '../sidebar/sidebar-items';
+import { SidebarService } from '../sidebar/sidebar-service';
 
 /**
  * Breadcrumb component for displaying and navigating

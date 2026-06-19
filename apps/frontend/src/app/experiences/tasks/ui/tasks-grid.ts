@@ -3,10 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { UserService } from '@frontend/services/user.service';
 
 @Component({
   selector: 'pc-tasks-grid',
@@ -45,6 +46,7 @@ import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.to
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
   private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
   private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
@@ -285,7 +287,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     }
     let avatarUrl = this.usersAvatarById.get(v);
     if (avatarUrl) {
-      avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
           <img src="${avatarUrl}" alt="${label}" class="w-5 h-5 rounded-full object-cover" />
@@ -326,7 +328,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     const resolvedName = this.usersById.get(label) ?? label;
     let avatarUrl = this.usersAvatarById.get(label);
     if (avatarUrl) {
-      avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
           <img src="${avatarUrl}" alt="${resolvedName}" class="w-5 h-5 rounded-full object-cover" />

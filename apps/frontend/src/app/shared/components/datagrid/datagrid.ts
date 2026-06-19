@@ -20,7 +20,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { cloneQueryBuilderNode, getAllOptionsType, QueryBuilderGroupNode, QueueExportInputType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Tags } from '@experiences/tags/ui/tags';
 import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
 import { SearchService } from '@frontend/services/api/search-service';
 import { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
@@ -62,7 +62,7 @@ import { FetchController } from './controllers/fetch.controller';
 import { UndoManager } from './undo-redo-mgr';
 import { Models } from 'common/src/lib/kysely.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { GridHeaderComponent } from '../grid-header/grid-header';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 
 @Component({
   selector: 'pc-datagrid',

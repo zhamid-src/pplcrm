@@ -89,7 +89,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('@uxcommon/components/tags/add-tag').then((m) => m.AddTag),
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
       },
     ],
   },
