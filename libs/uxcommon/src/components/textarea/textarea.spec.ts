@@ -1,0 +1,46 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Textarea } from './textarea';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { By } from '@angular/platform-browser';
+import { signal } from '@angular/core';
+import { form } from '@angular/forms/signals';
+
+describe('Textarea Component', () => {
+  let component: Textarea;
+  let fixture: ComponentFixture<Textarea>;
+  let testForm: any;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [Textarea],
+    }).compileComponents();
+
+    TestBed.runInInjectionContext(() => {
+      const payload = signal({ testField: '' });
+      testForm = form(payload, () => {});
+    });
+
+    fixture = TestBed.createComponent(Textarea);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('formField', testForm.testField);
+    fixture.detectChanges();
+  });
+
+  it('should create the component', () => {
+    expect(component).toBeTruthy();
+  });
+
+  it('should render label when textarea is provided', () => {
+    fixture.componentRef.setInput('label', 'Test Label');
+    fixture.detectChanges();
+    const labelSpan = fixture.debugElement.query(By.css('.label-text'));
+    expect(labelSpan.nativeElement.textContent).toContain('Test Label');
+  });
+
+  it('should apply rows to textarea', () => {
+    fixture.componentRef.setInput('rows', 5);
+    fixture.detectChanges();
+    const textareaEl = fixture.debugElement.query(By.css('textarea'));
+    expect(textareaEl.nativeElement.getAttribute('rows')).toBe('5');
+  });
+});
