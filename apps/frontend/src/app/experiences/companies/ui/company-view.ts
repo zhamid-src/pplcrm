@@ -6,7 +6,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInCompany } from './people-in-company';
 import { CompaniesService } from '../services/companies-service';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -25,7 +25,7 @@ export class CompanyView {
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
@@ -35,7 +35,7 @@ export class CompanyView {
   protected readonly employeeCount = signal(0);
 
   private readonly usersResource = resource({
-    loader: () => this.auth.getUsers(),
+    loader: () => this.userService.getUsers(),
   });
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 

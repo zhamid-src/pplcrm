@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PersonView } from './person-view';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
@@ -13,7 +13,7 @@ describe('PersonView', () => {
   let fixture: ComponentFixture<PersonView>;
 
   let mockAlertSvc: any;
-  let mockAuthSvc: any;
+  let mockUserService: any;
   let mockHouseholdsSvc: any;
   let mockPersonsSvc: any;
   let mockVolunteerSvc: any;
@@ -27,7 +27,7 @@ describe('PersonView', () => {
       showInfo: vi.fn(),
     };
 
-    mockAuthSvc = {
+    mockUserService = {
       getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'Admin' }]),
     };
 
@@ -79,7 +79,7 @@ describe('PersonView', () => {
       providers: [
         provideRouter([]),
         { provide: AlertService, useValue: mockAlertSvc },
-        { provide: AuthService, useValue: mockAuthSvc },
+        { provide: UserService, useValue: mockUserService },
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: VolunteerService, useValue: mockVolunteerSvc },

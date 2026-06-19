@@ -4,7 +4,7 @@
  * and session management through tRPC communication with the backend.
  */
 import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType, UpdateAuthUserType } from '@common';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
 
@@ -64,27 +64,12 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.user;
   }
 
-
-  /**
-   * Retrieve all users for the current tenant.
-   */
-  public getUsers() {
-    return this.api.auth.getUsers.query() as Promise<IAuthUser[]>;
-  }
-
   /**
    * Initializes the auth service by fetching the current user from the backend.
    * Useful to restore session on page reload.
    */
   public init() {
     return this.getCurrentUser();
-  }
-
-  /**
-   * Retrieves a user profile by ID (including stats and profile fields like last name).
-   */
-  public getProfileById(id: string) {
-    return this.api.auth.getById.query(id);
   }
 
   /**
@@ -135,23 +120,6 @@ export class AuthService extends TRPCService<'authusers'> {
     }
 
     return res;
-  }
-
-  /**
-   * Updates an existing user's profile details.
-   */
-  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
-    const updated = await this.api.auth.update.mutate({ id, data });
-    // If the updated user is the current user, update our local signal
-    const current = this.user();
-    if (current && current.id === id) {
-      this.user.set({
-        ...current,
-        first_name: updated.first_name ?? current.first_name,
-        ...(updated as any),
-      });
-    }
-    return updated;
   }
 
   /**

@@ -4,7 +4,6 @@ import { UpdateTaskType } from '@common';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AuthService } from '../../../auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { UserService } from '@frontend/services/user.service';
@@ -45,7 +44,6 @@ import { UserService } from '@frontend/services/user.service';
   ],
 })
 export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
-  private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
   private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
   private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
@@ -126,7 +124,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   public override async ngOnInit() {
     // Load users to drive Assigned To options and name mapping
     try {
-      const users = await this.auth.getUsers();
+      const users = await this.userService.getUsers();
       this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
       this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
       this.userIds = users.map((u) => String(u.id));

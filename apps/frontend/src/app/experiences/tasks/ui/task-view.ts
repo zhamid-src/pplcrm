@@ -109,7 +109,7 @@ export class TaskView {
     try {
       const [t, us, ts] = await Promise.all([
         this.tasks.getById(this.id()),
-        this.auth.getUsers(),
+        this.userService.getUsers(),
         this.teams.getAll({ limit: 1000 }),
       ]);
       if (!t) {

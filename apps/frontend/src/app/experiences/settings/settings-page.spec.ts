@@ -6,6 +6,7 @@ import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
 import { of } from 'rxjs';
 
 describe('SettingsPage', () => {
@@ -14,6 +15,7 @@ describe('SettingsPage', () => {
   let mockSettingsSvc: any;
   let mockAlertSvc: any;
   let mockAuthSvc: any;
+  let mockUserService: any;
   let snapshotSignalValue: any;
 
   beforeEach(async () => {
@@ -74,6 +76,9 @@ describe('SettingsPage', () => {
 
     mockAuthSvc = {
       getCurrentUser: vi.fn().mockResolvedValue(mockAuthUser),
+    };
+
+    mockUserService = {
       getProfileById: vi.fn().mockResolvedValue(mockAuthUser),
       updateUserProfile: vi.fn().mockResolvedValue(mockAuthUser),
     };
@@ -97,6 +102,7 @@ describe('SettingsPage', () => {
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: AuthService, useValue: mockAuthSvc },
+        { provide: UserService, useValue: mockUserService },
       ],
     }).compileComponents();
 

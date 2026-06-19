@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TaskView } from './task-view';
 import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -12,6 +13,7 @@ describe('TaskView', () => {
   let component: TaskView;
   let fixture: ComponentFixture<TaskView>;
   let mockAuth: any;
+  let mockUserService: any;
   let mockTasks: any;
   let mockTeams: any;
   let mockDialogs: any;
@@ -19,8 +21,12 @@ describe('TaskView', () => {
 
   beforeEach(async () => {
     mockAuth = {
-      getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'User 1' }]),
       getUser: vi.fn().mockReturnValue({ id: 'u1' }),
+    };
+
+    mockUserService = {
+      getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'User 1' }]),
+      resolveAvatarUrl: vi.fn().mockReturnValue(null),
     };
 
     mockTasks = {
@@ -71,6 +77,7 @@ describe('TaskView', () => {
       providers: [
         provideRouter([]),
         { provide: AuthService, useValue: mockAuth },
+        { provide: UserService, useValue: mockUserService },
         { provide: TasksService, useValue: mockTasks },
         { provide: TeamsService, useValue: mockTeams },
         { provide: ConfirmDialogService, useValue: mockDialogs },

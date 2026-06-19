@@ -6,7 +6,7 @@ import { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
-import { AuthService } from '../../../../auth/auth-service';
+import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailType } from 'common/src/lib/models';
 
@@ -36,7 +36,7 @@ import { EmailType } from 'common/src/lib/models';
 })
 export class EmailAssign {
   private alertSvc = inject(AlertService);
-  private auth = inject(AuthService);
+  private userService = inject(UserService);
   private store = inject(EmailsStore);
 
   protected assignedTo = signal<string | null>(null);
@@ -48,7 +48,7 @@ export class EmailAssign {
   public users = signal<IAuthUser[]>([]);
 
   constructor() {
-    this.auth.getUsers().then((u) => this.users.set(u));
+    this.userService.getUsers().then((u) => this.users.set(u));
     // Can't use computed because assignedTo is settable
     effect(() => {
       this.assignedTo.set(this.email()?.assigned_to || null);

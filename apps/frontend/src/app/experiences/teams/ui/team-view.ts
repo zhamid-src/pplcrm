@@ -6,7 +6,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { TeamsService } from '../services/teams-service';
 import { TasksService } from '../../tasks/services/tasks-service';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '@common';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -24,7 +24,7 @@ export class TeamViewComponent {
   private readonly tasksSvc = inject(TasksService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly isLoading = signal(false);
@@ -62,7 +62,7 @@ export class TeamViewComponent {
     });
 
     // Load users
-    this.auth
+    this.userService
       .getUsers()
       .then((u) => {
         this.users.set(u);

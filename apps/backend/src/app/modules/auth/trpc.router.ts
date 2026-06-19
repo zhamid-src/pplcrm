@@ -4,12 +4,12 @@
  */
 import {
   InviteAuthUserObj,
-  UpdateAuthUserObj,
   Verify2FAObj,
   getAllOptions,
   signInInputObj,
   signUpInputObj,
   idSchema,
+  UpdateAuthUserObj,
 } from '@common';
 
 import z from 'zod';
@@ -34,18 +34,26 @@ function count() {
 }
 
 /**
- * Retrieve all auth users for the current tenant.
- * Only minimal fields are returned.
- */
-function getUsers() {
-  return authProcedure.query(({ ctx }) => controller.getUsersList(ctx.auth));
-}
-
-/**
  * Retrieve auth users with extended counts data.
  */
 function getAllWithCounts() {
   return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
+}
+
+/**
+ * Retrieve a specific auth user by id.
+ */
+function getById() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
+}
+
+/**
+ * Update an existing auth user.
+ */
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
 }
 
 /**
@@ -70,13 +78,6 @@ function resetPassword() {
   return publicProcedure
     .input(z.object({ password: z.string(), code: z.string() }))
     .mutation(({ input }) => controller.resetPassword(input.password, input.code));
-}
-
-/**
- * Retrieve a specific auth user by id.
- */
-function getById() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
 }
 
 /**
@@ -187,15 +188,6 @@ function signOut() {
 }
 
 /**
- * Update an existing auth user.
- */
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
-}
-
-/**
  * Register a new user account.
  *
  * @input The sign-up schema defined in `signUpInputObj`.
@@ -237,7 +229,6 @@ export const AuthRouter = router({
   signIn: signIn(),
   signOut: signOut(),
   currentUser: currentUser(),
-  getUsers: getUsers(),
   getAllWithCounts: getAllWithCounts(),
   getById: getById(),
   invite: invite(),

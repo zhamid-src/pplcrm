@@ -14,7 +14,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { ColumnType } from 'kysely';
 
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
@@ -34,7 +34,7 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
 })
 export class PersonDetail implements OnInit {
   private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
@@ -152,7 +152,7 @@ export class PersonDetail implements OnInit {
    */
   constructor() {
     // Load users once for display names
-    this.auth
+    this.userService
       .getUsers()
       .then((u) => {
         this.users.set(u);

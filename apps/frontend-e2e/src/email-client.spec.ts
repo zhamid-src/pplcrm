@@ -82,7 +82,7 @@ test.describe('Email Client', () => {
     });
 
     // 2. Mock auth.getUsers
-    await page.route(/\/auth\.getUsers/, async (route) => {
+    await page.route(/\/users\.getUsers/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

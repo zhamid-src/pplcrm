@@ -27,8 +27,7 @@ import { WebFormsRouter } from './web-forms/trpc.router';
 import { BillingRouter } from './billing/trpc.router';
 import { WorkflowsRouter } from './workflows/trpc.router';
 import { ExportsRouter } from './exports/trpc.router';
-
-
+import { UsersRouter } from './users/trpc.router';
 
 /**
  * Inferred type representing the full structure of the tRPC API.
@@ -71,8 +70,8 @@ export const trpcRouter = router({
   billing: BillingRouter,
   workflows: WorkflowsRouter,
   exports: ExportsRouter,
+  users: UsersRouter,
 });
-
 
 // Re-export individual routers for convenience.
 export { AuthRouter } from './auth/trpc.router';
@@ -120,4 +119,4 @@ export { BillingRouter } from './billing/trpc.router';
 
 export { WorkflowsRouter } from './workflows/trpc.router';
 export { ExportsRouter } from './exports/trpc.router';
-
+export { UsersRouter } from './users/trpc.router';

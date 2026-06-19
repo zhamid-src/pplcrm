@@ -5,7 +5,7 @@ import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { IAuthUser } from '@common';
 
 @Component({
@@ -24,7 +24,7 @@ import { IAuthUser } from '@common';
 export class ActivityFeed implements OnInit {
   private readonly activitySvc = inject(ActivityService);
   private readonly alertSvc = inject(AlertService);
-  private readonly authSvc = inject(AuthService);
+  private readonly userService = inject(UserService);
 
   protected readonly isLoadingExport = signal(false);
 
@@ -118,7 +118,7 @@ export class ActivityFeed implements OnInit {
 
   private async loadUsers() {
     try {
-      const u = await this.authSvc.getUsers();
+      const u = await this.userService.getUsers();
       this.users.set(u || []);
     } catch (err) {
       console.error('Failed to load users for filter', err);

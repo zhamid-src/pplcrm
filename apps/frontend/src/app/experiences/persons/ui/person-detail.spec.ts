@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PersonDetail } from './person-detail';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { TeamsService } from '../../teams/services/teams-service';
@@ -16,7 +16,7 @@ describe('PersonDetail', () => {
   let fixture: ComponentFixture<PersonDetail>;
 
   let mockAlertSvc: any;
-  let mockAuthSvc: any;
+  let mockUserService: any;
   let mockConfirmDlg: any;
   let mockHouseholdsSvc: any;
   let mockPersonsSvc: any;
@@ -31,7 +31,7 @@ describe('PersonDetail', () => {
       showInfo: vi.fn(),
     };
 
-    mockAuthSvc = {
+    mockUserService = {
       getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'Admin' }]),
     };
 
@@ -82,7 +82,7 @@ describe('PersonDetail', () => {
       providers: [
         provideRouter([]),
         { provide: AlertService, useValue: mockAlertSvc },
-        { provide: AuthService, useValue: mockAuthSvc },
+        { provide: UserService, useValue: mockUserService },
         { provide: ConfirmDialogService, useValue: mockConfirmDlg },
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },

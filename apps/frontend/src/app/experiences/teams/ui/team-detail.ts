@@ -11,7 +11,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
 import { ListsService } from '../../lists/services/lists-service';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { TasksService } from '../../tasks/services/tasks-service';
 
 interface PersonOption {
@@ -35,7 +35,7 @@ export class TeamDetailComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly teams = inject(TeamsService);
   private readonly lists = inject(ListsService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly tasksSvc = inject(TasksService);
   private readonly dialogs = inject(ConfirmDialogService);
 
@@ -289,7 +289,7 @@ export class TeamDetailComponent implements OnInit {
 
   private async loadUsers() {
     try {
-      const us = await this.auth.getUsers();
+      const us = await this.userService.getUsers();
       this.users.set(us || []);
     } catch (err) {
       console.error('Failed to load teammates list', err);
