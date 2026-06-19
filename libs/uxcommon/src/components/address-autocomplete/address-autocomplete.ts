@@ -1,6 +1,6 @@
 import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
-import { parseAddress } from 'apps/frontend/src/app/utils/googlePlacesAddressMapper';
+import { parseAddress } from './googlePlacesAddressMapper';
 import { AddressType } from '../../../../common/src/lib/kysely.models';
 
 @Component({

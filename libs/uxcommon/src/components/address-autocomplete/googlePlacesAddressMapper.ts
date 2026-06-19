@@ -1,4 +1,4 @@
-import { AddressType } from '../../../../../libs/common/src/lib/kysely.models';
+import { AddressType } from '../../../../common/src/lib/kysely.models';
 
 /**
  * Maps the internal `AddressType` keys to the corresponding Google Places component types.

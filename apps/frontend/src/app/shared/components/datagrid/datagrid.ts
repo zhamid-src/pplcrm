@@ -54,7 +54,7 @@ import { GridTagFilterService } from './services/grid-tag-filter.service';
 import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
+import { QueryBuilderField, QueryBuilderComponent } from '../query-builder/query-builder';
 // Header and inline filters rendered inline in template now
 import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';

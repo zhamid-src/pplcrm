@@ -6,6 +6,7 @@ export * from './components/alerts/alerts';
 export * from './components/icons/icon';
 export * from './components/icons/icons.index';
 export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
 export * from './components/user-avatar/user-avatar';
 export * from './components/tags/tagitem';
 

@@ -2,7 +2,7 @@ import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '../../../../common/src';
+import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '@common';
 
 export interface QueryBuilderField {
   name: string;
@@ -125,7 +125,7 @@ export class QueryBuilderComponent {
   // Summary builder
   public summarizeGroup(group: QueryBuilderGroupNode): string {
     if (!group.rules?.length) return '(Everyone)';
-    const parts = group.rules.map((node) => this.summarizeNode(node));
+    const parts = group.rules.map((node: QueryBuilderNode) => this.summarizeNode(node));
     const joiner = ` ${group.conjunction} `;
     return `(${parts.join(joiner)})`;
   }

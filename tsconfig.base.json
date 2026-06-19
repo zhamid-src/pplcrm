@@ -18,14 +18,14 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@common": ["./common/src/index.ts"],
+      "@common": ["./libs/common/src/index.ts"],
       "@experiences/*": ["./apps/frontend/src/app/experiences/*"],
       "@frontend/*": ["./apps/frontend/src/app/*"],
       "@icons/*": ["./libs/uxcommon/src/components/icons/*"],
       "@pplcrm/uxcommon": ["./libs/uxcommon/src/index.ts"],
       "@uxcommon/*": ["./libs/uxcommon/src/*"],
       "apps/*": ["./apps/*"],
-      "common/*": ["./common/*"]
+      "common/*": ["./libs/common/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]

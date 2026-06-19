@@ -1,6 +1,6 @@
 import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from '@frontend/services/shared-dialog.service';
+import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
 
 @Component({
   selector: 'pc-dialog-host',
