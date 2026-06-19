@@ -38,12 +38,8 @@
       <div class="grid gap-8 md:grid-cols-12">
         <!-- Left Column: Form Configuration -->
         <div class="space-y-6 md:col-span-7">
-          <form (submit)="save($event)" class="card bg-base-100 border border-base-200 shadow-sm">
-            <div class="card-body gap-5">
-              <h2 class="card-title text-base font-semibold uppercase tracking-wide text-base-content/60">
-                Form Settings
-              </h2>
-
+          <form (submit)="save($event)">
+            <pc-card title="Form Settings">
               <!-- Name -->
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Form Name *</label>
@@ -235,92 +231,78 @@
                   applied automatically.
                 </p>
               </div>
-            </div>
+            </pc-card>
           </form>
         </div>
 
         <!-- Right Column: Code Generator / Preview -->
         <div class="space-y-6 md:col-span-5">
           <!-- Live Form Preview Panel -->
-          <div class="card bg-base-100 border border-base-200 shadow-sm overflow-hidden relative">
-            <div
-              class="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-primary to-transparent"
-            ></div>
-
-            <div class="card-body gap-4 p-6">
-              <div>
-                <h3 class="font-bold text-base flex items-center gap-2">
-                  <pc-icon name="eye" [size]="5" class="text-primary"></pc-icon>
-                  Live Form Preview
-                </h3>
-                <p class="text-xs text-base-content/50">Real-time preview of the landing page form layout.</p>
+          <pc-card title="Live Form Preview" subtitle="Real-time preview of the landing page form layout." icon="eye">
+            <!-- Mimic Public Form Aesthetics (supporting theme inheritance) -->
+            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
+              <!-- Inner Form Header -->
+              <div class="text-center mb-6">
+                <h4
+                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
+                >
+                  {{ payload().name || 'Untitled Web Form' }}
+                </h4>
+                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
+                  {{ payload().description || 'Enter a description to see it here.' }}
+                </p>
               </div>
 
-              <!-- Mimic Public Form Aesthetics (supporting theme inheritance) -->
-              <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
-                <!-- Inner Form Header -->
-                <div class="text-center mb-6">
-                  <h4
-                    class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
-                  >
-                    {{ payload().name || 'Untitled Web Form' }}
-                  </h4>
-                  <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
-                    {{ payload().description || 'Enter a description to see it here.' }}
-                  </p>
+              <!-- Form Fields -->
+              <div class="space-y-4">
+                @if (showFirstName()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">First Name</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                </div>
+                } @if (showLastName()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Last Name</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                </div>
+                }
+
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
+                  <input
+                    type="email"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="john@example.com"
+                    disabled
+                  />
                 </div>
 
-                <!-- Form Fields -->
-                <div class="space-y-4">
-                  @if (showFirstName()) {
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">First Name</label>
-                    <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
-                  </div>
-                  } @if (showLastName()) {
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Last Name</label>
-                    <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
-                  </div>
-                  }
-
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
-                    <input
-                      type="email"
-                      class="input input-bordered input-sm w-full"
-                      placeholder="john@example.com"
-                      disabled
-                    />
-                  </div>
-
-                  @if (showMobile()) {
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Mobile / Phone</label>
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full"
-                      placeholder="E.g. 555-0199"
-                      disabled
-                    />
-                  </div>
-                  } @if (showNotes()) {
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Notes / Message</label>
-                    <textarea
-                      class="textarea textarea-bordered textarea-sm w-full"
-                      rows="2"
-                      placeholder="How can we help you?"
-                      disabled
-                    ></textarea>
-                  </div>
-                  }
-
-                  <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>Submit</button>
+                @if (showMobile()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Mobile / Phone</label>
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. 555-0199"
+                    disabled
+                  />
                 </div>
+                } @if (showNotes()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Notes / Message</label>
+                  <textarea
+                    class="textarea textarea-bordered textarea-sm w-full"
+                    rows="2"
+                    placeholder="How can we help you?"
+                    disabled
+                  ></textarea>
+                </div>
+                }
+
+                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>Submit</button>
               </div>
             </div>
-          </div>
+          </pc-card>
 
           @if (isNew()) {
           <div class="card bg-base-200 border border-base-300 text-center">
@@ -334,84 +316,74 @@
             </div>
           </div>
           } @else {
-          <div class="card bg-base-100 border border-base-200 shadow-sm">
-            <div class="card-body gap-4">
-              <div class="flex items-center justify-between border-b border-base-200 pb-3 mb-1">
-                <div>
-                  <h3 class="font-bold text-base">HTML Embed Snippet</h3>
-                  <p class="text-xs text-base-content/50">Deploy this form on your external website.</p>
-                </div>
-                <button class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
-                  <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
-                  Copy
+          <pc-card title="HTML Embed Snippet" subtitle="Deploy this form on your external website.">
+            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
+              Copy
+            </button>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Form ID</label>
+              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
+                {{ formId() }}
+              </code>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">
+                <span>Public Landing Page URL</span>
+              </label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  [value]="formUrl()"
+                  readonly
+                  class="input input-bordered input-sm flex-1 font-mono text-xs"
+                />
+                <a
+                  [href]="formUrl()"
+                  target="_blank"
+                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+                  title="Open landing page"
+                >
+                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
+                </a>
+                <button
+                  class="btn btn-sm btn-outline btn-primary px-3"
+                  (click)="copyUrl()"
+                  title="Copy landing page URL"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
                 </button>
               </div>
-
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Public Form ID</label>
-                <code
-                  class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all"
-                >
-                  {{ formId() }}
-                </code>
-              </div>
-
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">
-                  <span>Public Landing Page URL</span>
-                </label>
-                <div class="flex gap-2">
-                  <input
-                    type="text"
-                    [value]="formUrl()"
-                    readonly
-                    class="input input-bordered input-sm flex-1 font-mono text-xs"
-                  />
-                  <a
-                    [href]="formUrl()"
-                    target="_blank"
-                    class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-                    title="Open landing page"
-                  >
-                    <pc-icon name="arrow-top-right-on-square"></pc-icon>
-                  </a>
-                  <button
-                    class="btn btn-sm btn-outline btn-primary px-3"
-                    (click)="copyUrl()"
-                    title="Copy landing page URL"
-                  >
-                    <pc-icon name="document-duplicate"></pc-icon>
-                  </button>
-                </div>
-              </div>
-
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">HTML Code</label>
-                <pre
-                  class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
-                >
-{{ embedSnippet() }}
-                    </pre
-                >
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="rounded-lg bg-base-50 p-4 border border-base-200">
-                <h4
-                  class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
-                >
-                  <pc-icon name="check-circle" class="text-success"></pc-icon>
-                  Spam & BOT Protection Included
-                </h4>
-                <p class="text-[11px] text-base-content/60 leading-normal">
-                  The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>).
-                  Spam bots automatically fill in every input control, which triggers our silent rejection, protecting
-                  your CRM from contact pollution.
-                </p>
-              </div>
             </div>
-          </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">HTML Code</label>
+              <pre
+                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
+              >
+{{ embedSnippet() }}
+                  </pre
+              >
+            </div>
+
+            <div class="divider my-1"></div>
+
+            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
+              <h4
+                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
+              >
+                <pc-icon name="check-circle" class="text-success"></pc-icon>
+                Spam & BOT Protection Included
+              </h4>
+              <p class="text-[11px] text-base-content/60 leading-normal">
+                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>). Spam
+                bots automatically fill in every input control, which triggers our silent rejection, protecting your CRM
+                from contact pollution.
+              </p>
+            </div>
+          </pc-card>
           }
         </div>
       </div>
