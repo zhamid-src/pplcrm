@@ -16,7 +16,6 @@
       [title]="isNew() ? 'Create Volunteer Event' : detail()?.name"
       [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
       icon="clock"
-      [iconSize]="5"
       [form]="form"
       [isLoading]="saving()"
       [disabled]="slugChecking() || slugUnique() === false"
