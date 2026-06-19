@@ -10,10 +10,11 @@ import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avata
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {

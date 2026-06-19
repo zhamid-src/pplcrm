@@ -20,8 +20,8 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { PcIconNameType } from '@icons/icons.index';
 
 interface SocialLinkDef {
@@ -46,7 +46,7 @@ interface SocialLinkDef {
     StatusBadge,
     StatCard,
     ProfileCard,
-    DetailRow,
+    DetailItem,
   ],
   templateUrl: './person-view.html',
 })
