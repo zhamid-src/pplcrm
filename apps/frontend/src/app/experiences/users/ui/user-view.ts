@@ -8,7 +8,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AuthUsersService } from '../services/authusers-service';
+import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserService } from '../../../services/user.service';
 
@@ -23,7 +23,7 @@ export class UserViewComponent {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly users = inject(AuthUsersService);
+  private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly userService = inject(UserService);

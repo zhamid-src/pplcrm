@@ -3,7 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AuthUsersService } from '../services/authusers-service';
+import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from '@frontend/auth/auth-service';
 import { UserViewComponent } from './user-view';
 
@@ -66,7 +66,7 @@ describe('UserViewComponent', () => {
     await TestBed.configureTestingModule({
       imports: [UserViewComponent],
       providers: [
-        { provide: AuthUsersService, useValue: mockUsersSvc },
+        { provide: UserAdminService, useValue: mockUsersSvc },
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },

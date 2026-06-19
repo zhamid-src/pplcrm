@@ -3,7 +3,7 @@ import { UpdateAuthUserType } from '@common';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AuthUsersService } from '../services/authusers-service';
+import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserService } from '@frontend/services/user.service';
 
@@ -27,7 +27,7 @@ import { UserService } from '@frontend/services/user.service';
     </div>
   `,
   providers: [
-    { provide: AbstractAPIService, useExisting: AuthUsersService },
+    { provide: AbstractAPIService, useExisting: UserAdminService },
     provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
   ],
 })

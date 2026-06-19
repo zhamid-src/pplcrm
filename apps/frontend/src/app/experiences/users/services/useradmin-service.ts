@@ -12,7 +12,7 @@ import {
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
-export class AuthUsersService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
   protected override readonly endpointName = 'authusers';
 
   public add(row: InviteAuthUserType) {
