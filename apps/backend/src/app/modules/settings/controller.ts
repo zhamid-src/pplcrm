@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, SettingsEntryType } from '@common';
+import { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { env } from '../../../env';

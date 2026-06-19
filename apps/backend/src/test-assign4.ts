@@ -1,6 +1,6 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
 
 const db = new Kysely<Models>({
   dialect: new PostgresDialect({
@@ -9,9 +9,9 @@ const db = new Kysely<Models>({
       database: 'pplcrm',
       password: '[REDACTED]',
       host: 'localhost',
-      port: 5432
-    })
-  })
+      port: 5432,
+    }),
+  }),
 });
 
 async function run() {
@@ -19,7 +19,7 @@ async function run() {
   console.log(q.compile().sql);
   const result = await q.executeTakeFirst();
   console.log(result);
-  
+
   const updatedRow = await db.selectFrom('emails').selectAll().where('id', '=', '29').executeTakeFirst();
   console.log('After update:', updatedRow?.assigned_to);
 

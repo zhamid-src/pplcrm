@@ -1,7 +1,7 @@
 import { BaseController } from '../../lib/base.controller';
 import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
-import type { OperationDataType, Models } from 'common/src/lib/kysely.models';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';

@@ -2,10 +2,10 @@
  * @file Data grid component for viewing and editing issues (a special tag type).
  */
 import { Component, inject } from '@angular/core';
-import { AddTagType } from '@common';
+import { AddTagType } from '../../../../../../../libs/common/src';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { getAllOptionsType } from '@common';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 

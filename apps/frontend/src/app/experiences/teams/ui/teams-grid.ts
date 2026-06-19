@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { UpdateTeamType } from '@common';
+import { UpdateTeamType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';

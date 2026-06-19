@@ -1,7 +1,12 @@
 import { ReferenceExpression, SelectQueryBuilder, Transaction, sql, Selectable } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models, OperationDataType, TypeId, TypeTenantId } from 'common/src/lib/kysely.models';
+import {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../../libs/common/src/lib/kysely.models';
 import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
 /**

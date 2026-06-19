@@ -4,9 +4,9 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Repository for the `persons` table.

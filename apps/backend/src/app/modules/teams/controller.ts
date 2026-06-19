@@ -1,4 +1,9 @@
-import { AddTeamType, type IAuthKeyPayload, UpdateTeamType, getAllOptionsType } from '@common';
+import {
+  AddTeamType,
+  type IAuthKeyPayload,
+  UpdateTeamType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
 
 import type { Transaction } from 'kysely';
 
@@ -11,7 +16,7 @@ import { getCanonicalSystemTagName } from '../tags/system-tags';
 import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
 import { MapTeamsListsRepo } from './repositories/map-teams-lists.repo';
 import { TeamsRepo } from './repositories/teams.repo';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
 export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly mapRepo = new MapTeamsPersonsRepo();

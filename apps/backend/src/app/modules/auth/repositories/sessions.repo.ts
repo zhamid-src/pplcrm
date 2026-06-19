@@ -3,7 +3,7 @@
  */
 import { Transaction } from 'kysely';
 
-import { GetOperandType, Models } from 'common/src/lib/kysely.models';
+import { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
 import { hashToken } from '../../../lib/token-hash';
 

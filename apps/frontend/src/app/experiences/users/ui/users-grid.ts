@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { UpdateAuthUserType } from '@common';
+import { UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';

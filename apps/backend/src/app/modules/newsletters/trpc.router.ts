@@ -1,4 +1,4 @@
-import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '@common';
+import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
 
 import { authProcedure, router } from '../../../trpc';
 import { NewslettersController } from './controller';
@@ -15,9 +15,7 @@ export const NewslettersRouter = router({
     .input(idSchema)
     .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
 
-  send: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => {
-      return newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id);
-    }),
+  send: authProcedure.input(idSchema).mutation(async ({ input, ctx }) => {
+    return newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id);
+  }),
 });

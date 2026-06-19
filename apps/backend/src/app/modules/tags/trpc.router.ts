@@ -1,4 +1,4 @@
-import { AddTagObj, UpdateTagObj } from '@common';
+import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -19,7 +19,7 @@ export const TagsRouter = router({
       z.object({
         name: z.string().trim().max(100, 'Search term too long'),
         type: z.enum(['tag', 'issue']).default('tag').optional(),
-      })
+      }),
     )
     .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
 });

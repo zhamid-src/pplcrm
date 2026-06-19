@@ -4,7 +4,7 @@
 import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '@common';
+import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -19,7 +19,7 @@ import { HouseholdsService } from '../../households/services/households-service'
 import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
-import { AddressType, Persons } from 'common/src/lib/kysely.models';
+import { AddressType, Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 

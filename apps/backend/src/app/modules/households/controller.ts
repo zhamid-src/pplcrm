@@ -4,7 +4,7 @@ import {
   IAuthKeyPayload,
   UpdateHouseholdsType,
   getAllOptionsType,
-} from '@common';
+} from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { BaseRepository, QueryParams } from '../../lib/base.repo';
@@ -15,7 +15,7 @@ import { TagsRepo } from '../tags/repositories/tags.repo';
 import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
 import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Controller for managing household records and their associated tags.

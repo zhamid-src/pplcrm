@@ -1,7 +1,7 @@
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
-import type { OperationDataType } from 'common/src/lib/kysely.models';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';

@@ -2,12 +2,12 @@
  * @file Service for interacting with the email backend via tRPC.
  */
 import { Service } from '@angular/core';
-import { EmailStatus, JSend, jsend } from '@common';
+import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
 
 import { TRPCService } from '../../../services/api/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
-import { HasRow } from 'common/src/lib/emails';
-import { EmailDraftType, EmailType } from 'common/src/lib/models';
+import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
+import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../environments/environment';
 
 /** Service for interacting with email backend via tRPC */

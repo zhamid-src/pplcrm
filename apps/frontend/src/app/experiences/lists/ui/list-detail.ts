@@ -2,7 +2,12 @@ import { Component, OnInit, computed, inject, input, resource, signal, viewChild
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AddListType, UpdateHouseholdsType, UpdatePersonsType, UpdateListType } from '@common';
+import {
+  AddListType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateListType,
+} from '../../../../../../../libs/common/src';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
@@ -19,7 +24,7 @@ import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/g
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';
-import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '@common';
+import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '../../../../../../../libs/common/src';
 
 /** Grid component for filtering households when creating lists */
 @Component({

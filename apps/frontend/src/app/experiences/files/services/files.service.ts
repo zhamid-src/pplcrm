@@ -1,6 +1,6 @@
 import { Service } from '@angular/core';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
 
 @Service()
 export class FilesService extends AbstractAPIService<'files', any> {

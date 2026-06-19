@@ -1,5 +1,5 @@
 import { BaseRepository } from '../../../lib/base.repo';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
   constructor() {

@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
-import type { QueueExportInputType } from '@common';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { QueueExportInputType } from '../../../../../../libs/common/src';
 import { ExportsRepo } from './repositories/exports.repo';
 
 const ENTITY_LABEL_MAP: Record<string, string> = {

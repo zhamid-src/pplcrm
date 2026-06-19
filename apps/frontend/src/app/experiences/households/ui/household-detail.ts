@@ -4,7 +4,7 @@
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { UpdateHouseholdsType, UpdateHouseholdsObj } from '@common';
+import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -13,7 +13,7 @@ import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { HouseholdsService } from '../services/households-service';
-import { Households, AddressType } from 'common/src/lib/kysely.models';
+import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';

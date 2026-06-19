@@ -1,7 +1,7 @@
 /**
  * tRPC router for application settings such as retrieving active campaigns.
  */
-import { UpsertSettingsInputObj } from '@common';
+import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';

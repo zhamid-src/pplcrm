@@ -1,7 +1,7 @@
 import { ErrorHandler, inject, Service } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TRPCClientError } from '@trpc/client';
-import { JSendFailError, JSendServerError } from '@common';
+import { JSendFailError, JSendServerError } from '../../../../../libs/common/src';
 
 import { ErrorService } from './error.service';
 

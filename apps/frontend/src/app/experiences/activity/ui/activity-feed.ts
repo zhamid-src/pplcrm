@@ -6,7 +6,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { UserService } from '../../../services/user.service';
-import { IAuthUser } from '@common';
+import { IAuthUser } from '../../../../../../../libs/common/src';
 
 @Component({
   selector: 'pc-activity-feed',

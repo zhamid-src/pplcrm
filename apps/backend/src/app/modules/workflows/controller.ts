@@ -2,7 +2,7 @@ import { BaseController } from '../../lib/base.controller';
 import { WorkflowsRepo } from './repositories/workflows.repo';
 import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
 import { Transaction, Kysely } from 'kysely';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TRPCError } from '@trpc/server';
 
 export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {

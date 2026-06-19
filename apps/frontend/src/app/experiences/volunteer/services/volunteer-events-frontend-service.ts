@@ -5,7 +5,7 @@ import {
   ExportCsvInputType,
   ExportCsvResponseType,
   getAllOptionsType,
-} from '@common';
+} from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 

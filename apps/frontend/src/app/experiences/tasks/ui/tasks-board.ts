@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { UpdateTaskType } from '@common';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { TasksService } from '../services/tasks-service';

@@ -1,4 +1,4 @@
-import { jsend } from '@common';
+import { jsend } from '../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';

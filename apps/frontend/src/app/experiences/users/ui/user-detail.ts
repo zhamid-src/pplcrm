@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, UpdateAuthUserType } from '@common';
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';

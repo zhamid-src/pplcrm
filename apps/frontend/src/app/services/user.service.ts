@@ -1,5 +1,5 @@
 import { inject, Service } from '@angular/core';
-import { IAuthUser, UpdateAuthUserType } from '@common';
+import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../auth/auth-service';
 import { TRPCService } from './api/trpc-service';

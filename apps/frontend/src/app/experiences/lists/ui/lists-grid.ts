@@ -2,7 +2,7 @@
  * Grid component for viewing and editing lists of people or households.
  */
 import { Component, OnDestroy, effect, inject, untracked } from '@angular/core';
-import { UpdateListType } from '@common';
+import { UpdateListType } from '../../../../../../../libs/common/src';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';

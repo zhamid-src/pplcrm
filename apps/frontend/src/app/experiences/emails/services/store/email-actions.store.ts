@@ -10,8 +10,8 @@ import { EmailsService } from '../emails-service';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
-import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
-import type { EmailDraftType, EmailType } from 'common/src/lib/models';
+import { ALL_FOLDERS, EmailStatus } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailDraftType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Service()
 export class EmailActionsStore {

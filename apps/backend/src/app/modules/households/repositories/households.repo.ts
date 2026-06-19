@@ -4,7 +4,7 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 

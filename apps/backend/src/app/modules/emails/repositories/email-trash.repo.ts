@@ -4,7 +4,7 @@
 import { Transaction, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, TypeTenantId } from 'common/src/lib/kysely.models';
+import { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Data access for the `email_recipients` table.

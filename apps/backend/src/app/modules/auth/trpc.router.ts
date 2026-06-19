@@ -10,7 +10,7 @@ import {
   signUpInputObj,
   idSchema,
   UpdateAuthUserObj,
-} from '@common';
+} from '../../../../../../libs/common/src';
 
 import z from 'zod';
 

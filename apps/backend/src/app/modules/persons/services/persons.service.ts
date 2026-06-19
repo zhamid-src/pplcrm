@@ -1,5 +1,5 @@
 import { env } from '../../../../env';
-import { IAuthKeyPayload, UpdatePersonsType } from '@common';
+import { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
@@ -11,7 +11,7 @@ import { PersonsRepo } from '../repositories/persons.repo';
 import { CompaniesRepo } from '../../companies/repositories/companies.repo';
 import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
 import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';

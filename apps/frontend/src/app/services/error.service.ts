@@ -1,6 +1,6 @@
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
-import { JSendServerError } from '@common';
+import { JSendServerError } from '../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 

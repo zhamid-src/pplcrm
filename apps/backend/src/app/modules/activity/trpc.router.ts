@@ -1,4 +1,4 @@
-import { getAllOptions, exportCsvInput, exportCsvResponse } from '@common';
+import { getAllOptions, exportCsvInput, exportCsvResponse } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { ActivityController } from './controller';
@@ -6,9 +6,7 @@ import { ActivityController } from './controller';
 const activity = new ActivityController();
 
 export const ActivityRouter = router({
-  getFeed: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => activity.getFeed(ctx.auth, input)),
+  getFeed: authProcedure.input(getAllOptions).query(({ input, ctx }) => activity.getFeed(ctx.auth, input)),
   getActivities: authProcedure
     .input(
       z.object({
@@ -16,13 +14,13 @@ export const ActivityRouter = router({
         entityId: z.string().min(1),
         startRow: z.number().optional(),
         endRow: z.number().optional(),
-      })
+      }),
     )
     .query(({ input, ctx }) =>
       activity.getActivities(ctx.auth.tenant_id, input.entity, input.entityId, {
         startRow: input.startRow,
         endRow: input.endRow,
-      })
+      }),
     ),
   exportCsv: authProcedure
     .input(exportCsvInput)

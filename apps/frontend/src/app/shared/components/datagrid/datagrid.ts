@@ -17,7 +17,12 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { cloneQueryBuilderNode, getAllOptionsType, QueryBuilderGroupNode, QueueExportInputType } from '@common';
+import {
+  cloneQueryBuilderNode,
+  getAllOptionsType,
+  QueryBuilderGroupNode,
+  QueueExportInputType,
+} from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { Tags } from '@experiences/tags/ui/tags';
@@ -60,7 +65,7 @@ import { KeyboardController } from './controllers/keyboard.controller';
 import { EditingController } from './controllers/editing.controller';
 import { FetchController } from './controllers/fetch.controller';
 import { UndoManager } from './undo-redo-mgr';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 

@@ -3,7 +3,7 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untra
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUser } from '@common';
+import { IAuthUser } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { QuillModule } from 'ngx-quill';

@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { type AddressType } from 'common/src/lib/kysely.models';
+import { type AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';

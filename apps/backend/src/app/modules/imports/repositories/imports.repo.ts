@@ -1,7 +1,7 @@
 import { Transaction, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export type DataImportWithStats = {
   id: string;
@@ -38,14 +38,13 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
   }
 
   public async getAllWithStats(input: { tenant_id: string }, trx?: Transaction<Models>) {
-    return this.buildStatsQuery(input, trx).execute().then((rows) => rows.map((row) => this.mapRow(row)));
+    return this.buildStatsQuery(input, trx)
+      .execute()
+      .then((rows) => rows.map((row) => this.mapRow(row)));
   }
 
   public async getOneWithStats(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const rows = await this.buildStatsQuery(input, trx)
-      .where('data_imports.id', '=', input.id)
-      .limit(1)
-      .execute();
+    const rows = await this.buildStatsQuery(input, trx).where('data_imports.id', '=', input.id).limit(1).execute();
     const row = rows.at(0);
     return row ? this.mapRow(row) : null;
   }

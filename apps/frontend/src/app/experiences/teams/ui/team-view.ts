@@ -7,7 +7,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { TeamsService } from '../services/teams-service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { UserService } from '../../../services/user.service';
-import { type IAuthUser } from '@common';
+import { type IAuthUser } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 

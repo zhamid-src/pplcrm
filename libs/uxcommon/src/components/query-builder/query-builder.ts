@@ -2,7 +2,7 @@ import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '@common';
+import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '../../../../common/src';
 
 export interface QueryBuilderField {
   name: string;

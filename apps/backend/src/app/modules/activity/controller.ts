@@ -2,7 +2,7 @@ import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
 
 export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {
   constructor() {
@@ -17,22 +17,21 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     tenant_id: string,
     entity: string,
     entityId: string,
-    options?: { startRow?: number; endRow?: number }
+    options?: { startRow?: number; endRow?: number },
   ) {
     return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
   }
 
   public async deleteOldActivities(): Promise<void> {
-    const tenants = await this.getRepo().db.selectFrom('tenants')
-      .select(['id', 'subscription_plan'])
-      .execute();
+    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'subscription_plan']).execute();
 
     for (const tenant of tenants) {
       const isHigherPlan = tenant.subscription_plan && tenant.subscription_plan !== 'free';
       const days = isHigherPlan ? 28 : 7;
       const thresholdDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-      await this.getRepo().db.deleteFrom('user_activity')
+      await this.getRepo()
+        .db.deleteFrom('user_activity')
         .where('tenant_id', '=', tenant.id as any)
         .where('created_at', '<', thresholdDate)
         .execute();
@@ -60,7 +59,17 @@ export class ActivityController extends BaseController<'user_activity', UserActi
       metadata: row.metadata ? JSON.stringify(row.metadata) : '',
     }));
 
-    const columns = input?.columns || ['id', 'created_at', 'user', 'email', 'activity', 'entity', 'entity_id', 'quantity', 'metadata'];
+    const columns = input?.columns || [
+      'id',
+      'created_at',
+      'user',
+      'email',
+      'activity',
+      'entity',
+      'entity_id',
+      'quantity',
+      'metadata',
+    ];
     const response = this.buildCsvResponse(records, { ...input, columns });
 
     if (auth) {
@@ -78,7 +87,8 @@ export class ActivityController extends BaseController<'user_activity', UserActi
           },
         });
 
-        const user = await this.getRepo().db.selectFrom('authusers')
+        const user = await this.getRepo()
+          .db.selectFrom('authusers')
           .select(['email'])
           .where('id', '=', auth.user_id as any)
           .executeTakeFirst();

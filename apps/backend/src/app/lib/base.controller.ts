@@ -1,9 +1,14 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../libs/common/src';
 import { env } from '../../env';
 
 import { ReferenceExpression, Transaction } from 'kysely';
 
-import { Models, OperationDataType, TypeTenantId } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
 import { UserActivityRepo } from './user-activity.repo';

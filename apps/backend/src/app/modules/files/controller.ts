@@ -1,7 +1,7 @@
 import { BaseController } from '../../lib/base.controller';
 import { FilesRepo } from './repositories/files.repo';
 import { StorageService } from '../../lib/storage.service';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 
 export class FilesController extends BaseController<'files', FilesRepo> {
   private storageService = new StorageService();

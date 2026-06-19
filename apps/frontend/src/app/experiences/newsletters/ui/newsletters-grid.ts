@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { UpdateMarketingEmailType } from '@common';
+import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';

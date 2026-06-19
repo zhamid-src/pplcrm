@@ -2,7 +2,7 @@ import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddWebFormObj } from '@common';
+import { AddWebFormObj } from '../../../../../../../libs/common/src';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { FormsService } from '../services/forms-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';

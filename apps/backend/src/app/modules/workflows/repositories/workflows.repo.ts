@@ -1,7 +1,6 @@
 import { ReferenceExpression, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
-
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class WorkflowsRepo extends BaseRepository<'workflows'> {
   constructor() {
@@ -32,11 +31,14 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
             sql<boolean>`(
             LOWER(workflows.name) LIKE ${text} OR
             LOWER(workflows.description) LIKE ${text}
-          )`);
+          )`,
+          );
         })
         .$if(!!filterModel['name']?.value, (q) => q.where('workflows.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel['status']?.value, (q) => q.where('workflows.status', '=', filterModel['status'].value))
-        .$if(!!filterModel['trigger_type']?.value, (q) => q.where('workflows.trigger_type', '=', filterModel['trigger_type'].value));
+        .$if(!!filterModel['trigger_type']?.value, (q) =>
+          q.where('workflows.trigger_type', '=', filterModel['trigger_type'].value),
+        );
 
     const countResult = await applyFilters(this.getSelect(trx))
       .select(({ fn }) => [fn.count(sql`DISTINCT workflows.id`).as('total')])
@@ -71,7 +73,10 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
           .as('active_enrollments_count'),
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),
+        options.sortModel!.reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
       )
       .offset(startRow)
       .limit(endRow - startRow)

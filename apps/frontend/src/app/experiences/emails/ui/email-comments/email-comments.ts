@@ -4,7 +4,7 @@
 import { DatePipe, SlicePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { IAuthUser } from '@common';
+import type { IAuthUser } from '../../../../../../../../libs/common/src';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
@@ -15,7 +15,7 @@ import { MentionController, userDisplay } from '@uxcommon/mentions/mention-contr
 import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
 import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailCommentType, EmailType } from 'common/src/lib/models';
+import type { EmailCommentType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-comments',

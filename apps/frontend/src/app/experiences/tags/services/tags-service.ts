@@ -1,8 +1,14 @@
 import { Service } from '@angular/core';
-import { AddTagType, ExportCsvInputType, ExportCsvResponseType, UpdateTagType, getAllOptionsType } from '@common';
+import {
+  AddTagType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTagType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { Tags } from 'common/src/lib/kysely.models';
+import { Tags } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * `TagsService` handles all CRUD operations and utility methods for managing tags

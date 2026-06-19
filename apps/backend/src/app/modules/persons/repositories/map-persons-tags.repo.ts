@@ -2,7 +2,7 @@
  * Repository managing the relationship between people and tags.
  */
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 
 /**
@@ -32,7 +32,10 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
   /**
    * Deletes a mapping.
    */
-  public async deleteMapping(input: { tenant_id: string; person_id: string; tag_id: string }, trx?: Transaction<Models>) {
+  public async deleteMapping(
+    input: { tenant_id: string; person_id: string; tag_id: string },
+    trx?: Transaction<Models>,
+  ) {
     const res = await this.getDelete(trx)
       .where('tenant_id', '=', input.tenant_id)
       .where('person_id', '=', input.person_id)

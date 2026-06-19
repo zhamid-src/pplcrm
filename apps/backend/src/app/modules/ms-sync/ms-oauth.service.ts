@@ -4,14 +4,14 @@
  */
 import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/msal-node';
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
 /** Scopes required for reading, writing, and sending mail via Microsoft Graph */
 const MS_SCOPES = [
   'https://graph.microsoft.com/Mail.Read',
   'https://graph.microsoft.com/Mail.ReadWrite',
   'https://graph.microsoft.com/Mail.Send',
-  'offline_access'
+  'offline_access',
 ];
 
 /**
@@ -23,7 +23,10 @@ export class MsOAuthService {
   private readonly db: Kysely<Models>;
   private readonly redirectUri: string;
 
-  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string }) {
+  constructor(
+    db: Kysely<Models>,
+    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
+  ) {
     this.db = db;
     this.redirectUri = config.redirectUri;
     this.msalApp = new ConfidentialClientApplication({
@@ -157,7 +160,9 @@ export class MsOAuthService {
   /**
    * Returns connection status for a user.
    */
-  public async getConnectionStatus(userId: string): Promise<{ connected: boolean; msEmail: string | null; syncedAt: Date | null }> {
+  public async getConnectionStatus(
+    userId: string,
+  ): Promise<{ connected: boolean; msEmail: string | null; syncedAt: Date | null }> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')
       .select(['ms_email', 'synced_at'])

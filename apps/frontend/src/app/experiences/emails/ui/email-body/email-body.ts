@@ -9,7 +9,7 @@ import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailType } from 'common/src/lib/models';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../../environments/environment';
 
 @Component({

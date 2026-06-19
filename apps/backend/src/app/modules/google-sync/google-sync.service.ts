@@ -4,10 +4,10 @@
  * the shared EmailIngesterService.
  */
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { GoogleOAuthService } from './google-oauth.service';
 import { EmailIngesterService, IngestableEmail } from '../emails/services/email-ingester.service';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 

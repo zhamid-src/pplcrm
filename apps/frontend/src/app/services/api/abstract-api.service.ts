@@ -5,10 +5,10 @@ import {
   ExportCsvResponseType,
   getAllOptionsType,
   QueueExportInputType,
-} from '@common';
+} from '../../../../../../libs/common/src';
 import { TRPCService } from './trpc-service';
 
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Abstract base class for API services that handle CRUD operations for database tables.

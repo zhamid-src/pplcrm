@@ -4,8 +4,8 @@ import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
-import type { EmailType } from 'common/src/lib/models';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { PcIconNameType } from '@icons/icons.index';
 
 interface ContextMenuItem {

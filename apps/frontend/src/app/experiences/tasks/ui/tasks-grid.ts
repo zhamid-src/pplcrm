@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { UpdateTaskType } from '@common';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';

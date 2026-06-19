@@ -3,7 +3,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, FormField, disabled } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
-import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '@common';
+import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';

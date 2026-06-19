@@ -1,6 +1,6 @@
 import { InjectionToken, Provider } from '@angular/core';
 import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
-import type { QueueExportInputType } from '@common';
+import type { QueueExportInputType } from '../../../../../../../libs/common/src';
 
 export interface DataGridConfig {
   filterToolPanelId: string;

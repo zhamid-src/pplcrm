@@ -1,4 +1,4 @@
-import { UpdateHouseholdsObj, idSchema } from '@common';
+import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
 
 import { z } from 'zod';
 

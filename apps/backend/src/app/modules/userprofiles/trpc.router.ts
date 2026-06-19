@@ -1,7 +1,7 @@
 /**
  * tRPC router exposing endpoints for managing user profile data.
  */
-import { idSchema } from '@common';
+import { idSchema } from '../../../../../../libs/common/src';
 
 import { authProcedure, router } from '../../../trpc';
 import { UserProfilesController } from './controller';

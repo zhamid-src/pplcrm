@@ -1,5 +1,11 @@
 import { Service } from '@angular/core';
-import { AddTeamType, ExportCsvInputType, ExportCsvResponseType, UpdateTeamType, getAllOptionsType } from '@common';
+import {
+  AddTeamType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTeamType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 

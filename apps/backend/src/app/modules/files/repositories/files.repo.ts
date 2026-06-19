@@ -1,6 +1,6 @@
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
 import { Transaction } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class FilesRepo extends BaseRepository<'files'> {
   constructor() {

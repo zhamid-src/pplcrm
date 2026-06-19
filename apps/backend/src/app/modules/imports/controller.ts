@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, ImportListItem } from '@common';
+import { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
@@ -64,10 +64,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
           );
           if (personIds.length > 0) {
             await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
-            await this.mapListsPersonsRepo.deleteByPersonIds(
-              { tenant_id: auth.tenant_id, person_ids: personIds },
-              trx,
-            );
+            await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
             await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
           }
         } else {
@@ -104,7 +101,8 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
             trx,
           );
           if (companyIds.length > 0) {
-            await trx.updateTable('persons')
+            await trx
+              .updateTable('persons')
               .set({ company_id: null, updated_at: sql`now()` as any, updatedby_id: auth.user_id })
               .where('tenant_id', '=', auth.tenant_id)
               .where('company_id', 'in', companyIds)
@@ -120,20 +118,20 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
 
         // 4. Delete tasks
         if (wantsTaskDeletion) {
-          const taskIds = await this.tasksRepo.getIdsByFileId(
-            { tenant_id: auth.tenant_id, file_id: stats.id },
-            trx,
-          );
+          const taskIds = await this.tasksRepo.getIdsByFileId({ tenant_id: auth.tenant_id, file_id: stats.id }, trx);
           if (taskIds.length > 0) {
-            await trx.deleteFrom('task_subtasks')
+            await trx
+              .deleteFrom('task_subtasks')
               .where('tenant_id', '=', auth.tenant_id)
               .where('task_id', 'in', taskIds)
               .execute();
-            await trx.deleteFrom('task_comments')
+            await trx
+              .deleteFrom('task_comments')
               .where('tenant_id', '=', auth.tenant_id)
               .where('task_id', 'in', taskIds)
               .execute();
-            await trx.deleteFrom('task_attachments')
+            await trx
+              .deleteFrom('task_attachments')
               .where('tenant_id', '=', auth.tenant_id)
               .where('task_id', 'in', taskIds)
               .execute();

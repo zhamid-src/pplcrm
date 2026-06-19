@@ -1,6 +1,6 @@
 import { computed, signal } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
-import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '@common';
+import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '../../../../../../../../libs/common/src';
 
 export class GridAdvancedFilterService {
   // ── Signals ───────────────────────────────────────────────────────────────

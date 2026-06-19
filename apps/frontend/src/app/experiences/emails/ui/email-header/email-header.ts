@@ -8,8 +8,8 @@ import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
-import { EmailType } from 'common/src/lib/models';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-header',
