@@ -15,10 +15,22 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 
 @Component({
   selector: 'pc-user-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, DetailLayout, StatCard, StatusBadge, ProfileCard, DetailRow],
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+    DetailItem,
+  ],
   templateUrl: './user-view.html',
 })
 export class UserViewComponent {

@@ -12,241 +12,224 @@
   (delete)="deleteHousehold()"
 >
   @if (household(); as h) { @if (h.is_placeholder) {
-    <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-      <div class="avatar placeholder mb-4">
-        <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-          <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
-        </div>
-      </div>
-      <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-      <p class="text-sm text-base-content/60 mb-6">
-        This is a system placeholder representing individuals who do not currently have a household or address assigned.
-        It is not a real household record and cannot be edited.
-      </p>
-      <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-        <pc-icon name="arrow-left" [size]="4"></pc-icon>
-        Return to People
-      </a>
-    </div>
-    } @else {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Household Card, Map & Segmentation -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Elegant Household Card -->
-        <pc-profile-card iconName="home">
-          <!-- Address Title -->
-          <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
-
-          <!-- Contact Details List -->
-          <div class="w-full flex flex-col gap-3 text-sm">
-            <!-- Home Phone -->
-            @if (h.home_phone) {
-            <pc-detail-row
-              icon="bell"
-              iconClass="text-teal-500"
-              actionIcon="document-duplicate"
-              actionTip="Copy Home Phone"
-              (actionClick)="copyToClipboard(h.home_phone, 'Home Phone')"
-            >
-              <span class="font-medium text-base-content">{{ h.home_phone }}</span>
-            </pc-detail-row>
-            }
-
-            <!-- Household Type -->
-            @if (h.type) {
-            <pc-detail-row icon="information-circle" iconClass="text-indigo-500">
-              <span class="font-light">Type: <strong class="font-medium">{{ h.type }}</strong></span>
-            </pc-detail-row>
-            }
-
-            <!-- Mapped Districts (GIS) -->
-            @if (h.district || h.precinct || h.ward || h.geocoding_status) {
-            <div
-              class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
-            >
-              <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
-                <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
-                <span>Electoral Boundaries</span>
-              </div>
-              <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
-                @if (h.district) {
-                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                  <span class="text-[10px] text-base-content/40 block">District / Riding</span>
-                  <span class="font-bold text-base-content">{{ h.district }}</span>
-                </div>
-                } @if (h.ward) {
-                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                  <span class="text-[10px] text-base-content/40 block">Ward</span>
-                  <span class="font-bold text-base-content">{{ h.ward }}</span>
-                </div>
-                } @if (h.precinct) {
-                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                  <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
-                  <span class="font-bold text-base-content">{{ h.precinct }}</span>
-                </div>
-                }
-              </div>
-
-              <!-- Geocoding Status Badge -->
-              <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-                <span class="text-base-content/60">Geocoding Status:</span>
-                @if (h.geocoding_status === 'success') {
-                <span class="badge badge-success badge-sm font-medium">Success</span>
-                } @else if (h.geocoding_status === 'pending') {
-                <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
-                  <span class="loading loading-spinner loading-xs scale-75"></span>
-                  Pending
-                </span>
-                } @else if (h.geocoding_status === 'failed') {
-                <span class="badge badge-error badge-sm text-xs">Unresolved</span>
-                } @else {
-                <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
-                }
-              </div>
-            </div>
-            }
-          </div>
-
-          <!-- System Metadata -->
-          <div
-            class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-          >
-            <span>Created by {{ getUserName(h.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}</span>
-            <span>Updated {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(h.updatedby_id) }}</span>
-          </div>
-        </pc-profile-card>
-
-        <!-- Google Maps Card -->
-        <pc-card title="Map Location" icon="map">
-          <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
-            @if (hasMap()) { @defer (on viewport) {
-            <div #mapContainer id="household-map" class="w-full h-full"></div>
-            } @placeholder {
-            <div class="skeleton w-full h-full"></div>
-            } } @else {
-            <!-- Unverified Map Placeholder -->
-            <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
-              <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-              <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
-              <p class="text-xs max-w-[220px] font-light leading-snug">
-                Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-                address.
-              </p>
-            </div>
-            }
-          </div>
-        </pc-card>
-
-        <!-- Segmentation Card -->
-        <pc-card title="Segmentation">
-          <div class="flex flex-col gap-3">
-            <div>
-              <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-              @if (tags().length > 0) {
-              <div class="flex flex-wrap gap-1.5">
-                @for (t of tags(); track t) {
-                <span class="badge badge-sm badge-outline badge-primary font-medium px-2 py-2">{{ t }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-              }
-            </div>
-
-            <div>
-              <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-              @if (issues().length > 0) {
-              <div class="flex flex-wrap gap-1.5">
-                @for (i of issues(); track i) {
-                <span class="badge badge-sm badge-outline badge-secondary font-medium px-2 py-2">{{ i }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-              }
-            </div>
-          </div>
-        </pc-card>
-      </div>
-
-      <!-- Right Column: Stats & Tabs Panel -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Dashboard Stats Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <!-- Stats: People -->
-          <pc-stat-card
-            [title]="'People'"
-            [value]="peopleCount()"
-            [description]="'Household members'"
-            [icon]="'user-group'"
-            [valueColorClass]="'text-teal-500'"
-            [iconColorClass]="'text-teal-500'"
-          ></pc-stat-card>
-
-          <!-- Stats: Interactions -->
-          <pc-stat-card
-            [title]="'Interactions'"
-            [value]="0"
-            [description]="'Logged contacts'"
-            [icon]="'envelope'"
-            [valueColorClass]="'text-indigo-500'"
-            [iconColorClass]="'text-indigo-500'"
-          ></pc-stat-card>
-
-          <!-- Stats: Donations -->
-          <pc-stat-card
-            [title]="'Donations'"
-            [value]="'$0'"
-            [description]="'Financial support'"
-            [icon]="'currency-dollar'"
-            [valueColorClass]="'text-emerald-500'"
-            [iconColorClass]="'text-emerald-500'"
-          ></pc-stat-card>
-
-          <!-- Stats: Volunteers -->
-          <pc-stat-card
-            [title]="'Volunteers'"
-            [value]="0"
-            [description]="'Active assignments'"
-            [icon]="'volunteer'"
-            [valueColorClass]="'text-purple-500'"
-            [iconColorClass]="'text-purple-500'"
-          ></pc-stat-card>
-        </div>
-
-        <!-- Multi-Tab Details & History Panel -->
-        <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
-          <pc-tab-panel id="members" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4">
-              <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
-            </div>
-          </pc-tab-panel>
-
-          <pc-tab-panel id="activity" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-              <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
-            </div>
-          </pc-tab-panel>
-
-          <pc-tab-panel id="details" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4">
-              @if (h.notes) {
-              <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-                <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
-                  >Household Notes</span
-                >
-                <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
-              </div>
-              } @else {
-              <div class="text-center py-10 text-base-content/40 italic">
-                No internal notes recorded for this household
-              </div>
-              }
-            </div>
-          </pc-tab-panel>
-        </pc-tabs>
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
       </div>
     </div>
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
+  </div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Household Card, Map & Segmentation -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Household Card -->
+      <pc-profile-card iconName="home">
+        <!-- Address Title -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
+
+        <!-- Contact Details List -->
+        <div class="w-full flex flex-col text-sm">
+          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
+        </div>
+
+        <!-- Mapped Districts (GIS) -->
+        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+        <div
+          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+        >
+          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
+            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+            <span>Electoral Boundaries</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+            @if (h.district) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+              <span class="font-bold text-base-content">{{ h.district }}</span>
+            </div>
+            } @if (h.ward) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Ward</span>
+              <span class="font-bold text-base-content">{{ h.ward }}</span>
+            </div>
+            } @if (h.precinct) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+              <span class="font-bold text-base-content">{{ h.precinct }}</span>
+            </div>
+            }
+          </div>
+
+          <!-- Geocoding Status Badge -->
+          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+            <span class="text-base-content/60">Geocoding Status:</span>
+            @if (h.geocoding_status === 'success') {
+            <span class="badge badge-success badge-sm font-medium">Success</span>
+            } @else if (h.geocoding_status === 'pending') {
+            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+              <span class="loading loading-spinner loading-xs scale-75"></span>
+              Pending
+            </span>
+            } @else if (h.geocoding_status === 'failed') {
+            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
+            } @else {
+            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span>Created by {{ getUserName(h.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}</span>
+          <span>Updated {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(h.updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
+
+      <!-- Google Maps Card -->
+      <pc-card title="Map Location" icon="map">
+        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
+          @if (hasMap()) { @defer (on viewport) {
+          <div #mapContainer id="household-map" class="w-full h-full"></div>
+          } @placeholder {
+          <div class="skeleton w-full h-full"></div>
+          } } @else {
+          <!-- Unverified Map Placeholder -->
+          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+            <p class="text-xs max-w-[220px] font-light leading-snug">
+              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+              address.
+            </p>
+          </div>
+          }
+        </div>
+      </pc-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (t of tags(); track t) {
+              <span class="badge badge-sm badge-outline badge-primary font-medium px-2 py-2">{{ t }}</span>
+              }
+            </div>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (i of issues(); track i) {
+              <span class="badge badge-sm badge-outline badge-secondary font-medium px-2 py-2">{{ i }}</span>
+              }
+            </div>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs Panel -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Stats: People -->
+        <pc-stat-card
+          [title]="'People'"
+          [value]="peopleCount()"
+          [description]="'Household members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Interactions -->
+        <pc-stat-card
+          [title]="'Interactions'"
+          [value]="0"
+          [description]="'Logged contacts'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="'$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteers -->
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="0"
+          [description]="'Active assignments'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Multi-Tab Details & History Panel -->
+      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (h.notes) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
+                >Household Notes</span
+              >
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No internal notes recorded for this household
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
   } }
 </pc-detail-layout>

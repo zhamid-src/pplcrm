@@ -12,7 +12,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
@@ -27,7 +27,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
     Tabs,
     TabPanel,
     ProfileCard,
-    DetailRow,
+    DetailItem,
   ],
   templateUrl: './company-view.html',
 })

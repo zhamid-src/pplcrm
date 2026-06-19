@@ -302,30 +302,16 @@
           </header>
 
           <div class="space-y-5">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">User ID</p>
-              <p
-                class="text-sm font-mono text-base-content/80 mt-1 select-all break-all bg-base-200/40 p-2 rounded-lg border border-base-200/50"
-              >
-                {{ detail()?.id }}
-              </p>
-            </div>
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Assigned Role</p>
-              <p class="text-sm font-semibold text-base-content/80 mt-1 capitalize">{{ detail()?.role || 'User' }}</p>
-            </div>
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Member Since</p>
-              <p class="text-sm text-base-content/80 mt-1">
-                {{ detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : '—' }}
-              </p>
-            </div>
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Last Profile Update</p>
-              <p class="text-sm text-base-content/80 mt-1">
-                {{ detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : '—' }}
-              </p>
-            </div>
+            <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+            <pc-detail-item label="Assigned Role" [value]="detail()?.role"></pc-detail-item>
+            <pc-detail-item
+              label="Member Since"
+              [value]="detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : null"
+            ></pc-detail-item>
+            <pc-detail-item
+              label="Last Profile Update"
+              [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+            ></pc-detail-item>
           </div>
         </div>
       </div>

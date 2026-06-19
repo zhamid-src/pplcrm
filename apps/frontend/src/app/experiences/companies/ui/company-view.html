@@ -11,139 +11,123 @@
   (delete)="deleteCompany()"
 >
   @if (company()) {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Company Details Card -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Elegant Company Card -->
-        <pc-profile-card [avatarText]="initials()">
-          <!-- Name & Industry -->
-          <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
-          @if (company().industry) {
-          <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
-          } @else {
-          <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
-          }
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Company Details Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Company Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Industry -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
+        @if (company().industry) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
+        } @else {
+        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
+        }
 
-          <!-- Contact details list -->
-          <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-            <!-- Website -->
-            @if (company().website) {
-            <pc-detail-row icon="globe-americas" iconClass="text-indigo-500">
-              <a [href]="company().website" target="_blank" class="truncate font-medium text-primary hover:underline">
-                {{ company().website }}
-              </a>
-            </pc-detail-row>
-            }
-
-            <!-- Email -->
-            @if (company().email) {
-            <pc-detail-row
-              icon="envelope"
-              iconClass="text-teal-500"
-              actionIcon="document-duplicate"
-              actionTip="Copy Email"
-              (actionClick)="copyToClipboard(company().email, 'Email')"
-            >
-              <span class="truncate font-medium text-base-content">{{ company().email }}</span>
-            </pc-detail-row>
-            }
-
-            <!-- Phone -->
-            @if (company().phone) {
-            <pc-detail-row
-              icon="identification"
-              iconClass="text-purple-500"
-              actionIcon="document-duplicate"
-              actionTip="Copy Phone"
-              (actionClick)="copyToClipboard(company().phone, 'Phone')"
-            >
-              <span class="font-medium text-base-content">{{ company().phone }}</span>
-            </pc-detail-row>
-            }
-          </div>
-
-          <!-- Internal Notes (Short summary) -->
-          @if (company().notes) {
-          <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
-              Internal Notes
-            </span>
-            <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-              {{ company().notes }}
-            </p>
-          </div>
-          }
-
-          <!-- System Metadata -->
-          <div
-            class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-          >
-            <span>Created by {{ getUserName(company().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
-            <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(company().updatedby_id) }}</span>
-          </div>
-        </pc-profile-card>
-      </div>
-
-      <!-- Right Column: Stats & Tabs -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Stats Panel -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <pc-stat-card
-            [title]="'Employees'"
-            [value]="employeeCount()"
-            [description]="'Total staff listed'"
-            [icon]="'user-group'"
-            [valueColorClass]="'text-teal-500'"
-            [iconColorClass]="'text-teal-500'"
-          ></pc-stat-card>
-
-          <pc-stat-card
-            [title]="'Enriched from Google'"
-            [value]="isEnriched() ? 'Yes' : 'No'"
-            [description]="'Google Places sync status'"
-            [icon]="'check-circle'"
-            [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-            [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-          ></pc-stat-card>
+        <!-- Contact details list -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Website"
+            [value]="company().website"
+            icon="globe-americas"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Email Address"
+            [value]="company().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Phone Number"
+            [value]="company().phone"
+            icon="identification"
+            [copyable]="true"
+          ></pc-detail-item>
         </div>
 
-        <!-- Tabs Panel -->
-        <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
-          <pc-tab-panel id="activity" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-              <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-            </div>
-          </pc-tab-panel>
+        <!-- Internal Notes (Short summary) -->
+        @if (company().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
+            Internal Notes
+          </span>
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ company().notes }}
+          </p>
+        </div>
+        }
 
-          <pc-tab-panel id="employees" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4">
-              @defer (on viewport) {
-              <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-              } @placeholder {
-              <div class="skeleton w-full h-32"></div>
-              }
-            </div>
-          </pc-tab-panel>
-
-          <pc-tab-panel id="details" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4">
-              @if (company().description) {
-              <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-                <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
-                  Company Description
-                </span>
-                <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-                  {{ company().description }}
-                </p>
-              </div>
-              } @else {
-              <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
-              }
-            </div>
-          </pc-tab-panel>
-        </pc-tabs>
-      </div>
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span>Created by {{ getUserName(company().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
+          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(company().updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
     </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Employees'"
+          [value]="employeeCount()"
+          [description]="'Total staff listed'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Enriched from Google'"
+          [value]="isEnriched() ? 'Yes' : 'No'"
+          [description]="'Google Places sync status'"
+          [icon]="'check-circle'"
+          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="employees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @defer (on viewport) {
+            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (company().description) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
+                Company Description
+              </span>
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+                {{ company().description }}
+              </p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
   }
 </pc-detail-layout>

@@ -46,69 +46,32 @@
         </div>
 
         <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col gap-3 text-sm">
-          <!-- Primary Email -->
-          @if (person().email) {
-          <pc-detail-row
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
             icon="envelope"
-            iconClass="text-indigo-500"
-            actionIcon="document-duplicate"
-            actionTip="Copy Email"
-            (actionClick)="copyToClipboard(person().email, 'Email')"
-          >
-            <span class="truncate font-medium text-base-content">{{ person().email }}</span>
-          </pc-detail-row>
-          }
-
-          <!-- Secondary Email -->
-          @if (person().email2) {
-          <pc-detail-row
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
             icon="envelope"
-            iconClass="text-indigo-500"
-            actionIcon="document-duplicate"
-            actionTip="Copy Email 2"
-            (actionClick)="copyToClipboard(person().email2, 'Secondary Email')"
-          >
-            <span class="truncate font-light text-base-content/80">{{ person().email2 }} (Secondary)</span>
-          </pc-detail-row>
-          }
-
-          <!-- Mobile Phone -->
-          @if (person().mobile) {
-          <pc-detail-row
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
             icon="phone"
-            iconClass="text-purple-500"
-            actionIcon="document-duplicate"
-            actionTip="Copy Mobile"
-            (actionClick)="copyToClipboard(person().mobile, 'Mobile Phone')"
-          >
-            <span class="font-medium text-base-content">{{ person().mobile }}</span>
-          </pc-detail-row>
-          }
-
-          <!-- Home Phone -->
-          @if (person().home_phone) {
-          <pc-detail-row
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
             icon="home"
-            iconClass="text-purple-500"
-            actionIcon="document-duplicate"
-            actionTip="Copy Home Phone"
-            (actionClick)="copyToClipboard(person().home_phone, 'Home Phone')"
-          >
-            <span class="font-light text-base-content/80">{{ person().home_phone }} (Home)</span>
-          </pc-detail-row>
-          }
-
-          <!-- Address -->
-          <pc-detail-row
-            icon="map-pin"
-            iconClass="text-pink-500"
-            [actionIcon]="householdId() && !isPlaceholderHousehold() ? 'arrow-top-right-on-square' : null"
-            actionTip="View Household"
-            (actionClick)="navigateToHousehold()"
-          >
-            <span class="font-medium text-base-content break-words leading-tight">{{ addressString() }}</span>
-          </pc-detail-row>
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
         </div>
 
         <!-- Notes Section -->
