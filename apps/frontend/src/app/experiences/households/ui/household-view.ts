@@ -14,13 +14,13 @@ import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-household-view',
@@ -30,7 +30,7 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
     PeopleInHousehold,
     Icon,
     RecordActivities,
-    FormActions,
+    DetailLayout,
     PcCard,
     Tabs,
     TabPanel,

@@ -8,13 +8,13 @@ import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '../../../../../../../libs/common/src';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-form-view',
@@ -23,7 +23,7 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
     RouterModule,
     Icon,
     RecordActivities,
-    FormActions,
+    DetailLayout,
     PcCard,
     Tabs,
     TabPanel,

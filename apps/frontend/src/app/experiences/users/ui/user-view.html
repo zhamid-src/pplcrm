@@ -1,30 +1,17 @@
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <div class="flex items-center justify-between border-b border-base-300 pb-4">
-      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
-        <pc-icon name="user-circle" class="text-primary" [size]="6"></pc-icon>
-        User Profile
-      </h1>
-      <pc-form-actions
-        [isLoading]="loading()"
-        [btn1Text]="'Edit User'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete User'"
-        (deleteClicked)="deleteUser()"
-        (btn1Clicked)="editUser()"
-      ></pc-form-actions>
-    </div>
-
-    @if (error() && !detail()) {
-    <div class="p-6 alert alert-error">
-      <span>{{ error() }}</span>
-    </div>
-    } @else if (loading() && !detail()) {
-    <div class="flex justify-center items-center py-20">
-      <span class="loading loading-spinner loading-lg"></span>
-    </div>
-    } @else if (detail()) {
+<pc-detail-layout
+  [title]="'User Profile'"
+  [icon]="'user-circle'"
+  [isLoading]="loading()"
+  [error]="error()"
+  [hasRecord]="!!detail()"
+  [showDelete]="true"
+  [deleteText]="'Delete User'"
+  [btn1Text]="'Edit User'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editUser()"
+  (delete)="deleteUser()"
+>
+  @if (detail()) {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: User Card -->
@@ -110,11 +97,5 @@
         </div>
       </div>
     </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>User not found or failed to load.</span>
-    </div>
-    }
-  </div>
-</div>
+  }
+</pc-detail-layout>

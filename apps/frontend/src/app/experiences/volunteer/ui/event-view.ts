@@ -7,13 +7,13 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-event-view',
@@ -22,7 +22,7 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
     RouterModule,
     Icon,
     RecordActivities,
-    FormActions,
+    DetailLayout,
     Tabs,
     TabPanel,
     StatusBadge,

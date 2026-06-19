@@ -1,26 +1,16 @@
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <div class="flex items-center justify-between border-b border-base-300 pb-4">
-      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
-        <pc-icon name="briefcase" class="text-primary" [size]="6"></pc-icon>
-        Company Details
-      </h1>
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        [btn1Text]="'Edit Company'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete Company'"
-        (deleteClicked)="deleteCompany()"
-        (btn1Clicked)="editCompany()"
-      ></pc-form-actions>
-    </div>
-
-    @if (isLoading()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else if (company()) {
+<pc-detail-layout
+  [title]="'Company Details'"
+  [icon]="'briefcase'"
+  [isLoading]="isLoading()"
+  [hasRecord]="!!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete Company'"
+  [btn1Text]="'Edit Company'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+>
+  @if (company()) {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: Company Details Card -->
@@ -155,11 +145,5 @@
         </pc-tabs>
       </div>
     </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Company not found or failed to load.</span>
-    </div>
-    }
-  </div>
-</div>
+  }
+</pc-detail-layout>

@@ -22,18 +22,20 @@ import { FormActions } from '../form-actions/form-actions';
 
       <div class="flex items-center gap-2">
         <ng-content select="[pc-actions-prefix]"></ng-content>
-        <pc-form-actions
-          [isLoading]="isLoading()"
-          [signalForm]="form()"
-          [disabled]="disabled()"
-          [buttonsToShow]="buttonsToShow()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [showDelete]="showDelete()"
-          [deleteText]="deleteText()"
-          (btn1Clicked)="save.emit($event)"
-          (deleteClicked)="delete.emit()"
-        ></pc-form-actions>
+        @if (showActions()) {
+          <pc-form-actions
+            [isLoading]="isLoading()"
+            [signalForm]="form()"
+            [disabled]="disabled()"
+            [buttonsToShow]="buttonsToShow()"
+            [btn1Text]="btn1Text()"
+            [btn1Icon]="btn1Icon()"
+            [showDelete]="showDelete()"
+            [deleteText]="deleteText()"
+            (btn1Clicked)="save.emit($event)"
+            (deleteClicked)="delete.emit()"
+          ></pc-form-actions>
+        }
         <ng-content select="[pc-actions-suffix]"></ng-content>
       </div>
     </div>
@@ -52,6 +54,7 @@ export class DetailHeader {
   public btn1Icon = input<PcIconNameType>('save');
   public showDelete = input<boolean>(false);
   public deleteText = input<string>('DELETE');
+  public showActions = input<boolean>(true);
 
   public readonly save = output<any>();
   public readonly delete = output<void>();

@@ -1,28 +1,17 @@
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <div class="flex items-center justify-between border-b border-base-300 pb-4">
-      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
-        <pc-icon name="home" class="text-primary" [size]="6"></pc-icon>
-        Household Details
-      </h1>
-      @if (household() && !household()?.is_placeholder) {
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        [btn1Text]="'Edit Household'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete Household'"
-        (deleteClicked)="deleteHousehold()"
-        (btn1Clicked)="editHousehold()"
-      ></pc-form-actions>
-      }
-    </div>
-
-    @if (isLoading()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else { @if (household(); as h) { @if (h.is_placeholder) {
+<pc-detail-layout
+  [title]="'Household Details'"
+  [icon]="'home'"
+  [isLoading]="isLoading()"
+  [hasRecord]="!!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete Household'"
+  [btn1Text]="'Edit Household'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+>
+  @if (household(); as h) { @if (h.is_placeholder) {
     <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
       <div class="avatar placeholder mb-4">
         <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
@@ -259,11 +248,5 @@
         </pc-tabs>
       </div>
     </div>
-    } } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Household not found or failed to load.</span>
-    </div>
-    } }
-  </div>
-</div>
+  } }
+</pc-detail-layout>
