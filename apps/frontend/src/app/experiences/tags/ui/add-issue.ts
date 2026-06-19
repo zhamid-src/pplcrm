@@ -2,7 +2,7 @@ import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AddTagObj } from '../../../../../../../libs/common/src';
-import { TRPCClientError } from '@trpc/client';
+
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -86,14 +86,8 @@ export class AddIssue {
 
           this.payload.set({ name: '', description: '', color: '#ef4444' });
           this.formActions()?.stayOrCancel();
-        } catch (err: unknown) {
-          if (err instanceof TRPCClientError) {
-            this.alertSvc.showError(err.message);
-          } else if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
-            this.alertSvc.showError((err as { message: string }).message);
-          } else {
-            this.alertSvc.showError("We've hit an unknown error. Please try again.");
-          }
+        } catch (err: any) {
+          this.alertSvc.showError(err.message || "We've hit an unknown error. Please try again.");
         } finally {
           end();
         }

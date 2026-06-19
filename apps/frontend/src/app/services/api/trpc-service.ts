@@ -12,6 +12,8 @@ import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
 import { TokenService } from './token-service';
 import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
+
 
 /**
  * Base service providing type-safe tRPC client functionality with advanced features.
@@ -177,34 +179,38 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
           next: (value) => observer.next(value),
           error: (err) => {
             const meta = (op as unknown as { meta?: { skipErrorHandler?: boolean } }).meta;
+            let finalErr: any = err;
 
             if (err instanceof TRPCClientError) {
               const code = err.data?.code as string | undefined;
               const path = op.path ?? '';
               const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
 
+              let msg = err.message;
               if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
                 // Server formatter should already do this; this is just a client fallback
-                err.message = GENERIC_LOGIN_MSG;
+                msg = GENERIC_LOGIN_MSG;
               } else if (code === 'BAD_REQUEST') {
                 const isValidationError = (err.data as any)?.isZodError;
                 if (isValidationError) {
-                  err.message = GENERIC_INPUT_MSG;
+                  msg = GENERIC_INPUT_MSG;
                 }
               }
-
-              if (!meta?.skipErrorHandler) errorSvc.handle(err);
-            } else {
-              if (!meta?.skipErrorHandler) errorSvc.handle(err as unknown);
+              finalErr = new ApiError(msg, err);
             }
 
-            observer.error(err);
+            if (!meta?.skipErrorHandler) {
+              errorSvc.handle(finalErr);
+            }
+
+            observer.error(finalErr);
           },
           complete: () => observer.complete(),
         });
         return unsubscribe;
       });
 }
+
 
 /**
  * Creates a TRPC HTTP unbatched link with the auth token included in headers.

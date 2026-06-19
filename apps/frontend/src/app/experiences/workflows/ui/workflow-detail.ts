@@ -10,7 +10,6 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { TRPCClientError } from '@trpc/client';
 import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
 import { VolunteerEventsFrontendService } from '../../volunteer/services/volunteer-events-frontend-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -426,12 +425,8 @@ export class WorkflowDetailComponent implements OnInit {
               void this.loadSteps();
             }
           }
-        } catch (err: unknown) {
-          if (err instanceof TRPCClientError) {
-            this.alertSvc.showError(err.message);
-          } else {
-            this.alertSvc.showError('An error occurred while saving the workflow.');
-          }
+        } catch (err: any) {
+          this.alertSvc.showError(err.message || 'An error occurred while saving the workflow.');
         } finally {
           end();
         }
