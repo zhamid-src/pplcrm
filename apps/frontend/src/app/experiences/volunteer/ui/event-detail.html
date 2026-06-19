@@ -47,400 +47,372 @@
     <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
       <!-- Left 2 cols: Main details -->
       <div class="md:col-span-2 space-y-6">
-        <div class="card bg-base-100 border border-base-300 shadow-md">
-          <div class="card-body p-6 space-y-4">
-            <h3 class="font-bold text-lg text-base-content">Event Details</h3>
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Weekend Door Knocking Campaign"
+          ></pc-input>
 
+          <div>
             <pc-input
-              id="event-name"
-              label="Event Name *"
-              [formField]="form.name"
-              placeholder="E.g., Weekend Door Knocking Campaign"
-            ></pc-input>
-
-            <div>
-              <pc-input
-                id="event-slug"
-                label="URL Slug *"
-                [formField]="form.slug"
-                placeholder="e.g. weekend-knocking"
-                [hasError]="slugUnique() === false"
-                (input)="onSlugInput()"
-              >
-                <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
-              </pc-input>
-              @if (slugChecking()) {
-              <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-                <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-              </p>
-              } @else if (slugUnique() === true) {
-              <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-              } @else if (slugUnique() === false) {
-              <p class="text-xs text-error mt-0.5 pl-1">
-                ✗ This slug is already in use. Please choose a different one.
-              </p>
-              }
-            </div>
-
-            <pc-textarea
-              id="event-desc"
-              label="Description"
-              [formField]="form.description"
-              placeholder="Describe the purpose, tasks, and instructions for volunteers..."
-              [rows]="4"
-            ></pc-textarea>
-
-            <pc-input
-              id="event-location"
-              label="Location Address"
-              [formField]="form.location_address"
-              placeholder="E.g., Central Park Pavilion, or street coordinates"
-            ></pc-input>
-
-            <div class="divider"></div>
-
-            <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-              <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-              Organizer Contact Point
-            </h4>
-            <p class="text-xs text-base-content/60">
-              Provide contact info for constituents who have questions about this shift.
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. weekend-knocking"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
             </p>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <pc-input
-                id="contact-email"
-                label="Contact Email"
-                type="email"
-                [formField]="form.contact_email"
-                placeholder="organizer@example.com"
-              ></pc-input>
-              <pc-input
-                id="contact-phone"
-                label="Contact Phone"
-                [formField]="form.contact_phone"
-                placeholder="E.g., 555-0199"
-              ></pc-input>
-            </div>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
           </div>
-        </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., Central Park Pavilion, or street coordinates"
+          ></pc-input>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact Point
+          </h4>
+          <p class="text-xs text-base-content/60">
+            Provide contact info for constituents who have questions about this shift.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
 
         <!-- Roster Management (Only for existing events) -->
         @if (!isNew()) {
-        <div class="card bg-base-100 border border-base-300 shadow-md">
-          <div class="card-body p-6 space-y-4">
-            <div
-              class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-base-300 pb-3"
-            >
-              <div>
-                <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-                  <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-                  Shift Roster
-                </h3>
-                <p class="text-xs text-base-content/60 mt-0.5">
-                  Sign up volunteers and record their attendance and hours.
-                </p>
-              </div>
-              <div class="badge badge-primary gap-1">
-                {{ roster().length }} Signed Up @if (detail()?.capacity) {
-                <span>/ {{ detail()?.capacity }} Max</span>
-                }
+        <pc-card
+          title="Shift Roster"
+          subtitle="Sign up volunteers and record their attendance and hours."
+          icon="user-group"
+        >
+          <div pc-card-actions class="badge badge-primary gap-1">
+            {{ roster().length }} Signed Up @if (detail()?.capacity) {
+            <span>/ {{ detail()?.capacity }} Max</span>
+            }
+          </div>
+
+          <!-- Search to Add Volunteers -->
+          <div class="relative space-y-1">
+            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pl-10"
+                placeholder="Search volunteers by name or email..."
+                [ngModel]="volunteerSearch()"
+                (ngModelChange)="volunteerSearch.set($event)"
+                [ngModelOptions]="{standalone: true}"
+              />
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
+                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
               </div>
             </div>
 
-            <!-- Search to Add Volunteers -->
-            <div class="relative space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
-              <div class="relative">
-                <input
-                  type="text"
-                  class="input input-bordered w-full pl-10"
-                  placeholder="Search volunteers by name or email..."
-                  [ngModel]="volunteerSearch()"
-                  (ngModelChange)="volunteerSearch.set($event)"
-                  [ngModelOptions]="{standalone: true}"
-                />
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                  <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
-                </div>
-              </div>
-
-              <!-- Search suggestions -->
-              @if (volunteerSearchResults().length > 0) {
+            <!-- Search suggestions -->
+            @if (volunteerSearchResults().length > 0) {
+            <div
+              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+            >
+              @for (p of volunteerSearchResults(); track p.id) {
               <div
-                class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+                (click)="addVolunteer(p)"
+                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
               >
-                @for (p of volunteerSearchResults(); track p.id) {
-                <div
-                  (click)="addVolunteer(p)"
-                  class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
-                >
-                  <div>
-                    <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                    <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                  </div>
-                  <button type="button" class="btn btn-primary btn-xs gap-1">
-                    <pc-icon name="plus" [size]="3"></pc-icon>
-                    Add
-                  </button>
+                <div>
+                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
                 </div>
-                }
+                <button type="button" class="btn btn-primary btn-xs gap-1">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Add
+                </button>
               </div>
               }
             </div>
-
-            <!-- Roster Table -->
-            <div class="overflow-x-auto border border-base-300 rounded-lg">
-              <table class="table w-full text-sm">
-                <thead>
-                  <tr class="bg-base-200 text-xs">
-                    <th>Volunteer</th>
-                    <th class="w-40">Status</th>
-                    <th class="w-24">Hours</th>
-                    <th>Notes</th>
-                    <th class="w-20 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-base-200">
-                  @if (roster().length === 0) {
-                  <tr>
-                    <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
-                      No volunteers signed up for this event yet.
-                    </td>
-                  </tr>
-                  } @for (shift of roster(); track shift.id) {
-                  <tr class="hover:bg-base-200/40">
-                    <!-- Contact details -->
-                    <td>
-                      <div>
-                        <a
-                          [routerLink]="['/people', shift.person_id]"
-                          class="font-bold text-primary hover:underline hover:cursor-pointer"
-                        >
-                          {{ shift.first_name }} {{ shift.last_name }}
-                        </a>
-                      </div>
-                      <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
-                    </td>
-                    <!-- Shift status dropdown -->
-                    <td>
-                      <select
-                        class="select select-bordered select-sm w-full font-medium"
-                        [ngModel]="shift.status"
-                        (ngModelChange)="updateShiftStatus(shift, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                        [class.select-success]="shift.status === 'attended'"
-                        [class.select-warning]="shift.status === 'signed_up'"
-                        [class.select-error]="shift.status === 'no_show'"
-                      >
-                        <option value="signed_up">Signed Up</option>
-                        <option value="attended">Attended</option>
-                        <option value="no_show">No Show</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <!-- Hours worked input -->
-                    <td>
-                      <input
-                        type="number"
-                        class="input input-bordered input-sm w-full text-center font-mono"
-                        placeholder="--"
-                        min="0"
-                        max="24"
-                        step="0.5"
-                        [ngModel]="shift.hours_worked"
-                        (ngModelChange)="updateShiftHours(shift, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                        [disabled]="shift.status !== 'attended'"
-                      />
-                    </td>
-                    <!-- Notes -->
-                    <td>
-                      <input
-                        type="text"
-                        class="input input-bordered input-sm w-full"
-                        placeholder="Optional details..."
-                        [ngModel]="shift.notes"
-                        (ngModelChange)="updateShiftNotes(shift, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                      />
-                    </td>
-                    <!-- Actions -->
-                    <td>
-                      <div class="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-primary"
-                          title="Save shift edits"
-                          (click)="saveShiftDetails(shift)"
-                        >
-                          <pc-icon name="check-circle" [size]="6"></pc-icon>
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove volunteer"
-                          (click)="removeVolunteer(shift)"
-                        >
-                          <pc-icon name="trash" [size]="5"></pc-icon>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
+            }
           </div>
-        </div>
+
+          <!-- Roster Table -->
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table w-full text-sm">
+              <thead>
+                <tr class="bg-base-200 text-xs">
+                  <th>Volunteer</th>
+                  <th class="w-40">Status</th>
+                  <th class="w-24">Hours</th>
+                  <th>Notes</th>
+                  <th class="w-20 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @if (roster().length === 0) {
+                <tr>
+                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
+                    No volunteers signed up for this event yet.
+                  </td>
+                </tr>
+                } @for (shift of roster(); track shift.id) {
+                <tr class="hover:bg-base-200/40">
+                  <!-- Contact details -->
+                  <td>
+                    <div>
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="font-bold text-primary hover:underline hover:cursor-pointer"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                    </div>
+                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
+                  </td>
+                  <!-- Shift status dropdown -->
+                  <td>
+                    <select
+                      class="select select-bordered select-sm w-full font-medium"
+                      [ngModel]="shift.status"
+                      (ngModelChange)="updateShiftStatus(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [class.select-success]="shift.status === 'attended'"
+                      [class.select-warning]="shift.status === 'signed_up'"
+                      [class.select-error]="shift.status === 'no_show'"
+                    >
+                      <option value="signed_up">Signed Up</option>
+                      <option value="attended">Attended</option>
+                      <option value="no_show">No Show</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </td>
+                  <!-- Hours worked input -->
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-sm w-full text-center font-mono"
+                      placeholder="--"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      [ngModel]="shift.hours_worked"
+                      (ngModelChange)="updateShiftHours(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [disabled]="shift.status !== 'attended'"
+                    />
+                  </td>
+                  <!-- Notes -->
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="Optional details..."
+                      [ngModel]="shift.notes"
+                      (ngModelChange)="updateShiftNotes(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <!-- Actions -->
+                  <td>
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-primary"
+                        title="Save shift edits"
+                        (click)="saveShiftDetails(shift)"
+                      >
+                        <pc-icon name="check-circle" [size]="6"></pc-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        title="Remove volunteer"
+                        (click)="removeVolunteer(shift)"
+                      >
+                        <pc-icon name="trash" [size]="5"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </pc-card>
         }
       </div>
 
       <!-- Right 1 col: Timing, Capacity, Actions -->
       <div class="space-y-6">
         @if (!isNew() && detail()?.public_url) {
-        <div class="card bg-base-100 border border-base-300 shadow-md">
-          <div class="card-body p-6 space-y-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="globe-americas" class="text-primary" [size]="5"></pc-icon>
-              Public Signup Link
-            </h3>
-            <p class="text-xs text-base-content/60">
-              Constituents can use this URL to view the event and sign up for this shift.
-            </p>
-            <div class="flex gap-2 items-center">
-              <input
-                #publicUrlInput
-                readonly
-                type="text"
-                class="input input-bordered input-sm flex-1 font-mono text-xs"
-                [value]="environment.apiUrl + detail()?.public_url"
-              />
-              <button
-                type="button"
-                class="btn btn-primary btn-sm btn-square"
-                title="Copy Link"
-                (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
-              >
-                <pc-icon name="document-duplicate" [size]="5"></pc-icon>
-              </button>
-            </div>
-
-            @if (detail()?.is_private) {
-            <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
-              <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-              <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
-            </div>
-            } @else {
-            <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-              <span>Public Dashboard Link:</span>
-              <a
-                [href]="environment.apiUrl + detail()?.tenant_public_url"
-                target="_blank"
-                class="link link-primary font-mono text-[10px] break-all"
-              >
-                {{ environment.apiUrl + detail()?.tenant_public_url }}
-              </a>
-            </div>
-            }
+        <pc-card
+          title="Public Signup Link"
+          subtitle="Constituents can use this URL to view the event and sign up for this shift."
+          icon="globe-americas"
+        >
+          <div class="flex gap-2 items-center">
+            <input
+              #publicUrlInput
+              readonly
+              type="text"
+              class="input input-bordered input-sm flex-1 font-mono text-xs"
+              [value]="environment.apiUrl + detail()?.public_url"
+            />
+            <button
+              type="button"
+              class="btn btn-primary btn-sm btn-square"
+              title="Copy Link"
+              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+            >
+              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
+            </button>
           </div>
-        </div>
+
+          @if (detail()?.is_private) {
+          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
+            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
+          </div>
+          } @else {
+          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
+            <span>Public Dashboard Link:</span>
+            <a
+              [href]="environment.apiUrl + detail()?.tenant_public_url"
+              target="_blank"
+              class="link link-primary font-mono text-[10px] break-all"
+            >
+              {{ environment.apiUrl + detail()?.tenant_public_url }}
+            </a>
+          </div>
+          }
+        </pc-card>
         }
-        <div class="card bg-base-100 border border-base-300 shadow-md">
-          <div class="card-body p-6 space-y-4">
-            <h3 class="font-bold text-lg text-base-content">Scheduling</h3>
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
 
-            <pc-input
-              id="start-time"
-              label="Start Date & Time *"
-              type="datetime-local"
-              [formField]="form.start_time"
-            ></pc-input>
+          <pc-input
+            id="end-time"
+            label="End Date & Time *"
+            type="datetime-local"
+            [formField]="form.end_time"
+          ></pc-input>
 
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-            ></pc-input>
+          <pc-input
+            id="capacity"
+            label="Volunteer Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
 
-            <pc-input
-              id="capacity"
-              label="Volunteer Capacity"
-              type="number"
-              [formField]="form.capacity"
-              placeholder="Unlimited"
-            ></pc-input>
+          <div class="divider"></div>
 
-            <div class="divider"></div>
-
-            <div class="form-control">
-              <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                <div class="flex-1 min-w-0">
-                  <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
-                  <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                    Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
-                  </p>
-                </div>
-                <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-              </label>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="form-control">
-              <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                <div class="flex-1 min-w-0">
-                  <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
-                  <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                    Send a confirmation email with shift and coordinator details to constituents when they sign up.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary mt-1 shrink-0"
-                  [formField]="form.send_signup_confirmation"
-                />
-              </label>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="form-control">
-              <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                <div class="flex-1 min-w-0">
-                  <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
-                  <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                    Send email alert notifications to the event coordinator or organization admins upon new volunteer
-                    signups.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary mt-1 shrink-0"
-                  [formField]="form.send_volunteer_alert"
-                />
-              </label>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="form-control">
-              <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                <div class="flex-1 min-w-0">
-                  <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
-                  <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                    If enabled, this event will not be shown on the public upcoming list. Only constituents with the
-                    direct link can sign up.
-                  </p>
-                </div>
-                <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
-              </label>
-            </div>
-
-            <div class="divider"></div>
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
           </div>
-        </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_signup_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
+                  signups.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_volunteer_alert"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
+                  direct link can sign up.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
+            </label>
+          </div>
+        </pc-card>
 
         <!-- Event Summary Panel -->
         @if (!isNew()) {

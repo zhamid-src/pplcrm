@@ -16,10 +16,11 @@ import { Households } from '../../../../../../../libs/common/src/lib/kysely.mode
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-household-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions, PcCard],
   templateUrl: './household-view.html',
 })
 export class HouseholdView {

@@ -7,6 +7,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ActivityService } from '@experiences/activity/services/activity.service';
 
 describe('PersonView', () => {
   let component: PersonView;
@@ -19,6 +20,7 @@ describe('PersonView', () => {
   let mockVolunteerSvc: any;
   let mockRoute: any;
   let mockRouter: any;
+  let mockActivitySvc: any;
 
   beforeEach(async () => {
     mockAlertSvc = {
@@ -33,6 +35,10 @@ describe('PersonView', () => {
 
     mockHouseholdsSvc = {
       getById: vi.fn().mockResolvedValue({ street_num: '123', street1: 'Main St', city: 'City', state: 'NY' }),
+    };
+
+    mockActivitySvc = {
+      getActivities: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
     };
 
     mockPersonsSvc = {
@@ -62,7 +68,7 @@ describe('PersonView', () => {
     mockRoute = {
       snapshot: {
         paramMap: {
-          get: vi.fn().mockReturnValue('p1'),
+          get: vi.fn((key: string) => (key === 'id' ? 'p1' : null)),
         },
       },
     };
@@ -84,6 +90,7 @@ describe('PersonView', () => {
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: VolunteerService, useValue: mockVolunteerSvc },
         { provide: ActivatedRoute, useValue: mockRoute },
+        { provide: ActivityService, useValue: mockActivitySvc },
       ],
     }).compileComponents();
 
@@ -92,13 +99,15 @@ describe('PersonView', () => {
 
     fixture = TestBed.createComponent(PersonView);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 'p1');
+    fixture.detectChanges();
   });
 
   it('should load all details and activities on init', async () => {
-    component.ngOnInit();
-    await new Promise((r) => setTimeout(r, 10));
+    await fixture.whenStable();
+    fixture.detectChanges();
 
-    expect(component['id']).toBe('p1');
+    expect(component['id']()).toBe('p1');
     expect(mockPersonsSvc.getById).toHaveBeenCalledWith('p1');
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'tag');
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'issue');
@@ -114,8 +123,8 @@ describe('PersonView', () => {
   });
 
   it('should copy text to clipboard and show success alert', async () => {
-    component.ngOnInit();
-    await new Promise((r) => setTimeout(r, 10));
+    await fixture.whenStable();
+    fixture.detectChanges();
 
     component['copyToClipboard']('john@example.com', 'Email');
     await new Promise((r) => setTimeout(r, 10));

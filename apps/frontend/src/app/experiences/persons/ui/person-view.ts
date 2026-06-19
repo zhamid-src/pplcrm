@@ -16,10 +16,11 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-person-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions, PcCard],
   templateUrl: './person-view.html',
 })
 export class PersonView {

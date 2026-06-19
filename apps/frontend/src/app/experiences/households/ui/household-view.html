@@ -152,38 +152,28 @@
         </div>
 
         <!-- Google Maps Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 flex justify-between items-center">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="map" [size]="4" class="text-teal-500"></pc-icon> Map Location
-            </h3>
-          </div>
-
-          <div class="relative w-full h-64 bg-base-200 flex items-center justify-center">
-            @if (hasMap()) {
-              @defer (on viewport) {
-                <div #mapContainer id="household-map" class="w-full h-full"></div>
-              } @placeholder {
-                <div class="skeleton w-full h-full"></div>
-              }
-            } @else {
-              <!-- Unverified Map Placeholder -->
-              <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
-                <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-                <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
-                <p class="text-xs max-w-[220px] font-light leading-snug">
-                  Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-                  address.
-                </p>
-              </div>
+        <pc-card title="Map Location" icon="map">
+          <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
+            @if (hasMap()) { @defer (on viewport) {
+            <div #mapContainer id="household-map" class="w-full h-full"></div>
+            } @placeholder {
+            <div class="skeleton w-full h-full"></div>
+            } } @else {
+            <!-- Unverified Map Placeholder -->
+            <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+              <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+              <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+              <p class="text-xs max-w-[220px] font-light leading-snug">
+                Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+                address.
+              </p>
+            </div>
             }
           </div>
-        </div>
+        </pc-card>
 
-        <!-- Tags & Issues Segmentation Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col gap-4">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70">Segmentation</h3>
-
+        <!-- Segmentation Card -->
+        <pc-card title="Segmentation">
           <div class="flex flex-col gap-3">
             <div>
               <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
@@ -211,7 +201,7 @@
               }
             </div>
           </div>
-        </div>
+        </pc-card>
       </div>
 
       <!-- Right Column: Stats & Tabs Panel -->

@@ -16,6 +16,7 @@ export * from './components/toggle/toggle';
 export * from './components/detail-header/detail-header';
 export * from './components/entity-overview/entity-overview';
 export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
 
 // Directives
 export * from './directives/animate-if.directive';

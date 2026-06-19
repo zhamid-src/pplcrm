@@ -10,13 +10,14 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader],
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent {
