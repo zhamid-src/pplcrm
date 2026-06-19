@@ -5,14 +5,15 @@ import { Component, OnInit, inject, input, signal, computed } from '@angular/cor
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
 
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -26,7 +27,16 @@ import { PersonsService } from '../../persons/services/persons-service';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [PcInput, PcTextarea, AddressAutocomplete, Tags, FormActions, Icon, RouterModule],
+  imports: [
+    PcTextarea,
+    AddressAutocomplete,
+    Tags,
+    Icon,
+    RouterModule,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcAddressFormGroup,
+  ],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
@@ -182,13 +192,17 @@ export class HouseholdDetail implements OnInit {
   }
 
   /** Returns the creation date of the household */
-  protected getCreatedAt() {
-    return this.household()?.created_at;
+  protected getCreatedAt(): Date | null {
+    const date = this.household()?.created_at;
+    if (!date) return null;
+    return new Date(date as any);
   }
 
   /** Returns the last updated date of the household */
-  protected getUpdatedAt() {
-    return this.household()?.updated_at;
+  protected getUpdatedAt(): Date | null {
+    const date = this.household()?.updated_at;
+    if (!date) return null;
+    return new Date(date as any);
   }
 
   protected async deleteHousehold() {

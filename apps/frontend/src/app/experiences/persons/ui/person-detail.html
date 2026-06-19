@@ -4,22 +4,18 @@
 
   <div class="max-w-3xl mx-auto w-full">
     <!-- Back to profile or list -->
-    <div class="mb-6 flex justify-between items-center border-b border-base-200 pb-4">
-      <h2 class="text-xl font-bold text-base-content flex items-center gap-2">
-        <pc-icon [name]="person()?.id ? 'pencil-square' : 'user-plus'" [size]="5" class="text-primary"></pc-icon>
-        {{ person()?.id ? 'Edit Person Details' : 'Add New Person' }}
-      </h2>
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        [signalForm]="form"
-        (btn1Clicked)="save($event)"
-        [buttonsToShow]="buttonsToShow()"
-        [btn1Text]="person()?.id ? 'Save Person' : 'Create Person'"
-        [showDelete]="!!person()?.id"
-        [deleteText]="'Delete Person'"
-        (deleteClicked)="deletePerson()"
-      ></pc-form-actions>
-    </div>
+    <pc-detail-header
+      [title]="person()?.id ? 'Edit Person Details' : 'Add New Person'"
+      [icon]="person()?.id ? 'pencil-square' : 'user-plus'"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save Person' : 'Create Person'"
+      [showDelete]="!!person()?.id"
+      deleteText="Delete Person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
 
     <form (submit)="save()" novalidate class="flex flex-col gap-5">
       <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">

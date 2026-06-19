@@ -7,27 +7,20 @@
   </div>
   } @else {
   <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-          <pc-icon name="briefcase" class="text-primary" [size]="7"></pc-icon>
-          {{ isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '') }}
-        </h1>
-        <p class="text-sm text-base-content/60 mt-1">
-          {{ isNewMode() ? 'Create a new company record' : 'View and update company information' }}
-        </p>
-      </div>
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        [signalForm]="form"
-        (btn1Clicked)="save($event)"
-        [buttonsToShow]="'two'"
-        [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
-        [showDelete]="!isNewMode()"
-        [deleteText]="'Delete Company'"
-        (deleteClicked)="deleteCompany()"
-      ></pc-form-actions>
-    </div>
+    <pc-detail-header
+      [title]="isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '')"
+      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
+      icon="briefcase"
+      [iconSize]="7"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
+      [showDelete]="!isNewMode()"
+      deleteText="Delete Company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Form Section -->
@@ -114,18 +107,10 @@
 
         <!-- Metadata Card -->
         @if (!isNewMode()) {
-        <div class="card bg-base-200/50 border border-base-300 shadow-xl">
-          <div class="card-body p-5 space-y-3 text-xs text-base-content/60">
-            <div class="flex justify-between">
-              <span>Created:</span>
-              <span class="font-semibold">{{ company()?.created_at | date: 'medium' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span>Last Updated:</span>
-              <span class="font-semibold">{{ company()?.updated_at | date: 'medium' }}</span>
-            </div>
-          </div>
-        </div>
+        <pc-entity-overview
+          [createdAt]="company()?.created_at"
+          [updatedAt]="company()?.updated_at"
+        ></pc-entity-overview>
         }
       </div>
     </div>
