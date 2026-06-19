@@ -15,6 +15,7 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-event-view',
@@ -44,7 +45,9 @@ export class EventViewComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-  protected readonly isLoading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
   protected readonly event = signal<any | null>(null);
   protected readonly roster = signal<any[]>([]);
 
@@ -85,7 +88,7 @@ export class EventViewComponent {
   }
 
   protected async loadAllData(id: string) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // 1. Load Event details
       const detail = await this.volunteerEventsSvc.getById(id);
@@ -97,7 +100,8 @@ export class EventViewComponent {
     } catch (err) {
       this.alertSvc.showError('Failed to load event details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
@@ -114,7 +118,7 @@ export class EventViewComponent {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await this.volunteerEventsSvc.delete(this.id());
       this.volunteerEventsSvc.triggerRefresh();
@@ -124,7 +128,7 @@ export class EventViewComponent {
       const message = err?.message || err?.data?.message || 'Unable to delete event';
       this.alertSvc.showError(message);
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 

@@ -44,6 +44,7 @@ export class CompanyView {
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
   protected readonly company = signal<any | null>(null);
   protected readonly employeeCount = signal(0);
@@ -95,7 +96,7 @@ export class CompanyView {
   }
 
   protected async loadAllData(id: string) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // 1. Load company details (triggers Google enrichment job on backend)
       const data = await this.companiesSvc.getById(id);
@@ -107,7 +108,8 @@ export class CompanyView {
     } catch (err) {
       this.alertSvc.showError('Failed to load company details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
@@ -124,7 +126,7 @@ export class CompanyView {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await this.companiesSvc.delete(this.id());
       this.companiesSvc.triggerRefresh();
@@ -134,7 +136,7 @@ export class CompanyView {
       const message = err?.message || err?.data?.message || 'Unable to delete company';
       this.alertSvc.showError(message);
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 

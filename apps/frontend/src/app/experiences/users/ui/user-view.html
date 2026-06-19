@@ -3,7 +3,7 @@
   [icon]="'user-circle'"
   [isLoading]="loading()"
   [error]="error()"
-  [hasRecord]="!!detail()"
+  [hasRecord]="!initialized() || !!detail()"
   [showDelete]="true"
   [deleteText]="'Delete User'"
   [btn1Text]="'Edit User'"
