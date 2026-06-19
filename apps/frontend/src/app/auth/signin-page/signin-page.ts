@@ -2,7 +2,7 @@ import { Component, effect, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { form, submit, required, email, minLength, pattern, FormField } from '@angular/forms/signals';
-import { JSendFailError } from '@common';
+import { JSendFailError } from '../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../services/api/token-service';
 import { TRPCClientError } from '@trpc/client';

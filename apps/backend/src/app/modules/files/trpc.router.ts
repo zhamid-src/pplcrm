@@ -1,4 +1,4 @@
-import { idSchema, getAllOptions } from '@common';
+import { idSchema, getAllOptions } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { FilesController } from './controller';

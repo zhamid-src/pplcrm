@@ -1,7 +1,7 @@
 import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { AddTagObj } from '@common';
+import { AddTagObj } from '../../../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';

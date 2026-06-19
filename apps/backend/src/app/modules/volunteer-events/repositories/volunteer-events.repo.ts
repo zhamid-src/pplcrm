@@ -1,6 +1,6 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { BaseRepository, JoinedQueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   constructor() {
@@ -15,7 +15,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       tenant_id: string;
       options?: any;
     },
-    trx?: Transaction<Models>
+    trx?: Transaction<Models>,
   ): Promise<{ rows: any[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
@@ -23,18 +23,16 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     const filterModel = (options.filterModel ?? {}) as Record<string, any>;
 
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .where('volunteer_events.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb2) => {
-          const text = searchStr;
-          return qb2.where(
-            sql`(
+      let q = qb.where('volunteer_events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
+        const text = searchStr;
+        return qb2.where(
+          sql`(
               LOWER(volunteer_events.name) LIKE ${text} OR
               LOWER(volunteer_events.description) LIKE ${text} OR
               LOWER(volunteer_events.location_address) LIKE ${text}
-            )` as any
-          );
-        });
+            )` as any,
+        );
+      });
 
       // Archive filter based on event time
       const includeArchived = (options as any).includeArchived === true;
@@ -91,11 +89,11 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
         'volunteer_events.updated_at',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb)
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
       )
       .$if(!options.sortModel?.length, (qb) => qb.orderBy('volunteer_events.start_time', 'desc'))
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!)
+        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
       )
       .execute();
 
@@ -108,10 +106,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   /**
    * Get volunteer roster (shifts) for a specific event.
    */
-  public async getShiftsForEvent(
-    input: { tenant_id: string; event_id: string },
-    trx?: Transaction<Models>
-  ) {
+  public async getShiftsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     return db
       .selectFrom('volunteer_shifts')
@@ -149,7 +144,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       notes?: string | null;
       user_id: string;
     },
-    trx?: Transaction<Models>
+    trx?: Transaction<Models>,
   ) {
     const db = trx || (BaseRepository as any)['_db'];
 
@@ -177,11 +172,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       updatedby_id: input.user_id,
     };
 
-    return db
-      .insertInto('volunteer_shifts')
-      .values(row)
-      .returningAll()
-      .executeTakeFirst();
+    return db.insertInto('volunteer_shifts').values(row).returningAll().executeTakeFirst();
   }
 
   /**
@@ -198,7 +189,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       };
       user_id: string;
     },
-    trx?: Transaction<Models>
+    trx?: Transaction<Models>,
   ) {
     const db = trx || (BaseRepository as any)['_db'];
     return db
@@ -217,10 +208,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   /**
    * Remove/Delete a shift.
    */
-  public async deleteShift(
-    input: { tenant_id: string; id: string },
-    trx?: Transaction<Models>
-  ) {
+  public async deleteShift(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     const res = await db
       .deleteFrom('volunteer_shifts')
@@ -233,10 +221,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   /**
    * Get shift history for a person.
    */
-  public async getHistoryForPerson(
-    input: { tenant_id: string; person_id: string },
-    trx?: Transaction<Models>
-  ) {
+  public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     return db
       .selectFrom('volunteer_shifts')
@@ -261,18 +246,12 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   /**
    * Get aggregated stats for a volunteer (person).
    */
-  public async getVolunteerStats(
-    input: { tenant_id: string; person_id: string },
-    trx?: Transaction<Models>
-  ) {
+  public async getVolunteerStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
 
     const result = await db
       .selectFrom('volunteer_shifts')
-      .select((eb: any) => [
-        eb.fn.count('id').as('shifts_count'),
-        eb.fn.sum('hours_worked').as('total_hours'),
-      ])
+      .select((eb: any) => [eb.fn.count('id').as('shifts_count'), eb.fn.sum('hours_worked').as('total_hours')])
       .where('tenant_id', '=', input.tenant_id)
       .where('person_id', '=', input.person_id)
       .where('status', '=', 'attended')

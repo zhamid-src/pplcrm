@@ -1,7 +1,7 @@
 import { ReferenceExpression, SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class WebFormsRepo extends BaseRepository<'web_forms'> {
   constructor() {
@@ -9,10 +9,7 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
   }
 
   public async getByIdPublic(id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst();
+    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
   }
 
   public override async getAllWithCounts(
@@ -39,7 +36,8 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
             sql<boolean>`(
             LOWER(web_forms.name) LIKE ${text} OR
             LOWER(web_forms.description) LIKE ${text}
-          )`);
+          )`,
+          );
         })
         .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
@@ -71,7 +69,10 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
         'web_forms.send_alert',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort), qb),
+        options.sortModel!.reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
       )
       .offset(startRow)
       .limit(endRow - startRow)
@@ -80,8 +81,12 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     const formattedRows = rows.map((row) => ({
       ...row,
       id: String(row['id']),
-      target_tags: Array.isArray(row['target_tags']) ? row['target_tags'] : JSON.parse((row['target_tags'] as any) || '[]'),
-      target_lists: Array.isArray(row['target_lists']) ? row['target_lists'] : JSON.parse((row['target_lists'] as any) || '[]'),
+      target_tags: Array.isArray(row['target_tags'])
+        ? row['target_tags']
+        : JSON.parse((row['target_tags'] as any) || '[]'),
+      target_lists: Array.isArray(row['target_lists'])
+        ? row['target_lists']
+        : JSON.parse((row['target_lists'] as any) || '[]'),
     }));
 
     return {

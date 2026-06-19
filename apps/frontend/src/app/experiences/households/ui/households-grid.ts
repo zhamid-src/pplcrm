@@ -3,7 +3,7 @@
  */
 import { Component, inject, signal, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { UpdateHouseholdsObj } from '@common';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';

@@ -1,7 +1,7 @@
 /**
  * Data access layer for email message records.
  */
-import { EmailStatus, SPECIAL_FOLDERS } from '@common';
+import { EmailStatus, SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
 
 import { UpdateResult, sql } from 'kysely';
 
@@ -10,7 +10,7 @@ import { EmailAttachmentsRepo } from './email-attachments.repo';
 import { EmailHeadersRepo } from './email-headers.repo';
 import { EmailRecipientsRepo } from './email-recipients.repo';
 import { EmailTrashRepo } from './email-trash.repo';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
 
 /**
  * Repository for the `emails` table.

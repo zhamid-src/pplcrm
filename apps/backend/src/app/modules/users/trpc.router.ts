@@ -2,7 +2,7 @@
  * tRPC router exposing endpoints for managing user account list, profile viewing,
  * and profile updates.
  */
-import { UpdateAuthUserObj, idSchema } from '@common';
+import { UpdateAuthUserObj, idSchema } from '../../../../../../libs/common/src';
 
 import z from 'zod';
 

@@ -1,7 +1,7 @@
 import { computed, signal, Service, linkedSignal } from '@angular/core';
 
-import { ServerEmail } from 'common/src/lib/emails';
-import type { EmailType } from 'common/src/lib/models';
+import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Service()
 export class EmailStateStore {

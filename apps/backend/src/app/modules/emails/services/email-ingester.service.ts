@@ -4,7 +4,7 @@
  * Shared by both MsSyncService and GoogleSyncService to avoid code duplication.
  */
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { StorageService } from '../../../lib/storage.service';
 import { env } from '../../../../env';
 import crypto from 'crypto';
@@ -56,12 +56,36 @@ export class EmailIngesterService {
 
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx.deleteFrom('email_comments').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-      await trx.deleteFrom('email_recipients').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-      await trx.deleteFrom('email_attachments' as any).where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-      await trx.deleteFrom('email_trash' as any).where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_bodies')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_headers')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments' as any)
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_trash' as any)
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
 
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
@@ -86,12 +110,28 @@ export class EmailIngesterService {
 
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx.deleteFrom('email_comments').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
       await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
       await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx.deleteFrom('email_recipients').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx.deleteFrom('email_attachments' as any).where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx.deleteFrom('email_trash' as any).where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments' as any)
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx
+        .deleteFrom('email_trash' as any)
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
 
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
@@ -181,7 +221,7 @@ export class EmailIngesterService {
           console.error(`Failed to upload attachment ${att.name} for message ${email.id} to storage:`, err);
           return null;
         }
-      })
+      }),
     );
 
     const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
@@ -196,7 +236,7 @@ export class EmailIngesterService {
           from_email: email.fromEmail,
           to_email: email.toEmail,
           subject: email.subject,
-          preview: dedupeKey,   // store ID as dedup key
+          preview: dedupeKey, // store ID as dedup key
           assigned_to: null,
           is_favourite: false,
           deleted_at: null,

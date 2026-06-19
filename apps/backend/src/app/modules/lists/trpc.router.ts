@@ -1,4 +1,4 @@
-import { AddListObj, UpdateListObj, idSchema } from '@common';
+import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -20,7 +20,9 @@ export const ListsRouter = router({
     .input(z.object({ id: idSchema, data: UpdateListObj }))
     .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
 
-  getMembersHouseholds: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
+  getMembersHouseholds: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
 
   getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
 

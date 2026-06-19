@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
 import { env } from '../../../env';
 import { promises as fs } from 'fs';

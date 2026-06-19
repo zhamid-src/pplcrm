@@ -1,5 +1,5 @@
 import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '@common';
+import { debounce } from '../../../../common/src';
 
 @Component({
   selector: 'pc-autocomplete',

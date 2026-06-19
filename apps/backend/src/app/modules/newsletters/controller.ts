@@ -1,4 +1,4 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '@common';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
 import { sql } from 'kysely';
 
 import { BaseController } from '../../lib/base.controller';

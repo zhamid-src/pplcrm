@@ -3,13 +3,13 @@
  * Handles the Google authorization code flow, token storage, and refresh.
  */
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
 /** Scopes required for reading, writing, and sending mail via Gmail API */
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/userinfo.email'
+  'https://www.googleapis.com/auth/userinfo.email',
 ];
 
 export class GoogleOAuthService {
@@ -104,7 +104,7 @@ export class GoogleOAuthService {
         .select('refresh_token')
         .where('user_id', '=', userId)
         .executeTakeFirst();
-      
+
       if (existing?.refresh_token) {
         insertObj.refresh_token = existing.refresh_token;
       } else {
@@ -193,7 +193,9 @@ export class GoogleOAuthService {
   /**
    * Returns connection status for a user.
    */
-  public async getConnectionStatus(userId: string): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null }> {
+  public async getConnectionStatus(
+    userId: string,
+  ): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null }> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
       .select(['google_email', 'synced_at'])

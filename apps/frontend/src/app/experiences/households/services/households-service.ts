@@ -2,7 +2,12 @@
  * @file Service responsible for managing household data via tRPC.
  */
 import { Service } from '@angular/core';
-import { ExportCsvInputType, ExportCsvResponseType, UpdateHouseholdsType, getAllOptionsType } from '@common';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 

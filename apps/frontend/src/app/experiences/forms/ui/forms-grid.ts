@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { AddWebFormType } from '@common';
+import { AddWebFormType } from '../../../../../../../libs/common/src';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';

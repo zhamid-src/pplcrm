@@ -4,7 +4,7 @@
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class TeamsRepo extends BaseRepository<'teams'> {
   private readonly volunteerTag = 'volunteer';

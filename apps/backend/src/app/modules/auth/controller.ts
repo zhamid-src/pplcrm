@@ -9,7 +9,7 @@ import {
   getAllOptionsType,
   signInInputType,
   signUpInputType,
-} from '@common';
+} from '../../../../../../libs/common/src';
 
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
@@ -52,7 +52,7 @@ import {
   Models,
   OperationDataType,
   TablesOperationMap,
-} from 'common/src/lib/kysely.models';
+} from '../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Controller responsible for user authentication, sign-up, token management,

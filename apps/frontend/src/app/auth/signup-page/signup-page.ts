@@ -2,7 +2,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUser, signUpInputType } from '@common';
+import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';

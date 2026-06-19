@@ -2,7 +2,7 @@ import { Component, DestroyRef, computed, effect, inject, signal } from '@angula
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 
-import type { ImportListItem } from '@common';
+import type { ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ImportsService } from '../services/imports-service';

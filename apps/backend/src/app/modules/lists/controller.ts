@@ -1,4 +1,9 @@
-import type { AddListType, IAuthKeyPayload, UpdateListType, getAllOptionsType } from '@common';
+import type {
+  AddListType,
+  IAuthKeyPayload,
+  UpdateListType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
@@ -7,7 +12,7 @@ import { PersonsController } from '../persons/controller';
 import { ListsRepo } from './repositories/lists.repo';
 import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
 import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
-import type { OperationDataType } from 'common/src/lib/kysely.models';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 
 /**

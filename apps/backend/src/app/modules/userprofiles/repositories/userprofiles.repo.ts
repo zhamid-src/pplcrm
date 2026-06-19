@@ -4,7 +4,7 @@
 import { Transaction } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Repository for interacting with the `profiles` table.

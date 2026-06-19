@@ -2,7 +2,7 @@
  * tRPC router for email management including folders, individual emails,
  * comments, and assignment of emails to users.
  */
-import { idSchema } from '@common';
+import { idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -14,10 +14,14 @@ import { EmailsController } from './controller';
  */
 function addComment() {
   return authProcedure
-    .input(z.object({ id: idSchema, author_id: idSchema, comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long') }))
-    .mutation(
-      ({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment),
-    );
+    .input(
+      z.object({
+        id: idSchema,
+        author_id: idSchema,
+        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment));
 }
 
 /**
@@ -45,9 +49,7 @@ function deleteDraft() {
 }
 
 function deleteEmail() {
-  return authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input]));
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input]));
 }
 
 function deleteEmails() {
@@ -75,9 +77,7 @@ function getDraft() {
 }
 
 function getEmailBody() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
 }
 
 /**
@@ -95,18 +95,16 @@ function getEmailHeader() {
  * @returns Email body with headers and recipient information.
  */
 function getEmailWithHeaders() {
-  return authProcedure.input(idSchema).query(
-    async ({ input, ctx }) => {
-      const tenantId = ctx.auth.tenant_id;
+  return authProcedure.input(idSchema).query(async ({ input, ctx }) => {
+    const tenantId = ctx.auth.tenant_id;
 
-      const [body, header] = await Promise.all([
-        emails.getEmailBody(tenantId, input),
-        emails.getEmailHeader(tenantId, input),
-      ]);
+    const [body, header] = await Promise.all([
+      emails.getEmailBody(tenantId, input),
+      emails.getEmailHeader(tenantId, input),
+    ]);
 
-      return { body, header };
-    },
-  );
+    return { body, header };
+  });
 }
 
 /**
@@ -115,13 +113,15 @@ function getEmailWithHeaders() {
  */
 function getEmails() {
   return authProcedure
-    .input(z.object({
-      folderId: idSchema,
-      limit: z.number().int().min(1).max(100).optional(),
-      offset: z.number().int().min(0).optional(),
-    }))
+    .input(
+      z.object({
+        folderId: idSchema,
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
     .query(({ input, ctx }) =>
-      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset)
+      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset),
     );
 }
 
@@ -136,9 +136,7 @@ function getFoldersWithCounts() {
 }
 
 function hasAttachment() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
+  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
 }
 
 function hasAttachmentByEmailIds() {
@@ -156,9 +154,7 @@ function restoreFromTrash() {
 function moveToFolder() {
   return authProcedure
     .input(z.object({ id: idSchema, folderId: idSchema }))
-    .mutation(({ input, ctx }) =>
-      emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id)
-    );
+    .mutation(({ input, ctx }) => emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id));
 }
 
 function saveDraft() {
@@ -173,16 +169,15 @@ function saveDraft() {
         html: z.string().max(100000, 'HTML body is too long').optional(),
       }),
     )
-    .mutation(
-      ({ input, ctx }) =>
-        emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
-          id: input.id,
-          to_list: input.to,
-          cc_list: input.cc ?? [],
-          bcc_list: input.bcc ?? [],
-          subject: input.subject ?? undefined,
-          body_html: input.html ?? undefined,
-        }),
+    .mutation(({ input, ctx }) =>
+      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
+        id: input.id,
+        to_list: input.to,
+        cc_list: input.cc ?? [],
+        bcc_list: input.bcc ?? [],
+        subject: input.subject ?? undefined,
+        body_html: input.html ?? undefined,
+      }),
     );
 }
 
@@ -195,9 +190,7 @@ function setFavourite() {
 function setStatus() {
   return authProcedure
     .input(z.object({ id: idSchema, status: z.enum(['open', 'closed']) }))
-    .mutation(({ input, ctx }) =>
-      emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id),
-    );
+    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id));
 }
 
 /**

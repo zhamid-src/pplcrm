@@ -1,14 +1,8 @@
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
-import { getAllOptionsType } from '@common';
+import { getAllOptionsType } from '../../../../../../libs/common/src';
 import { ErrorService } from '../error.service';
-import {
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
+import { TRPCClientError, TRPCLink, createTRPCClient, httpLink as trpcHttpLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import superjson from 'superjson';
 
@@ -193,7 +187,8 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
                 // Server formatter should already do this; this is just a client fallback
                 err.message = GENERIC_LOGIN_MSG;
               } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as any)?.zodError || (err.message && err.message.trim().startsWith('['));
+                const isValidationError =
+                  (err.data as any)?.zodError || (err.message && err.message.trim().startsWith('['));
                 if (isValidationError) {
                   err.message = GENERIC_INPUT_MSG;
                 }
@@ -227,4 +222,3 @@ function httpUnbatchedLink(tokenSvc: TokenService) {
     },
   });
 }
-

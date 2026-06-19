@@ -1,7 +1,7 @@
 import { sql, Transaction } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class TasksRepo extends BaseRepository<'tasks'> {
   constructor() {
@@ -34,14 +34,15 @@ export class TasksRepo extends BaseRepository<'tasks'> {
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
-    
+
     const rest = {
       ...(options || {}),
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
 
     const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
-    const hasCreatedFilter = !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const hasCreatedFilter =
+      !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
     const joinAssign = !!ass || !!text || hasAssignedFilter;
     const joinCreator = !!text || hasCreatedFilter;
 
@@ -49,18 +50,20 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const raw = (filterModel['status'].value) as any;
+          const raw = filterModel['status'].value as any;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
           return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const raw = (filterModel['priority'].value) as any;
+          const raw = filterModel['priority'].value as any;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
           return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
         })
-        .$if(!!filterModel?.['due_at']?.value, (q) => q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any))
+        .$if(!!filterModel?.['due_at']?.value, (q) =>
+          q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any),
+        )
         .$if(!!hasAssignedFilter, (q) => {
           const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
           const arr = Array.isArray(raw) ? raw : [raw];
@@ -80,7 +83,10 @@ export class TasksRepo extends BaseRepository<'tasks'> {
               return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
             });
           if (!parts.length) return q;
-          const orExpr = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          const orExpr = parts.reduce(
+            (acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`),
+            parts[0],
+          );
           return q.where(sql`(${orExpr})` as any);
         })
         .$if(!!hasCreatedFilter, (q) => {
@@ -99,10 +105,15 @@ export class TasksRepo extends BaseRepository<'tasks'> {
               return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
             });
           if (!parts.length) return q;
-          const orExpr2 = parts.reduce((acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`), parts[0]);
+          const orExpr2 = parts.reduce(
+            (acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`),
+            parts[0],
+          );
           return q.where(sql`(${orExpr2})` as any);
         })
-        .$if(!!filterModel?.['team_id']?.value, (q) => q.where('tasks.team_id', '=', filterModel['team_id'].value as any));
+        .$if(!!filterModel?.['team_id']?.value, (q) =>
+          q.where('tasks.team_id', '=', filterModel['team_id'].value as any),
+        );
 
     return applyGridFilters(this.getSelectWithColumns(rest))
       .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
@@ -134,7 +145,9 @@ export class TasksRepo extends BaseRepository<'tasks'> {
           (pri as any).sort,
         ),
       )
-      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, (ass as any).sort));
+      .$if(!!ass, (qb) =>
+        qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, (ass as any).sort),
+      );
   }
 
   public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {

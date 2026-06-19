@@ -4,7 +4,7 @@
  * Shared base repository that wraps Kysely and provides common CRUD helpers.
  * Specific repositories for individual tables extend this class.
  */
-import { INow, QueryBuilderGroupNode } from '@common';
+import { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
 import { promises as fs } from 'fs';
 import {
@@ -30,7 +30,13 @@ import {
 } from 'kysely';
 import path from 'path';
 
-import { Models, OperationDataType, TypeId, TypeTableColumns, TypeTenantId } from 'common/src/lib/kysely.models';
+import {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTableColumns,
+  TypeTenantId,
+} from '../../../../../libs/common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
 const dialect = new PostgresDialect({

@@ -9,7 +9,7 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailType } from 'common/src/lib/models';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-activities',

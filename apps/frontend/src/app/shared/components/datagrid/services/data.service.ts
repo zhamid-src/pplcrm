@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import type { getAllOptionsType } from '@common';
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
 
 @Injectable({ providedIn: 'root' })
 export class DataGridDataService {

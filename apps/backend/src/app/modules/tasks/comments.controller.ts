@@ -1,7 +1,7 @@
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import { Transaction } from 'kysely';
-import type { OperationDataType, Models } from 'common/src/lib/kysely.models';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TaskCommentsRepo } from './repositories/task-comments.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 
@@ -19,25 +19,24 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
     if (comment && row.comment && row.task_id && row.tenant_id) {
       const actorId = row.createdby_id || (row as any).author_id || '';
       if (actorId) {
-        await this.userActivity.log({
-          tenant_id: String(row.tenant_id),
-          user_id: String(actorId),
-          activity: 'update',
-          entity: 'tasks',
-          entity_id: String(row.task_id),
-          quantity: 1,
-          metadata: { action: 'add_comment', comment_id: comment.id },
-        }, trx);
+        await this.userActivity.log(
+          {
+            tenant_id: String(row.tenant_id),
+            user_id: String(actorId),
+            activity: 'update',
+            entity: 'tasks',
+            entity_id: String(row.task_id),
+            quantity: 1,
+            metadata: { action: 'add_comment', comment_id: comment.id },
+          },
+          trx,
+        );
       }
 
       const commentLink = `${env.appUrl}/tasks/${row.task_id}`;
-      processMentions(
-        this.getRepo().db,
-        String(row.tenant_id),
-        row.comment,
-        commentLink,
-        String(actorId)
-      ).catch((err) => console.error('Failed to process task comment mentions', err));
+      processMentions(this.getRepo().db, String(row.tenant_id), row.comment, commentLink, String(actorId)).catch(
+        (err) => console.error('Failed to process task comment mentions', err),
+      );
     }
     return comment;
   }
@@ -46,5 +45,3 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
     return this.add(row);
   }
 }
-
-

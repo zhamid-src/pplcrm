@@ -1,6 +1,6 @@
 import { signal, Service } from '@angular/core';
 
-import { SettingsEntryType } from '@common';
+import { SettingsEntryType } from '../../../../../../../libs/common/src';
 
 import { TRPCService } from '../../../services/api/trpc-service';
 

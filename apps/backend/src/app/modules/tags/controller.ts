@@ -1,9 +1,9 @@
-import { AddTagType, IAuthKeyPayload, UpdateTagType } from '@common';
+import { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
 
 import { ConflictError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { TagsRepo } from './repositories/tags.repo';
-import { OperationDataType } from 'common/src/lib/kysely.models';
+import { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Controller for managing tags: creation, updating, searching, and reporting.

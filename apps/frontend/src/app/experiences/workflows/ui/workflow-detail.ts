@@ -1,6 +1,6 @@
 import { Component, OnInit, signal, inject, computed } from '@angular/core';
 import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
-import { AddWorkflowObj } from '@common';
+import { AddWorkflowObj } from '../../../../../../../libs/common/src';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';

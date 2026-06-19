@@ -7,8 +7,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { EmailsService } from '../emails-service';
 import { EmailStateStore } from './email-state.store';
-import { ServerEmail } from 'common/src/lib/emails';
-import type { EmailFolderType } from 'common/src/lib/models';
+import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Service()
 export class EmailFoldersStore {

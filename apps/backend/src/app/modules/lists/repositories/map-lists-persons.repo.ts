@@ -1,5 +1,5 @@
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 
 /** Repository for the `map_lists_persons` table. */

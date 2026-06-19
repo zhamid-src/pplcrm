@@ -4,7 +4,7 @@
  * and session management through tRPC communication with the backend.
  */
 import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '@common';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
 

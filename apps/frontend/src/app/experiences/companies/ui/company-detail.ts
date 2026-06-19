@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, input, signal } from '@angular/cor
 import { DatePipe } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { CompanyInputObj } from '@common';
+import { CompanyInputObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';

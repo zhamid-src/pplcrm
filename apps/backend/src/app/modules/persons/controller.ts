@@ -1,4 +1,9 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload, getAllOptionsType } from '@common';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { QueryParams } from '../../lib/base.repo';

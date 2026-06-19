@@ -1,12 +1,10 @@
-import { EMAIL_FOLDERS, EmailFolderConfig } from '@common';
+import { EMAIL_FOLDERS, EmailFolderConfig } from '../../../../../libs/common/src';
 
 /**
  * Get all email folders sorted by sort_order.
  */
 export function getAllEmailFolders(): EmailFolderConfig[] {
-  return [...EMAIL_FOLDERS]
-    .filter((folder: any) => !folder.is_hidden)
-    .sort((a, b) => a.sort_order - b.sort_order);
+  return [...EMAIL_FOLDERS].filter((folder: any) => !folder.is_hidden).sort((a, b) => a.sort_order - b.sort_order);
 }
 
 /**

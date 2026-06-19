@@ -1,4 +1,4 @@
-import { idSchema } from '@common';
+import { idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -17,7 +17,7 @@ export const ImportsRouter = router({
         deleteHouseholds: z.boolean().optional(),
         deleteCompanies: z.boolean().optional(),
         deleteTasks: z.boolean().optional(),
-      })
+      }),
     )
     .mutation(({ input, ctx }) => imports.deleteImport(input, ctx.auth)),
 });

@@ -9,8 +9,8 @@ import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-co
 import { EmailDetails } from '../email-details/email-details';
 import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
-import type { EmailFolderType, EmailType } from 'common/src/lib/models';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({

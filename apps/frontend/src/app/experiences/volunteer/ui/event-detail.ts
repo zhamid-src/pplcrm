@@ -3,7 +3,11 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { AddVolunteerEventType, UpdateVolunteerEventType, AddVolunteerEventObj } from '@common';
+import {
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+  AddVolunteerEventObj,
+} from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';

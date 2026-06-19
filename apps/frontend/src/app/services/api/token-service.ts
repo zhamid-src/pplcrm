@@ -1,5 +1,5 @@
 import { Service } from '@angular/core';
-import { IToken } from '@common';
+import { IToken } from '../../../../../../libs/common/src';
 
 /**
  * Service for managing authentication and refresh tokens with configurable persistence.
@@ -115,7 +115,7 @@ export class TokenService {
    * Automatically removes any token that is falsy.
    *
    * @param token - Object containing auth and/or refresh tokens.
-  */
+   */
   public set(token: IToken): void {
     if (token.auth_token) {
       this.setAuthToken(token.auth_token);
@@ -184,7 +184,7 @@ export class TokenService {
    * Removes a specific token key from the active storage.
    *
    * @param item - The key of the token to remove.
-  */
+   */
   private removeToken(item: string): void {
     if (this.persistence) {
       localStorage.removeItem(item);
@@ -198,7 +198,7 @@ export class TokenService {
    *
    * @param item - The key under which to store the token.
    * @param token - The token string to store.
-  */
+   */
   private setToken(item: string, token: string): void {
     if (this.persistence) {
       localStorage.setItem(item, token);

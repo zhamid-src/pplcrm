@@ -7,7 +7,7 @@ import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 import { Swap } from '@uxcommon/components/swap/swap';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from 'common/src/lib/models';
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-folder-list',

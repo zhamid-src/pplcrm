@@ -1,7 +1,7 @@
-import { SelectQueryBuilder, Transaction } from "kysely";
+import { SelectQueryBuilder, Transaction } from 'kysely';
 
-import { BaseRepository } from "./base.repo";
-import { Models, OperationDataType } from "common/src/lib/kysely.models";
+import { BaseRepository } from './base.repo';
+import { Models, OperationDataType } from '../../../../../libs/common/src/lib/kysely.models';
 
 export class UserActivityRepo extends BaseRepository<'user_activity'> {
   constructor() {
@@ -35,16 +35,19 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     return mapped;
   }
 
-  public async log(input: {
-    tenant_id: string;
-    user_id: string;
-    activity: UserActivityType;
-    entity: string;
-    entity_id?: string | null;
-    quantity?: number | null;
-    metadata?: Record<string, unknown> | null;
-    performed_by?: string | null;
-  }, trx?: Transaction<Models>) {
+  public async log(
+    input: {
+      tenant_id: string;
+      user_id: string;
+      activity: UserActivityType;
+      entity: string;
+      entity_id?: string | null;
+      quantity?: number | null;
+      metadata?: Record<string, unknown> | null;
+      performed_by?: string | null;
+    },
+    trx?: Transaction<Models>,
+  ) {
     const actor = input.performed_by ?? input.user_id;
     const row = {
       tenant_id: input.tenant_id,
@@ -68,7 +71,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     tenant_id: string,
     entity: string,
     entity_id: string,
-    options?: { startRow?: number; endRow?: number }
+    options?: { startRow?: number; endRow?: number },
   ) {
     let entities = [entity];
     const ent = entity.toLowerCase();
@@ -106,7 +109,8 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       .where('user_activity.entity_id', '=', entity_id)
       .orderBy('user_activity.created_at', 'desc');
 
-    const countQuery = this.db.selectFrom('user_activity')
+    const countQuery = this.db
+      .selectFrom('user_activity')
       .select(({ fn }) => [fn.count('user_activity.id').as('total')])
       .where('user_activity.tenant_id', '=', tenant_id)
       .where('user_activity.entity', 'in', entities)
@@ -116,10 +120,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       query = query.offset(options.startRow).limit(options.endRow - options.startRow);
     }
 
-    const [rows, countResult] = await Promise.all([
-      query.execute(),
-      countQuery.executeTakeFirst(),
-    ]);
+    const [rows, countResult] = await Promise.all([query.execute(), countQuery.executeTakeFirst()]);
 
     const count = Number(countResult?.total ?? 0);
     return { rows, count };
@@ -162,7 +163,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
           eb('authusers.last_name', 'ilike', search),
           eb('user_activity.entity', 'ilike', search),
           eb('user_activity.activity', 'ilike', search),
-        ])
+        ]),
       );
     }
 
@@ -195,7 +196,7 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
             eb('authusers.last_name', 'ilike', search),
             eb('user_activity.entity', 'ilike', search),
             eb('user_activity.activity', 'ilike', search),
-          ])
+          ]),
         );
     }
 
@@ -239,5 +240,16 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
   }
 }
 
-export type UserActivityType = 'import' | 'export' | 'create' | 'update' | 'delete' | 'assign' | 'unassign' | 'merge' | 'close' | 'reopen' | 'send';
+export type UserActivityType =
+  | 'import'
+  | 'export'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'assign'
+  | 'unassign'
+  | 'merge'
+  | 'close'
+  | 'reopen'
+  | 'send';
 import { QueryParams } from './base.repo';

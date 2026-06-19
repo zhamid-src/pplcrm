@@ -4,7 +4,7 @@
 import { Insertable, OperandValueExpressionOrList, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Repository for interacting with the `settings` table.
@@ -53,13 +53,11 @@ export class SettingsRepo extends BaseRepository<'settings'> {
     return this.getInsert()
       .values(rows as Insertable<Models['settings']>[])
       .onConflict((oc) =>
-        oc
-          .columns(['tenant_id', 'key'])
-          .doUpdateSet({
-            value: (eb) => eb.ref('excluded.value'),
-            updatedby_id: (eb) => eb.ref('excluded.updatedby_id'),
-            updated_at: sql`now()`,
-          }),
+        oc.columns(['tenant_id', 'key']).doUpdateSet({
+          value: (eb) => eb.ref('excluded.value'),
+          updatedby_id: (eb) => eb.ref('excluded.updatedby_id'),
+          updated_at: sql`now()`,
+        }),
       )
       .returningAll()
       .execute();

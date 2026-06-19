@@ -3,7 +3,7 @@
  */
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE } from '@common';
+import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
 
 import { PersonsService } from '../services/persons-service';
 

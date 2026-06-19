@@ -1,14 +1,14 @@
 import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { EmailStatus } from '@common';
+import { EmailStatus } from '../../../../../../../../libs/common/src';
 
 import { EmailsService } from '../emails-service';
 import { EmailActionsStore } from './email-actions.store';
 import { EmailCacheStore } from './email-cache.store';
 import { EmailFoldersStore } from './email-folders.store';
 import { type EmailId, EmailStateStore } from './email-state.store';
-import type { EmailFolderType, EmailType } from 'common/src/lib/models';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Service()
 export class EmailsStore {

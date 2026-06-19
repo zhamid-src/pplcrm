@@ -1,6 +1,6 @@
 import { sql, Transaction } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class CompaniesRepo extends BaseRepository<'companies'> {
   constructor() {

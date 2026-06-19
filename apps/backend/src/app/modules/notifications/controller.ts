@@ -1,6 +1,6 @@
 import { BaseController } from '../../lib/base.controller';
 import { NotificationsRepo } from './repositories/notifications.repo';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 
 export class NotificationsController extends BaseController<'notifications', NotificationsRepo> {
   constructor() {

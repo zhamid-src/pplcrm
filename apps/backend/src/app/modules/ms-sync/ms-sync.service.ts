@@ -5,9 +5,9 @@
  */
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Kysely } from 'kysely';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { MsOAuthService } from './ms-oauth.service';
-import { ALL_FOLDERS } from 'common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { EmailIngesterService, IngestableEmail } from '../emails/services/email-ingester.service';
 
 const MAX_MESSAGES_PER_SYNC = 50;

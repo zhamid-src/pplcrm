@@ -2,7 +2,7 @@ import { Component, OnInit, effect, inject, signal, WritableSignal } from '@angu
 import { ActivatedRoute } from '@angular/router';
 import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
-import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '@common';
+import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';

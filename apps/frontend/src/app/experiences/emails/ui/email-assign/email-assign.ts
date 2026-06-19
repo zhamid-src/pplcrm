@@ -2,13 +2,13 @@
  * @file Component for assigning an email to a user.
  */
 import { Component, effect, inject, input, signal } from '@angular/core';
-import { IAuthUser } from '@common';
+import { IAuthUser } from '../../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
-import { EmailType } from 'common/src/lib/models';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-assign',

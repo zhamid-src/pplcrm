@@ -1,6 +1,6 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
 
 const db = new Kysely<Models>({
   dialect: new PostgresDialect({
@@ -8,9 +8,9 @@ const db = new Kysely<Models>({
       user: 'postgres',
       database: 'pplcrm',
       host: 'localhost',
-      port: 5432
-    })
-  })
+      port: 5432,
+    }),
+  }),
 });
 
 async function run() {

@@ -1,4 +1,4 @@
-import { idSchema, CompanyInputObj } from '@common';
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { CompaniesController } from './controller';

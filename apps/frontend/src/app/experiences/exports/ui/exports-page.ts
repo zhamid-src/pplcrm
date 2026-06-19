@@ -5,7 +5,7 @@ import { TokenService } from '../../../services/api/token-service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import type { DataExportRecordType } from '@common';
+import type { DataExportRecordType } from '../../../../../../../libs/common/src';
 import { environment } from '../../../../environments/environment';
 
 @Component({

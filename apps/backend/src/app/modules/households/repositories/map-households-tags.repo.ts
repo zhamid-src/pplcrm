@@ -2,7 +2,7 @@
  * Repository handling the mapping between households and tags.
  */
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from 'common/src/lib/kysely.models';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 
 /**
@@ -28,10 +28,7 @@ export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'>
     return Number(res?.numDeletedRows ?? 0) > 0;
   }
 
-  public async deleteByHouseholdIds(
-    input: { tenant_id: string; household_ids: string[] },
-    trx?: Transaction<Models>,
-  ) {
+  public async deleteByHouseholdIds(input: { tenant_id: string; household_ids: string[] }, trx?: Transaction<Models>) {
     if (!input.household_ids.length) return 0;
     const res = await this.getDelete(trx)
       .where('tenant_id', '=', input.tenant_id as any)

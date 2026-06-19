@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 
-import { MarketingEmailTopLinkType, MarketingEmailType } from '@common';
+import { MarketingEmailTopLinkType, MarketingEmailType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 
 import { NewslettersService } from '../services/newsletters-service';

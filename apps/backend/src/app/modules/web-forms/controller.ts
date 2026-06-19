@@ -1,7 +1,7 @@
-import type { AddWebFormType, IAuthKeyPayload, UpdateWebFormType } from '@common';
+import type { AddWebFormType, IAuthKeyPayload, UpdateWebFormType } from '../../../../../../libs/common/src';
 import { BaseController } from '../../lib/base.controller';
 import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from 'common/src/lib/kysely.models';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 
@@ -385,8 +385,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
   }
 
   public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    const res = await this.getRepo().db
-      .selectFrom('user_activity')
+    const res = await this.getRepo()
+      .db.selectFrom('user_activity')
       .select(({ fn }) => fn.count('id').as('total'))
       .where('tenant_id', '=', tenantId)
       .where('entity', '=', 'web_forms')

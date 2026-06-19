@@ -2,7 +2,7 @@
  * @file Data grid component for viewing and editing tags.
  */
 import { Component } from '@angular/core';
-import { AddTagType } from '@common';
+import { AddTagType } from '../../../../../../../libs/common/src';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';

@@ -2,7 +2,13 @@
  * tRPC router offering CRUD operations, tag management, and queries
  * for person records associated with a tenant.
  */
-import { UpdatePersonsObj, exportCsvInput, exportCsvResponse, getAllOptions, idSchema } from '@common';
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { PersonsController } from './controller';

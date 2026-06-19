@@ -1,7 +1,7 @@
 import { Transaction } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, OperationDataType } from 'common/src/lib/kysely.models';
+import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class MapTeamsListsRepo extends BaseRepository<'map_teams_lists'> {
   constructor() {
@@ -51,14 +51,15 @@ export class MapTeamsListsRepo extends BaseRepository<'map_teams_lists'> {
       }
 
       if (toAdd.length > 0) {
-        const rowsToInsert = toAdd.map((list_id) =>
-          ({
-            tenant_id: input.tenant_id,
-            team_id: input.team_id,
-            list_id,
-            createdby_id: input.user_id,
-            updatedby_id: input.user_id,
-          }) as OperationDataType<'map_teams_lists', 'insert'>,
+        const rowsToInsert = toAdd.map(
+          (list_id) =>
+            ({
+              tenant_id: input.tenant_id,
+              team_id: input.team_id,
+              list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            }) as OperationDataType<'map_teams_lists', 'insert'>,
         );
         await this.addMany({ rows: rowsToInsert }, innerTrx);
       }

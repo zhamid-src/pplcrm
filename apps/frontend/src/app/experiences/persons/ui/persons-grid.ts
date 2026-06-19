@@ -6,7 +6,7 @@
 import { Component, inject, signal, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { UpdatePersonsObj, UpdatePersonsType } from '@common';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';

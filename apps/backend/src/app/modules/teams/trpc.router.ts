@@ -1,4 +1,4 @@
-import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '@common';
+import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
 
 import { z } from 'zod';
 
@@ -14,15 +14,11 @@ function getAll() {
 }
 
 function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ ctx, input }) => controller.getById(ctx.auth, input));
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getById(ctx.auth, input));
 }
 
 function add() {
-  return authProcedure
-    .input(AddTeamObj)
-    .mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
+  return authProcedure.input(AddTeamObj).mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
 }
 
 function update() {
@@ -32,21 +28,15 @@ function update() {
 }
 
 function remove() {
-  return authProcedure
-    .input(idSchema)
-    .mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
+  return authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
 }
 
 function getForVolunteer() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
 }
 
 function getAssignedLists() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
 }
 
 export const TeamsRouter = router({

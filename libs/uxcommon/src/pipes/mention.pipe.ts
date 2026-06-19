@@ -1,6 +1,6 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
-import type { IAuthUser } from 'common/src/lib/auth';
+import type { IAuthUser } from '../../../common/src/lib/auth';
 
 /**
  * Transforms plain text containing @mentions into HTML with highlighted mentions.

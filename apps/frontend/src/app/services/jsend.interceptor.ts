@@ -1,11 +1,6 @@
-import {
-  HttpContextToken,
-  HttpErrorResponse,
-  HttpInterceptorFn,
-  HttpResponse,
-} from '@angular/common/http';
+import { HttpContextToken, HttpErrorResponse, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { jsend, JSendFailError, JSendServerError } from '@common';
+import { jsend, JSendFailError, JSendServerError } from '../../../../../libs/common/src';
 import { catchError, map } from 'rxjs/operators';
 import { throwError } from 'rxjs';
 

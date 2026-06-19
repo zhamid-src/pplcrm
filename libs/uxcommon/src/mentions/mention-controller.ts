@@ -1,5 +1,5 @@
 import { computed, signal } from '@angular/core';
-import type { IAuthUser } from 'common/src/lib/auth';
+import type { IAuthUser } from '../../../common/src/lib/auth';
 
 export class MentionController {
   private getUsers: () => IAuthUser[];

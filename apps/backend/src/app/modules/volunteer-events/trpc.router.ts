@@ -5,7 +5,7 @@ import {
   UpdateVolunteerEventObj,
   AddVolunteerShiftObj,
   UpdateVolunteerShiftObj,
-} from '@common';
+} from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { VolunteerEventsController } from './controller';
@@ -14,17 +14,13 @@ const ctrl = new VolunteerEventsController();
 
 export const VolunteerRouter = router({
   // Events
-  getAll: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
 
   getById: authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
 
-  add: authProcedure
-    .input(AddVolunteerEventObj)
-    .mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
+  add: authProcedure.input(AddVolunteerEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
 
   checkSlugUnique: authProcedure
     .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
@@ -39,9 +35,7 @@ export const VolunteerRouter = router({
     .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
 
   // Shifts / Roster
-  getShiftsForEvent: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
+  getShiftsForEvent: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
 
   signupVolunteer: authProcedure
     .input(AddVolunteerShiftObj)
@@ -51,16 +45,12 @@ export const VolunteerRouter = router({
     .input(z.object({ id: idSchema, data: UpdateVolunteerShiftObj }))
     .mutation(({ input, ctx }) => ctrl.updateShift(input.id, input.data, ctx.auth)),
 
-  deleteShift: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
+  deleteShift: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
 
   // Person Specific History/Stats
   getHistoryForPerson: authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
 
-  getVolunteerStats: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
+  getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
 });

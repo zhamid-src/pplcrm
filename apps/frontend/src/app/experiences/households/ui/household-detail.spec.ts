@@ -7,7 +7,7 @@ import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TagsService } from '../../tags/services/tags-service';
 import { HouseholdDetail } from './household-detail';
-import { AddressType } from 'common/src/lib/kysely.models';
+import { AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 const mockHouseholdData = {
   id: '123',

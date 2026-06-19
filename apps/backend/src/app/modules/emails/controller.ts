@@ -7,9 +7,9 @@ import { EmailCommentsRepo } from './repositories/email-comments.repo';
 import { EmailDraftsRepo } from './repositories/email-drafts.repo';
 import { EmailRepo } from './repositories/email.repo';
 import { BaseController } from '../../lib/base.controller';
-import { ALL_FOLDERS, EmailStatus } from 'common/src/lib/emails';
-import { TypeTenantId } from 'common/src/lib/kysely.models';
-import { EmailDraftType } from 'common/src/lib/models';
+import { ALL_FOLDERS, EmailStatus } from '../../../../../../libs/common/src/lib/emails';
+import { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
@@ -43,15 +43,11 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         },
       });
       if (!row) throw new InternalError('Failed to add comment');
-      
+
       const commentLink = `${env.appUrl}/emails/${email_id}`;
-      processMentions(
-        this.commentsRepo.db,
-        tenant_id,
-        comment,
-        commentLink,
-        author_id
-      ).catch((err) => console.error('Failed to process email comment mentions', err));
+      processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
+        console.error('Failed to process email comment mentions', err),
+      );
 
       return row;
     } catch (err) {
@@ -80,19 +76,21 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         if (user_id) metadata['assigned_to_id'] = user_id;
         if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
 
-        this.activityRepo.log({
-          tenant_id,
-          user_id: actor_id,
-          activity: activityType,
-          entity: 'email',
-          entity_id: id,
-          metadata,
-        }).catch((e) => console.error('Failed to log email assign activity', e));
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata,
+          })
+          .catch((e) => console.error('Failed to log email assign activity', e));
       }
 
       if (user_id) {
         try {
-          const email = await this.getRepo().getOneBy('id', { tenant_id, value: id }) as any;
+          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as any;
           if (email) {
             const subject = email.subject || '(No Subject)';
             const notificationsRepo = new NotificationsRepo();
@@ -342,17 +340,13 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Move an email to a specific folder */
-  public async moveToFolder(
-    tenant_id: string,
-    id: string,
-    folder_id: string,
-    actor_id?: string,
-  ) {
+  public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
     try {
       const isTrash = folder_id === ALL_FOLDERS.TRASH;
       const deleted_at = isTrash ? new Date() : null;
 
-      const updated = await this.getRepo().getUpdate()
+      const updated = await this.getRepo()
+        .getUpdate()
         .set({ folder_id, deleted_at })
         .where('tenant_id', '=', tenant_id)
         .where('id', '=', id)
@@ -363,14 +357,16 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
       // --- Log activity ---
       if (actor_id) {
-        this.activityRepo.log({
-          tenant_id,
-          user_id: actor_id,
-          activity: isTrash ? 'delete' : 'update',
-          entity: 'email',
-          entity_id: id,
-          metadata: { folder_id },
-        }).catch((e) => console.error('Failed to log email move activity', e));
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: isTrash ? 'delete' : 'update',
+            entity: 'email',
+            entity_id: id,
+            metadata: { folder_id },
+          })
+          .catch((e) => console.error('Failed to log email move activity', e));
       }
 
       return updated;
@@ -412,12 +408,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   }
 
   /** Update email status (open/closed/resolved) */
-  public async setStatus(
-    tenant_id: string,
-    id: string,
-    status: EmailStatus,
-    actor_id?: string,
-  ) {
+  public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
     try {
       const updated = await this.getRepo().setStatus(tenant_id, id, status);
       if (!updated) throw new NotFoundError('Email not found');
@@ -425,14 +416,16 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       // --- Log activity ---
       if (actor_id) {
         const activityType = status === 'closed' ? 'close' : 'reopen';
-        this.activityRepo.log({
-          tenant_id,
-          user_id: actor_id,
-          activity: activityType,
-          entity: 'email',
-          entity_id: id,
-          metadata: { status },
-        }).catch((e) => console.error('Failed to log email status activity', e));
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata: { status },
+          })
+          .catch((e) => console.error('Failed to log email status activity', e));
       }
 
       return updated;
@@ -448,8 +441,8 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
       if (!email) throw new NotFoundError('Email not found');
 
-      await this.getRepo().db
-        .insertInto('email_read_states')
+      await this.getRepo()
+        .db.insertInto('email_read_states')
         .values({
           tenant_id,
           user_id,
@@ -459,7 +452,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         .onConflict((oc: any) =>
           oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
             is_read,
-          })
+          }),
         )
         .execute();
 

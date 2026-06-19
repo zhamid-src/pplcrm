@@ -4,7 +4,7 @@
 import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { HasRow } from 'common/src/lib/emails';
+import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 
 /**
  * Data access for the `email_attachments` table.

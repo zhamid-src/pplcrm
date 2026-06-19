@@ -1,7 +1,7 @@
 import { BaseRepository } from '../../lib/base.repo';
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '@common';
+import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {

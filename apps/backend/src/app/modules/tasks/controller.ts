@@ -4,14 +4,14 @@ import type {
   ExportCsvResponseType,
   UpdateTaskType,
   getAllOptionsType,
-} from '@common';
+} from '../../../../../../libs/common/src';
 
-import type { IAuthKeyPayload } from 'common/src/lib/auth';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 
 import { TasksRepo } from './repositories/tasks.repo';
-import type { OperationDataType } from 'common/src/lib/kysely.models';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
