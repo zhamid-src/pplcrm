@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { AddWebFormType } from '../../../../../../../libs/common/src';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -27,7 +26,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
     provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'forms-export.csv' } }),
   ],
 })
-export class FormsGridComponent extends DataGrid<'web_forms', AddWebFormType> {
+export class FormsGridComponent {
   protected col = [
     { field: 'name', headerName: 'Form Name', editable: false },
     { field: 'description', headerName: 'Description', editable: false },
@@ -40,7 +39,5 @@ export class FormsGridComponent extends DataGrid<'web_forms', AddWebFormType> {
     },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 }

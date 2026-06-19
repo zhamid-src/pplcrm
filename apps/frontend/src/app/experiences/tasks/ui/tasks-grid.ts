@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateTaskType } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
@@ -7,6 +7,7 @@ import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { UserService } from '@frontend/services/user.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-tasks-grid',
@@ -14,6 +15,7 @@ import { UserService } from '@frontend/services/user.service';
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
+        #grid
         title="Tasks"
         description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
         [colDefs]="col"
@@ -43,14 +45,17 @@ import { UserService } from '@frontend/services/user.service';
     provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
   ],
 })
-export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnInit {
+export class TasksGrid implements OnInit {
   private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
   private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
   private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
   private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
   private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
 
-  //private readonly tasksSvc = inject(TasksService);
   private readonly unassignedLabel = 'Not Assigned';
 
   // Users for Assigned To (populated via AuthService on init)
@@ -117,11 +122,9 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
   protected importerOpen = signal(false);
   protected isArchiveMode = signal(false);
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
-  public override async ngOnInit() {
+  public async ngOnInit() {
     // Load users to drive Assigned To options and name mapping
     try {
       const users = await this.userService.getUsers();
@@ -132,7 +135,6 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     } catch {
       /* no op */
     }
-    await super.ngOnInit();
   }
 
   protected readonly autoMapHeader = (h: string): string => {
@@ -164,7 +166,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
     const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const res = await (this.gridSvc as unknown as TasksService).import(rows, skippedReported, fileName || undefined);
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
 
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
@@ -178,7 +180,7 @@ export class TasksGrid extends DataGrid<'tasks', UpdateTaskType> implements OnIn
         message: msg,
       });
       this.importerOpen.set(false);
-      await this.refresh();
+      await this.grid()?.refresh();
     } catch (e: any) {
       const msg = e?.message || e?.data?.message || 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });

@@ -123,7 +123,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Optional cache placeholder removed (unused in current implementation)
   private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
-  private readonly childGrid = viewChild(DataGrid);
   private tsColumns: TSColumnDef<any, any>[] = [];
   private tsTable: any;
   private readonly pctrl = inject(PinningController, { optional: true })!;
@@ -313,7 +312,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected rowHeight = 36;
 
   // Table state (TanStack-like minimal state)
-  protected rows = this.store?.rows ?? signal([]);
+  public readonly rows = this.store?.rows ?? signal<any[]>([]);
   protected selectedIdSet = this.store?.selectedIdSet ?? signal(new Set());
   protected selectionStickyWidth = this.store?.selectionStickyWidth ?? signal(48);
   protected showFilterPanel = signal(false);
@@ -407,6 +406,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
+  public isCellEditableOverride = input<((row: any, col: ColDef) => boolean) | null>(null);
 
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
   public listId = input<string | null>(null);
@@ -922,12 +922,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Clear both grid selection and the select-all cache */
-  protected clearAllSelection() {
-    const child = this.childGrid();
-    if (child) {
-      child.clearAllSelection();
-      return;
-    }
+  public clearAllSelection() {
     this.allSelected.set(false);
     this.allSelectedIds.set([]);
     this.allSelectedIdSet.set(new Set());
@@ -1351,11 +1346,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Utility: returns selected rows from grid */
-  protected getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
-    const child = this.childGrid();
-    if (child) {
-      return child.getSelectedRows() as (Partial<RowOf<T>> & { id: string })[];
-    }
+  public getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
     const currentRows = this.rows();
     const rowById = new Map<string, RowOf<T>>();
     for (const row of currentRows) {
@@ -1487,7 +1478,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col?.editable;
   }
 
-  protected isCellEditable(row: any, col: ColDef): boolean {
+  public isCellEditable(row: any, col: ColDef): boolean {
+    const override = this.isCellEditableOverride();
+    if (override) {
+      return override(row, col);
+    }
     if (!this.isEditable(col)) return false;
     const canSelectFn = this.rowCanSelect();
     if (canSelectFn && !canSelectFn(row)) return false;
@@ -1721,7 +1716,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Called when row is double-clicked. */
-  protected openEditOnDoubleClick(row: any) {
+  public openEditOnDoubleClick(row: any) {
     this.openEdit(row?.id);
   }
 
@@ -1765,12 +1760,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Triggers a full grid refresh via backend. */
-  protected async refresh(): Promise<void> {
-    const child = this.childGrid();
-    if (child) {
-      await child.refresh();
-      return;
-    }
+  public async refresh(): Promise<void> {
     await this.loadPage(this.pageIndex());
   }
   public async doRefresh() {

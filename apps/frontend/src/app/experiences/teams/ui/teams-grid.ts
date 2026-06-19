@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { UpdateTeamType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -29,7 +28,7 @@ import { TeamsService } from '../services/teams-service';
     provideDataGridConfig({ messages: { exportEntity: 'teams', exportFileName: 'teams-export.csv' } }),
   ],
 })
-export class TeamsGridComponent extends DataGrid<'teams', UpdateTeamType> {
+export class TeamsGridComponent {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',

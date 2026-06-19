@@ -1,7 +1,7 @@
 /**
  * @file Grid component for listing households with counts and tags.
  */
-import { Component, inject, signal, input } from '@angular/core';
+import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -15,6 +15,8 @@ import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 interface ParamsType {
   value: string[];
@@ -26,6 +28,7 @@ interface ParamsType {
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
+        #grid
         [showToolbar]="!inline()"
         title="Households"
         description="Manage household groups, track shared addresses, and organize family relationships."
@@ -69,20 +72,17 @@ interface ParamsType {
     provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
   ],
 })
-
-/**
- * This is the households grid component used to display the list of households.
- * It also gets the number of people that belong to each household.
- *
- * Extends the base {@link DataGrid} to provide custom columns and renderers.
- *
- * @see {@link DataGrid}
- */
-export class HouseholdsGrid extends DataGrid<'households', never> {
+export class HouseholdsGrid implements OnInit {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+
   private tagOptionValues: string[] = [];
   private issueOptionValues: string[] = [];
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
@@ -169,29 +169,12 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       cellRendererParams: {
         type: 'households',
         obj: UpdateHouseholdsObj,
-        service: this.gridSvc,
+        service: this.householdsService,
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      /**
-       * Compares two tag arrays for equality.
-       * @param tagsA First array of tags
-       * @param tagsB Second array of tags
-       * @returns Whether they are considered equal
-       */
       equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      /**
-       * Formats the tag array for display as a string.
-       * @param params The cell parameters containing the tag array
-       * @returns Comma-separated string of tags
-       */
       valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      /**
-       * Comparator function for sorting tag arrays
-       * @param tagsA First array of tags
-       * @param tagsB Second array of tags
-       * @returns Sort order: -1, 0, or 1
-       */
       comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
     },
     {
@@ -204,7 +187,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       cellRendererParams: {
         type: 'households',
         obj: UpdateHouseholdsObj,
-        service: this.gridSvc,
+        service: this.householdsService,
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
@@ -226,7 +209,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
       cellEditorParams: { textarea: true, rows: 5 },
     },
   ];
-  public override listId = input<string | null>(null);
+  public listId = input<string | null>(null);
   public showHeader = input<boolean>(true);
 
   protected importSummary = signal<CsvImportSummary | null>(null);
@@ -235,10 +218,9 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
   protected importerOpen = signal(false);
   protected tagsInput = '';
 
-  public override async ngOnInit() {
+  public async ngOnInit() {
     await this.loadTagOptions();
     await this.loadIssueOptions();
-    await super.ngOnInit();
   }
 
   private async loadTagOptions() {
@@ -257,19 +239,18 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
     }
   }
 
-  /**
-   * Constructor: Calls the parent constructor of DataGrid
-   */
-  constructor() {
-    super();
+  constructor() {}
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
   }
 
   /**
    * Override delete to warn the user when selected households have people attached.
    * Offers three choices: delete people too, keep people and remove address, or cancel.
    */
-  protected override async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.getSelectedRows()) as Array<{
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
       id: string;
       persons_count?: number | string | null;
       is_placeholder?: boolean;
@@ -342,7 +323,7 @@ export class HouseholdsGrid extends DataGrid<'households', never> {
 
       // Now delete the households themselves
       try {
-        await this.gridSvc.deleteMany(householdIds);
+        await this.householdsService.deleteMany(householdIds);
         this.alertSvc.showSuccess('Households deleted successfully.');
       } catch {
         this.alertSvc.showError('Failed to delete one or more households.');

@@ -3,9 +3,9 @@
  * Provides comprehensive person management with inline editing, tag management,
  * and address confirmation workflows.
  */
-import { Component, inject, signal, input } from '@angular/core';
+import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -18,7 +18,10 @@ import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/g
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig, DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 interface ParamsType {
   value: string[];
@@ -33,9 +36,17 @@ interface ParamsType {
     provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
   ],
 })
-export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
+export class PersonsGrid implements OnInit {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
 
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
 
@@ -48,6 +59,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   private addressChangeModalId: string | null = null;
   private importProgressTimer: any;
   private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
 
   protected readonly mappableFields = [
     'first_name',
@@ -95,7 +107,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,
-        service: this.gridSvc,
+        service: this.personsService,
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
@@ -113,7 +125,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       cellRendererParams: {
         type: 'persons',
         obj: UpdatePersonsObj,
-        service: this.gridSvc,
+        service: this.personsService,
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
@@ -209,17 +221,15 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   protected importerOpen = signal(false);
   protected importSummary = signal<CsvImportSummary | null>(null);
 
-  public override listId = input<string | null>(null);
+  public listId = input<string | null>(null);
 
   /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
   protected tagsInput = '';
-  protected issueOptionValues: string[] = [];
 
-  public override async ngOnInit() {
+  public async ngOnInit() {
     await this.loadTagOptions();
     await this.loadIssueOptions();
-    await super.ngOnInit();
   }
 
   private async loadTagOptions() {
@@ -242,10 +252,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
    * Initializes the grid and retrieves tag filter data from the route.
    */
   constructor() {
-    super();
     const route = inject(ActivatedRoute);
     this.limitTags = route.snapshot.data['tags'] ?? [];
-    console.log(this.showToolbar());
   }
 
   protected getPlusIcon(): PcIconNameType {
@@ -315,7 +323,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const tags = Array.from(combined);
 
     try {
-      const res = await (this.gridSvc as unknown as PersonsService).import(
+      const res = await this.personsService.import(
         rows,
         tags,
         skippedReported,
@@ -335,7 +343,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         message: msg,
       });
       this.importerOpen.set(false);
-      await this.refresh();
+      await this.grid()?.refresh();
     } catch (e: any) {
       const msg = e?.message || e?.data?.message || 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
@@ -415,8 +423,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
   /**
    * Overridden delete handler to detect and confirm team captain deletions cascadingly.
    */
-  protected override async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.getSelectedRows();
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
     if (!selected.length) {
       this.alertSvc.showError('No rows selected.');
       return true;
@@ -444,7 +452,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
     const end = this._loading.begin();
     try {
       // Call deleteMany without force, skipping global error toast
-      await (this.gridSvc as PersonsService).deleteMany(ids, undefined, true);
+      await this.personsService.deleteMany(ids, undefined, true);
       this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
     } catch (err: any) {
       // Check if it's the captain error message
@@ -460,7 +468,7 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
         });
         if (forceOk) {
           try {
-            await (this.gridSvc as PersonsService).deleteMany(ids, true, true);
+            await this.personsService.deleteMany(ids, true, true);
             this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
           } catch (forceErr: any) {
             const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
@@ -472,8 +480,8 @@ export class PersonsGrid extends DataGrid<DATA_TYPE, UpdatePersonsType> {
       }
     } finally {
       end();
-      this.clearAllSelection();
-      await this.refresh();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
     }
     return true;
   }

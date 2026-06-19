@@ -2,7 +2,6 @@
  * @file Data grid component for viewing and editing issues (a special tag type).
  */
 import { Component, inject } from '@angular/core';
-import { AddTagType } from '../../../../../../../libs/common/src';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import type { getAllOptionsType } from '../../../../../../../libs/common/src';
@@ -48,7 +47,7 @@ class IssuesService extends TagsService {
     provideDataGridConfig({ messages: { exportEntity: 'issues', exportFileName: 'issues-export.csv' } }),
   ],
 })
-export class IssuesGridComponent extends DataGrid<'tags', AddTagType> {
+export class IssuesGridComponent {
   protected col = [
     { field: 'name', headerName: 'Issue Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
@@ -64,9 +63,7 @@ export class IssuesGridComponent extends DataGrid<'tags', AddTagType> {
     { field: 'use_count_households', headerName: 'Households' },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
   protected renderColorCell(raw: unknown): string {
     const v = typeof raw === 'string' ? raw.trim() : '';

@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -11,6 +11,7 @@ import { CompaniesService } from '../services/companies-service';
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
+        #grid
         title="Companies"
         description="Manage corporate contacts, associate people with companies, and track organization profiles."
         [colDefs]="col"
@@ -42,7 +43,10 @@ import { CompaniesService } from '../services/companies-service';
     provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
   ],
 })
-export class CompaniesGrid extends DataGrid<'companies', any> {
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
+
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -65,10 +69,6 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
       valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
     },
   ];
-
-  constructor() {
-    super();
-  }
 
   protected openImportDialog() {
     this.importSummary.set(null);
@@ -106,7 +106,7 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
     const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const res = await (this.gridSvc as unknown as CompaniesService).import(
+      const res = await this.companiesService.import(
         rows,
         skippedReported,
         fileName || undefined,
@@ -124,7 +124,7 @@ export class CompaniesGrid extends DataGrid<'companies', any> {
         message: msg,
       });
       this.importerOpen.set(false);
-      await this.refresh();
+      await this.grid()?.refresh();
     } catch (e: any) {
       const msg = e?.message || e?.data?.message || 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
