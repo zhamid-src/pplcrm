@@ -6,7 +6,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '@common';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -21,7 +21,7 @@ export class FormViewComponent {
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   readonly id = input.required<string>();
@@ -119,7 +119,7 @@ ${
     });
 
     // Load users
-    this.auth
+    this.userService
       .getUsers()
       .then((u) => {
         this.users.set(u);

@@ -8,6 +8,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
 
 @Component({
   selector: 'pc-profile-page',
@@ -17,6 +18,7 @@ import { AuthService } from '../../auth/auth-service';
 export class ProfilePage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -154,7 +156,7 @@ export class ProfilePage implements OnInit {
     this.saving.set(true);
     this.error.set(null);
     try {
-      await this.auth.updateUserProfile(user.id, payload);
+      await this.userService.updateUserProfile(user.id, payload);
       this.alerts.showSuccess('Profile updated successfully');
       await this.load();
       this.form().reset();
@@ -337,7 +339,7 @@ export class ProfilePage implements OnInit {
         throw new Error('Not logged in');
       }
 
-      const user = await this.auth.getProfileById(currentUser.id);
+      const user = await this.userService.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);
       this.avatarUrl.set((user as any).avatar_url ?? null);

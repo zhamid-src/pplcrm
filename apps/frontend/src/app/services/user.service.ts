@@ -1,10 +1,43 @@
 import { inject, Service } from '@angular/core';
+import { IAuthUser, UpdateAuthUserType } from '@common';
 import { environment } from '../../environments/environment';
-import { TokenService } from './api/token-service';
+import { AuthService } from '../auth/auth-service';
+import { TRPCService } from './api/trpc-service';
 
 @Service()
-export class UserService {
-  private readonly tokenService = inject(TokenService);
+export class UserService extends TRPCService<any> {
+  private readonly authService = inject(AuthService);
+
+  /**
+   * Retrieve all users for the current tenant.
+   */
+  public getUsers() {
+    return this.api.users.getUsers.query() as Promise<IAuthUser[]>;
+  }
+
+  /**
+   * Retrieves a user profile by ID (including stats and profile fields like last name).
+   */
+  public getProfileById(id: string) {
+    return this.api.users.getProfileById.query(id);
+  }
+
+  /**
+   * Updates an existing user's profile details.
+   */
+  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
+    const updated = await this.api.users.updateUserProfile.mutate({ id, data });
+    // If the updated user is the current user, update our local signal
+    const current = this.authService.getUser();
+    if (current && current.id === id) {
+      this.authService.getUserSignal().set({
+        ...current,
+        first_name: updated.first_name ?? current.first_name,
+        ...(updated as any),
+      });
+    }
+    return updated;
+  }
 
   /**
    * Resolves a relative or absolute avatar URL with the backend API URL and

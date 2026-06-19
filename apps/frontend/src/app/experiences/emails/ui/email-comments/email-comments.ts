@@ -9,6 +9,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { AuthService } from '../../../../auth/auth-service';
+import { UserService } from '../../../../services/user.service';
 import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
 import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
 import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
@@ -23,6 +24,7 @@ import type { EmailCommentType, EmailType } from 'common/src/lib/models';
 })
 export class EmailComments {
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly store = inject(EmailsStore);
 
   private dialogs = inject(ConfirmDialogService);
@@ -69,7 +71,7 @@ export class EmailComments {
 
   constructor() {
     // Load users once
-    this.auth
+    this.userService
       .getUsers()
       .then((u) => this.users.set(u))
       .catch((e) => console.error('Failed to load users:', e));

@@ -5,6 +5,7 @@ import { Icon } from '@icons/icon';
 import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
 
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
@@ -38,6 +39,7 @@ export class SettingsPage implements OnInit {
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
   protected readonly householdsSvc = inject(HouseholdsService);
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
 
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
 
@@ -158,7 +160,7 @@ export class SettingsPage implements OnInit {
               import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
             },
           };
-          await this.auth.updateUserProfile(user.id, payload);
+          await this.userService.updateUserProfile(user.id, payload);
           await this.loadUserPrefs();
         }
       }
@@ -425,7 +427,7 @@ export class SettingsPage implements OnInit {
     try {
       const currentUser = await this.auth.getCurrentUser();
       if (currentUser) {
-        const user = await this.auth.getProfileById(currentUser.id);
+        const user = await this.userService.getProfileById(currentUser.id);
         this.currentUserDetail.set(user);
         const prefs = user.notification_preferences || {
           mention_in_comment: true,

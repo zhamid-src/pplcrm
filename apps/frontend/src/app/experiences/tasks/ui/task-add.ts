@@ -7,7 +7,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 
@@ -21,7 +21,7 @@ export class TaskAddComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly tasks = inject(TasksService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly teams = inject(TeamsService);
 
   private _loading = createLoadingGate();
@@ -54,7 +54,7 @@ export class TaskAddComponent implements OnInit {
   public async ngOnInit() {
     const end = this._loading.begin();
     try {
-      const [us, ts] = await Promise.all([this.auth.getUsers(), this.teams.getAll({ limit: 1000 })]);
+      const [us, ts] = await Promise.all([this.userService.getUsers(), this.teams.getAll({ limit: 1000 })]);
       this.users.set(us || []);
       this.teamsList.set(ts?.rows ?? []);
 

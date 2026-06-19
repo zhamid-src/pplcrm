@@ -9,7 +9,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from './people-in-household';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
@@ -26,7 +26,7 @@ export class PersonView {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
@@ -41,11 +41,9 @@ export class PersonView {
   protected readonly person = signal<any | null>(null);
 
   private readonly usersResource = resource({
-    loader: () => this.auth.getUsers(),
+    loader: () => this.userService.getUsers(),
   });
-  private readonly usersById = computed(
-    () => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])),
-  );
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Analytics & Lists
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);

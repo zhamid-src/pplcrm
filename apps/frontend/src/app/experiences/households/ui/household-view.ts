@@ -10,7 +10,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
-import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from 'common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -26,7 +26,7 @@ export class HouseholdView {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
@@ -87,7 +87,7 @@ export class HouseholdView {
     });
 
     // Load users for addedby/updatedby display names
-    this.auth
+    this.userService
       .getUsers()
       .then((u) => {
         this.users.set(u);
