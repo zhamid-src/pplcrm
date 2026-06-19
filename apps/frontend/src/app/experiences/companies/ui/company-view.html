@@ -2,7 +2,7 @@
   [title]="'Company Details'"
   [icon]="'briefcase'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!company()"
+  [hasRecord]="!initialized() || !!company()"
   [showDelete]="true"
   [deleteText]="'Delete Company'"
   [btn1Text]="'Edit Company'"

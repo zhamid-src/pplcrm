@@ -2,7 +2,7 @@
   [title]="'Web Form Details'"
   [icon]="'clipboard-document-list'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!formRecord()"
+  [hasRecord]="!initialized() || !!formRecord()"
   [showDelete]="true"
   [deleteText]="'Delete Form'"
   [btn1Text]="'Edit Form'"

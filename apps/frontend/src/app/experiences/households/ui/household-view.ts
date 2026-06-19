@@ -22,6 +22,7 @@ import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-household-view',
@@ -53,7 +54,9 @@ export class HouseholdView {
   private readonly router = inject(Router);
   private readonly loader = inject(Loader);
   private readonly dialogSvc = inject(ConfirmDialogService);
-  protected readonly isLoading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
   protected readonly household = signal<Households | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
@@ -123,7 +126,7 @@ export class HouseholdView {
   }
 
   protected async loadAllData(id: string) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // 1. Load household details
       const householdData = (await this.householdsSvc.getById(id)) as Households;
@@ -141,7 +144,8 @@ export class HouseholdView {
     } catch (err) {
       this.alertSvc.showError('Failed to load household details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
@@ -151,7 +155,7 @@ export class HouseholdView {
 
   protected async deleteHousehold() {
     if (!this.id()) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // Fetch people belonging to this household
       const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
@@ -198,7 +202,7 @@ export class HouseholdView {
       const message = err?.message || err?.data?.message || 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 

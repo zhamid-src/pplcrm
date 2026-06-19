@@ -14,6 +14,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
   selector: 'pc-team-view',
@@ -42,7 +43,9 @@ export class TeamViewComponent {
   private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected readonly isLoading = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
   protected readonly team = signal<any>(null);
   protected readonly teamTasks = signal<any[]>([]);
   protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
@@ -94,7 +97,7 @@ export class TeamViewComponent {
   }
 
   protected async loadAllData(id: string) {
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       // 1. Load team detail
       const data = await this.teamsSvc.getById(id);
@@ -108,7 +111,8 @@ export class TeamViewComponent {
     } catch (err) {
       this.alertSvc.showError('Failed to load team details: ' + String(err));
     } finally {
-      this.isLoading.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
@@ -125,7 +129,7 @@ export class TeamViewComponent {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.isLoading.set(true);
+    const end = this._loading.begin();
     try {
       await this.teamsSvc.delete(this.id());
       this.teamsSvc.triggerRefresh();
@@ -135,7 +139,7 @@ export class TeamViewComponent {
       const message = err?.message || err?.data?.message || 'Unable to delete team';
       this.alertSvc.showError(message);
     } finally {
-      this.isLoading.set(false);
+      end();
     }
   }
 

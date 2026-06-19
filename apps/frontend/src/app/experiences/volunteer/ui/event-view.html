@@ -2,7 +2,7 @@
   [title]="'Event Details'"
   [icon]="'calendar'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!event()"
+  [hasRecord]="!initialized() || !!event()"
   [showDelete]="true"
   [deleteText]="'Delete Event'"
   [btn1Text]="'Edit Event'"

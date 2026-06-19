@@ -2,7 +2,7 @@
   [title]="'Household Details'"
   [icon]="'home'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!household()"
+  [hasRecord]="!initialized() || !!household()"
   [showActions]="!!(household() && !household()?.is_placeholder)"
   [showDelete]="true"
   [deleteText]="'Delete Household'"

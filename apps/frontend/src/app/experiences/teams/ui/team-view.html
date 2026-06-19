@@ -2,7 +2,7 @@
   [title]="'Team Details'"
   [icon]="'user-group'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!team()"
+  [hasRecord]="!initialized() || !!team()"
   [showDelete]="true"
   [deleteText]="'Delete Team'"
   [btn1Text]="'Edit Team'"

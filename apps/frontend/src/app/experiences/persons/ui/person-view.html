@@ -2,7 +2,7 @@
   [title]="'Person Profile'"
   [icon]="'user-circle'"
   [isLoading]="isLoading()"
-  [hasRecord]="!!person()"
+  [hasRecord]="!initialized() || !!person()"
   [showDelete]="true"
   [deleteText]="'Delete Person'"
   [btn1Text]="'Edit Person'"
