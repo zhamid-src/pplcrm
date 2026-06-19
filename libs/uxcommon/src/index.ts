@@ -13,6 +13,9 @@ export * from './components/input/input';
 export * from './components/textarea/textarea';
 export * from './components/select/select';
 export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
 
 // Directives
 export * from './directives/animate-if.directive';

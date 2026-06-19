@@ -5,18 +5,18 @@ import { Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, FormActions],
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent {

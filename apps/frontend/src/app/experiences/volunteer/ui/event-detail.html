@@ -12,30 +12,21 @@
   } @else {
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
-      <div class="flex items-center gap-3">
-        <pc-icon name="clock" class="text-primary" [size]="5"></pc-icon>
-        <div>
-          <h1 class="text-xl font-bold">{{ isNew() ? 'Create Volunteer Event' : detail()?.name }}</h1>
-          <p class="text-sm text-base-content/60 mt-0.5">
-            {{ isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance
-            roster.' }}
-          </p>
-        </div>
-      </div>
-      <pc-form-actions
-        [isLoading]="saving()"
-        [signalForm]="form"
-        [disabled]="slugChecking() || slugUnique() === false"
-        (btn1Clicked)="save($event)"
-        [buttonsToShow]="'two'"
-        [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
-        [btn1Icon]="'save'"
-        [showDelete]="!isNew()"
-        [deleteText]="'Delete Event'"
-        (deleteClicked)="deleteEvent()"
-      ></pc-form-actions>
-    </div>
+    <pc-detail-header
+      [title]="isNew() ? 'Create Volunteer Event' : detail()?.name"
+      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
+      icon="clock"
+      [iconSize]="5"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+      [showDelete]="!isNew()"
+      deleteText="Delete Event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
 
     <!-- Error alert -->
     @if (error()) {
@@ -454,29 +445,18 @@
 
         <!-- Event Summary Panel -->
         @if (!isNew()) {
-        <div class="card bg-base-200/50 border border-base-300 shadow-md">
-          <div class="card-body p-5 space-y-3">
-            <h4 class="font-bold text-sm text-base-content uppercase tracking-wider">Event Overview</h4>
-            <div class="text-xs text-base-content/75 space-y-2">
-              <div class="flex justify-between">
-                <span>Start:</span>
-                <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>End:</span>
-                <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Created By:</span>
-                <span class="font-semibold">Representative</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Created At:</span>
-                <span class="font-semibold">{{ detail()?.created_at | date:'shortDate' }}</span>
-              </div>
+        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
+          <div pc-overview-prefix class="space-y-2 mb-2">
+            <div class="flex justify-between">
+              <span>Start:</span>
+              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>End:</span>
+              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
             </div>
           </div>
-        </div>
+        </pc-entity-overview>
         }
       </div>
     </form>

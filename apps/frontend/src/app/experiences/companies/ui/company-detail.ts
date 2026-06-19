@@ -1,5 +1,4 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Input as PcInput } from '@uxcommon/components/input/input';
@@ -10,12 +9,13 @@ import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, PcInput, PcTextarea, Icon, PeopleInCompany, RouterModule, FormActions],
+  imports: [PcInput, PcTextarea, Icon, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview],
   templateUrl: './company-detail.html',
 })
 export class CompanyDetail implements OnInit {

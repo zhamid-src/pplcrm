@@ -6,7 +6,6 @@ import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Tags } from '@experiences/tags/ui/tags';
@@ -14,6 +13,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 
 import { ColumnType } from 'kysely';
 
@@ -32,7 +32,7 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, FormActions, RouterModule, Icon],
+  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {

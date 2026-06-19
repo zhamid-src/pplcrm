@@ -12,10 +12,11 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
@@ -23,7 +24,17 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, PcInput, PcTextarea, RouterModule, Icon, FormActions],
+  imports: [
+    DatePipe,
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+  ],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })
