@@ -160,18 +160,20 @@ describe('HouseholdsGrid', () => {
   });
 
   it('should prevent inline editing for placeholder households', () => {
-    fixture.componentRef.setInput('rowCanSelect', component.rowCanSelectFn);
     fixture.detectChanges();
 
     const street1Col = component['col'].find((c) => c.field === 'street1');
     expect(street1Col).toBeDefined();
 
+    const grid = component['grid']();
+    expect(grid).toBeDefined();
+
     // With a placeholder household, editing should be disabled
-    const placeholderCfg = component.editableCfg({ is_placeholder: true }, street1Col);
+    const placeholderCfg = grid!.editableCfg({ is_placeholder: true }, street1Col);
     expect(placeholderCfg.isEditable()).toBe(false);
 
     // With a regular household, editing should be enabled
-    const regularCfg = component.editableCfg({ is_placeholder: false }, street1Col);
+    const regularCfg = grid!.editableCfg({ is_placeholder: false }, street1Col);
     expect(regularCfg.isEditable()).toBe(true);
   });
 });

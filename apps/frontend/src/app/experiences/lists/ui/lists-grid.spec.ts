@@ -85,24 +85,28 @@ describe('ListsGridComponent', () => {
   });
 
   it('should call refresh when refreshCount signal increments', async () => {
-    vi.spyOn(component as any, 'refresh').mockImplementation(vi.fn());
+    fixture.detectChanges();
+    const grid = component['grid']();
+    expect(grid).toBeDefined();
 
-    await component.ngOnInit();
+    const refreshSpy = vi.spyOn(grid!, 'refresh').mockResolvedValue();
 
     // Simulate a refresh trigger via the signal
     refreshCount.update((n) => n + 1);
     // Effect runs asynchronously; flush microtasks
     await fixture.whenStable();
 
-    expect((component as any).refresh).toHaveBeenCalled();
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it('should not call refresh on initial render (refreshCount === 0)', async () => {
-    vi.spyOn(component as any, 'refresh').mockImplementation(vi.fn());
+    fixture.detectChanges();
+    const grid = component['grid']();
+    expect(grid).toBeDefined();
 
-    await component.ngOnInit();
+    const refreshSpy = vi.spyOn(grid!, 'refresh').mockResolvedValue();
 
     // No trigger — refreshCount stays 0
-    expect((component as any).refresh).not.toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
   });
 });

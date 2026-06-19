@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { UpdateVolunteerEventType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -32,7 +31,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
     provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
   ],
 })
-export class EventsGridComponent extends DataGrid<'volunteer_events', UpdateVolunteerEventType> {
+export class EventsGridComponent {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',

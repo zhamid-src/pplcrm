@@ -2,7 +2,6 @@
  * @file Data grid component for viewing and editing tags.
  */
 import { Component } from '@angular/core';
-import { AddTagType } from '../../../../../../../libs/common/src';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -29,7 +28,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
     provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
   ],
 })
-export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
+export class TagsGridComponent {
   protected col = [
     { field: 'name', headerName: 'Tag Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
@@ -45,9 +44,7 @@ export class TagsGridComponent extends DataGrid<'tags', AddTagType> {
     { field: 'use_count_households', headerName: 'Households' },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
   protected renderColorCell(raw: unknown): string {
     const v = typeof raw === 'string' ? raw.trim() : '';

@@ -1,7 +1,7 @@
 /**
  * Grid component for viewing and editing lists of people or households.
  */
-import { Component, OnDestroy, effect, inject, untracked } from '@angular/core';
+import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
 import { UpdateListType } from '../../../../../../../libs/common/src';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -16,6 +16,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
+        #grid
         title="Lists"
         description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
         [colDefs]="col"
@@ -32,17 +33,17 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
     provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
   ],
 })
-export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implements OnDestroy {
+export class ListsGridComponent implements OnDestroy {
   private readonly refreshSvc = inject(ListsRefreshService);
   private readonly listsSvc = inject(ListsService);
   private readonly alerts = inject(AlertService);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
 
   constructor() {
-    super();
     effect(() => {
       const count = this.refreshSvc.refreshCount();
       if (count > 0) {
-        untracked(() => this.refresh());
+        untracked(() => this.grid()?.refresh());
       }
     });
   }
@@ -179,7 +180,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
             this.alerts.showSuccess('List refreshed successfully');
           }
           // Reload the full grid so all columns (size, last_refreshed_at, etc.) update.
-          this.refresh();
+          this.grid()?.refresh();
         }
       } catch {
         clearInterval(interval);
@@ -191,7 +192,7 @@ export class ListsGridComponent extends DataGrid<'lists', UpdateListType> implem
     this.pollIntervals.set(id, interval);
   }
 
-  public override ngOnDestroy() {
+  public ngOnDestroy() {
     for (const interval of this.pollIntervals.values()) {
       clearInterval(interval);
     }

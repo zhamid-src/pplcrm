@@ -4,8 +4,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   AddListType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
   UpdateListType,
 } from '../../../../../../../libs/common/src';
 import { HouseholdsService } from '@experiences/households/services/households-service';
@@ -31,20 +29,24 @@ import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '
   selector: 'pc-household-filter-grid',
   imports: [DataGrid],
   template: `<pc-datagrid
+    #grid
     [colDefs]="col"
     [disableDelete]="true"
     [disableExport]="true"
     [disableImport]="true"
     [disableRefresh]="true"
-    [disableView]="true"
+    [disableView]="disableView()"
     [limitToTags]="tags()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
+    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
   ></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
 })
-export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholdsType> {
+export class HouseholdFilterGrid {
+  private readonly grid = viewChild(DataGrid);
+
   protected col: ColDef[] = [
     {
       field: 'address',
@@ -66,10 +68,22 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
     { field: 'tags', headerName: 'Tags' },
   ];
 
-  public override allowFilter = input<boolean>(true);
-  public override showToolbar = input<boolean>(true);
-  public override enableSelection = input<boolean>(true);
+  public allowFilter = input<boolean>(true);
+  public showToolbar = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public disableView = input<boolean>(true);
+  public externalAdvancedFilterModel = input<any | null>(null);
   public readonly tags = input<string[]>([]);
+
+  public getCountRowSelected() {
+    return this.grid()?.getCountRowSelected() ?? 0;
+  }
+  public getDefinition() {
+    return this.grid()?.getDefinition();
+  }
+  public triggerFilterChanged() {
+    this.grid()?.triggerFilterChanged();
+  }
 }
 
 /** Grid component for filtering people when creating lists */
@@ -77,20 +91,24 @@ export class HouseholdFilterGrid extends DataGrid<'households', UpdateHouseholds
   selector: 'pc-people-filter-grid',
   imports: [DataGrid],
   template: `<pc-datagrid
+    #grid
     [colDefs]="col"
     [disableDelete]="true"
     [disableExport]="true"
     [disableImport]="true"
     [disableRefresh]="true"
-    [disableView]="true"
+    [disableView]="disableView()"
     [limitToTags]="tags()"
     [allowFilter]="allowFilter()"
     [showToolbar]="showToolbar()"
     [enableSelection]="enableSelection()"
+    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
   ></pc-datagrid>`,
   providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
 })
-export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
+export class PeopleFilterGrid {
+  private readonly grid = viewChild(DataGrid);
+
   protected col: ColDef[] = [
     { field: 'first_name', headerName: 'First Name' },
     { field: 'last_name', headerName: 'Last Name' },
@@ -115,10 +133,22 @@ export class PeopleFilterGrid extends DataGrid<'persons', UpdatePersonsType> {
     },
   ];
 
-  public override allowFilter = input<boolean>(true);
-  public override showToolbar = input<boolean>(true);
-  public override enableSelection = input<boolean>(true);
+  public allowFilter = input<boolean>(true);
+  public showToolbar = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public disableView = input<boolean>(true);
+  public externalAdvancedFilterModel = input<any | null>(null);
   public readonly tags = input<string[]>([]);
+
+  public getCountRowSelected() {
+    return this.grid()?.getCountRowSelected() ?? 0;
+  }
+  public getDefinition() {
+    return this.grid()?.getDefinition();
+  }
+  public triggerFilterChanged() {
+    this.grid()?.triggerFilterChanged();
+  }
 }
 
 /** Component for creating new lists. Allows building static or dynamic lists using filters. */

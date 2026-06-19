@@ -1,5 +1,4 @@
 import { Component, inject } from '@angular/core';
-import { UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -13,6 +12,7 @@ import { UserService } from '@frontend/services/user.service';
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
+        #grid
         title="Users"
         description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
         [colDefs]="col"
@@ -23,6 +23,7 @@ import { UserService } from '@frontend/services/user.service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-users"
+        [isCellEditableOverride]="isCellEditableBind"
       ></pc-datagrid>
     </div>
   `,
@@ -31,7 +32,7 @@ import { UserService } from '@frontend/services/user.service';
     provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
   ],
 })
-export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
+export class UsersGridComponent {
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
 
@@ -133,13 +134,10 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
     },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
-  protected override isCellEditable(row: any, col: any): boolean {
-    const isBaseEditable = super.isCellEditable(row, col);
-    if (!isBaseEditable) return false;
+  public readonly isCellEditableBind = (row: any, col: any): boolean => {
+    if (!col.editable) return false;
 
     const currentUserRole = this.auth.getUser()?.role;
 
@@ -152,7 +150,7 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
     }
 
     return true;
-  }
+  };
 
   private formatDate(value: unknown): string {
     if (!value) return '';

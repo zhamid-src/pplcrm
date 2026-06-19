@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { UpdateWorkflowType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -29,7 +28,7 @@ import { WorkflowsService } from '../services/workflows-service';
     provideDataGridConfig({ messages: { exportEntity: 'workflows', exportFileName: 'workflows-export.csv' } }),
   ],
 })
-export class WorkflowsGridComponent extends DataGrid<'workflows', UpdateWorkflowType> {
+export class WorkflowsGridComponent {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     month: 'short',
     day: 'numeric',
@@ -65,9 +64,7 @@ export class WorkflowsGridComponent extends DataGrid<'workflows', UpdateWorkflow
     },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
   private formatDate(value: unknown): string {
     if (!value) return '--';

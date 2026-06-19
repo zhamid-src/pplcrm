@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, viewChild } from '@angular/core';
 import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 
@@ -12,9 +12,10 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
   imports: [DataGrid, NewslettersDashboardComponent],
   template: `
     <div class="flex flex-col gap-6">
-      <pc-newsletters-dashboard [rows]="rows()"></pc-newsletters-dashboard>
+      <pc-newsletters-dashboard [rows]="grid?.rows() ?? []"></pc-newsletters-dashboard>
 
       <pc-datagrid
+        #grid
         [colDefs]="col"
         [disableDelete]="true"
         [disableView]="false"
@@ -31,7 +32,9 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
     provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
   ],
 })
-export class NewslettersGridComponent extends DataGrid<'newsletters', UpdateMarketingEmailType> {
+export class NewslettersGridComponent {
+  protected readonly grid = viewChild<DataGrid<'newsletters', UpdateMarketingEmailType>>('grid');
+
   private readonly countFormatter = new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 0,
   });
@@ -84,9 +87,7 @@ export class NewslettersGridComponent extends DataGrid<'newsletters', UpdateMark
     },
   ];
 
-  constructor() {
-    super();
-  }
+  constructor() {}
 
   private formatCount(value: unknown): string {
     const num = Number(value);
