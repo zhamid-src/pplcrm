@@ -34,12 +34,12 @@
           </pc-detail-row>
         </div>
 
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex flex-col gap-1 leading-normal"
-        >
-          <span>Created: {{ detail()?.created_at | date: 'medium' }}</span>
-          <span>Last updated: {{ detail()?.updated_at | date: 'medium' }}</span>
-        </div>
+        <pc-system-metadata
+          [createdAt]="detail()?.created_at"
+          [updatedAt]="detail()?.updated_at"
+          layout="col"
+          dateFormat="medium"
+        ></pc-system-metadata>
       </pc-profile-card>
     </div>
 
@@ -59,8 +59,8 @@
       }
 
       <!-- Account Metadata -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 p-6">
-        <h3 class="text-lg font-semibold border-b border-base-200 pb-2 mb-4">Account Metadata</h3>
+      <!-- Account Metadata -->
+      <pc-card title="Account Metadata">
         <div class="grid gap-4 sm:grid-cols-2">
           <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
           <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
@@ -73,15 +73,14 @@
             [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
           ></pc-detail-item>
         </div>
-      </div>
+      </pc-card>
 
       <!-- Activity log track -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col">
-        <h3 class="text-lg font-semibold border-b border-base-200 pb-2 mb-4">Activity Log</h3>
+      <pc-card title="Activity Log">
         <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
           <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
         </div>
-      </div>
+      </pc-card>
     </div>
   </div>
   }

@@ -118,7 +118,10 @@
       <!-- Overview Sidebar -->
       <div>
         @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="getCreatedAt()" [updatedAt]="getUpdatedAt()"></pc-entity-overview>
+        <pc-entity-overview
+          [createdAt]="household()?.created_at"
+          [updatedAt]="household()?.updated_at"
+        ></pc-entity-overview>
         }
       </div>
     </div>

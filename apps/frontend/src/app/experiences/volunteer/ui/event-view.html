@@ -11,172 +11,167 @@
   (delete)="deleteEvent()"
 >
   @if (event()) {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Event Card -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Elegant Event Details Card -->
-        <pc-profile-card iconName="clock">
-          <!-- Name & Status -->
-          <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-          <div class="flex gap-2 mb-4">
-            @if (event().is_private) {
-            <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
-            } @else {
-            <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
-            } @if (eventPassed()) {
-            <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
-            } @else {
-            <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-            }
-          </div>
-
-          <!-- Details and Settings List -->
-          <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-            @if (event().description) {
-            <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-            }
-
-            <pc-detail-row icon="map-pin" iconClass="text-error">
-              <span class="text-xs">
-                <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-              </span>
-            </pc-detail-row>
-
-            <pc-detail-row icon="calendar" iconClass="text-info">
-              <div class="text-xs flex flex-col">
-                <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-                <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-              </div>
-            </pc-detail-row>
-
-            @if (event().contact_email || event().contact_phone) {
-            <div class="divider my-1"></div>
-            <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
-              Coordinator Contact
-            </div>
-            @if (event().contact_email) {
-            <pc-detail-row icon="envelope" iconClass="text-teal-500">
-              <span>Email:</span>
-              <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
-            </pc-detail-row>
-            } @if (event().contact_phone) {
-            <pc-detail-row icon="phone" iconClass="text-purple-500">
-              <span>Phone:</span>
-              <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
-            </pc-detail-row>
-            } }
-          </div>
-        </pc-profile-card>
-
-        <!-- Public Signup Link Card -->
-        @if (event().public_url) {
-        <div class="card bg-base-100 shadow-xl border border-base-300 p-6 flex flex-col gap-4">
-          <div class="flex items-center justify-between border-b border-base-200 pb-2">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="globe-americas" [size]="4"></pc-icon> Public Signup Link
-            </h3>
-            <button class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
-              <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
-            </button>
-          </div>
-
-          <div class="form-control text-xs">
-            <div class="flex gap-2">
-              <input
-                type="text"
-                [value]="publicUrl()"
-                readonly
-                class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-              />
-              <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-                <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-              </a>
-            </div>
-          </div>
-        </div>
-        }
-      </div>
-
-      <!-- Right Column: Stats & Tabs -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Stats Panel -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <pc-stat-card
-            [title]="'Signed Up'"
-            [value]="roster().length"
-            [description]="'Volunteers scheduled'"
-            [icon]="'user-group'"
-            [valueColorClass]="'text-indigo-500'"
-            [iconColorClass]="'text-indigo-500'"
-          ></pc-stat-card>
-
-          <pc-stat-card
-            [title]="'Remaining Capacity'"
-            [value]="remainingCapacity()"
-            [description]="'Total capacity: ' + (event().capacity ?? 'Unlimited')"
-            [icon]="'adjustments-horizontal'"
-            [valueColorClass]="'text-teal-500'"
-            [iconColorClass]="'text-teal-500'"
-          ></pc-stat-card>
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Event Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Event Details Card -->
+      <pc-profile-card iconName="clock">
+        <!-- Name & Status -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+        <div class="flex gap-2 mb-4">
+          @if (event().is_private) {
+          <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
+          } @else {
+          <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
+          } @if (eventPassed()) {
+          <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
+          } @else {
+          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          }
         </div>
 
-        <!-- Tabs Panel -->
-        <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
-          <pc-tab-panel id="roster" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-3">
-              @if (roster().length === 0) {
-              <p class="text-sm text-base-content/40 italic">No volunteers signed up for this event roster.</p>
-              } @else {
-              <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-                <table class="table table-sm table-zebra w-full text-xs">
-                  <thead>
-                    <tr class="bg-base-200 text-base-content/70">
-                      <th>Volunteer</th>
-                      <th>Status</th>
-                      <th>Hours Worked</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (shift of roster(); track shift.id) {
-                    <tr class="hover:bg-base-200/50">
-                      <td class="font-semibold">
-                        <a
-                          [routerLink]="['/people', shift.person_id]"
-                          class="link hover:underline text-primary font-bold"
-                        >
-                          {{ shift.first_name }} {{ shift.last_name }}
-                        </a>
-                        <div class="text-[10px] text-base-content/50 font-normal mt-0.5">
-                          {{ shift.email || 'No email' }}
-                        </div>
-                      </td>
-                      <td>
-                        <pc-status-badge [type]="getStatusType(shift.status)">
-                          {{ shift.status || 'signed_up' }}
-                        </pc-status-badge>
-                      </td>
-                      <td class="font-mono">
-                        {{ shift.hours_worked !== null && shift.hours_worked !== undefined ? shift.hours_worked : '—' }}
-                      </td>
-                      <td class="max-w-xs truncate" [title]="shift.notes || ''">{{ shift.notes || '—' }}</td>
-                    </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-              }
-            </div>
-          </pc-tab-panel>
+        <!-- Details and Settings List -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (event().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+          }
 
-          <pc-tab-panel id="activity" [activeTab]="activeTab()">
-            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-              <pc-record-activities [entity]="'volunteer_events'" [entityId]="id()!"></pc-record-activities>
+          <pc-detail-row icon="map-pin" iconClass="text-error">
+            <span class="text-xs">
+              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+            </span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="calendar" iconClass="text-info">
+            <div class="text-xs flex flex-col">
+              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
             </div>
-          </pc-tab-panel>
-        </pc-tabs>
-      </div>
+          </pc-detail-row>
+
+          @if (event().contact_email || event().contact_phone) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
+            Coordinator Contact
+          </div>
+          @if (event().contact_email) {
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span>Email:</span>
+            <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
+          </pc-detail-row>
+          } @if (event().contact_phone) {
+          <pc-detail-row icon="phone" iconClass="text-purple-500">
+            <span>Phone:</span>
+            <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
+          </pc-detail-row>
+          } }
+        </div>
+      </pc-profile-card>
+
+      <!-- Public Signup Link Card -->
+      @if (event().public_url) {
+      <pc-card title="Public Signup Link" icon="globe-americas">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
+        </button>
+
+        <div class="form-control text-xs">
+          <div class="flex gap-2">
+            <input
+              type="text"
+              [value]="publicUrl()"
+              readonly
+              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+            />
+            <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+            </a>
+          </div>
+        </div>
+      </pc-card>
+      }
     </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Signed Up'"
+          [value]="roster().length"
+          [description]="'Volunteers scheduled'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Remaining Capacity'"
+          [value]="remainingCapacity()"
+          [description]="'Total capacity: ' + (event().capacity ?? 'Unlimited')"
+          [icon]="'adjustments-horizontal'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="roster" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
+            @if (roster().length === 0) {
+            <p class="text-sm text-base-content/40 italic">No volunteers signed up for this event roster.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm table-zebra w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Volunteer</th>
+                    <th>Status</th>
+                    <th>Hours Worked</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of roster(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="link hover:underline text-primary font-bold"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                      <div class="text-[10px] text-base-content/50 font-normal mt-0.5">
+                        {{ shift.email || 'No email' }}
+                      </div>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getStatusType(shift.status)">
+                        {{ shift.status || 'signed_up' }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono">
+                      {{ shift.hours_worked !== null && shift.hours_worked !== undefined ? shift.hours_worked : '—' }}
+                    </td>
+                    <td class="max-w-xs truncate" [title]="shift.notes || ''">{{ shift.notes || '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'volunteer_events'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
   }
 </pc-detail-layout>

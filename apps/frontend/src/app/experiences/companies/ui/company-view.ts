@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
@@ -14,11 +13,11 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 
 @Component({
   selector: 'pc-company-view',
   imports: [
-    DatePipe,
     RouterModule,
     PeopleInCompany,
     RecordActivities,
@@ -28,6 +27,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
     TabPanel,
     ProfileCard,
     DetailItem,
+    SystemMetadata,
   ],
   templateUrl: './company-view.html',
 })
@@ -148,16 +148,6 @@ export class CompanyView {
       .catch(() => {
         this.alertSvc.showError(`Failed to copy ${label}`);
       });
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.company()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.company()?.updated_at;
-    return date ? new Date(date) : null;
   }
 
   protected getUserName(id: string | null | undefined): string {

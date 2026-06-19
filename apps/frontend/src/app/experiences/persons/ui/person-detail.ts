@@ -14,8 +14,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-
-import { ColumnType } from 'kysely';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -33,7 +32,7 @@ import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer],
+  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {
@@ -319,21 +318,11 @@ export class PersonDetail implements OnInit {
     return this.getFormattedAddress(address);
   }
 
-  /** Returns the creation date of the person as a Date (for pipes) */
-  protected getCreatedAt(): Date | null {
-    return this.getDateFrom(this.person()?.created_at);
-  }
-
   protected getId() {
     const id = this.person()?.id;
     if (!id) return null;
 
     return id as unknown as string;
-  }
-
-  /** Returns the last updated date of the person as a Date (for pipes) */
-  protected getUpdatedAt() {
-    return this.getDateFrom(this.person()?.updated_at);
   }
 
   /** Get the display name for a user id */
@@ -559,15 +548,6 @@ export class PersonDetail implements OnInit {
     } finally {
       this.householdsLoading.set(false);
     }
-  }
-
-  private getDateFrom(date: ColumnType<Date, string | Date | undefined, string | Date> | null | undefined) {
-    if (!date) return null;
-    if (date instanceof Date) return date;
-
-    // If date is a Kysely ColumnType, extract the value
-    const value = typeof date === 'object' && 'toString' in date ? date.toString() : (date as string);
-    return new Date(value);
   }
 
   /**

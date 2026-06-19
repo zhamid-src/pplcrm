@@ -16,6 +16,8 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-user-view',
@@ -30,6 +32,8 @@ import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
     ProfileCard,
     DetailRow,
     DetailItem,
+    SystemMetadata,
+    PcCard,
   ],
   templateUrl: './user-view.html',
 })
