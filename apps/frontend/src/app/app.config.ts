@@ -5,6 +5,7 @@ import {
   provideAppInitializer,
   provideZonelessChangeDetection,
 } from '@angular/core';
+import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
 import { ENVIRONMENT } from './environment-token';
 import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
@@ -55,6 +56,7 @@ export function tokenGetter() {
 export const appConfig: ApplicationConfig = {
   providers: [
     { provide: ENVIRONMENT, useValue: environment },
+    provideTanStackQuery(new QueryClient()),
     /**
      * Provides Google Maps API Loader globally with the 'places' library.
      */

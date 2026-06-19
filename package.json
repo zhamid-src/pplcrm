@@ -26,6 +26,7 @@
     "@googlemaps/js-api-loader": "^1.16.10",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@tailwindcss/cli": "^4.2.4",
+    "@tanstack/angular-query-experimental": "^5.101.0",
     "@tanstack/table-core": "^8.21.3",
     "@tanstack/virtual-core": "^3.14.0",
     "@triangular/password-checker": "^20.0.0",
