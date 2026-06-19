@@ -1,59 +1,56 @@
-    <div class="p-4">
-      <div class="flex items-center gap-2 mb-4">
-        <pc-icon name="view-kanban"></pc-icon>
-        <h2 class="text-xl font-semibold">Task Board</h2>
-      </div>
+<div class="p-4">
+  <div class="flex items-center gap-2 mb-4">
+    <pc-icon name="view-kanban"></pc-icon>
+    <h2 class="text-xl font-semibold">Task Board</h2>
+  </div>
 
-      <div class="grid gap-4" [class]="gridColsClass">
-        @for (col of statuses; track col) {
-          <div class="bg-base-200 rounded-lg p-3 min-h-72 flex flex-col">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-semibold">{{ toLabel(col) }}</h3>
-              <span class="badge badge-sm">{{ grouped()[col].length || 0 }}</span>
-            </div>
-            <div
-              class="flex-1 overflow-auto"
-              [attr.data-status]="col"
-              (dragover)="onDragOver($event)"
-              (drop)="onDrop($event, col)"
-            >
-              <div class="flex flex-wrap gap-2 pb-6" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)">
-                @for (t of grouped()[col]; track t.id) {
-                  <div
-                    class="card bg-warning/10 border border-warning/20 shadow-sm cursor-move w-32 md:w-36 aspect-square relative"
-                    draggable="true"
-                    (dragstart)="onDragStart($event, t)"
-                    (dblclick)="openTask(t)"
-                    (dragover)="onDragOver($event)"
-                    (drop)="onDrop($event, col)"
-                  >
-                    <div class="card-body p-3">
-                      <div class="flex items-center gap-2 mb-1  w-full">
-                        <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
-                        <button
-                          (click)="openTask(t); $event.stopPropagation()"
-                          class="btn btn-ghost btn-xs btn-circle ml-auto"
-                          title="View Details"
-                        >
-                          <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-                        </button>
-                      </div>
-                      <span class="badge badge-xs absolute bottom-2 right-2" [class]="priorityBadgeClass(t.priority)">
-                        {{ t.priority || '' }}
-                      </span>
-                      <div class="text-sm font-medium break-words overflow-hidden">
-                        {{ t.name }}
-                      </div>
-                      <div class="mt-auto text-xs opacity-70">{{ dateLabel(t.due_at) }}</div>
-                    </div>
-                  </div>
-                }
-                <!-- Spacer drop zone at bottom of column -->
-                <div class="w-full h-16" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)"></div>
+  <div class="grid gap-4" [class]="gridColsClass">
+    @for (col of statuses; track col) {
+    <div class="bg-base-200 rounded-lg p-3 min-h-72 flex flex-col">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold">{{ toLabel(col) }}</h3>
+        <span class="badge badge-sm">{{ grouped()[col].length || 0 }}</span>
+      </div>
+      <div
+        class="flex-1 overflow-auto"
+        [attr.data-status]="col"
+        (dragover)="onDragOver($event)"
+        (drop)="onDrop($event, col)"
+      >
+        <div class="flex flex-wrap gap-2 pb-6" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)">
+          @for (t of grouped()[col]; track t.id) {
+          <div
+            class="card bg-warning/10 border border-warning/20 shadow-sm cursor-move w-32 md:w-36 aspect-square relative"
+            draggable="true"
+            (dragstart)="onDragStart($event, t)"
+            (dblclick)="openTask(t)"
+            (dragover)="onDragOver($event)"
+            (drop)="onDrop($event, col)"
+          >
+            <div class="card-body p-3">
+              <div class="flex items-center gap-2 mb-1 w-full">
+                <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
+                <button
+                  (click)="openTask(t); $event.stopPropagation()"
+                  class="btn btn-ghost btn-xs btn-circle ml-auto"
+                  title="View Details"
+                >
+                  <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+                </button>
               </div>
+              <span class="badge badge-xs absolute bottom-2 right-2" [class]="priorityBadgeClass(t.priority)">
+                {{ t.priority || '' }}
+              </span>
+              <div class="text-sm font-medium break-words overflow-hidden">{{ t.name }}</div>
+              <div class="mt-auto text-xs opacity-70">{{ dateLabel(t.due_at) }}</div>
             </div>
           </div>
-        }
+          }
+          <!-- Spacer drop zone at bottom of column -->
+          <div class="w-full h-16" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)"></div>
+        </div>
       </div>
     </div>
-  
+    }
+  </div>
+</div>

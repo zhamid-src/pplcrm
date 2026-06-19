@@ -48,10 +48,10 @@
             <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
             <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
 
-            <div class="badge badge-lg badge-neutral gap-2 mb-6 font-medium capitalize">
+            <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
               <pc-icon name="identification" [size]="4"></pc-icon>
               {{ detail()?.role }}
-            </div>
+            </pc-status-badge>
 
             <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
               <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
@@ -63,7 +63,9 @@
                   ></pc-icon>
                   <span>Verified:</span>
                 </div>
-                <span class="font-bold">{{ detail()?.verified ? 'Yes' : 'No' }}</span>
+                <pc-status-badge [type]="detail()?.verified ? 'success' : 'neutral'">
+                  {{ detail()?.verified ? 'Yes' : 'No' }}
+                </pc-status-badge>
               </div>
             </div>
 
@@ -83,17 +85,11 @@
         @if (stats()) {
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           @for (card of activityCards(); track card.key) {
-          <div class="stats stats-vertical rounded border border-base-300 bg-base-100 shadow-sm">
-            <div class="stat">
-              <div class="stat-title text-sm text-base-content/70">{{ card.title }}</div>
-              <div class="stat-value text-2xl font-semibold">{{ card.value }}</div>
-              <div class="stat-desc text-xs text-base-content/60">
-                {{ card.subtitle }} @if (card.asOf) {
-                <span class="block">As of {{ formatAsOf(card.asOf) }}</span>
-                }
-              </div>
-            </div>
-          </div>
+          <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+            @if (card.asOf) {
+            <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+            }
+          </pc-stat-card>
           }
         </div>
         }

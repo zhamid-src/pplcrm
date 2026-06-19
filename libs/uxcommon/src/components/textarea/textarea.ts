@@ -17,7 +17,9 @@ import { FormField } from '@angular/forms/signals';
         [formField]="formField()"
         [rows]="rows()"
         class="textarea textarea-bordered w-full"
-        [class.textarea-error]="hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))"
+        [class.textarea-error]="
+          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
+        "
       ></textarea>
 
       @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {

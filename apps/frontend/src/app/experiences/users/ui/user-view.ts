@@ -11,10 +11,12 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserService } from '../../../services/user.service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 @Component({
   selector: 'pc-user-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, StatusBadge],
   templateUrl: './user-view.html',
 })
 export class UserViewComponent {

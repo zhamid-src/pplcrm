@@ -17,6 +17,10 @@ export * from './components/detail-header/detail-header';
 export * from './components/entity-overview/entity-overview';
 export * from './components/address-form-group/address-form-group';
 export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
 
 // Directives
 export * from './directives/animate-if.directive';

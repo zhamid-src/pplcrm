@@ -14,7 +14,9 @@ import { FormField } from '@angular/forms/signals';
 
       <label
         class="input w-full flex items-center gap-2"
-        [class.input-error]="hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))"
+        [class.input-error]="
+          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
+        "
       >
         <ng-content select="[pc-prefix]"></ng-content>
         <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />

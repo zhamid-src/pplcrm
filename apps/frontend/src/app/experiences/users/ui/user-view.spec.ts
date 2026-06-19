@@ -5,6 +5,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from '@frontend/auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { UserViewComponent } from './user-view';
 
 describe('UserViewComponent', () => {
@@ -48,6 +49,10 @@ describe('UserViewComponent', () => {
       resolveAvatarUrl: vi.fn().mockImplementation((url: string | null) => (url ? `resolved-${url}` : null)),
     };
 
+    const mockUserService = {
+      resolveAvatarUrl: vi.fn().mockImplementation((url: string | null) => (url ? `resolved-${url}` : null)),
+    };
+
     mockUsersSvc.getById.mockResolvedValue({
       id: 'user-123',
       email: 'john@example.com',
@@ -68,6 +73,7 @@ describe('UserViewComponent', () => {
       providers: [
         { provide: UserAdminService, useValue: mockUsersSvc },
         { provide: AuthService, useValue: mockAuthSvc },
+        { provide: UserService, useValue: mockUserService },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
@@ -77,6 +83,7 @@ describe('UserViewComponent', () => {
 
     fixture = TestBed.createComponent(UserViewComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 'user-123');
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

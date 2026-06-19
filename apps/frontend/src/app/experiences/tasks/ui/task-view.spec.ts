@@ -88,10 +88,11 @@ describe('TaskView', () => {
 
     fixture = TestBed.createComponent(TaskView);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 't1');
+    fixture.detectChanges();
   });
 
   it('should load task details on init', async () => {
-    component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     expect(mockTasks.getById).toHaveBeenCalledWith('t1');
@@ -100,7 +101,6 @@ describe('TaskView', () => {
   });
 
   it('should update task and trigger refresh', async () => {
-    component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     await component['update']({ name: 'Updated Task Name' });
@@ -111,7 +111,6 @@ describe('TaskView', () => {
   });
 
   it('should delete task and trigger refresh', async () => {
-    component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     const mockRouter = TestBed.inject(Router);

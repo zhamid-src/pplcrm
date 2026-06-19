@@ -132,77 +132,35 @@
       <div class="lg:col-span-2 flex flex-col gap-6">
         <!-- Stats Panel -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="card bg-base-100 border border-base-300 shadow-md">
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">Submissions</span>
-                <h3 class="text-2xl font-bold text-indigo-500 mt-1">{{ submissionsCount() }}</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Total lead contacts collected</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-indigo-500">
-                <pc-icon name="envelope" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'Submissions'"
+            [value]="submissionsCount()"
+            [description]="'Total lead contacts collected'"
+            [icon]="'envelope'"
+            [valueColorClass]="'text-indigo-500'"
+            [iconColorClass]="'text-indigo-500'"
+          ></pc-stat-card>
 
-          <div class="card bg-base-100 border border-base-300 shadow-md">
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">Fields Included</span>
-                <h3 class="text-2xl font-bold text-amber-500 mt-1">{{ fieldsCount() }}</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Active field inputs</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-500">
-                <pc-icon name="queue-list" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'Fields Included'"
+            [value]="fieldsCount()"
+            [description]="'Active field inputs'"
+            [icon]="'queue-list'"
+            [valueColorClass]="'text-amber-500'"
+            [iconColorClass]="'text-amber-500'"
+          ></pc-stat-card>
         </div>
 
         <!-- Tabs Panel -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-          <!-- Tabs Header -->
-          <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'activity'"
-              (click)="activeTab.set('activity')"
-            >
-              <pc-icon name="adjustments-horizontal" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>Activity Feed</span>
-            </a>
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'targetActions'"
-              (click)="activeTab.set('targetActions')"
-            >
-              <pc-icon name="paper-airplane" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>Actions & Mapping</span>
-            </a>
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'fieldsPreview'"
-              (click)="activeTab.set('fieldsPreview')"
-            >
-              <pc-icon name="pencil-square" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>Fields Configuration</span>
-            </a>
-          </div>
-
-          <!-- Tab Panels -->
-          <div class="p-6">
-            <!-- Panel: General Activity Feed -->
-            @if (activeTab() === 'activity') {
+        <!-- Tabs Panel -->
+        <pc-tabs [tabs]="formTabs()" [(activeTab)]="activeTab">
+          <pc-tab-panel id="activity" [activeTab]="activeTab()">
             <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
               <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
             </div>
-            }
+          </pc-tab-panel>
 
-            <!-- Panel: Target Actions / Lists / Tags -->
-            @if (activeTab() === 'targetActions') {
+          <pc-tab-panel id="targetActions" [activeTab]="activeTab()">
             <div class="flex flex-col gap-5 text-sm">
               <div>
                 <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
@@ -228,10 +186,9 @@
                 </div>
               </div>
             </div>
-            }
+          </pc-tab-panel>
 
-            <!-- Panel: Fields Configuration Preview -->
-            @if (activeTab() === 'fieldsPreview') {
+          <pc-tab-panel id="fieldsPreview" [activeTab]="activeTab()">
             <div class="flex flex-col gap-4">
               <h4 class="font-semibold text-base-content">Form Input Preview</h4>
               <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
@@ -267,9 +224,8 @@
                 }
               </div>
             </div>
-            }
-          </div>
-        </div>
+          </pc-tab-panel>
+        </pc-tabs>
       </div>
     </div>
     } @else {

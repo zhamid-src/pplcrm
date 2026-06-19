@@ -58,165 +58,126 @@
   </div>
   } @else {
   <!-- KPI Stats Cards -->
+  <!-- KPI Stats Cards -->
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-    <!-- Card 1: Members Count -->
-    <div
-      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    <pc-stat-card
+      [title]="'List Size'"
+      [value]="memberCount()"
+      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
+      [icon]="'users'"
+      [iconBgClass]="'bg-primary/10'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Newsletters Sent'"
+      [value]="stats()?.totalNewsletters || 0"
+      [description]="'Campaign dispatches'"
+      [icon]="'megaphone'"
+      [iconBgClass]="'bg-secondary/10'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Open Rate'"
+      [value]="formatPercent(stats()?.openRate)"
+      [icon]="'envelope'"
+      [iconBgClass]="'bg-accent/10'"
+      [iconColorClass]="'text-accent'"
     >
-      <div>
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">List Size</span>
-        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ memberCount() }}</h3>
-        <span class="text-[11px] text-base-content/60 mt-2 block">
-          Targeting {{ isPeople() ? 'People' : 'Households' }}
-        </span>
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
       </div>
-      <div class="bg-primary/10 text-primary p-3.5 rounded-2xl">
-        <pc-icon name="users" [size]="6"></pc-icon>
-      </div>
-    </div>
+    </pc-stat-card>
 
-    <!-- Card 2: Campaigns Sent -->
-    <div
-      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
+    <pc-stat-card
+      [title]="'Avg Click Rate'"
+      [value]="formatPercent(stats()?.clickRate)"
+      [icon]="'chart-pie'"
+      [iconBgClass]="'bg-info/10'"
+      [iconColorClass]="'text-info'"
     >
-      <div>
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Newsletters Sent</span>
-        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ stats()?.totalNewsletters || 0 }}</h3>
-        <span class="text-[11px] text-base-content/60 mt-2 block"> Campaign dispatches </span>
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
       </div>
-      <div class="bg-secondary/10 text-secondary p-3.5 rounded-2xl">
-        <pc-icon name="megaphone" [size]="6"></pc-icon>
-      </div>
-    </div>
-
-    <!-- Card 3: Avg Open Rate -->
-    <div
-      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
-    >
-      <div class="flex-grow">
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Open Rate</span>
-        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgOpenRate) }}</h3>
-
-        <!-- Open Rate Progress Bar -->
-        <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
-          <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
-        </div>
-      </div>
-      <div class="bg-accent/10 text-accent p-3.5 rounded-2xl ml-4 shrink-0">
-        <pc-icon name="envelope" [size]="6"></pc-icon>
-      </div>
-    </div>
-
-    <!-- Card 4: Avg Click Rate -->
-    <div
-      class="card bg-base-100 border border-base-200/50 shadow-md p-5 flex flex-row items-center justify-between hover:shadow-lg transition-shadow duration-200"
-    >
-      <div class="flex-grow">
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg Click Rate</span>
-        <h3 class="text-3xl font-extrabold text-base-content mt-1">{{ formatPercent(stats()?.avgClickRate) }}</h3>
-
-        <!-- Click Rate Progress Bar -->
-        <div class="w-full bg-base-200 rounded-full h-1.5 mt-3.5">
-          <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
-        </div>
-      </div>
-      <div class="bg-info/10 text-info p-3.5 rounded-2xl ml-4 shrink-0">
-        <pc-icon name="chart-pie" [size]="6"></pc-icon>
-      </div>
-    </div>
+    </pc-stat-card>
   </div>
 
-  <!-- Tabs Header -->
-  <div class="tabs tabs-lifted mb-6">
-    <button
-      class="tab tab-lg font-medium transition-all duration-200"
-      [class.tab-active]="activeTab() === 'members'"
-      (click)="activeTab.set('members')"
-    >
-      Members List ({{ memberCount() }})
-    </button>
-    <button
-      class="tab tab-lg font-medium transition-all duration-200"
-      [class.tab-active]="activeTab() === 'newsletters'"
-      (click)="activeTab.set('newsletters')"
-    >
-      Newsletter Campaigns ({{ stats()?.newsletters?.length || 0 }})
-    </button>
-  </div>
-
-  <!-- Tab 1: Members Panel -->
-  @if (activeTab() === 'members') {
-  <div class="card bg-base-100 border border-base-200/50 shadow-md p-6">
-    @if (isPeople()) {
-    <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
-    } @else {
-    <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
-    }
-  </div>
-  }
-
-  <!-- Tab 2: Campaigns Panel -->
-  @if (activeTab() === 'newsletters') {
-  <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-    <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-      <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
-      <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
-      <div class="p-12 text-center text-base-content/50">
-        <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-        <p class="font-medium text-base">No campaign emails sent to this list</p>
-        <p class="text-xs mt-1">Sent newsletters targeting this list will appear here with engagement statistics.</p>
-      </div>
+  <!-- Tabs Panel -->
+  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="members" [activeTab]="activeTab()">
+      @if (isPeople()) {
+      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
       } @else {
-      <table class="table table-zebra table-md w-full">
-        <thead>
-          <tr class="bg-base-200/50 text-base-content/70">
-            <th class="font-bold">Newsletter Name</th>
-            <th class="font-bold">Subject</th>
-            <th class="font-bold">Send Date</th>
-            <th class="font-bold text-right">Recipients</th>
-            <th class="font-bold text-right">Open Rate</th>
-            <th class="font-bold text-right">Click Rate</th>
-            <th class="font-bold text-center">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (n of stats().newsletters; track n.id) {
-          <tr class="hover:bg-base-200/40 transition-colors">
-            <td class="font-bold text-base-content">{{ n.name }}</td>
-            <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
-            <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
-            <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
-            <td class="text-right">
-              <div class="flex items-center justify-end gap-1.5">
-                <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
-              </div>
-            </td>
-            <td class="text-right">
-              <div class="flex items-center justify-end gap-1.5">
-                <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
-              </div>
-            </td>
-            <td class="text-center">
-              <a
-                [routerLink]="['/newsletters', n.id]"
-                class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
-              >
-                <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
-                View Report
-              </a>
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
+      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
       }
-    </div>
-  </div>
-  } } @if (listData() && listData()?.id) {
+    </pc-tab-panel>
+
+    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
+          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
+          <div class="p-12 text-center text-base-content/50">
+            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+            <p class="font-medium text-base">No campaign emails sent to this list</p>
+            <p class="text-xs mt-1">
+              Sent newsletters targeting this list will appear here with engagement statistics.
+            </p>
+          </div>
+          } @else {
+          <table class="table table-zebra table-md w-full">
+            <thead>
+              <tr class="bg-base-200/50 text-base-content/70">
+                <th class="font-bold">Newsletter Name</th>
+                <th class="font-bold">Subject</th>
+                <th class="font-bold">Send Date</th>
+                <th class="font-bold text-right">Recipients</th>
+                <th class="font-bold text-right">Open Rate</th>
+                <th class="font-bold text-right">Click Rate</th>
+                <th class="font-bold text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (n of stats().newsletters; track n.id) {
+              <tr class="hover:bg-base-200/40 transition-colors">
+                <td class="font-bold text-base-content">{{ n.name }}</td>
+                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
+                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
+                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-center">
+                  <a
+                    [routerLink]="['/newsletters', n.id]"
+                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
+                  >
+                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
+                    View Report
+                  </a>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+          }
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+  } @if (listData() && listData()?.id) {
   <div class="mt-8 border-t border-base-250 pt-6">
     <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
   </div>

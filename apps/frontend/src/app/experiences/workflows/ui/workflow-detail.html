@@ -271,603 +271,607 @@
 
   <!-- ACTIVE WORKSPACE: DESIGNER, ENROLLMENTS, OR LOGS -->
   @if (triggerSelected()) {
-  <!-- Tabs Navigation -->
-  <div class="tabs tabs-box bg-base-200 p-1 rounded-2xl flex gap-2 w-fit">
-    <button
-      (click)="selectTab('steps')"
-      class="tab rounded-xl transition-all font-semibold"
-      [class.tab-active]="activeTab() === 'steps'"
-    >
-      Sequence Designer ({{ steps().length }})
-    </button>
-    <button
-      (click)="!isNew() && selectTab('enrollments')"
-      class="tab rounded-xl transition-all font-semibold"
-      [class.tab-active]="activeTab() === 'enrollments'"
-      [class.opacity-50]="isNew()"
-      [class.cursor-not-allowed]="isNew()"
-      [class.tooltip]="isNew()"
-      [attr.data-tip]="isNew() ? 'Save workflow to enroll contacts' : null"
-    >
-      Enrolled Contacts ({{ enrollments().length }})
-    </button>
-  </div>
-
-  <!-- TAB 1: VISUAL SEQUENCE DESIGNER -->
-  @if (activeTab() === 'steps') {
-  <div class="flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-270px)] min-h-[600px] w-full">
-    <!-- Visual Canvas (Left/Center) -->
-    <div
-      class="flex-1 bg-base-200/50 border border-base-350 rounded-2xl p-8 flex flex-col items-center h-full overflow-y-auto relative shadow-inner"
-    >
-      <!-- Trigger Node -->
-      <div
-        (click)="selectedNodeType.set('trigger'); selectedNodeIndex.set(null)"
-        class="card bg-base-100 border-2 shadow-md rounded-2xl p-5 w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
-        [class.border-success]="selectedNodeType() === 'trigger'"
-        [class.border-base-200]="selectedNodeType() !== 'trigger'"
-      >
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner">
-            @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> } @case
-            ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
-            <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') { <pc-icon name="document-text"></pc-icon> }
-            @case ('contact_created') { <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') {
-            <pc-icon name="queue-list"></pc-icon> } @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> }
-            @case ('new_subscriber') { <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') {
-            <pc-icon name="x-circle"></pc-icon> } @default { <pc-icon name="user-plus"></pc-icon> } }
-          </div>
-          <div class="flex flex-col">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
-            <span class="text-sm font-bold text-base-content"> {{ formatTriggerType(payload().trigger_type) }} </span>
-            @if (selectedEventName()) {
-            <span class="text-[10px] text-success font-semibold truncate max-w-[200px]" [title]="selectedEventName()">
-              Filter: {{ selectedEventName() }}
-            </span>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- Connector line + Add Button below trigger -->
-      <div class="flex flex-col items-center">
-        <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-        <div class="dropdown dropdown-bottom dropdown-center">
+  <pc-tabs [tabs]="workflowTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="steps" [activeTab]="activeTab()">
+      <div class="flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-270px)] min-h-[600px] w-full">
+        <!-- Visual Canvas (Left/Center) -->
+        <div
+          class="flex-1 bg-base-200/50 border border-base-350 rounded-2xl p-8 flex flex-col items-center h-full overflow-y-auto relative shadow-inner"
+        >
+          <!-- Trigger Node -->
           <div
-            tabindex="0"
-            role="button"
-            class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
+            (click)="selectedNodeType.set('trigger'); selectedNodeIndex.set(null)"
+            class="card bg-base-100 border-2 shadow-md rounded-2xl p-5 w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+            [class.border-success]="selectedNodeType() === 'trigger'"
+            [class.border-base-200]="selectedNodeType() !== 'trigger'"
           >
-            <pc-icon name="plus"></pc-icon>
-          </div>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
-          >
-            <li>
-              <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
-                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                Add Email Step
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-      </div>
-
-      <!-- Steps Flow List -->
-      @for (step of steps(); track $index) {
-      <div class="flex flex-col items-center w-full">
-        <!-- Delay Node (Hourglass/Clock) -->
-        <div
-          (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
-          class="bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-amber-100 hover:scale-[1.02] transition-all duration-150"
-          [class.ring-2]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-          [class.ring-amber-400]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-        >
-          <pc-icon name="clock"></pc-icon>
-          <span
-            >Wait <strong>{{ step.delay_days }}</strong> {{ (step.delay_unit === 'hours' ? 'hour' : 'day') +
-            (step.delay_days === 1 ? '' : 's') }}</span
-          >
-        </div>
-
-        <!-- Vertical connector line -->
-        <div class="w-0.5 h-8 bg-base-content/15 border-dashed border-l-2"></div>
-
-        <!-- Email Action Node Card -->
-        <div
-          (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
-          class="card bg-base-100 border-2 shadow-md rounded-2xl w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
-          [class.border-primary]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-          [class.border-base-200]="selectedNodeType() !== 'step' || selectedNodeIndex() !== $index"
-        >
-          <div class="card-body p-4 gap-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div
-                  class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-inner"
-                >
-                  <pc-icon name="envelope"></pc-icon>
-                </div>
-                <span class="text-[10px] font-black text-base-content/40 uppercase">Step {{ $index + 1 }}</span>
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner"
+              >
+                @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
+                @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+                <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
+                <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
+                <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
+                @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
+                <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
+                @default { <pc-icon name="user-plus"></pc-icon> } }
               </div>
+              <div class="flex flex-col">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
+                <span class="text-sm font-bold text-base-content">
+                  {{ formatTriggerType(payload().trigger_type) }}
+                </span>
+                @if (selectedEventName()) {
+                <span
+                  class="text-[10px] text-success font-semibold truncate max-w-[200px]"
+                  [title]="selectedEventName()"
+                >
+                  Filter: {{ selectedEventName() }}
+                </span>
+                }
+              </div>
+            </div>
+          </div>
 
-              <button
-                (click)="removeStep($index); $event.stopPropagation()"
-                class="btn btn-ghost btn-xs text-error p-1 hover:bg-transparent rounded-full"
-                title="Remove Step"
+          <!-- Connector line + Add Button below trigger -->
+          <div class="flex flex-col items-center">
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+            <div class="dropdown dropdown-bottom dropdown-center">
+              <div
+                tabindex="0"
+                role="button"
+                class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
               >
-                <pc-icon name="trash"></pc-icon>
-              </button>
-            </div>
-
-            <div class="flex flex-col gap-1 border-b border-base-100 pb-2">
-              <span class="text-[10px] font-bold text-base-content/40 uppercase">Email Subject</span>
-              <span class="text-xs font-semibold text-base-content truncate">{{ step.subject || '(No subject)' }}</span>
-            </div>
-
-            <div class="flex items-center justify-between pt-1">
-              <button
-                (click)="openEmailDesigner($index); $event.stopPropagation()"
-                class="btn btn-xs btn-outline btn-primary gap-1 px-3 rounded-lg shadow-sm"
+                <pc-icon name="plus"></pc-icon>
+              </div>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
               >
-                <pc-icon name="pencil-square"></pc-icon>
-                Edit Email
-              </button>
-              <span class="text-[9px] text-base-content/40 font-medium italic">
-                {{ step.html_content ? 'Visual Template' : 'Plain Text Only' }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Connector line + Add Button below step -->
-        <div class="flex flex-col items-center">
-          <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-          <div class="dropdown dropdown-bottom dropdown-center">
-            <div
-              tabindex="0"
-              role="button"
-              class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
-            >
-              <pc-icon name="plus"></pc-icon>
-            </div>
-            <ul
-              tabindex="0"
-              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
-            >
-              <li>
-                <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
-                  <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                  Add Email Step
-                </a>
-              </li>
-            </ul>
-          </div>
-          <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-        </div>
-      </div>
-      }
-
-      <!-- Exit Node -->
-      <div
-        (click)="selectedNodeType.set('settings'); selectedNodeIndex.set(null)"
-        class="bg-neutral text-neutral-content text-xs font-black px-6 py-3.5 rounded-2xl shadow-md uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:bg-neutral-focus hover:scale-[1.02] transition-all duration-150"
-      >
-        <pc-icon name="x-circle"></pc-icon>
-        <span>Exit Automation</span>
-      </div>
-    </div>
-
-    <!-- Properties Panel Sidebar (Right) -->
-    <aside
-      class="w-full lg:w-96 shrink-0 border border-base-300 bg-base-100 p-6 flex flex-col gap-5 h-full rounded-2xl shadow-sm overflow-y-auto"
-    >
-      <!-- Option A: Trigger Node Selected -->
-      @if (selectedNodeType() === 'trigger') {
-      <div class="flex flex-col gap-4">
-        <div class="flex justify-between items-center pb-2 border-b border-base-200">
-          <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Trigger</h3>
-          <button (click)="selectedNodeType.set('settings')" class="btn btn-ghost btn-xs text-primary font-bold">
-            Automation Settings
-          </button>
-        </div>
-
-        <div class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5">
-          <div class="flex items-center gap-2 text-success">
-            <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
-              @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
-              @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
-              <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') { <pc-icon name="document-text"></pc-icon> }
-              @case ('contact_created') { <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') {
-              <pc-icon name="queue-list"></pc-icon> } @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> }
-              @case ('new_subscriber') { <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') {
-              <pc-icon name="x-circle"></pc-icon> } @default { <pc-icon name="user-plus"></pc-icon> } }
-            </div>
-            <span class="font-black text-sm text-base-content"> {{ formatTriggerType(payload().trigger_type) }} </span>
-          </div>
-          <p class="text-xs text-base-content/75 leading-relaxed">
-            This trigger activates automatically based on system events or manual selection settings.
-          </p>
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Trigger Type</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_type"
-          >
-            <option value="manual">Manual Enrollment</option>
-            <option value="volunteer_signup">Volunteer Event Signup</option>
-            <option value="tag_added">Tag Added</option>
-            <option value="web_form_submitted">Web Form Submitted</option>
-            <option value="volunteer_shift_status">Volunteer Shift Status</option>
-            <option value="contact_created">New Contact Created</option>
-            <option value="list_joined">List Joined</option>
-            <option value="payment_event">Billing / Payment Event</option>
-            <option value="new_subscriber">New Subscriber</option>
-            <option value="new_unsubscriber">New Unsubscriber</option>
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5">
-            Warning: Changing trigger type will modify how future subscribers enroll.
-          </p>
-        </div>
-
-        @if (payload().trigger_type === 'volunteer_signup') {
-        <div class="form-control mt-2">
-          <label class="label label-text font-semibold text-xs py-1">Volunteer Event</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_event_id"
-          >
-            <option value="">-- Any Event --</option>
-            @for (event of volunteerEvents(); track event.id) {
-            <option [value]="event.id">{{ event.name }}</option>
-            }
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer
-            event signup.
-          </p>
-        </div>
-        } @if (payload().trigger_type === 'tag_added') {
-        <div class="form-control mt-2">
-          <label class="label label-text font-semibold text-xs py-1">Tag Filter</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_event_id"
-          >
-            <option value="">-- Any Tag --</option>
-            @for (tag of tags(); track tag.id) {
-            <option [value]="tag.id">{{ tag.name }}</option>
-            }
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Select a specific tag that triggers enrollment, or leave as "Any Tag".
-          </p>
-        </div>
-        } @if (payload().trigger_type === 'web_form_submitted') {
-        <div class="form-control mt-2">
-          <label class="label label-text font-semibold text-xs py-1">Web Form Filter</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_event_id"
-          >
-            <option value="">-- Any Web Form --</option>
-            @for (formEl of webForms(); track formEl.id) {
-            <option [value]="formEl.id">{{ formEl.name }}</option>
-            }
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Select a specific web form that triggers enrollment, or leave as "Any Web Form".
-          </p>
-        </div>
-        } @if (payload().trigger_type === 'list_joined') {
-        <div class="form-control mt-2">
-          <label class="label label-text font-semibold text-xs py-1">Static List Filter</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_event_id"
-          >
-            <option value="">-- Any Static List --</option>
-            @for (listEl of lists(); track listEl.id) {
-            <option [value]="listEl.id">{{ listEl.name }}</option>
-            }
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Select a static list that triggers enrollment when joined.
-          </p>
-        </div>
-        } @if (payload().trigger_type === 'volunteer_shift_status') {
-        <div class="form-control mt-2">
-          <label class="label label-text font-semibold text-xs py-1">Shift Status Filter</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.trigger_event_id"
-          >
-            <option value="">-- Any Status --</option>
-            <option value="attended">Attended</option>
-            <option value="no_show">No Show</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Select a volunteer shift status update that triggers enrollment.
-          </p>
-        </div>
-        }
-      </div>
-      }
-
-      <!-- Option B: Step Node Selected -->
-      @else if (selectedNodeType() === 'step' && selectedNodeIndex() !== null) { @let idx = selectedNodeIndex()!; @let
-      step = steps()[idx]; @if (step) {
-      <div class="flex flex-col gap-4">
-        <div class="flex justify-between items-center pb-2 border-b border-base-200">
-          <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Step {{ idx + 1 }}</h3>
-          <button
-            (click)="removeStep(idx)"
-            class="btn btn-ghost btn-xs text-error gap-1 px-1.5 hover:bg-error/10 rounded"
-          >
-            <pc-icon name="trash"></pc-icon>
-            Delete Step
-          </button>
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Delay Duration</label>
-          <div class="flex items-center gap-2">
-            <input
-              type="number"
-              class="input input-bordered input-sm w-20 text-center font-bold rounded-xl"
-              [(ngModel)]="step.delay_days"
-              min="0"
-            />
-            <select class="select select-bordered select-sm font-bold text-xs rounded-xl" [(ngModel)]="step.delay_unit">
-              <option value="days">day(s)</option>
-              <option value="hours">hour(s)</option>
-            </select>
-            <span class="text-xs text-base-content/60 font-semibold">after previous step</span>
-          </div>
-          <p class="text-[10px] text-base-content/50 mt-1">Set to 0 to send instantly.</p>
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Email Subject Line</label>
-          <input
-            type="text"
-            class="input input-bordered input-sm w-full font-semibold rounded-xl"
-            placeholder="e.g. Welcome aboard!"
-            [(ngModel)]="step.subject"
-          />
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Preview Text / Snippet</label>
-          <input
-            type="text"
-            class="input input-bordered input-sm w-full rounded-xl"
-            placeholder="Secondary subtitle in inbox preview..."
-            [(ngModel)]="step.preview_text"
-          />
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Plain Text Fallback (Plain Text Only)</label>
-          <textarea
-            class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
-            rows="4"
-            placeholder="Fallback message without HTML formatting..."
-            [(ngModel)]="step.plain_text_content"
-          ></textarea>
-        </div>
-
-        <div class="border-t border-base-250 pt-4 flex flex-col gap-3">
-          <button (click)="openEmailDesigner(idx)" class="btn btn-primary w-full gap-2 shadow-sm rounded-xl">
-            <pc-icon name="pencil-square"></pc-icon>
-            Design Email Content
-          </button>
-          <div class="text-center">
-            <span class="text-[10px] text-base-content/40 italic font-semibold"
-              >Opens drag-and-drop block designer</span
-            >
-          </div>
-        </div>
-      </div>
-      } }
-
-      <!-- Option C: Workflow Settings (Default/Fallback) -->
-      @else {
-      <div class="flex flex-col gap-4">
-        <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50 pb-2 border-b border-base-200">
-          Workflow Settings
-        </h3>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Workflow Name</label>
-          <input
-            type="text"
-            class="input input-bordered input-sm w-full font-semibold rounded-xl"
-            placeholder="e.g. Volunteer Welcome Series"
-            [formField]="form.name"
-            [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-          />
-          @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-          form.name().errors(); track err) {
-          <p class="text-xs text-error mt-1">{{ err.message }}</p>
-          } }
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Description</label>
-          <textarea
-            class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
-            rows="4"
-            placeholder="Brief summary of what this drip campaign does..."
-            [formField]="form.description"
-            [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
-          ></textarea>
-          @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for (err
-          of form.description().errors(); track err) {
-          <p class="text-xs text-error mt-1">{{ err.message }}</p>
-          } }
-        </div>
-
-        <div class="form-control">
-          <label class="label label-text font-semibold text-xs py-1">Campaign Status</label>
-          <select
-            class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-            [formField]="form.status"
-          >
-            <option value="draft">Draft (Inactive)</option>
-            <option value="active">Active (Processing)</option>
-            <option value="paused">Paused</option>
-          </select>
-          <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-            Only active campaigns will parse background queues to send emails.
-          </p>
-        </div>
-
-        <div class="border-t border-base-200 pt-4 mt-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Sequence Overview</span>
-          <div class="flex items-center justify-between text-xs font-semibold mt-2 text-base-content/70">
-            <span>Total steps:</span>
-            <span class="font-mono font-black">{{ steps().length }}</span>
-          </div>
-        </div>
-      </div>
-      }
-    </aside>
-  </div>
-  }
-
-  <!-- TAB 2: ENROLLED CONTACTS ROSTER -->
-  @if (!isNew() && activeTab() === 'enrollments') {
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full items-start">
-    <!-- Enrollment Search & Add (1/3 width) -->
-    <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-1 h-fit">
-      <div class="card-body gap-4 p-5">
-        <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
-        <p class="text-xs text-base-content/60">
-          Search for a constituent to manually subscribe them to this sequence.
-        </p>
-
-        <div class="join w-full mt-1">
-          <input
-            type="text"
-            class="input input-bordered join-item w-full text-xs rounded-l-xl"
-            placeholder="Search by name or email..."
-            [(ngModel)]="searchQuery"
-            (keyup.enter)="searchContacts()"
-          />
-          <button (click)="searchContacts()" class="btn btn-secondary join-item px-4 rounded-r-xl">
-            @if (searchingContacts()) {
-            <span class="loading loading-spinner"></span>
-            } @else {
-            <pc-icon name="magnifying-glass"></pc-icon>
-            }
-          </button>
-        </div>
-
-        <!-- Search Results list -->
-        @if (searchResults().length > 0) {
-        <div class="flex flex-col gap-2 max-h-60 overflow-y-auto mt-2 border border-base-200 p-2 rounded-xl bg-base-50">
-          @for (contact of searchResults(); track contact.id) {
-          <div
-            class="flex items-center justify-between p-2 rounded-lg bg-base-100 hover:bg-base-200 border border-base-150 transition-all text-xs"
-          >
-            <div class="flex flex-col">
-              <span class="font-bold">{{ contact.first_name || '' }} {{ contact.last_name || '' }}</span>
-              <span class="text-[10px] text-base-content/50">{{ contact.email || 'No email' }}</span>
-            </div>
-            <button
-              (click)="enrollSelected(contact.id)"
-              class="btn btn-xs btn-primary gap-1 px-3 rounded-lg shadow-sm"
-              [disabled]="!contact.email"
-            >
-              <pc-icon name="user-plus"></pc-icon>
-              Enroll
-            </button>
-          </div>
-          }
-        </div>
-        } @else if (searchQuery() && !searchingContacts()) {
-        <span class="text-xs text-base-content/50 mt-1 italic">No contacts found for query.</span>
-        }
-      </div>
-    </div>
-
-    <!-- Enrollment list (2/3 width) -->
-    <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-2">
-      <div class="card-body gap-4 p-5">
-        <h3 class="card-title text-base font-bold">Active Enrollments Roster</h3>
-
-        @if (enrollments().length === 0) {
-        <div class="text-center py-12 border-2 border-dashed border-base-300 rounded-xl bg-base-50">
-          <pc-icon name="user-group" class="mx-auto text-base-content/30 mb-2"></pc-icon>
-          <p class="text-sm font-semibold text-base-content/50">No contacts have been enrolled in this sequence yet.</p>
-        </div>
-        } @else {
-        <div class="overflow-x-auto w-full mt-2">
-          <table class="table table-zebra table-sm w-full">
-            <thead>
-              <tr>
-                <th>Contact Name</th>
-                <th>Email</th>
-                <th class="text-center">Step #</th>
-                <th>Status</th>
-                <th>Next Run At</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (en of enrollments(); track en.id) {
-              <tr>
-                <td class="font-bold text-xs">
-                  <a [routerLink]="['/people', en.person_id]" class="link link-primary">
-                    {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
+                <li>
+                  <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
+                    <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                    Add Email Step
                   </a>
-                </td>
-                <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
-                <td class="text-xs font-mono font-bold text-center">
-                  <span class="bg-base-250 px-2 py-0.5 rounded">{{ en.current_step_number }}</span>
-                </td>
-                <td>
-                  <span
-                    class="badge badge-sm font-semibold border-none"
-                    [class.badge-success]="en.status === 'completed'"
-                    [class.badge-info]="en.status === 'active'"
-                    [class.badge-ghost]="en.status === 'cancelled'"
-                  >
-                    {{ en.status }}
-                  </span>
-                </td>
-                <td class="text-xs text-base-content/60">
-                  {{ en.next_run_at ? (en.next_run_at | date: 'short') : 'Ended' }}
-                </td>
-                <td class="text-right">
-                  @if (en.status === 'active') {
+                </li>
+              </ul>
+            </div>
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+          </div>
+
+          <!-- Steps Flow List -->
+          @for (step of steps(); track $index) {
+          <div class="flex flex-col items-center w-full">
+            <!-- Delay Node (Hourglass/Clock) -->
+            <div
+              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+              class="bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-amber-100 hover:scale-[1.02] transition-all duration-150"
+              [class.ring-2]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+              [class.ring-amber-400]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+            >
+              <pc-icon name="clock"></pc-icon>
+              <span
+                >Wait <strong>{{ step.delay_days }}</strong> {{ (step.delay_unit === 'hours' ? 'hour' : 'day') +
+                (step.delay_days === 1 ? '' : 's') }}</span
+              >
+            </div>
+
+            <!-- Vertical connector line -->
+            <div class="w-0.5 h-8 bg-base-content/15 border-dashed border-l-2"></div>
+
+            <!-- Email Action Node Card -->
+            <div
+              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+              class="card bg-base-100 border-2 shadow-md rounded-2xl w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+              [class.border-primary]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+              [class.border-base-200]="selectedNodeType() !== 'step' || selectedNodeIndex() !== $index"
+            >
+              <div class="card-body p-4 gap-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-inner"
+                    >
+                      <pc-icon name="envelope"></pc-icon>
+                    </div>
+                    <span class="text-[10px] font-black text-base-content/40 uppercase">Step {{ $index + 1 }}</span>
+                  </div>
+
                   <button
-                    (click)="cancelEnrollment(en.id)"
-                    class="btn btn-ghost btn-xs text-error gap-1 hover:bg-error/10 px-2 rounded"
+                    (click)="removeStep($index); $event.stopPropagation()"
+                    class="btn btn-ghost btn-xs text-error p-1 hover:bg-transparent rounded-full"
+                    title="Remove Step"
                   >
                     <pc-icon name="trash"></pc-icon>
-                    Cancel
                   </button>
-                  } @else {
-                  <span class="text-[10px] text-base-content/40 italic font-semibold">Inactive</span>
-                  }
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
+                </div>
+
+                <div class="flex flex-col gap-1 border-b border-base-100 pb-2">
+                  <span class="text-[10px] font-bold text-base-content/40 uppercase">Email Subject</span>
+                  <span class="text-xs font-semibold text-base-content truncate"
+                    >{{ step.subject || '(No subject)' }}</span
+                  >
+                </div>
+
+                <div class="flex items-center justify-between pt-1">
+                  <button
+                    (click)="openEmailDesigner($index); $event.stopPropagation()"
+                    class="btn btn-xs btn-outline btn-primary gap-1 px-3 rounded-lg shadow-sm"
+                  >
+                    <pc-icon name="pencil-square"></pc-icon>
+                    Edit Email
+                  </button>
+                  <span class="text-[9px] text-base-content/40 font-medium italic">
+                    {{ step.html_content ? 'Visual Template' : 'Plain Text Only' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Connector line + Add Button below step -->
+            <div class="flex flex-col items-center">
+              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+              <div class="dropdown dropdown-bottom dropdown-center">
+                <div
+                  tabindex="0"
+                  role="button"
+                  class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
+                >
+                  <pc-icon name="plus"></pc-icon>
+                </div>
+                <ul
+                  tabindex="0"
+                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
+                >
+                  <li>
+                    <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
+                      <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                      Add Email Step
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+            </div>
+          </div>
+          }
+
+          <!-- Exit Node -->
+          <div
+            (click)="selectedNodeType.set('settings'); selectedNodeIndex.set(null)"
+            class="bg-neutral text-neutral-content text-xs font-black px-6 py-3.5 rounded-2xl shadow-md uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:bg-neutral-focus hover:scale-[1.02] transition-all duration-150"
+          >
+            <pc-icon name="x-circle"></pc-icon>
+            <span>Exit Automation</span>
+          </div>
         </div>
-        }
+
+        <!-- Properties Panel Sidebar (Right) -->
+        <aside
+          class="w-full lg:w-96 shrink-0 border border-base-300 bg-base-100 p-6 flex flex-col gap-5 h-full rounded-2xl shadow-sm overflow-y-auto"
+        >
+          <!-- Option A: Trigger Node Selected -->
+          @if (selectedNodeType() === 'trigger') {
+          <div class="flex flex-col gap-4">
+            <div class="flex justify-between items-center pb-2 border-b border-base-200">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Trigger</h3>
+              <button (click)="selectedNodeType.set('settings')" class="btn btn-ghost btn-xs text-primary font-bold">
+                Automation Settings
+              </button>
+            </div>
+
+            <div
+              class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5"
+            >
+              <div class="flex items-center gap-2 text-success">
+                <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
+                  @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
+                  @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+                  <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
+                  <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
+                  <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
+                  @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
+                  <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
+                  @default { <pc-icon name="user-plus"></pc-icon> } }
+                </div>
+                <span class="font-black text-sm text-base-content">
+                  {{ formatTriggerType(payload().trigger_type) }}
+                </span>
+              </div>
+              <p class="text-xs text-base-content/75 leading-relaxed">
+                This trigger activates automatically based on system events or manual selection settings.
+              </p>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Trigger Type</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_type"
+              >
+                <option value="manual">Manual Enrollment</option>
+                <option value="volunteer_signup">Volunteer Event Signup</option>
+                <option value="tag_added">Tag Added</option>
+                <option value="web_form_submitted">Web Form Submitted</option>
+                <option value="volunteer_shift_status">Volunteer Shift Status</option>
+                <option value="contact_created">New Contact Created</option>
+                <option value="list_joined">List Joined</option>
+                <option value="payment_event">Billing / Payment Event</option>
+                <option value="new_subscriber">New Subscriber</option>
+                <option value="new_unsubscriber">New Unsubscriber</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5">
+                Warning: Changing trigger type will modify how future subscribers enroll.
+              </p>
+            </div>
+
+            @if (payload().trigger_type === 'volunteer_signup') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Volunteer Event</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Event --</option>
+                @for (event of volunteerEvents(); track event.id) {
+                <option [value]="event.id">{{ event.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer
+                event signup.
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'tag_added') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Tag Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Tag --</option>
+                @for (tag of tags(); track tag.id) {
+                <option [value]="tag.id">{{ tag.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific tag that triggers enrollment, or leave as "Any Tag".
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'web_form_submitted') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Web Form Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Web Form --</option>
+                @for (formEl of webForms(); track formEl.id) {
+                <option [value]="formEl.id">{{ formEl.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific web form that triggers enrollment, or leave as "Any Web Form".
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'list_joined') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Static List Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Static List --</option>
+                @for (listEl of lists(); track listEl.id) {
+                <option [value]="listEl.id">{{ listEl.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a static list that triggers enrollment when joined.
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'volunteer_shift_status') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Shift Status Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Status --</option>
+                <option value="attended">Attended</option>
+                <option value="no_show">No Show</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a volunteer shift status update that triggers enrollment.
+              </p>
+            </div>
+            }
+          </div>
+          }
+
+          <!-- Option B: Step Node Selected -->
+          @else if (selectedNodeType() === 'step' && selectedNodeIndex() !== null) { @let idx = selectedNodeIndex()!;
+          @let step = steps()[idx]; @if (step) {
+          <div class="flex flex-col gap-4">
+            <div class="flex justify-between items-center pb-2 border-b border-base-200">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">
+                Selected: Step {{ idx + 1 }}
+              </h3>
+              <button
+                (click)="removeStep(idx)"
+                class="btn btn-ghost btn-xs text-error gap-1 px-1.5 hover:bg-error/10 rounded"
+              >
+                <pc-icon name="trash"></pc-icon>
+                Delete Step
+              </button>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Delay Duration</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  class="input input-bordered input-sm w-20 text-center font-bold rounded-xl"
+                  [(ngModel)]="step.delay_days"
+                  min="0"
+                />
+                <select
+                  class="select select-bordered select-sm font-bold text-xs rounded-xl"
+                  [(ngModel)]="step.delay_unit"
+                >
+                  <option value="days">day(s)</option>
+                  <option value="hours">hour(s)</option>
+                </select>
+                <span class="text-xs text-base-content/60 font-semibold">after previous step</span>
+              </div>
+              <p class="text-[10px] text-base-content/50 mt-1">Set to 0 to send instantly.</p>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Email Subject Line</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full font-semibold rounded-xl"
+                placeholder="e.g. Welcome aboard!"
+                [(ngModel)]="step.subject"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Preview Text / Snippet</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full rounded-xl"
+                placeholder="Secondary subtitle in inbox preview..."
+                [(ngModel)]="step.preview_text"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Plain Text Fallback (Plain Text Only)</label>
+              <textarea
+                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+                rows="4"
+                placeholder="Fallback message without HTML formatting..."
+                [(ngModel)]="step.plain_text_content"
+              ></textarea>
+            </div>
+
+            <div class="border-t border-base-250 pt-4 flex flex-col gap-3">
+              <button (click)="openEmailDesigner(idx)" class="btn btn-primary w-full gap-2 shadow-sm rounded-xl">
+                <pc-icon name="pencil-square"></pc-icon>
+                Design Email Content
+              </button>
+              <div class="text-center">
+                <span class="text-[10px] text-base-content/40 italic font-semibold"
+                  >Opens drag-and-drop block designer</span
+                >
+              </div>
+            </div>
+          </div>
+          } }
+
+          <!-- Option C: Workflow Settings (Default/Fallback) -->
+          @else {
+          <div class="flex flex-col gap-4">
+            <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50 pb-2 border-b border-base-200">
+              Workflow Settings
+            </h3>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Workflow Name</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full font-semibold rounded-xl"
+                placeholder="e.g. Volunteer Welcome Series"
+                [formField]="form.name"
+                [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+              />
+              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+              form.name().errors(); track err) {
+              <p class="text-xs text-error mt-1">{{ err.message }}</p>
+              } }
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Description</label>
+              <textarea
+                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+                rows="4"
+                placeholder="Brief summary of what this drip campaign does..."
+                [formField]="form.description"
+                [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
+              ></textarea>
+              @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
+              (err of form.description().errors(); track err) {
+              <p class="text-xs text-error mt-1">{{ err.message }}</p>
+              } }
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Campaign Status</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.status"
+              >
+                <option value="draft">Draft (Inactive)</option>
+                <option value="active">Active (Processing)</option>
+                <option value="paused">Paused</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Only active campaigns will parse background queues to send emails.
+              </p>
+            </div>
+
+            <div class="border-t border-base-200 pt-4 mt-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Sequence Overview</span>
+              <div class="flex items-center justify-between text-xs font-semibold mt-2 text-base-content/70">
+                <span>Total steps:</span>
+                <span class="font-mono font-black">{{ steps().length }}</span>
+              </div>
+            </div>
+          </div>
+          }
+        </aside>
       </div>
-    </div>
-  </div>
-  } @if (!isNew() && workflowId()) {
+    </pc-tab-panel>
+
+    <pc-tab-panel id="enrollments" [activeTab]="activeTab()">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full items-start">
+        <!-- Enrollment Search & Add (1/3 width) -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-1 h-fit">
+          <div class="card-body gap-4 p-5">
+            <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
+            <p class="text-xs text-base-content/60">
+              Search for a constituent to manually subscribe them to this sequence.
+            </p>
+
+            <div class="join w-full mt-1">
+              <input
+                type="text"
+                class="input input-bordered join-item w-full text-xs rounded-l-xl"
+                placeholder="Search by name or email..."
+                [(ngModel)]="searchQuery"
+                (keyup.enter)="searchContacts()"
+              />
+              <button (click)="searchContacts()" class="btn btn-secondary join-item px-4 rounded-r-xl">
+                @if (searchingContacts()) {
+                <span class="loading loading-spinner"></span>
+                } @else {
+                <pc-icon name="magnifying-glass"></pc-icon>
+                }
+              </button>
+            </div>
+
+            <!-- Search Results list -->
+            @if (searchResults().length > 0) {
+            <div
+              class="flex flex-col gap-2 max-h-60 overflow-y-auto mt-2 border border-base-200 p-2 rounded-xl bg-base-50"
+            >
+              @for (contact of searchResults(); track contact.id) {
+              <div
+                class="flex items-center justify-between p-2 rounded-lg bg-base-100 hover:bg-base-200 border border-base-150 transition-all text-xs"
+              >
+                <div class="flex flex-col">
+                  <span class="font-bold">{{ contact.first_name || '' }} {{ contact.last_name || '' }}</span>
+                  <span class="text-[10px] text-base-content/50">{{ contact.email || 'No email' }}</span>
+                </div>
+                <button
+                  (click)="enrollSelected(contact.id)"
+                  class="btn btn-xs btn-primary gap-1 px-3 rounded-lg shadow-sm"
+                  [disabled]="!contact.email"
+                >
+                  <pc-icon name="user-plus"></pc-icon>
+                  Enroll
+                </button>
+              </div>
+              }
+            </div>
+            } @else if (searchQuery() && !searchingContacts()) {
+            <span class="text-xs text-base-content/50 mt-1 italic">No contacts found for query.</span>
+            }
+          </div>
+        </div>
+
+        <!-- Enrollment list (2/3 width) -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-2">
+          <div class="card-body gap-4 p-5">
+            <h3 class="card-title text-base font-bold">Active Enrollments Roster</h3>
+
+            @if (enrollments().length === 0) {
+            <div class="text-center py-12 border-2 border-dashed border-base-300 rounded-xl bg-base-50">
+              <pc-icon name="user-group" class="mx-auto text-base-content/30 mb-2"></pc-icon>
+              <p class="text-sm font-semibold text-base-content/50">
+                No contacts have been enrolled in this sequence yet.
+              </p>
+            </div>
+            } @else {
+            <div class="overflow-x-auto w-full mt-2">
+              <table class="table table-zebra table-sm w-full">
+                <thead>
+                  <tr>
+                    <th>Contact Name</th>
+                    <th>Email</th>
+                    <th class="text-center">Step #</th>
+                    <th>Status</th>
+                    <th>Next Run At</th>
+                    <th class="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (en of enrollments(); track en.id) {
+                  <tr>
+                    <td class="font-bold text-xs">
+                      <a [routerLink]="['/people', en.person_id]" class="link link-primary">
+                        {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
+                      </a>
+                    </td>
+                    <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
+                    <td class="text-xs font-mono font-bold text-center">
+                      <span class="bg-base-250 px-2 py-0.5 rounded">{{ en.current_step_number }}</span>
+                    </td>
+                    <td>
+                      <span
+                        class="badge badge-sm font-semibold border-none"
+                        [class.badge-success]="en.status === 'completed'"
+                        [class.badge-info]="en.status === 'active'"
+                        [class.badge-ghost]="en.status === 'cancelled'"
+                      >
+                        {{ en.status }}
+                      </span>
+                    </td>
+                    <td class="text-xs text-base-content/60">
+                      {{ en.next_run_at ? (en.next_run_at | date: 'short') : 'Ended' }}
+                    </td>
+                    <td class="text-right">
+                      @if (en.status === 'active') {
+                      <button
+                        (click)="cancelEnrollment(en.id)"
+                        class="btn btn-ghost btn-xs text-error gap-1 hover:bg-error/10 px-2 rounded"
+                      >
+                        <pc-icon name="trash"></pc-icon>
+                        Cancel
+                      </button>
+                      } @else {
+                      <span class="text-[10px] text-base-content/40 italic font-semibold">Inactive</span>
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+
+  @if (!isNew() && workflowId()) {
   <div class="mt-8 border-t border-base-200 pt-6">
     <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
   </div>

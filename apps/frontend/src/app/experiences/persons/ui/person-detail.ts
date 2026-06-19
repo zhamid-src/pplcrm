@@ -25,6 +25,7 @@ import { CompaniesService } from '../../companies/services/companies-service';
 import { AddressType, Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 
 /**
  * Component for displaying and editing a single person's details.
@@ -32,7 +33,7 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
  */
 @Component({
   selector: 'pc-person-detail',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader],
+  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer],
   templateUrl: './person-detail.html',
 })
 export class PersonDetail implements OnInit {

@@ -18,6 +18,7 @@ import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 @Component({
   selector: 'pc-workflow-detail',
@@ -30,6 +31,8 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
     DatePipe,
     VisualNewsletterEditorComponent,
     FormActions,
+    Tabs,
+    TabPanel,
   ],
   templateUrl: './workflow-detail.html',
   providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],
@@ -51,7 +54,18 @@ export class WorkflowDetailComponent implements OnInit {
 
   protected readonly isNew = signal(true);
   protected readonly workflowId = signal<string | null>(null);
-  protected readonly activeTab = signal<'steps' | 'enrollments' | 'activity'>('steps');
+  protected readonly activeTab = signal<string>('steps');
+
+  protected readonly workflowTabs = computed<PcTabOption[]>(() => [
+    { id: 'steps', label: `Sequence Designer (${this.steps().length})`, icon: 'pencil-square' },
+    {
+      id: 'enrollments',
+      label: `Enrolled Contacts (${this.enrollments().length})`,
+      icon: 'user-group',
+      disabled: this.isNew(),
+      tooltip: 'Save workflow to enroll contacts',
+    },
+  ]);
 
   // Trigger state and visual designer nodes selection
   protected readonly triggerSelected = signal(false);
@@ -195,7 +209,7 @@ export class WorkflowDetailComponent implements OnInit {
   }
 
   // --- TAB MANAGEMENT ---
-  protected selectTab(tab: 'steps' | 'enrollments' | 'activity'): void {
+  protected selectTab(tab: string): void {
     this.activeTab.set(tab);
     if (tab !== 'steps') {
       this.selectedNodeType.set('settings');

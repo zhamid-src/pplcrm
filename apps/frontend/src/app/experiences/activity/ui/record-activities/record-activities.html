@@ -1,57 +1,51 @@
-    <div class="flex flex-col flex-1 h-full rounded-lg bg-base-100 text-base-content">
-      <div id="activities-panel" class="flex-1 min-h-0 overflow-auto email-scrollbar ">
-        @if (isLoading()) {
-          <div class="flex items-center justify-center py-6">
-            <span
-              class="loading loading-spinner loading-sm text-base-content/40"
-              aria-label="Loading activities"
-            ></span>
-          </div>
-        } @else if (activities().length === 0) {
-          <div class="flex flex-col items-center justify-center py-6 gap-1 text-base-content/40">
-            <pc-icon name="information-circle" [size]="5"></pc-icon>
-            <span class="text-xs">No activity recorded yet</span>
-          </div>
-        } @else {
-          <ol class="relative border-l border-base-300 ml-4 py-3 pr-3 space-y-3" aria-label="Record activity timeline">
-            @for (act of activities(); track act.id) {
-              <li class="ml-4">
-                <!-- Timeline dot -->
-                <span
-                  class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-base-100"
-                  [class]="getActivityDotClass(act.activity)"
-                >
-                  <pc-icon [name]="getActivityIcon(act.activity)" [size]="2"></pc-icon>
-                </span>
- 
-                <!-- Content -->
-                <div class="pl-1">
-                  <p class="text-xs text-base-content/80 leading-snug">
-                    <span class="font-semibold text-base-content">{{ act.first_name }} {{ act.last_name }}</span>
-                    {{ getActivityLabel(act) }}
-                  </p>
-                  <time
-                    class="text-[10px] text-base-content/40 mt-0.5 block"
-                    [title]="act.created_at | date: 'medium'"
-                    >{{ act.created_at | date: 'short' }}</time
-                  >
-                </div>
-              </li>
-            }
-          </ol>
- 
-          @if (hasMore()) {
-            <div class="flex justify-center pt-2 pb-3">
-              <button class="btn btn-ghost btn-xs text-primary gap-1" [disabled]="isLoadingMore()" (click)="loadMore()">
-                @if (isLoadingMore()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                } @else {
-                  <pc-icon name="arrow-path" [size]="3"></pc-icon>
-                }
-                <span>Load More</span>
-              </button>
-            </div>
-          }
-        }
-      </div>
+<div class="flex flex-col flex-1 h-full rounded-lg bg-base-100 text-base-content">
+  <div id="activities-panel" class="flex-1 min-h-0 overflow-auto email-scrollbar">
+    @if (isLoading()) {
+    <div class="flex items-center justify-center py-6">
+      <span class="loading loading-spinner loading-sm text-base-content/40" aria-label="Loading activities"></span>
     </div>
+    } @else if (activities().length === 0) {
+    <div class="flex flex-col items-center justify-center py-6 gap-1 text-base-content/40">
+      <pc-icon name="information-circle" [size]="5"></pc-icon>
+      <span class="text-xs">No activity recorded yet</span>
+    </div>
+    } @else {
+    <ol class="relative border-l border-base-300 ml-4 py-3 pr-3 space-y-3" aria-label="Record activity timeline">
+      @for (act of activities(); track act.id) {
+      <li class="ml-4">
+        <!-- Timeline dot -->
+        <span
+          class="absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-base-100"
+          [class]="getActivityDotClass(act.activity)"
+        >
+          <pc-icon [name]="getActivityIcon(act.activity)" [size]="2"></pc-icon>
+        </span>
+
+        <!-- Content -->
+        <div class="pl-1">
+          <p class="text-xs text-base-content/80 leading-snug">
+            <span class="font-semibold text-base-content">{{ act.first_name }} {{ act.last_name }}</span>
+            {{ getActivityLabel(act) }}
+          </p>
+          <time class="text-[10px] text-base-content/40 mt-0.5 block" [title]="act.created_at | date: 'medium'"
+            >{{ act.created_at | date: 'short' }}</time
+          >
+        </div>
+      </li>
+      }
+    </ol>
+
+    @if (hasMore()) {
+    <div class="flex justify-center pt-2 pb-3">
+      <button class="btn btn-ghost btn-xs text-primary gap-1" [disabled]="isLoadingMore()" (click)="loadMore()">
+        @if (isLoadingMore()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } @else {
+        <pc-icon name="arrow-path" [size]="3"></pc-icon>
+        }
+        <span>Load More</span>
+      </button>
+    </div>
+    } }
+  </div>
+</div>

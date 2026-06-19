@@ -209,121 +209,61 @@
         <!-- Dashboard Stats Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <!-- Stats: People -->
-          <div
-            class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200"
-          >
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">People</span>
-                <h3 class="text-2xl font-bold text-teal-500 mt-1">{{ peopleCount() }}</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Household members</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-teal-500">
-                <pc-icon name="user-group" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'People'"
+            [value]="peopleCount()"
+            [description]="'Household members'"
+            [icon]="'user-group'"
+            [valueColorClass]="'text-teal-500'"
+            [iconColorClass]="'text-teal-500'"
+          ></pc-stat-card>
 
           <!-- Stats: Interactions -->
-          <div
-            class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200"
-          >
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">Interactions</span>
-                <h3 class="text-2xl font-bold text-indigo-500 mt-1">0</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Logged contacts</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-indigo-500">
-                <pc-icon name="envelope" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'Interactions'"
+            [value]="0"
+            [description]="'Logged contacts'"
+            [icon]="'envelope'"
+            [valueColorClass]="'text-indigo-500'"
+            [iconColorClass]="'text-indigo-500'"
+          ></pc-stat-card>
 
           <!-- Stats: Donations -->
-          <div
-            class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200"
-          >
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">Donations</span>
-                <h3 class="text-2xl font-bold text-emerald-500 mt-1">$0</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Financial support</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-emerald-500">
-                <pc-icon name="currency-dollar" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'Donations'"
+            [value]="'$0'"
+            [description]="'Financial support'"
+            [icon]="'currency-dollar'"
+            [valueColorClass]="'text-emerald-500'"
+            [iconColorClass]="'text-emerald-500'"
+          ></pc-stat-card>
 
           <!-- Stats: Volunteers -->
-          <div
-            class="card bg-base-100 border border-base-300 shadow-md hover:-translate-y-0.5 transition-transform duration-200"
-          >
-            <div class="card-body p-5 flex flex-row items-center justify-between">
-              <div>
-                <span class="text-xs text-base-content/50 uppercase font-semibold">Volunteers</span>
-                <h3 class="text-2xl font-bold text-purple-500 mt-1">0</h3>
-                <p class="text-[10px] text-base-content/40 mt-0.5">Active assignments</p>
-              </div>
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-purple-500">
-                <pc-icon name="volunteer" [size]="6"></pc-icon>
-              </div>
-            </div>
-          </div>
+          <pc-stat-card
+            [title]="'Volunteers'"
+            [value]="0"
+            [description]="'Active assignments'"
+            [icon]="'volunteer'"
+            [valueColorClass]="'text-purple-500'"
+            [iconColorClass]="'text-purple-500'"
+          ></pc-stat-card>
         </div>
 
         <!-- Multi-Tab Details & History Panel -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-          <!-- Tabs Header -->
-          <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'members'"
-              (click)="activeTab.set('members')"
-            >
-              <pc-icon name="user-group" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>Household Members ({{ peopleCount() }})</span>
-            </a>
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'activity'"
-              (click)="activeTab.set('activity')"
-            >
-              <pc-icon name="adjustments-horizontal" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>Activity Feed</span>
-            </a>
-            <a
-              role="tab"
-              class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-              [class.tab-active]="activeTab() === 'details'"
-              (click)="activeTab.set('details')"
-            >
-              <pc-icon name="information-circle" [size]="4" class="flex-shrink-0"></pc-icon>
-              <span>General Notes</span>
-            </a>
-          </div>
-
-          <!-- Tab Panels -->
-          <div class="p-6">
-            <!-- Panel: Household Members List -->
-            @if (activeTab() === 'members') {
+        <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+          <pc-tab-panel id="members" [activeTab]="activeTab()">
             <div class="flex flex-col gap-4">
               <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
             </div>
-            }
+          </pc-tab-panel>
 
-            <!-- Panel: General Activity Feed -->
-            @if (activeTab() === 'activity') {
+          <pc-tab-panel id="activity" [activeTab]="activeTab()">
             <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
               <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
             </div>
-            }
+          </pc-tab-panel>
 
-            <!-- Panel: General Details Notes -->
-            @if (activeTab() === 'details') {
+          <pc-tab-panel id="details" [activeTab]="activeTab()">
             <div class="flex flex-col gap-4">
               @if (h.notes) {
               <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
@@ -338,9 +278,8 @@
               </div>
               }
             </div>
-            }
-          </div>
-        </div>
+          </pc-tab-panel>
+        </pc-tabs>
       </div>
     </div>
     } } @else {

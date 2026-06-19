@@ -11,10 +11,12 @@ import { type IAuthUser } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard, Tabs, TabPanel, StatCard],
   templateUrl: './form-view.html',
 })
 export class FormViewComponent {
@@ -35,7 +37,13 @@ export class FormViewComponent {
   private usersById = new Map<string, IAuthUser>();
 
   // Active tab state
-  protected activeTab = signal<'activity' | 'targetActions' | 'fieldsPreview'>('activity');
+  protected activeTab = signal<string>('activity');
+
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
+  ]);
 
   protected readonly selectedFields = computed(() => {
     const record = this.formRecord();

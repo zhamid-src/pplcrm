@@ -7,9 +7,7 @@ import { AnimateIfDirective } from './animate-if.directive';
   standalone: true,
   imports: [AnimateIfDirective],
   template: `
-    <div *pcAnimateIf="isVisible; enter: enterClass(); exit: exitClass(); duration: duration()">
-      Test Content
-    </div>
+    <div *pcAnimateIf="isVisible; enter: enterClass(); exit: exitClass(); duration: duration()">Test Content</div>
   `,
 })
 class TestHostComponent {
@@ -72,4 +70,3 @@ describe('AnimateIfDirective', () => {
     expect(el).toBeNull();
   });
 });
-

@@ -122,74 +122,54 @@
     <!-- Metric Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       <!-- Card 1 -->
-      <div class="card bg-base-100 border border-base-300 shadow-md hover:scale-[1.01]">
-        <div class="card-body p-5 flex flex-row items-center justify-between">
-          <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Total Open Emails</span>
-            <h3 class="text-2xl font-bold text-primary mt-1">{{ totalOpenCount() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">All open inbox conversations</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-primary">
-            <pc-icon name="envelope" [size]="6"></pc-icon>
-          </div>
-        </div>
-      </div>
+      <pc-stat-card
+        [title]="'Total Open Emails'"
+        [value]="totalOpenCount()"
+        [description]="'All open inbox conversations'"
+        [icon]="'envelope'"
+        [valueColorClass]="'text-primary'"
+        [iconColorClass]="'text-primary'"
+      ></pc-stat-card>
 
       <!-- Card 2 -->
-      <div class="card bg-base-100 border border-base-300 shadow-md hover:scale-[1.01]">
-        <div class="card-body p-5 flex flex-row items-center justify-between">
-          <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Unassigned Open</span>
-            <h3 class="text-2xl font-bold text-warning mt-1">{{ unassignedOpenCount() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">Awaiting user assignment</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-warning">
-            <pc-icon name="exclamation-circle" [size]="6"></pc-icon>
-          </div>
-        </div>
-      </div>
+      <pc-stat-card
+        [title]="'Unassigned Open'"
+        [value]="unassignedOpenCount()"
+        [description]="'Awaiting user assignment'"
+        [icon]="'exclamation-circle'"
+        [valueColorClass]="'text-warning'"
+        [iconColorClass]="'text-warning'"
+      ></pc-stat-card>
 
       <!-- Card 3 -->
-      <div class="card bg-base-100 border border-base-300 shadow-md hover:scale-[1.01]">
-        <div class="card-body p-5 flex flex-row items-center justify-between">
-          <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Avg 1st Response</span>
-            <h3 class="text-2xl font-bold text-info mt-1">{{ avgFirstResponse() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">Time to reply or comment</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-info">
-            <pc-icon name="clock" [size]="6"></pc-icon>
-          </div>
-        </div>
-      </div>
+      <pc-stat-card
+        [title]="'Avg 1st Response'"
+        [value]="avgFirstResponse()"
+        [description]="'Time to reply or comment'"
+        [icon]="'clock'"
+        [valueColorClass]="'text-info'"
+        [iconColorClass]="'text-info'"
+      ></pc-stat-card>
 
       <!-- Card 4 -->
-      <div class="card bg-base-100 border border-base-300 shadow-md hover:scale-[1.01]">
-        <div class="card-body p-5 flex flex-row items-center justify-between">
-          <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Avg Time to Close</span>
-            <h3 class="text-2xl font-bold text-success mt-1">{{ avgTimeToClose() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">From arrival to closed status</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-success">
-            <pc-icon name="check-circle" [size]="6"></pc-icon>
-          </div>
-        </div>
-      </div>
+      <pc-stat-card
+        [title]="'Avg Time to Close'"
+        [value]="avgTimeToClose()"
+        [description]="'From arrival to closed status'"
+        [icon]="'check-circle'"
+        [valueColorClass]="'text-success'"
+        [iconColorClass]="'text-success'"
+      ></pc-stat-card>
 
       <!-- Card 5 -->
-      <div class="card bg-base-100 border border-base-300 shadow-md hover:scale-[1.01]">
-        <div class="card-body p-5 flex flex-row items-center justify-between">
-          <div>
-            <span class="text-xs text-base-content/50 uppercase font-semibold">Contacts Growth</span>
-            <h3 class="text-2xl font-bold text-secondary mt-1">+{{ activeContactsCount() }}</h3>
-            <p class="text-xs text-base-content/40 mt-1">New contacts (last 30 days)</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-secondary">
-            <pc-icon name="user-plus" [size]="6"></pc-icon>
-          </div>
-        </div>
-      </div>
+      <pc-stat-card
+        [title]="'Contacts Growth'"
+        [value]="'+' + activeContactsCount()"
+        [description]="'New contacts (last 30 days)'"
+        [icon]="'user-plus'"
+        [valueColorClass]="'text-secondary'"
+        [iconColorClass]="'text-secondary'"
+      ></pc-stat-card>
     </div>
 
     <!-- Charts Layout -->
