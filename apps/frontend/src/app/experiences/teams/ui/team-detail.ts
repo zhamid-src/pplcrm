@@ -5,8 +5,11 @@ import { Router, RouterModule } from '@angular/router';
 import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
@@ -24,7 +27,7 @@ import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe, FormActions],
+  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {

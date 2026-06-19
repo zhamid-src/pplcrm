@@ -87,6 +87,7 @@ describe('TeamDetailComponent', () => {
     mockTeamsSvc.getById.mockResolvedValue(mockTeam);
 
     await createComponent();
+    fixture.componentRef.setInput('id', 'team-123');
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -180,6 +181,7 @@ describe('TeamDetailComponent', () => {
     });
 
     await createComponent();
+    fixture.componentRef.setInput('id', 'team-123');
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -219,6 +221,7 @@ describe('TeamDetailComponent', () => {
     mockConfirmDialogSvc.confirm.mockResolvedValue(true);
 
     await createComponent();
+    fixture.componentRef.setInput('id', 'team-123');
     fixture.detectChanges();
     await fixture.whenStable();
 
