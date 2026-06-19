@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { JSendServerError } from '../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ApiError } from './api/api-error';
+
 
 import { TokenService } from './api/token-service';
 
@@ -39,6 +41,19 @@ export class ErrorService {
       if (!this.redirectFromCode(code)) {
         this.alerts.showError(error.message);
       }
+      return;
+    }
+
+    if (error instanceof ApiError) {
+      const original = error.originalError;
+      if (original instanceof TRPCClientError) {
+        const code = original.data?.code;
+        if (!this.redirectFromCode(code)) {
+          this.alerts.showError(error.message);
+        }
+        return;
+      }
+      this.alerts.showError(error.message);
       return;
     }
 

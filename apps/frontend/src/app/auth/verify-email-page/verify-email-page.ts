@@ -1,6 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { TRPCClientError } from '@trpc/client';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -44,11 +43,7 @@ export class VerifyEmailPage implements OnInit {
       }
     } catch (err: any) {
       this.status.set('error');
-      if (err instanceof TRPCClientError) {
-        this.errorMessage.set(err.message);
-      } else {
-        this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
-      }
+      this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
     } finally {
       end();
     }

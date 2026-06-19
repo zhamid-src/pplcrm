@@ -2,12 +2,11 @@ import { Component, effect, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { form, submit, required, email, minLength, pattern, FormField } from '@angular/forms/signals';
-import { JSendFailError } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
 import { TokenService } from '../../services/api/token-service';
-import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Icon } from '@icons/icon';
+
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -151,20 +150,13 @@ export class SignInPage implements OnInit {
             this.emailFor2FA.set(res.email || emailVal);
             this.otpData.update((o) => ({ ...o, code: '' }));
           }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+        } catch (err: any) {
+          const message = err.message || String(err);
           if (message.toLowerCase().includes('not verified')) {
             this.verificationPending.set(true);
             this.pendingEmail.set(emailVal);
           }
-          if (err instanceof JSendFailError) {
-            const msg = err.data['message'] ?? 'Unable to sign in.';
-            this.alertSvc.showError(msg);
-          } else if (err instanceof TRPCClientError) {
-            this.alertSvc.showError(err.message);
-          } else {
-            this.alertSvc.showError(message);
-          }
+          this.alertSvc.showError(message);
         } finally {
           end();
         }
@@ -205,15 +197,8 @@ export class SignInPage implements OnInit {
           const emailVal = this.emailFor2FA();
           const codeVal = this.otpData().code.trim();
           await this.authService.verify2FA({ email: emailVal, code: codeVal });
-        } catch (err) {
-          if (err instanceof JSendFailError) {
-            const message = err.data['message'] ?? 'Verification failed.';
-            this.alertSvc.showError(message);
-          } else if (err instanceof TRPCClientError) {
-            this.alertSvc.showError(err.message);
-          } else {
-            this.alertSvc.showError(err instanceof Error ? err.message : String(err));
-          }
+        } catch (err: any) {
+          this.alertSvc.showError(err.message || String(err));
         } finally {
           end();
         }
