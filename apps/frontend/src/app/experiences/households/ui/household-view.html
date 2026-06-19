@@ -53,29 +53,22 @@
           <div class="w-full flex flex-col gap-3 text-sm">
             <!-- Home Phone -->
             @if (h.home_phone) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="bell"
+              iconClass="text-teal-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Home Phone"
+              (actionClick)="copyToClipboard(h.home_phone, 'Home Phone')"
             >
-              <div class="flex items-center gap-2">
-                <pc-icon name="bell" [size]="4" class="text-teal-500"></pc-icon>
-                <span class="font-medium text-base-content">{{ h.home_phone }}</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-teal-500 tooltip"
-                data-tip="Copy Home Phone"
-                (click)="copyToClipboard(h.home_phone, 'Home Phone')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="font-medium text-base-content">{{ h.home_phone }}</span>
+            </pc-detail-row>
             }
 
             <!-- Household Type -->
             @if (h.type) {
-            <div class="flex items-center gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/80">
-              <pc-icon name="information-circle" [size]="4" class="text-indigo-500"></pc-icon>
+            <pc-detail-row icon="information-circle" iconClass="text-indigo-500">
               <span class="font-light">Type: <strong class="font-medium">{{ h.type }}</strong></span>
-            </div>
+            </pc-detail-row>
             }
 
             <!-- Mapped Districts (GIS) -->

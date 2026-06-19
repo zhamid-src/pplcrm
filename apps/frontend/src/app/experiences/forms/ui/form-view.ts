@@ -14,10 +14,23 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard, Tabs, TabPanel, StatCard, ProfileCard],
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    FormActions,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+  ],
   templateUrl: './form-view.html',
 })
 export class FormViewComponent {

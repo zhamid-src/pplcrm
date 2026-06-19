@@ -36,21 +36,15 @@
             <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
             }
 
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="user-circle" [size]="4" class="text-teal-500"></pc-icon>
-                <span>Team Captain:</span>
-              </div>
-              <span class="font-bold">{{ captainName() }}</span>
-            </div>
+            <pc-detail-row icon="user-circle" iconClass="text-teal-500">
+              <span>Team Captain:</span>
+              <span pc-row-action class="font-bold">{{ captainName() }}</span>
+            </pc-detail-row>
 
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="user-circle" [size]="4" class="text-purple-500"></pc-icon>
-                <span>Team Lead:</span>
-              </div>
-              <span class="font-bold">{{ leadName() }}</span>
-            </div>
+            <pc-detail-row icon="user-circle" iconClass="text-purple-500">
+              <span>Team Lead:</span>
+              <span pc-row-action class="font-bold">{{ leadName() }}</span>
+            </pc-detail-row>
           </div>
 
           <!-- System Metadata -->

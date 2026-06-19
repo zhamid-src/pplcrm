@@ -47,20 +47,18 @@
             <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
             }
 
-            <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <pc-icon name="map-pin" [size]="4" class="text-error shrink-0 mt-0.5"></pc-icon>
+            <pc-detail-row icon="map-pin" iconClass="text-error">
               <span class="text-xs">
                 <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
               </span>
-            </div>
+            </pc-detail-row>
 
-            <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <pc-icon name="calendar" [size]="4" class="text-info shrink-0 mt-0.5"></pc-icon>
+            <pc-detail-row icon="calendar" iconClass="text-info">
               <div class="text-xs flex flex-col">
                 <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
                 <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
               </div>
-            </div>
+            </pc-detail-row>
 
             @if (event().contact_email || event().contact_phone) {
             <div class="divider my-1"></div>
@@ -68,21 +66,15 @@
               Coordinator Contact
             </div>
             @if (event().contact_email) {
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="envelope" [size]="4" class="text-teal-500"></pc-icon>
-                <span>Email:</span>
-              </div>
-              <span class="font-semibold text-xs">{{ event().contact_email }}</span>
-            </div>
+            <pc-detail-row icon="envelope" iconClass="text-teal-500">
+              <span>Email:</span>
+              <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
+            </pc-detail-row>
             } @if (event().contact_phone) {
-            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-              <div class="flex items-center gap-2">
-                <pc-icon name="phone" [size]="4" class="text-purple-500"></pc-icon>
-                <span>Phone:</span>
-              </div>
-              <span class="font-semibold text-xs">{{ event().contact_phone }}</span>
-            </div>
+            <pc-detail-row icon="phone" iconClass="text-purple-500">
+              <span>Phone:</span>
+              <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
+            </pc-detail-row>
             } }
           </div>
         </pc-profile-card>

@@ -153,100 +153,66 @@
           <div class="w-full flex flex-col gap-3 text-sm">
             <!-- Primary Email -->
             @if (person().email) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="envelope"
+              iconClass="text-indigo-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Email"
+              (actionClick)="copyToClipboard(person().email, 'Email')"
             >
-              <div class="flex items-center gap-2 overflow-hidden">
-                <pc-icon name="envelope" [size]="4" class="text-indigo-500 flex-shrink-0"></pc-icon>
-                <span class="truncate font-medium text-base-content">{{ person().email }}</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-indigo-500 tooltip"
-                data-tip="Copy Email"
-                (click)="copyToClipboard(person().email, 'Email')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="truncate font-medium text-base-content">{{ person().email }}</span>
+            </pc-detail-row>
             }
 
             <!-- Secondary Email -->
             @if (person().email2) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="envelope"
+              iconClass="text-indigo-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Email 2"
+              (actionClick)="copyToClipboard(person().email2, 'Secondary Email')"
             >
-              <div class="flex items-center gap-2 overflow-hidden">
-                <pc-icon name="envelope" [size]="4" class="text-indigo-500 flex-shrink-0"></pc-icon>
-                <span class="truncate font-light text-base-content/80">{{ person().email2 }} (Secondary)</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-indigo-500 tooltip"
-                data-tip="Copy Email 2"
-                (click)="copyToClipboard(person().email2, 'Secondary Email')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="truncate font-light text-base-content/80">{{ person().email2 }} (Secondary)</span>
+            </pc-detail-row>
             }
 
             <!-- Mobile Phone -->
             @if (person().mobile) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="phone"
+              iconClass="text-purple-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Mobile"
+              (actionClick)="copyToClipboard(person().mobile, 'Mobile Phone')"
             >
-              <div class="flex items-center gap-2">
-                <pc-icon name="phone" [size]="4" class="text-purple-500"></pc-icon>
-                <span class="font-medium text-base-content">{{ person().mobile }}</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-purple-500 tooltip"
-                data-tip="Copy Mobile"
-                (click)="copyToClipboard(person().mobile, 'Mobile Phone')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="font-medium text-base-content">{{ person().mobile }}</span>
+            </pc-detail-row>
             }
 
             <!-- Home Phone -->
             @if (person().home_phone) {
-            <div
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="home"
+              iconClass="text-purple-500"
+              actionIcon="document-duplicate"
+              actionTip="Copy Home Phone"
+              (actionClick)="copyToClipboard(person().home_phone, 'Home Phone')"
             >
-              <div class="flex items-center gap-2">
-                <pc-icon name="home" [size]="4" class="text-purple-500"></pc-icon>
-                <span class="font-light text-base-content/80">{{ person().home_phone }} (Home)</span>
-              </div>
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-purple-500 tooltip"
-                data-tip="Copy Home Phone"
-                (click)="copyToClipboard(person().home_phone, 'Home Phone')"
-              >
-                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-              </button>
-            </div>
+              <span class="font-light text-base-content/80">{{ person().home_phone }} (Home)</span>
+            </pc-detail-row>
             }
 
             <!-- Address -->
-            <div
-              class="flex items-start justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
+            <pc-detail-row
+              icon="map-pin"
+              iconClass="text-pink-500"
+              [actionIcon]="householdId() && !isPlaceholderHousehold() ? 'arrow-top-right-on-square' : null"
+              actionTip="View Household"
+              (actionClick)="navigateToHousehold()"
             >
-              <div class="flex items-start gap-2 overflow-hidden">
-                <pc-icon name="map-pin" [size]="4" class="text-pink-500 mt-0.5 flex-shrink-0"></pc-icon>
-                <div class="flex flex-col">
-                  <span class="font-medium text-base-content break-words leading-tight">{{ addressString() }}</span>
-                </div>
-              </div>
-              @if (householdId() && !isPlaceholderHousehold()) {
-              <button
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-pink-500 tooltip mt-0.5"
-                data-tip="View Household"
-                (click)="navigateToHousehold()"
-              >
-                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-              </button>
-              }
-            </div>
+              <span class="font-medium text-base-content break-words leading-tight">{{ addressString() }}</span>
+            </pc-detail-row>
           </div>
 
           <!-- Notes Section -->
