@@ -6,7 +6,6 @@ import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/c
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -15,10 +14,11 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-user-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, StatusBadge, ProfileCard, DetailRow],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, DetailLayout, StatCard, StatusBadge, ProfileCard, DetailRow],
   templateUrl: './user-view.html',
 })
 export class UserViewComponent {

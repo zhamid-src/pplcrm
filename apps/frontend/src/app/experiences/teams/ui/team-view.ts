@@ -2,28 +2,26 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { TeamsService } from '../services/teams-service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '../../../../../../../libs/common/src';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-team-view',
   imports: [
     DatePipe,
     RouterModule,
-    Icon,
     RecordActivities,
-    FormActions,
+    DetailLayout,
     StatCard,
     Tabs,
     TabPanel,

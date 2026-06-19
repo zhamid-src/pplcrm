@@ -2,19 +2,18 @@ import { Component, computed, effect, inject, input, resource, signal, untracked
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInCompany } from './people-in-company';
 import { CompaniesService } from '../services/companies-service';
 import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../../persons/services/persons-service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 
 @Component({
   selector: 'pc-company-view',
@@ -22,9 +21,8 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
     DatePipe,
     RouterModule,
     PeopleInCompany,
-    Icon,
     RecordActivities,
-    FormActions,
+    DetailLayout,
     StatCard,
     Tabs,
     TabPanel,

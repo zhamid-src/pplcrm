@@ -1,26 +1,16 @@
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <div class="flex items-center justify-between border-b border-base-300 pb-4">
-      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
-        <pc-icon name="calendar" class="text-primary" [size]="6"></pc-icon>
-        Event Details
-      </h1>
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        [btn1Text]="'Edit Event'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete Event'"
-        (deleteClicked)="deleteEvent()"
-        (btn1Clicked)="editEvent()"
-      ></pc-form-actions>
-    </div>
-
-    @if (isLoading()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else if (event()) {
+<pc-detail-layout
+  [title]="'Event Details'"
+  [icon]="'calendar'"
+  [isLoading]="isLoading()"
+  [hasRecord]="!!event()"
+  [showDelete]="true"
+  [deleteText]="'Delete Event'"
+  [btn1Text]="'Edit Event'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editEvent()"
+  (delete)="deleteEvent()"
+>
+  @if (event()) {
     <!-- Main Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: Event Card -->
@@ -188,11 +178,5 @@
         </pc-tabs>
       </div>
     </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Event not found or failed to load.</span>
-    </div>
-    }
-  </div>
-</div>
+  }
+</pc-detail-layout>

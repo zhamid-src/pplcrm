@@ -14,6 +14,7 @@ export * from './components/textarea/textarea';
 export * from './components/select/select';
 export * from './components/toggle/toggle';
 export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
 export * from './components/entity-overview/entity-overview';
 export * from './components/address-form-group/address-form-group';
 export * from './components/card/card';
