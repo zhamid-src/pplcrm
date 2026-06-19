@@ -10,10 +10,11 @@ import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard],
   templateUrl: './form-view.html',
 })
 export class FormViewComponent {

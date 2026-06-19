@@ -11,10 +11,11 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {
