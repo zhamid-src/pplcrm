@@ -9,6 +9,10 @@ export * from './components/confirm-dialog-host';
 export * from './components/confirm-dialog.service';
 export * from './components/user-avatar/user-avatar';
 export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
 
 // Directives
 export * from './directives/animate-if.directive';
