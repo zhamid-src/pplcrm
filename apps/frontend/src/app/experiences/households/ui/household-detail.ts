@@ -191,20 +191,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /** Returns the creation date of the household */
-  protected getCreatedAt(): Date | null {
-    const date = this.household()?.created_at;
-    if (!date) return null;
-    return new Date(date as any);
-  }
-
-  /** Returns the last updated date of the household */
-  protected getUpdatedAt(): Date | null {
-    const date = this.household()?.updated_at;
-    if (!date) return null;
-    return new Date(date as any);
-  }
-
   protected async deleteHousehold() {
     if (!this.id()) return;
     const end = this._loading.begin();

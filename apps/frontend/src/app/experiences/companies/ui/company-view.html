@@ -60,12 +60,12 @@
         }
 
         <!-- System Metadata -->
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-        >
-          <span>Created by {{ getUserName(company().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
-          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(company().updatedby_id) }}</span>
-        </div>
+        <pc-system-metadata
+          [createdAt]="company().created_at"
+          [createdBy]="getUserName(company().createdby_id)"
+          [updatedAt]="company().updated_at"
+          [updatedBy]="getUserName(company().updatedby_id)"
+        ></pc-system-metadata>
       </pc-profile-card>
     </div>
 

@@ -38,7 +38,7 @@ import { DatePipe } from '@angular/common';
 })
 export class EntityOverview {
   public title = input<string>('Overview');
-  public createdAt = input<string | Date | null | undefined>();
-  public updatedAt = input<string | Date | null | undefined>();
+  public createdAt = input<any>();
+  public updatedAt = input<any>();
   public createdBy = input<string | null | undefined>();
 }

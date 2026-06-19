@@ -2,7 +2,7 @@
 <div class="flex min-h-full flex-col bg-base-100 p-6">
   <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
 
-  <div class="max-w-3xl mx-auto w-full">
+  <div class="max-w-4xl mx-auto w-full">
     <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? 'Edit Person Details' : 'Add New Person'"
@@ -17,203 +17,216 @@
       (delete)="deletePerson()"
     ></pc-detail-header>
 
-    <form (submit)="save()" novalidate class="flex flex-col gap-5">
-      <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-        @if (!person()?.id) {
-        <label class="label text-xs text-base-content/50 -mb-2"
-          >All fields are optional, but try to add as much as possible</label
-        >
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+      <div class="lg:col-span-2">
+        <form (submit)="save()" novalidate class="flex flex-col gap-5">
+          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
+            @if (!person()?.id) {
+            <label class="label text-xs text-base-content/50 -mb-2"
+              >All fields are optional, but try to add as much as possible</label
+            >
+            }
+
+            <!-- Name Inputs -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/3"
+                placeholder="First Name"
+                aria-label="First Name"
+                [formField]="form.first_name"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Middle Name(s)"
+                aria-label="Middle Name(s)"
+                [formField]="form.middle_names"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Last Name"
+                aria-label="Last Name"
+                [formField]="form.last_name"
+              ></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email"
+                aria-label="Email Address"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email 2"
+                aria-label="Secondary Email Address"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Mobile Phone"
+                aria-label="Mobile Phone"
+                [formField]="form.mobile"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Home Phone"
+                aria-label="Home Phone"
+                [formField]="form.home_phone"
+              ></pc-input>
+            </div>
+
+            <!-- Company Select -->
+            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
+              @for (c of companies(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+              }
+            </pc-select>
+
+            <!-- Assigned To / Owner Select -->
+            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
+              @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              }
+            </pc-select>
+
+            <!-- Address & Household Assignment -->
+            @if (householdId() && !isPlaceholderHousehold()) {
+            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
+              <span class="text-base-content/60">Address:</span>
+              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Change Household"
+                (click)="openAssignDrawer()"
+              >
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Go to Household"
+                (click)="navigateToHousehold()"
+              >
+                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
+                data-tip="Remove Address"
+                (click)="removeAddress()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
+            } @else {
+            <div
+              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                <span class="text-base-content/50 italic">No address assigned</span>
+              </div>
+              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                Assign Household
+              </button>
+            </div>
+            }
+
+            <!-- Social Media Profile Links -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Social Media Profiles
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="LinkedIn URL"
+                aria-label="LinkedIn URL"
+                [formField]="form.linkedin"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Twitter/X URL"
+                aria-label="Twitter/X URL"
+                [formField]="form.twitter"
+              ></pc-input>
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="Facebook URL"
+                aria-label="Facebook URL"
+                [formField]="form.facebook"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Instagram URL"
+                aria-label="Instagram URL"
+                [formField]="form.instagram"
+              ></pc-input>
+            </div>
+
+            <!-- Tags & Segmentation -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Tags & Issues
+            </div>
+
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="Enter issues, separated by comma"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+
+            <!-- Internal Notes -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
+
+            <pc-textarea
+              placeholder="Internal Notes..."
+              aria-label="Notes"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </fieldset>
+        </form>
+      </div>
+
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
         }
-
-        <!-- Name Inputs -->
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-input
-            class="basis-1/3"
-            placeholder="First Name"
-            aria-label="First Name"
-            [formField]="form.first_name"
-          ></pc-input>
-          <pc-input
-            class="basis-1/3"
-            placeholder="Middle Name(s)"
-            aria-label="Middle Name(s)"
-            [formField]="form.middle_names"
-          ></pc-input>
-          <pc-input
-            class="basis-1/3"
-            placeholder="Last Name"
-            aria-label="Last Name"
-            [formField]="form.last_name"
-          ></pc-input>
-        </div>
-
-        <!-- Emails -->
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-input
-            class="basis-1/2"
-            type="email"
-            placeholder="Email"
-            aria-label="Email Address"
-            [formField]="form.email"
-            [hasError]="!!emailError()"
-          ></pc-input>
-          <pc-input
-            class="basis-1/2"
-            type="email"
-            placeholder="Email 2"
-            aria-label="Secondary Email Address"
-            [formField]="form.email2"
-          ></pc-input>
-        </div>
-        @if (emailError()) {
-        <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-          {{ emailError() }}
-        </div>
-        }
-
-        <!-- Phones -->
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-input
-            class="basis-1/2"
-            type="tel"
-            placeholder="Mobile Phone"
-            aria-label="Mobile Phone"
-            [formField]="form.mobile"
-          ></pc-input>
-          <pc-input
-            class="basis-1/2"
-            type="tel"
-            placeholder="Home Phone"
-            aria-label="Home Phone"
-            [formField]="form.home_phone"
-          ></pc-input>
-        </div>
-
-        <!-- Company Select -->
-        <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
-          @for (c of companies(); track c.id) {
-          <option [value]="c.id">{{ c.name }}</option>
-          }
-        </pc-select>
-
-        <!-- Assigned To / Owner Select -->
-        <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-          @for (u of users(); track u.id) {
-          <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-          }
-        </pc-select>
-
-        <!-- Address & Household Assignment -->
-        @if (householdId() && !isPlaceholderHousehold()) {
-        <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
-          <span class="text-base-content/60">Address:</span>
-          <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-            data-tip="Change Household"
-            (click)="openAssignDrawer()"
-          >
-            <pc-icon name="chevron-down" [size]="4"></pc-icon>
-          </button>
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-            data-tip="Go to Household"
-            (click)="navigateToHousehold()"
-          >
-            <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-          </button>
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
-            data-tip="Remove Address"
-            (click)="removeAddress()"
-          >
-            <pc-icon name="trash" [size]="4"></pc-icon>
-          </button>
-        </div>
-        } @else {
-        <div
-          class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
-        >
-          <div class="flex items-center gap-2">
-            <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-            <span class="text-base-content/50 italic">No address assigned</span>
-          </div>
-          <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-            <pc-icon name="plus" [size]="3"></pc-icon>
-            Assign Household
-          </button>
-        </div>
-        }
-
-        <!-- Social Media Profile Links -->
-        <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-          Social Media Profiles
-        </div>
-
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-input
-            class="basis-1/2"
-            placeholder="LinkedIn URL"
-            aria-label="LinkedIn URL"
-            [formField]="form.linkedin"
-          ></pc-input>
-          <pc-input
-            class="basis-1/2"
-            placeholder="Twitter/X URL"
-            aria-label="Twitter/X URL"
-            [formField]="form.twitter"
-          ></pc-input>
-        </div>
-        <div class="flex flex-col md:flex-row gap-2">
-          <pc-input
-            class="basis-1/2"
-            placeholder="Facebook URL"
-            aria-label="Facebook URL"
-            [formField]="form.facebook"
-          ></pc-input>
-          <pc-input
-            class="basis-1/2"
-            placeholder="Instagram URL"
-            aria-label="Instagram URL"
-            [formField]="form.instagram"
-          ></pc-input>
-        </div>
-
-        <!-- Tags & Segmentation -->
-        <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Tags & Issues</div>
-
-        <pc-tags
-          [tags]="tags()"
-          type="tag"
-          [enableAutoComplete]="true"
-          (tagAdded)="tagAdded($event)"
-          (tagRemoved)="tagRemoved($event)"
-        ></pc-tags>
-
-        <pc-tags
-          [tags]="issues()"
-          type="issue"
-          [enableAutoComplete]="true"
-          placeholder="Enter issues, separated by comma"
-          (tagAdded)="issueAdded($event)"
-          (tagRemoved)="issueRemoved($event)"
-        ></pc-tags>
-
-        <!-- Internal Notes -->
-        <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
-
-        <pc-textarea
-          placeholder="Internal Notes..."
-          aria-label="Notes"
-          [formField]="form.notes"
-          [rows]="3"
-        ></pc-textarea>
-      </fieldset>
-    </form>
+      </div>
+    </div>
   </div>
 
   <!-- Right-side drawer: Assign to a different household -->

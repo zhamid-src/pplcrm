@@ -1,7 +1,6 @@
 /**
  * @file Component for viewing individual household records (read-only mode).
  */
-import { DatePipe } from '@angular/common';
 import { Component, ElementRef, ViewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -21,11 +20,12 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
 
 @Component({
   selector: 'pc-household-view',
   imports: [
-    DatePipe,
     RouterModule,
     PeopleInHousehold,
     Icon,
@@ -37,6 +37,8 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
     StatCard,
     ProfileCard,
     DetailItem,
+    SystemMetadata,
+    Tags,
   ],
   templateUrl: './household-view.html',
 })
@@ -239,18 +241,6 @@ export class HouseholdView {
       .catch(() => {
         this.alertSvc.showError(`Failed to copy ${label}`);
       });
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.household()?.created_at;
-    if (!date) return null;
-    return new Date(date as any);
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.household()?.updated_at;
-    if (!date) return null;
-    return new Date(date as any);
   }
 
   protected getUserName(id: string | null | undefined): string {

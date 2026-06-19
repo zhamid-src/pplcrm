@@ -22,6 +22,8 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
 import { PcIconNameType } from '@icons/icons.index';
 
 interface SocialLinkDef {
@@ -47,6 +49,8 @@ interface SocialLinkDef {
     StatCard,
     ProfileCard,
     DetailItem,
+    SystemMetadata,
+    Tags,
   ],
   templateUrl: './person-view.html',
 })
@@ -269,18 +273,6 @@ export class PersonView {
       .catch(() => {
         this.alertSvc.showError(`Failed to copy ${label}`);
       });
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.person()?.created_at;
-    if (!date) return null;
-    return new Date(date);
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.person()?.updated_at;
-    if (!date) return null;
-    return new Date(date);
   }
 
   protected getUserName(id: string | null | undefined): string {
