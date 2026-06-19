@@ -8,6 +8,7 @@ import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { StorageService } from '../../../lib/storage.service';
 import { env } from '../../../../env';
 import crypto from 'crypto';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
 
 export interface IngestableEmail {
   id: string; // Remote provider's unique message ID
@@ -252,7 +253,7 @@ export class EmailIngesterService {
       const emailId = String(emailRow.id);
 
       // 2. Rewrite inline CID references in body content, then insert body
-      let bodyHtml = email.bodyHtml;
+      let bodyHtml = sanitizeHtml(email.bodyHtml);
       for (const file of uploadedFiles) {
         if (file.is_inline && file.cid) {
           const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
