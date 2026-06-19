@@ -10,6 +10,7 @@ import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
 import { MsSyncService } from '../../ms-sync/ms-sync.service';
 import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
 import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
 
 function buildRawMime(options: {
   fromName: string;
@@ -327,7 +328,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const ccList = fields.cc ? JSON.parse(fields.cc) : [];
     const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
     const subject = fields.subject || '';
-    const html = fields.html || '';
+    const html = sanitizeHtml(fields.html || '');
 
     // Upload attachment files to storage outside transaction
     const uploadedFiles: Array<{

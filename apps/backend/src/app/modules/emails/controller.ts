@@ -13,6 +13,7 @@ import { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
+import { sanitizeHtml } from '../../lib/mail/sanitize-util';
 
 /** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -214,14 +215,19 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   public async getEmailBody(tenant_id: string, value: string) {
     try {
       const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
-      if (email) return email;
+      if (email) {
+        return {
+          ...email,
+          body_html: sanitizeHtml((email as any).body_html),
+        };
+      }
 
       // If no body exists, attempt to load from drafts table
       const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
       if (draft)
         return {
           email_id: value,
-          body_html: draft.body_html ?? '',
+          body_html: sanitizeHtml(draft.body_html),
           body_delta: (draft as any).body_delta ?? null,
         } as any;
 
@@ -389,6 +395,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     },
   ) {
     try {
+      if (draft.body_html) {
+        draft.body_html = sanitizeHtml(draft.body_html);
+      }
       const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
       if (!saved) throw new InternalError('Failed to save draft');
       return saved;
