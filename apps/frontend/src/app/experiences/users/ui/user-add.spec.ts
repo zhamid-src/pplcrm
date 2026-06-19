@@ -2,7 +2,7 @@ import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AuthUsersService } from '../services/authusers-service';
+import { UserAdminService } from '../services/useradmin-service';
 import { UserAddComponent } from './user-add';
 
 describe('UserAddComponent', () => {
@@ -35,7 +35,7 @@ describe('UserAddComponent', () => {
     await TestBed.configureTestingModule({
       imports: [UserAddComponent],
       providers: [
-        { provide: AuthUsersService, useValue: mockUsersSvc },
+        { provide: UserAdminService, useValue: mockUsersSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },

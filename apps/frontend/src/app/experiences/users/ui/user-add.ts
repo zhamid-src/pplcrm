@@ -4,7 +4,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 
-import { AuthUsersService } from '../services/authusers-service';
+import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
@@ -16,7 +16,7 @@ export class UserAddComponent implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly users = inject(AuthUsersService);
+  private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
 
   protected readonly error = signal<string | null>(null);
