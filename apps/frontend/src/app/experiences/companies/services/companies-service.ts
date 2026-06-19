@@ -1,16 +1,17 @@
 import { Service } from '@angular/core';
 import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
 export class CompaniesService extends AbstractAPIService<'companies', any> {
   protected override readonly endpointName = 'companies';
 
-  public add(row: any) {
+  public add(row: RouterInputs['companies']['add']) {
     return this.api.companies.add.mutate(row);
   }
 
-  public addMany(rows: any[]) {
+  public addMany(rows: RouterInputs['companies']['add'][]) {
     return Promise.resolve(rows);
   }
 
@@ -36,7 +37,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
-  public getById(id: string) {
+  public getById(id: string): Promise<any> {
     return this.api.companies.getById.query(id);
   }
 
@@ -44,11 +45,15 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return Promise.resolve([]);
   }
 
-  public async update(id: string, data: any) {
+  public async update(id: string, data: RouterInputs['companies']['update']['data']) {
     return this.api.companies.update.mutate({ id, data });
   }
 
-  public import(rows: any[], skipped: number, file_name?: string) {
+  public import(
+    rows: any[],
+    skipped: number,
+    file_name?: string,
+  ): Promise<RouterOutputs['companies']['import']> {
     return this.api.companies.import.mutate({ rows, skipped, file_name });
   }
 
@@ -56,17 +61,19 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.exportCsv.mutate(input);
   }
 
-  public getPotentialDuplicates(options?: {
-    page?: number;
-    pageSize?: number;
-  }): Promise<{ groups: any[]; total: number }> {
+  public getPotentialDuplicates(
+    options?: RouterInputs['companies']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['companies']['getPotentialDuplicates']> {
     return this.api.companies.getPotentialDuplicates.query(options);
   }
 
   /**
    * Merge source company into target company.
    */
-  public mergeCompanies(targetId: string, sourceId: string): Promise<any> {
+  public mergeCompanies(
+    targetId: string,
+    sourceId: string,
+  ): Promise<RouterOutputs['companies']['mergeCompanies']> {
     return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
   }
 }

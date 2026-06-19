@@ -26,8 +26,8 @@ export class CompanyDuplicatesComponent extends BaseDuplicateManager<any> implem
   protected getItemsFromRawGroup(raw: any) {
     return raw.companies || [];
   }
-  protected mergeInService(targetId: string, sourceId: string) {
-    return this.companiesSvc.mergeCompanies(targetId, sourceId);
+  protected async mergeInService(targetId: string, sourceId: string): Promise<void> {
+    await this.companiesSvc.mergeCompanies(targetId, sourceId);
   }
 
   protected getItemDisplayName(c: any): string {

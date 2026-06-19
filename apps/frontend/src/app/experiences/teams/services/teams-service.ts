@@ -8,44 +8,18 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterOutputs } from '../../../services/api/trpc-types';
 
-export interface TeamListItem {
-  id: string;
-  name: string;
-  description: string | null;
-  team_captain_id: string | null;
-  team_captain_name: string | null;
-  team_lead_user_id?: string | null;
-  team_lead_user_name?: string | null;
-  volunteer_count: number;
-  updated_at?: Date | string | null;
-}
-
-export interface TeamVolunteer {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string | null;
-}
-
-export interface TeamDetail extends Omit<TeamListItem, 'volunteer_count'> {
-  volunteers: TeamVolunteer[];
-  list_ids?: string[];
-  lists?: any[];
-}
-
-export interface TeamAssignmentInfo {
-  id: string;
-  name: string;
-  is_captain: boolean;
-}
+export type TeamListItem = RouterOutputs['teams']['getAll']['rows'][number];
+export type TeamDetail = RouterOutputs['teams']['getById'];
+export type TeamAssignmentInfo = RouterOutputs['teams']['getForVolunteer'][number];
 
 @Service()
 export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   protected override readonly endpointName = 'teams';
 
-  public add(row: AddTeamType) {
-    return this.api.teams.add.mutate(row) as Promise<TeamDetail>;
+  public add(row: AddTeamType): Promise<TeamDetail> {
+    return this.api.teams.add.mutate(row);
   }
 
   public addMany(_rows: AddTeamType[]) {
@@ -57,38 +31,35 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   }
 
   public count(): Promise<number> {
-    return this.api.teams.getAll.query({ startRow: 0, endRow: 1 }).then((res: { count: number }) => res.count ?? 0);
+    return this.api.teams.getAll.query({ startRow: 0, endRow: 1 }).then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
   }
 
   public detachTag(_id: string, _tag_name: string) {
     return Promise.resolve(false);
   }
 
-  public getAll(options?: getAllOptionsType) {
-    return this.api.teams.getAll.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: TeamListItem[];
-      count: number;
-    }>;
+  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['teams']['getAll']> {
+    return this.api.teams.getAll.query(options, { signal: this.ac.signal });
   }
 
-  public getTeamsForVolunteer(personId: string) {
-    return this.api.teams.getForVolunteer.query(personId, { signal: this.ac.signal }) as Promise<TeamAssignmentInfo[]>;
+  public getTeamsForVolunteer(personId: string): Promise<RouterOutputs['teams']['getForVolunteer']> {
+    return this.api.teams.getForVolunteer.query(personId, { signal: this.ac.signal });
   }
 
   public getAllArchived(_options?: getAllOptionsType) {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
-  public getById(id: string) {
-    return this.api.teams.getById.query(id) as Promise<TeamDetail>;
+  public getById(id: string): Promise<TeamDetail> {
+    return this.api.teams.getById.query(id);
   }
 
   public getTags(_id: string) {
     return Promise.resolve([]);
   }
 
-  public update(id: string, data: UpdateTeamType) {
-    return this.api.teams.update.mutate({ id, data }) as Promise<TeamDetail>;
+  public update(id: string, data: UpdateTeamType): Promise<TeamDetail> {
+    return this.api.teams.update.mutate({ id, data });
   }
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
