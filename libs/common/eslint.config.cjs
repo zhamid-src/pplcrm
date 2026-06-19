@@ -24,7 +24,7 @@ module.exports = [
       parserOptions: {
         project: [
           require('path').resolve(__dirname, 'tsconfig.lib.json'),
-          require('path').resolve(__dirname, '../tsconfig.base.json'),
+          require('path').resolve(__dirname, '../../tsconfig.base.json'),
         ],
         sourceType: 'module',
       },
