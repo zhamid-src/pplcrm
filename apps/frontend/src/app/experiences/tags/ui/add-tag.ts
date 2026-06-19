@@ -5,6 +5,7 @@ import { TRPCClientError } from '@trpc/client';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
 /**
@@ -14,15 +15,15 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
  */
 @Component({
   selector: 'pc-add-tag',
-  imports: [FormField, FormActions],
+  imports: [PcInput, FormField, FormActions],
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
         <label class="label text-base font-light">
           Enter a unique tag name (and optionally, give it a description)
         </label>
-        <input class="input" placeholder="Tag Name" [formField]="form.name" />
-        <input class="input" placeholder="Optional description" [formField]="form.description" />
+        <pc-input placeholder="Tag Name" [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" [formField]="form.description"></pc-input>
         <div class="flex items-center gap-2">
           <label class="label-text font-light text-sm">Colour</label>
           <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
