@@ -5,6 +5,9 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Loader } from '@googlemaps/js-api-loader';
 import { HouseholdsService } from '../services/households-service';
 import { HouseholdView } from './household-view';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { ActivityService } from '@experiences/activity/services/activity.service';
 
 const mockHouseholdData = {
   id: '123',
@@ -32,13 +35,29 @@ let mockHouseholdsSvc: any;
 let mockAlertSvc: any;
 let mockActivatedRoute: any;
 let mockLoader: any;
+let mockUserService: any;
+let mockPersonsSvc: any;
+let mockActivitySvc: any;
 
 describe('HouseholdView', () => {
   beforeEach(async () => {
+    mockUserService = {
+      getUsers: vi.fn().mockResolvedValue([{ id: 'u1', first_name: 'Admin' }]),
+    };
+
     mockHouseholdsSvc = {
       getById: vi.fn().mockResolvedValue(mockHouseholdData),
       getTags: vi.fn().mockResolvedValue(['donor', 'volunteer']),
       getPeopleCount: vi.fn().mockResolvedValue(3),
+    };
+
+    mockPersonsSvc = {
+      getByHouseholdId: vi.fn().mockResolvedValue([]),
+      getPeopleInHousehold: vi.fn().mockResolvedValue([]),
+    };
+
+    mockActivitySvc = {
+      getActivities: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
     };
 
     mockAlertSvc = {
@@ -86,19 +105,24 @@ describe('HouseholdView', () => {
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: Loader, useValue: mockLoader },
+        { provide: UserService, useValue: mockUserService },
+        { provide: PersonsService, useValue: mockPersonsSvc },
+        { provide: ActivityService, useValue: mockActivitySvc },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(HouseholdView);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', '123');
+    fixture.detectChanges();
   });
 
   it('should initialize and load household details, tags, and people count', async () => {
-    await component['loadAllData']();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(component).toBeTruthy();
-    expect(component['id']).toBe('123');
+    expect(component['id']()).toBe('123');
     expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
     expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123', 'tag');
     expect(mockHouseholdsSvc.getPeopleCount).toHaveBeenCalledWith('123');
@@ -127,7 +151,7 @@ describe('HouseholdView', () => {
   });
 
   it('should format addressString from individual fields when formatted_address is empty', async () => {
-    await component['loadAllData']();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     component['household'].set({

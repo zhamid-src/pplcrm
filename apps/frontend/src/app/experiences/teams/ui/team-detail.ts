@@ -10,6 +10,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamDetail, TeamsService } from '../services/teams-service';
@@ -27,7 +28,7 @@ import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-team-detail',
-  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect],
+  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
   templateUrl: './team-detail.html',
 })
 export class TeamDetailComponent implements OnInit {

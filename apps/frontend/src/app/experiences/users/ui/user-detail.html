@@ -41,22 +41,12 @@
   </div>
   }
 
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Profile</h2>
-    <form class="mt-4 space-y-4" (submit)="save($event)" novalidate>
+  <pc-card title="Profile">
+    <form class="space-y-4" (submit)="save($event)" novalidate>
       <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input
-          id="email"
-          label="Email"
-          type="email"
-          [formField]="form.email"
-          autocomplete="email"
-        ></pc-input>
+        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
 
-        <pc-select
-          label="Role"
-          [formField]="form.role"
-        >
+        <pc-select label="Role" [formField]="form.role">
           @if (currentUserRole() !== 'admin') {
           <option value="owner">Owner</option>
           }
@@ -65,26 +55,13 @@
           <option value="viewer">Viewer</option>
         </pc-select>
 
-        <pc-input
-          id="first_name"
-          label="First name"
-          [formField]="form.first_name"
-          autocomplete="given-name"
-        ></pc-input>
+        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
 
-        <pc-input
-          id="last_name"
-          label="Last name"
-          [formField]="form.last_name"
-          autocomplete="family-name"
-        ></pc-input>
+        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
       </div>
 
-      <pc-toggle
-        label="Verified account"
-        [formField]="form.verified"
-      ></pc-toggle>
+      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
     </form>
-  </section>
+  </pc-card>
 </section>
 }

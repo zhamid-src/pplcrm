@@ -5,17 +5,17 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { CompanyInputObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [PcInput, PcTextarea, Icon, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview],
+  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
   templateUrl: './company-detail.html',
 })
 export class CompanyDetail implements OnInit {

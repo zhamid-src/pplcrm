@@ -24,85 +24,54 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Form Section -->
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-        <div class="card-body p-6 space-y-4">
-          <!-- Name -->
-          <pc-input
-            label="Company Name"
-            placeholder="e.g. Acme Corp"
-            [formField]="form.name"
-          ></pc-input>
+      <pc-card class="lg:col-span-2">
+        <!-- Name -->
+        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Website -->
-            <pc-input
-              label="Website"
-              type="url"
-              placeholder="https://example.com"
-              [formField]="form.website"
-            ></pc-input>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Website -->
+          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
 
-            <!-- Industry -->
-            <pc-input
-              label="Industry"
-              placeholder="e.g. Technology"
-              [formField]="form.industry"
-            ></pc-input>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Email -->
-            <pc-input
-              label="Email"
-              type="email"
-              placeholder="info@example.com"
-              [formField]="form.email"
-            ></pc-input>
-
-            <!-- Phone -->
-            <pc-input
-              label="Phone"
-              type="tel"
-              placeholder="+1 555-0100"
-              [formField]="form.phone"
-            ></pc-input>
-          </div>
-
-          <!-- Description -->
-          <pc-textarea
-            label="Description"
-            placeholder="Company description..."
-            [formField]="form.description"
-            [rows]="3"
-          ></pc-textarea>
-
-          <!-- Notes -->
-          <pc-textarea
-            label="Internal Notes"
-            placeholder="Any additional notes..."
-            [formField]="form.notes"
-            [rows]="4"
-          ></pc-textarea>
+          <!-- Industry -->
+          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
         </div>
-      </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Email -->
+          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+
+          <!-- Phone -->
+          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+        </div>
+
+        <!-- Description -->
+        <pc-textarea
+          label="Description"
+          placeholder="Company description..."
+          [formField]="form.description"
+          [rows]="3"
+        ></pc-textarea>
+
+        <!-- Notes -->
+        <pc-textarea
+          label="Internal Notes"
+          placeholder="Any additional notes..."
+          [formField]="form.notes"
+          [rows]="4"
+        ></pc-textarea>
+      </pc-card>
 
       <!-- Members & Info Panel -->
       <div class="space-y-6">
         <!-- Employee List (Only when edit mode) -->
         @if (!isNewMode() && id()) {
-        <div class="card bg-base-100 border border-base-300 shadow-xl">
-          <div class="card-body p-6">
-            <h3 class="font-bold text-lg text-base-content mb-4 flex items-center gap-2">
-              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-              Associated Employees
-            </h3>
-            @defer (on viewport) {
-            <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            }
-          </div>
-        </div>
+        <pc-card title="Associated Employees" icon="user-group">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton w-full h-32"></div>
+          }
+        </pc-card>
         }
 
         <!-- Metadata Card -->

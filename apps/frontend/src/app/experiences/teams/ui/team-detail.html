@@ -30,7 +30,7 @@
   }
 
   <form class="grid gap-6" (submit)="save($event)" novalidate>
-    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <pc-card>
       <div class="grid gap-4 sm:grid-cols-3">
         <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
 
@@ -56,18 +56,12 @@
         [formField]="form.description"
         placeholder="Describe this team's focus"
       ></pc-textarea>
-    </section>
+    </pc-card>
 
     <!-- Volunteers Section -->
-    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 class="text-lg font-semibold">Volunteers</h2>
-          <p class="text-sm text-base-content/70">Select volunteers who belong to this team.</p>
-        </div>
-        <div class="text-sm text-base-content/60">
-          Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
-        </div>
+    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
+      <div pc-card-actions class="text-sm text-base-content/60">
+        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
@@ -107,17 +101,13 @@
           </div>
         </div>
       </div>
-    </section>
+    </pc-card>
 
     <!-- Assigned target constituent lists section -->
-    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-      <div>
-        <h2 class="text-lg font-semibold">Target Constituent Lists</h2>
-        <p class="text-sm text-base-content/70">
-          Assign lists of people or households this team is responsible for contacting.
-        </p>
-      </div>
-
+    <pc-card
+      title="Target Constituent Lists"
+      subtitle="Assign lists of people or households this team is responsible for contacting."
+    >
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-2">
           <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
@@ -155,22 +145,19 @@
           </div>
         </div>
       </div>
-    </section>
+    </pc-card>
 
     <!-- Team Tasks Section -->
     @if (!isNew()) {
-    <section class="grid gap-4 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 class="text-lg font-semibold">Team Tasks</h2>
-          <p class="text-sm text-base-content/70">Track the tasks and campaign progress assigned to this team.</p>
-        </div>
-        <div>
-          <a class="btn btn-xs btn-primary gap-1" [routerLink]="['/tasks/add']" [queryParams]="{ team_id: id }">
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-          </a>
-        </div>
-      </div>
+    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
+      <a
+        pc-card-actions
+        class="btn btn-xs btn-primary gap-1"
+        [routerLink]="['/tasks/add']"
+        [queryParams]="{ team_id: id }"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+      </a>
 
       <div class="overflow-x-auto rounded border border-base-200">
         @if (teamTasks().length === 0) {
@@ -212,7 +199,7 @@
         </table>
         }
       </div>
-    </section>
+    </pc-card>
     }
   </form>
 </section>
