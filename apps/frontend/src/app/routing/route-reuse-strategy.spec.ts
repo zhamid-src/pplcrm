@@ -1,27 +1,112 @@
-import { ActivatedRouteSnapshot } from '@angular/router';
+import { vi } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRouteSnapshot, Router } from '@angular/router';
+import * as routerModule from '@angular/router';
+import { Subject } from 'rxjs';
 import { CustomRouteReuseStrategy } from './route-reuse-strategy';
+
+const mockDestroyDetachedRouteHandle = vi.fn();
+
+vi.mock('@angular/router', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@angular/router')>();
+  return {
+    ...original,
+    destroyDetachedRouteHandle: (handle: any) => mockDestroyDetachedRouteHandle(handle),
+  };
+});
 
 describe('CustomRouteReuseStrategy', () => {
   let strategy: CustomRouteReuseStrategy;
+  let mockRouter: any;
+  let routerEvents$: Subject<any>;
 
   beforeEach(() => {
-    strategy = new CustomRouteReuseStrategy();
+    mockDestroyDetachedRouteHandle.mockClear();
+    routerEvents$ = new Subject<any>();
+    mockRouter = {
+      events: routerEvents$,
+    };
+
+    TestBed.configureTestingModule({
+      providers: [CustomRouteReuseStrategy, { provide: Router, useValue: mockRouter }],
+    });
+
+    strategy = TestBed.inject(CustomRouteReuseStrategy);
   });
 
-  it('should store and retrieve handles when reuse is enabled', () => {
+  it('should store and retrieve handles when reuse is enabled, and remove from cache after retrieval', () => {
     const route = { data: { shouldReuse: true, key: 'a' } } as unknown as ActivatedRouteSnapshot;
     const handle = {} as any;
     expect(strategy.shouldDetach(route)).toBe(true);
     strategy.store(route, handle);
     expect(strategy.shouldAttach(route)).toBe(true);
     expect(strategy.retrieve(route)).toBe(handle);
+    // After retrieve, it should be removed from cache
+    expect(strategy.shouldAttach(route)).toBe(false);
+    expect(strategy.retrieve(route)).toBeNull();
   });
 
   it('should not reuse routes when flag is false', () => {
     const route = { data: { shouldReuse: false, key: 'b' } } as unknown as ActivatedRouteSnapshot;
     expect(strategy.shouldDetach(route)).toBe(false);
     expect(strategy.shouldAttach(route)).toBe(false);
-    expect(strategy.retrieve(route)).toBe(false);
+    expect(strategy.retrieve(route)).toBeNull();
     expect(strategy.shouldReuseRoute(route)).toBe(false);
+  });
+
+  it('should handle store(route, null) by clearing that handle', () => {
+    const route = { data: { shouldReuse: true, key: 'a' } } as unknown as ActivatedRouteSnapshot;
+    const handle = {} as any;
+    strategy.store(route, handle);
+    expect(strategy.shouldAttach(route)).toBe(true);
+
+    strategy.store(route, null);
+    expect(strategy.shouldAttach(route)).toBe(false);
+    expect(mockDestroyDetachedRouteHandle).toHaveBeenCalledWith(handle);
+  });
+
+  it('should evict the oldest route handle (LRU) when cache limit is exceeded', () => {
+    // Store 5 routes
+    const routes: ActivatedRouteSnapshot[] = [];
+    const handles: any[] = [];
+    for (let i = 0; i < 5; i++) {
+      const key = `route-${i}`;
+      routes.push({ data: { shouldReuse: true, key } } as unknown as ActivatedRouteSnapshot);
+      handles.push({ name: `handle-${i}` } as any);
+      strategy.store(routes[i], handles[i]);
+    }
+
+    // All 5 should be attached
+    for (let i = 0; i < 5; i++) {
+      expect(strategy.shouldAttach(routes[i])).toBe(true);
+    }
+
+    // Store a 6th route, which should evict route-0 (the oldest)
+    const route5 = { data: { shouldReuse: true, key: 'route-5' } } as unknown as ActivatedRouteSnapshot;
+    const handle5 = { name: 'handle-5' } as any;
+    strategy.store(route5, handle5);
+
+    // Check that route-0 is evicted and destroyed
+    expect(strategy.shouldAttach(routes[0])).toBe(false);
+    expect(mockDestroyDetachedRouteHandle).toHaveBeenCalledWith(handles[0]);
+
+    // Routes 1-5 should still be attached
+    for (let i = 1; i < 5; i++) {
+      expect(strategy.shouldAttach(routes[i])).toBe(true);
+    }
+    expect(strategy.shouldAttach(route5)).toBe(true);
+  });
+
+  it('should clear all handlers when navigating to /signin or /signup', () => {
+    const route1 = { data: { shouldReuse: true, key: 'a' } } as unknown as ActivatedRouteSnapshot;
+    const handle1 = {} as any;
+    strategy.store(route1, handle1);
+    expect(strategy.shouldAttach(route1)).toBe(true);
+
+    // Simulate NavigationEnd event to signin
+    const navEvent = new routerModule.NavigationEnd(1, '/signin', '/signin');
+    routerEvents$.next(navEvent);
+
+    expect(strategy.shouldAttach(route1)).toBe(false);
   });
 });
