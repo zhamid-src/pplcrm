@@ -17,10 +17,10 @@ import { FormField } from '@angular/forms/signals';
         [formField]="formField()"
         [rows]="rows()"
         class="textarea textarea-bordered w-full"
-        [class.textarea-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
+        [class.textarea-error]="hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))"
       ></textarea>
 
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
+      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
         @for (err of formField()().errors(); track err) {
           <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
         }
@@ -33,4 +33,5 @@ export class Textarea {
   public placeholder = input<string>('');
   public rows = input<number>(3);
   public formField = input.required<any>();
+  public hasError = input<boolean>(false);
 }

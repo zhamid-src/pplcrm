@@ -52,64 +52,45 @@
     <h2 class="text-lg font-semibold">Profile</h2>
     <form class="mt-4 space-y-4" (submit)="save($event)" novalidate>
       <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-1">
-          <label for="email" class="text-sm font-medium text-base-content/80">Email</label>
-          <input
-            id="email"
-            type="email"
-            class="input input-bordered w-full"
-            [formField]="form.email"
-            autocomplete="email"
-          />
-          @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) {
-          <p class="text-sm text-error">Please enter a valid email address.</p>
+        <pc-input
+          id="email"
+          label="Email"
+          type="email"
+          [formField]="form.email"
+          autocomplete="email"
+        ></pc-input>
+
+        <pc-select
+          label="Role"
+          [formField]="form.role"
+        >
+          @if (currentUserRole() !== 'admin') {
+          <option value="owner">Owner</option>
           }
-        </div>
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+          <option value="viewer">Viewer</option>
+        </pc-select>
 
-        <div class="space-y-1">
-          <label for="role" class="text-sm font-medium text-base-content/80">Role</label>
-          <select id="role" class="select select-bordered w-full bg-base-100" [formField]="form.role">
-            @if (currentUserRole() !== 'admin') {
-            <option value="owner">Owner</option>
-            }
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-            <option value="viewer">Viewer</option>
-          </select>
-        </div>
+        <pc-input
+          id="first_name"
+          label="First name"
+          [formField]="form.first_name"
+          autocomplete="given-name"
+        ></pc-input>
 
-        <div class="space-y-1">
-          <label for="first_name" class="text-sm font-medium text-base-content/80">First name</label>
-          <input
-            id="first_name"
-            type="text"
-            class="input input-bordered w-full"
-            [formField]="form.first_name"
-            autocomplete="given-name"
-          />
-          @if (form.first_name().invalid() && (form.first_name().dirty() || form.first_name().touched())) {
-          <p class="text-sm text-error">First name is required.</p>
-          }
-        </div>
-
-        <div class="space-y-1">
-          <label for="last_name" class="text-sm font-medium text-base-content/80">Last name</label>
-          <input
-            id="last_name"
-            type="text"
-            class="input input-bordered w-full"
-            [formField]="form.last_name"
-            autocomplete="family-name"
-          />
-        </div>
+        <pc-input
+          id="last_name"
+          label="Last name"
+          [formField]="form.last_name"
+          autocomplete="family-name"
+        ></pc-input>
       </div>
 
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <label class="flex items-center gap-2 text-sm font-medium text-base-content/80">
-          <input type="checkbox" class="checkbox checkbox-primary" [formField]="form.verified" />
-          Verified account
-        </label>
-      </div>
+      <pc-toggle
+        label="Verified account"
+        [formField]="form.verified"
+      ></pc-toggle>
     </form>
   </section>
 </section>

@@ -15,57 +15,37 @@
       </div>
 
       <form class="space-y-4" (submit)="submit($event)" novalidate>
-        <div class="space-y-1">
-          <label class="block text-sm font-medium" for="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            class="w-full rounded border border-border px-3 py-2"
-            [formField]="form.email"
-            autocomplete="email"
-          />
-          @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) {
-            <p class="text-sm text-danger">Please enter a valid email address.</p>
-          }
-        </div>
+        <pc-input
+          label="Email"
+          type="email"
+          [formField]="form.email"
+          autocomplete="email"
+        ></pc-input>
 
         <div class="grid gap-4 sm:grid-cols-2">
-          <div class="space-y-1">
-            <label class="block text-sm font-medium" for="first_name">First name</label>
-            <input
-              id="first_name"
-              type="text"
-              class="w-full rounded border border-border px-3 py-2"
-              [formField]="form.first_name"
-              autocomplete="given-name"
-            />
-            @if (form.first_name().invalid() && (form.first_name().dirty() || form.first_name().touched())) {
-              <p class="text-sm text-danger">First name is required.</p>
-            }
-          </div>
+          <pc-input
+            label="First name"
+            [formField]="form.first_name"
+            autocomplete="given-name"
+          ></pc-input>
 
-          <div class="space-y-1">
-            <label class="block text-sm font-medium" for="last_name">Last name</label>
-            <input
-              id="last_name"
-              type="text"
-              class="w-full rounded border border-border px-3 py-2"
-              [formField]="form.last_name"
-              autocomplete="family-name"
-            />
-          </div>
+          <pc-input
+            label="Last name"
+            [formField]="form.last_name"
+            autocomplete="family-name"
+          ></pc-input>
         </div>
 
-        <div class="space-y-1">
-          <label class="block text-sm font-medium" for="role">Role</label>
-          <select id="role" class="w-full rounded border border-border px-3 py-2 bg-base-100" [formField]="form.role">
-            @if (currentUserRole() !== 'admin') {
-              <option value="owner">Owner</option>
-            }
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-          </select>
-        </div>
+        <pc-select
+          label="Role"
+          [formField]="form.role"
+        >
+          @if (currentUserRole() !== 'admin') {
+            <option value="owner">Owner</option>
+          }
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+        </pc-select>
 
         @if (error()) {
           <p class="text-sm text-danger">{{ error() }}</p>

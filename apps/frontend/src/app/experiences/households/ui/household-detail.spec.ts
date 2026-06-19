@@ -92,8 +92,9 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   fixture = TestBed.createComponent(HouseholdDetail);
   component = fixture.componentInstance;
 
-  // Set component input mode
+  // Set component inputs
   fixture.componentRef.setInput('mode', mode);
+  fixture.componentRef.setInput('id', mode === 'edit' ? '123' : null);
 };
 
 describe('HouseholdDetail', () => {
@@ -109,7 +110,7 @@ describe('HouseholdDetail', () => {
       fixture.detectChanges();
 
       expect(component).toBeTruthy();
-      expect(component['id']).toBeNull();
+      expect(component['id']()).toBeNull();
       expect(mockHouseholdsSvc.getById).not.toHaveBeenCalled();
       expect(component['payload']().city).toBe('');
       expect(component['form']().dirty()).toBe(false);
@@ -149,7 +150,7 @@ describe('HouseholdDetail', () => {
         lat: null,
         lng: null,
       });
-      expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Household added');
+      expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Household added successfully.');
       expect(mockHouseholdsSvc.triggerRefresh).toHaveBeenCalled();
     });
   });
@@ -164,7 +165,7 @@ describe('HouseholdDetail', () => {
       fixture.detectChanges();
 
       expect(component).toBeTruthy();
-      expect(component['id']).toBe('123');
+      expect(component['id']()).toBe('123');
       expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
       expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123', 'tag');
 

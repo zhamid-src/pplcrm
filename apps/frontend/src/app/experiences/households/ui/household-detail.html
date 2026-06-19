@@ -65,75 +65,51 @@
             </summary>
             <div class="flex flex-col gap-4 mt-4 pl-3 border-l-2 border-base-300">
               <div class="flex flex-col md:flex-row gap-3">
-                <div class="flex-1 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="Unit / Apt" [formField]="form.apt" />
-                  @if (form.apt().invalid() && (form.apt().dirty() || form.apt().touched())) { @for (err of
-                  form.apt().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
-                <div class="flex-1 flex flex-col gap-1">
-                  <input
-                    class="input input-bordered w-full"
-                    placeholder="Street Number"
-                    [formField]="form.street_num"
-                  />
-                  @if (form.street_num().invalid() && (form.street_num().dirty() || form.street_num().touched())) { @for
-                  (err of form.street_num().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
-                <div class="flex-2 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="Street Name" [formField]="form.street1" />
-                  @if (form.street1().invalid() && (form.street1().dirty() || form.street1().touched())) { @for (err of
-                  form.street1().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
+                <pc-input
+                  class="flex-1"
+                  placeholder="Unit / Apt"
+                  [formField]="form.apt"
+                ></pc-input>
+                <pc-input
+                  class="flex-1"
+                  placeholder="Street Number"
+                  [formField]="form.street_num"
+                ></pc-input>
+                <pc-input
+                  class="flex-2"
+                  placeholder="Street Name"
+                  [formField]="form.street1"
+                ></pc-input>
               </div>
               <div class="flex flex-col md:flex-row gap-3">
-                <div class="flex-1 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="City" [formField]="form.city" />
-                  @if (form.city().invalid() && (form.city().dirty() || form.city().touched())) { @for (err of
-                  form.city().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
-                <div class="flex-1 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="State / Province" [formField]="form.state" />
-                  @if (form.state().invalid() && (form.state().dirty() || form.state().touched())) { @for (err of
-                  form.state().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
-                <div class="flex-1 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="Country" [formField]="form.country" />
-                  @if (form.country().invalid() && (form.country().dirty() || form.country().touched())) { @for (err of
-                  form.country().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
+                <pc-input
+                  class="flex-1"
+                  placeholder="City"
+                  [formField]="form.city"
+                ></pc-input>
+                <pc-input
+                  class="flex-1"
+                  placeholder="State / Province"
+                  [formField]="form.state"
+                ></pc-input>
+                <pc-input
+                  class="flex-1"
+                  placeholder="Country"
+                  [formField]="form.country"
+                ></pc-input>
               </div>
               <div class="flex flex-col md:flex-row gap-3">
-                <div class="flex-1 flex flex-col gap-1">
-                  <input class="input input-bordered w-full" placeholder="Zip / Postal Code" [formField]="form.zip" />
-                  @if (form.zip().invalid() && (form.zip().dirty() || form.zip().touched())) { @for (err of
-                  form.zip().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
-                <div class="flex-1 flex flex-col gap-1">
-                  <input
-                    class="input input-bordered w-full"
-                    type="tel"
-                    placeholder="Home Phone"
-                    [formField]="form.home_phone"
-                  />
-                  @if (form.home_phone().invalid() && (form.home_phone().dirty() || form.home_phone().touched())) { @for
-                  (err of form.home_phone().errors(); track err) {
-                  <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-                  } }
-                </div>
+                <pc-input
+                  class="flex-1"
+                  placeholder="Zip / Postal Code"
+                  [formField]="form.zip"
+                ></pc-input>
+                <pc-input
+                  class="flex-1"
+                  type="tel"
+                  placeholder="Home Phone"
+                  [formField]="form.home_phone"
+                ></pc-input>
                 <div class="flex-1"></div>
               </div>
             </div>
@@ -173,18 +149,12 @@
           </div>
 
           <!-- Notes -->
-          <div class="flex flex-col gap-2">
-            <label class="text-sm font-semibold text-base-content/75">Internal Notes</label>
-            <textarea
-              class="textarea textarea-bordered h-24 w-full"
-              placeholder="Internal notes regarding this household..."
-              [formField]="form.notes"
-            ></textarea>
-            @if (form.notes().invalid() && (form.notes().dirty() || form.notes().touched())) { @for (err of
-            form.notes().errors(); track err) {
-            <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-            } }
-          </div>
+          <pc-textarea
+            label="Internal Notes"
+            placeholder="Internal notes regarding this household..."
+            [formField]="form.notes"
+            [rows]="3"
+          ></pc-textarea>
 
           <div class="h-2"></div>
         </div>

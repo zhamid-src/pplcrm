@@ -34,140 +34,62 @@
       <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
         <div class="card-body p-6 space-y-4">
           <!-- Name -->
-          <label class="form-control w-full">
-            <div class="label">
-              <span class="label-text font-medium">Company Name</span>
-            </div>
-            <input
-              class="input input-bordered w-full"
-              type="text"
-              [formField]="form.name"
-              placeholder="e.g. Acme Corp"
-              [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-            />
-            @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-            form.name().errors(); track err) {
-            <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-            } }
-          </label>
+          <pc-input
+            label="Company Name"
+            placeholder="e.g. Acme Corp"
+            [formField]="form.name"
+          ></pc-input>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- Website -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span class="label-text font-medium">Website</span>
-              </div>
-              <input
-                class="input input-bordered w-full"
-                type="url"
-                [formField]="form.website"
-                placeholder="https://example.com"
-                [class.input-error]="
-                        form.website().invalid() && (form.website().dirty() || form.website().touched())
-                      "
-              />
-              @if (form.website().invalid() && (form.website().dirty() || form.website().touched())) { @for (err of
-              form.website().errors(); track err) {
-              <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-              } }
-            </label>
+            <pc-input
+              label="Website"
+              type="url"
+              placeholder="https://example.com"
+              [formField]="form.website"
+            ></pc-input>
 
             <!-- Industry -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span class="label-text font-medium">Industry</span>
-              </div>
-              <input
-                class="input input-bordered w-full"
-                type="text"
-                [formField]="form.industry"
-                placeholder="e.g. Technology"
-                [class.input-error]="
-                        form.industry().invalid() && (form.industry().dirty() || form.industry().touched())
-                      "
-              />
-              @if (form.industry().invalid() && (form.industry().dirty() || form.industry().touched())) { @for (err of
-              form.industry().errors(); track err) {
-              <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-              } }
-            </label>
+            <pc-input
+              label="Industry"
+              placeholder="e.g. Technology"
+              [formField]="form.industry"
+            ></pc-input>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- Email -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span class="label-text font-medium">Email</span>
-              </div>
-              <input
-                class="input input-bordered w-full"
-                type="email"
-                [formField]="form.email"
-                placeholder="info@example.com"
-                [class.input-error]="form.email().invalid() && (form.email().dirty() || form.email().touched())"
-              />
-              @if (form.email().invalid() && (form.email().dirty() || form.email().touched())) { @for (err of
-              form.email().errors(); track err) {
-              <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-              } }
-            </label>
+            <pc-input
+              label="Email"
+              type="email"
+              placeholder="info@example.com"
+              [formField]="form.email"
+            ></pc-input>
 
             <!-- Phone -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span class="label-text font-medium">Phone</span>
-              </div>
-              <input
-                class="input input-bordered w-full"
-                type="tel"
-                [formField]="form.phone"
-                placeholder="+1 555-0100"
-                [class.input-error]="form.phone().invalid() && (form.phone().dirty() || form.phone().touched())"
-              />
-              @if (form.phone().invalid() && (form.phone().dirty() || form.phone().touched())) { @for (err of
-              form.phone().errors(); track err) {
-              <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-              } }
-            </label>
+            <pc-input
+              label="Phone"
+              type="tel"
+              placeholder="+1 555-0100"
+              [formField]="form.phone"
+            ></pc-input>
           </div>
 
           <!-- Description -->
-          <label class="form-control w-full">
-            <div class="label">
-              <span class="label-text font-medium">Description</span>
-            </div>
-            <textarea
-              class="textarea textarea-bordered w-full"
-              rows="3"
-              [formField]="form.description"
-              placeholder="Company description..."
-              [class.textarea-error]="
-                      form.description().invalid() && (form.description().dirty() || form.description().touched())
-                    "
-            ></textarea>
-            @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
-            (err of form.description().errors(); track err) {
-            <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-            } }
-          </label>
+          <pc-textarea
+            label="Description"
+            placeholder="Company description..."
+            [formField]="form.description"
+            [rows]="3"
+          ></pc-textarea>
 
           <!-- Notes -->
-          <label class="form-control w-full">
-            <div class="label">
-              <span class="label-text font-medium">Internal Notes</span>
-            </div>
-            <textarea
-              class="textarea textarea-bordered w-full"
-              rows="4"
-              [formField]="form.notes"
-              placeholder="Any additional notes..."
-              [class.textarea-error]="form.notes().invalid() && (form.notes().dirty() || form.notes().touched())"
-            ></textarea>
-            @if (form.notes().invalid() && (form.notes().dirty() || form.notes().touched())) { @for (err of
-            form.notes().errors(); track err) {
-            <p class="text-[11px] text-error pl-1 mt-1">{{ err.message }}</p>
-            } }
-          </label>
+          <pc-textarea
+            label="Internal Notes"
+            placeholder="Any additional notes..."
+            [formField]="form.notes"
+            [rows]="4"
+          ></pc-textarea>
         </div>
       </div>
 

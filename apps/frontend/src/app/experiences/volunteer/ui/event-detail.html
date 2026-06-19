@@ -61,89 +61,51 @@
           <div class="card-body p-6 space-y-4">
             <h3 class="font-bold text-lg text-base-content">Event Details</h3>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-name"
-                >Event Name *</label
-              >
-              <input
-                id="event-name"
-                type="text"
-                class="input input-bordered w-full"
-                [formField]="form.name"
-                placeholder="E.g., Weekend Door Knocking Campaign"
-                [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-              />
-              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-              form.name().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-input
+              id="event-name"
+              label="Event Name *"
+              [formField]="form.name"
+              placeholder="E.g., Weekend Door Knocking Campaign"
+            ></pc-input>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-slug"
-                >URL Slug *</label
+            <div>
+              <pc-input
+                id="event-slug"
+                label="URL Slug *"
+                [formField]="form.slug"
+                placeholder="e.g. weekend-knocking"
+                [hasError]="slugUnique() === false"
+                (input)="onSlugInput()"
               >
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
-                <input
-                  id="event-slug"
-                  type="text"
-                  class="input input-bordered w-full font-mono text-sm"
-                  [formField]="form.slug"
-                  placeholder="e.g. weekend-knocking"
-                  (input)="onSlugInput()"
-                  [class.input-error]="form.slug().invalid() && (form.slug().dirty() || form.slug().touched())"
-                />
-              </div>
-              @if (form.slug().invalid() && (form.slug().dirty() || form.slug().touched())) { @for (err of
-              form.slug().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } } @if (slugChecking()) {
-              <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1">
+                <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+              </pc-input>
+              @if (slugChecking()) {
+              <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
                 <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
               </p>
               } @else if (slugUnique() === true) {
-              <p class="text-xs text-success mt-0.5">✓ This slug is available!</p>
+              <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
               } @else if (slugUnique() === false) {
-              <p class="text-xs text-error mt-0.5">✗ This slug is already in use. Please choose a different one.</p>
+              <p class="text-xs text-error mt-0.5 pl-1">
+                ✗ This slug is already in use. Please choose a different one.
+              </p>
               }
             </div>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-desc"
-                >Description</label
-              >
-              <textarea
-                id="event-desc"
-                rows="4"
-                class="textarea textarea-bordered w-full"
-                [formField]="form.description"
-                placeholder="Describe the purpose, tasks, and instructions for volunteers..."
-                [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
-              ></textarea>
-              @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
-              (err of form.description().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-textarea
+              id="event-desc"
+              label="Description"
+              [formField]="form.description"
+              placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+              [rows]="4"
+            ></pc-textarea>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="event-location"
-                >Location Address</label
-              >
-              <input
-                id="event-location"
-                type="text"
-                class="input input-bordered w-full"
-                [formField]="form.location_address"
-                placeholder="E.g., Central Park Pavilion, or street coordinates"
-                [class.input-error]="form.location_address().invalid() && (form.location_address().dirty() || form.location_address().touched())"
-              />
-              @if (form.location_address().invalid() && (form.location_address().dirty() ||
-              form.location_address().touched())) { @for (err of form.location_address().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-input
+              id="event-location"
+              label="Location Address"
+              [formField]="form.location_address"
+              placeholder="E.g., Central Park Pavilion, or street coordinates"
+            ></pc-input>
 
             <div class="divider"></div>
 
@@ -156,40 +118,19 @@
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="space-y-1">
-                <label class="label text-xs font-semibold text-base-content/65 uppercase" for="contact-email"
-                  >Contact Email</label
-                >
-                <input
-                  id="contact-email"
-                  type="email"
-                  class="input input-bordered w-full"
-                  [formField]="form.contact_email"
-                  placeholder="organizer@example.com"
-                  [class.input-error]="form.contact_email().invalid() && (form.contact_email().dirty() || form.contact_email().touched())"
-                />
-                @if (form.contact_email().invalid() && (form.contact_email().dirty() || form.contact_email().touched()))
-                { @for (err of form.contact_email().errors(); track err) {
-                <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-                } }
-              </div>
-              <div class="space-y-1">
-                <label class="label text-xs font-semibold text-base-content/65 uppercase" for="contact-phone"
-                  >Contact Phone</label
-                >
-                <input
-                  id="contact-phone"
-                  type="text"
-                  class="input input-bordered w-full"
-                  [formField]="form.contact_phone"
-                  placeholder="E.g., 555-0199"
-                  [class.input-error]="form.contact_phone().invalid() && (form.contact_phone().dirty() || form.contact_phone().touched())"
-                />
-                @if (form.contact_phone().invalid() && (form.contact_phone().dirty() || form.contact_phone().touched()))
-                { @for (err of form.contact_phone().errors(); track err) {
-                <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-                } }
-              </div>
+              <pc-input
+                id="contact-email"
+                label="Contact Email"
+                type="email"
+                [formField]="form.contact_email"
+                placeholder="organizer@example.com"
+              ></pc-input>
+              <pc-input
+                id="contact-phone"
+                label="Contact Phone"
+                [formField]="form.contact_phone"
+                placeholder="E.g., 555-0199"
+              ></pc-input>
             </div>
           </div>
         </div>
@@ -419,57 +360,27 @@
           <div class="card-body p-6 space-y-4">
             <h3 class="font-bold text-lg text-base-content">Scheduling</h3>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="start-time"
-                >Start Date & Time *</label
-              >
-              <input
-                id="start-time"
-                type="datetime-local"
-                class="input input-bordered w-full"
-                [formField]="form.start_time"
-                [class.input-error]="form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())"
-              />
-              @if (form.start_time().invalid() && (form.start_time().dirty() || form.start_time().touched())) { @for
-              (err of form.start_time().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-input
+              id="start-time"
+              label="Start Date & Time *"
+              type="datetime-local"
+              [formField]="form.start_time"
+            ></pc-input>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="end-time"
-                >End Date & Time *</label
-              >
-              <input
-                id="end-time"
-                type="datetime-local"
-                class="input input-bordered w-full"
-                [formField]="form.end_time"
-                [class.input-error]="form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())"
-              />
-              @if (form.end_time().invalid() && (form.end_time().dirty() || form.end_time().touched())) { @for (err of
-              form.end_time().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+            ></pc-input>
 
-            <div class="space-y-1">
-              <label class="label text-xs font-semibold text-base-content/65 uppercase" for="capacity"
-                >Volunteer Capacity</label
-              >
-              <input
-                id="capacity"
-                type="number"
-                class="input input-bordered w-full"
-                [formField]="form.capacity"
-                placeholder="Unlimited"
-                [class.input-error]="form.capacity().invalid() && (form.capacity().dirty() || form.capacity().touched())"
-              />
-              @if (form.capacity().invalid() && (form.capacity().dirty() || form.capacity().touched())) { @for (err of
-              form.capacity().errors(); track err) {
-              <p class="text-xs text-error mt-0.5">{{ err.message }}</p>
-              } }
-            </div>
+            <pc-input
+              id="capacity"
+              label="Volunteer Capacity"
+              type="number"
+              [formField]="form.capacity"
+              placeholder="Unlimited"
+            ></pc-input>
 
             <div class="divider"></div>
 

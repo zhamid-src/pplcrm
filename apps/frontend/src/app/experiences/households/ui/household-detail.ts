@@ -2,7 +2,7 @@
  * @file Component for creating or editing households and managing their tags and members.
  */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
@@ -11,6 +11,8 @@ import { Icon } from '@icons/icon';
 import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -24,7 +26,7 @@ import { PersonsService } from '../../persons/services/persons-service';
  */
 @Component({
   selector: 'pc-household-detail',
-  imports: [FormField, AddressAutocomplete, Tags, FormActions, Icon, RouterModule],
+  imports: [PcInput, PcTextarea, AddressAutocomplete, Tags, FormActions, Icon, RouterModule],
   templateUrl: './household-detail.html',
 })
 export class HouseholdDetail implements OnInit {
@@ -263,6 +265,7 @@ export class HouseholdDetail implements OnInit {
     if (!this.id()) {
       return this.householdsSvc.add(data).then(async (result: any) => {
         this.alertSvc.showSuccess('Household added successfully.');
+        this.householdsSvc.triggerRefresh();
         done?.();
         await this.router.navigate(['/households', result.id]);
       });

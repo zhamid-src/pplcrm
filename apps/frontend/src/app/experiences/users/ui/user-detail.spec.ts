@@ -63,6 +63,7 @@ describe('UserDetailComponent', () => {
 
     fixture = TestBed.createComponent(UserDetailComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 'user-123');
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -83,11 +84,11 @@ describe('UserDetailComponent', () => {
   });
 
   it('should validate form and prevent saving if invalid', async () => {
-    const emailInput = fixture.nativeElement.querySelector('#email');
+    const emailInput = fixture.nativeElement.querySelector('#email input');
     emailInput.value = 'invalid-email';
     emailInput.dispatchEvent(new Event('input'));
 
-    const nameInput = fixture.nativeElement.querySelector('#first_name');
+    const nameInput = fixture.nativeElement.querySelector('#first_name input');
     nameInput.value = '';
     nameInput.dispatchEvent(new Event('input'));
 
@@ -100,7 +101,7 @@ describe('UserDetailComponent', () => {
   });
 
   it('should reset form back to loaded values', async () => {
-    const nameInput = fixture.nativeElement.querySelector('#first_name');
+    const nameInput = fixture.nativeElement.querySelector('#first_name input');
     nameInput.value = 'Changed';
     nameInput.dispatchEvent(new Event('input'));
 
@@ -123,7 +124,7 @@ describe('UserDetailComponent', () => {
   it('should save user details and trigger success alert', async () => {
     mockUsersSvc.update.mockResolvedValue({});
 
-    const nameInput = fixture.nativeElement.querySelector('#first_name');
+    const nameInput = fixture.nativeElement.querySelector('#first_name input');
     nameInput.value = 'Johnny';
     nameInput.dispatchEvent(new Event('input'));
 
@@ -146,7 +147,7 @@ describe('UserDetailComponent', () => {
     const errorMsg = 'Failed to update';
     mockUsersSvc.update.mockRejectedValue(new Error(errorMsg));
 
-    const nameInput = fixture.nativeElement.querySelector('#first_name');
+    const nameInput = fixture.nativeElement.querySelector('#first_name input');
     nameInput.value = 'Johnny';
     nameInput.dispatchEvent(new Event('input'));
 
