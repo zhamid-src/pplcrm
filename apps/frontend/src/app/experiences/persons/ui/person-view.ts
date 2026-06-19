@@ -22,6 +22,14 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface SocialLinkDef {
+  name: string;
+  url: string | null | undefined;
+  icon: PcIconNameType;
+  color: string;
+}
 
 @Component({
   selector: 'pc-person-view',
@@ -110,6 +118,37 @@ export class PersonView {
     const p = this.person();
     if (!p) return '';
     return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  // Social icons
+  public socialLinks = computed<SocialLinkDef[]>(() => {
+    const p = this.person();
+    return [
+      {
+        name: 'LinkedIn',
+        url: p.linkedin,
+        icon: 'linkedin',
+        color: 'bg-[#0a66c2]', // LinkedIn Blue
+      },
+      {
+        name: 'X',
+        url: p.twitter,
+        icon: 'x',
+        color: 'bg-black', // X Black
+      },
+      {
+        name: 'Facebook',
+        url: p.facebook,
+        icon: 'facebook',
+        color: 'bg-[#1877f2]', // Facebook Blue
+      },
+      {
+        name: 'Instagram',
+        url: p.instagram,
+        icon: 'instagram',
+        color: 'bg-[#e1306c]', // Instagram Pink/Red
+      },
+    ];
   });
 
   // Active tab state
