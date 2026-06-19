@@ -16,7 +16,8 @@ import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { UserService } from '../../../services/user.service';
 
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 
@@ -48,6 +49,7 @@ export class TaskView {
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
   private readonly teams = inject(TeamsService);
+  private readonly userService = inject(UserService);
 
   protected readonly task = signal<any | null>(null);
   protected readonly comments = signal<any[]>([]);
@@ -357,7 +359,7 @@ export class TaskView {
     if (!id) return null;
     const uid = String(id);
     const u = this.users().find((x) => String(x.id) === uid);
-    return u ? ((u as any).avatar_url ?? null) : null;
+    return u ? this.userService.resolveAvatarUrl((u as any).avatar_url) : null;
   }
 
   protected myUserId(): string | null {

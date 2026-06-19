@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { TagPaletteService } from '@uxcommon/components/tags/tag-palette.service';
+import { TagPaletteService } from '@experiences/tags/ui/tag-palette.service';
 
 @Injectable({ providedIn: 'root' })
 export class TagOptionsService {

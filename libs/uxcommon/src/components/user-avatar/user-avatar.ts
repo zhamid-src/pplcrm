@@ -1,6 +1,5 @@
-import { Component, computed, input, inject } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { NgClass } from '@angular/common';
-import { AuthService } from '@frontend/auth/auth-service';
 
 /**
  * Reusable user avatar component.
@@ -14,15 +13,15 @@ import { AuthService } from '@frontend/auth/auth-service';
 @Component({
   selector: 'pc-user-avatar',
   template: `
-    <div class="avatar" [class.placeholder]="!resolvedAvatarUrl()">
-      @if (resolvedAvatarUrl()) {
+    <div class="avatar" [class.placeholder]="!avatarUrl()">
+      @if (avatarUrl()) {
         <div
           class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
           [style.width.rem]="sizeRem()"
           [style.height.rem]="sizeRem()"
         >
           <img
-            [src]="resolvedAvatarUrl()!"
+            [src]="avatarUrl()!"
             [alt]="name() + ' avatar'"
             class="w-full h-full object-cover"
             referrerpolicy="no-referrer"
@@ -45,9 +44,7 @@ import { AuthService } from '@frontend/auth/auth-service';
   host: { class: 'contents' },
 })
 export class UserAvatarComponent {
-  private readonly auth = inject(AuthService);
-
-  /** Pre-computed download URL for the user's avatar, or null/undefined. */
+  /** Resolved download URL for the user's avatar, or null/undefined. */
   readonly avatarUrl = input<string | null | undefined>(null);
 
   /** Full name (or first name) used to derive initials and pick a colour. */
@@ -58,10 +55,6 @@ export class UserAvatarComponent {
    * Defaults to 8 (= 2rem / 32px).
    */
   readonly size = input<number>(8);
-
-  protected readonly resolvedAvatarUrl = computed(() => {
-    return this.auth.resolveAvatarUrl(this.avatarUrl());
-  });
 
   protected readonly sizeRem = computed(() => this.size() * 0.25);
   protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import type { AlertService } from '../../alerts/alert-service';
-import type { loadingGate } from '../../../loading-gate';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
 
 import { DataGridConfig } from '../datagrid.tokens';
 

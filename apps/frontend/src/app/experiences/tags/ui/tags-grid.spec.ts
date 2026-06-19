@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { TagsGridComponent } from './tags-grid';
 import { provideRouter } from '@angular/router';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_GRID_CONFIG } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { signal } from '@angular/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';

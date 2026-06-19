@@ -1,10 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { UpdateAuthUserType } from '@common';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AuthUsersService } from '../services/authusers-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '@frontend/services/user.service';
 
 @Component({
   selector: 'pc-users-grid',
@@ -32,6 +33,7 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 })
 export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType> {
   private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
 
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -52,7 +54,7 @@ export class UsersGridComponent extends DataGrid<'authusers', UpdateAuthUserType
 
         let avatarHtml = '';
         if (avatarUrl) {
-          avatarUrl = this.auth.resolveAvatarUrl(avatarUrl);
+          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
           avatarHtml = `<img src="${avatarUrl}" alt="${name}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
         } else {
           const PALETTES = [

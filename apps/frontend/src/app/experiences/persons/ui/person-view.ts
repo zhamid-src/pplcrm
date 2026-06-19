@@ -7,7 +7,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { type AddressType } from 'common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from './people-in-household';
 import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../../households/services/households-service';

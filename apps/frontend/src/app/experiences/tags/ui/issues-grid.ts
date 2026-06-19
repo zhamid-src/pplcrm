@@ -4,10 +4,10 @@
 import { Component, inject } from '@angular/core';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import type { getAllOptionsType } from '@common';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 /**
  * A thin wrapper over TagsService that forces `type: 'issue'` on every getAll/getAllWithCounts call.

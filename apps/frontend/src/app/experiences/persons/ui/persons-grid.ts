@@ -9,16 +9,16 @@ import { ActivatedRoute } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '@common';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
+import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 interface ParamsType {
   value: string[];

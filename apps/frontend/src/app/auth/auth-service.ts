@@ -7,7 +7,6 @@ import { signal, Service } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType, UpdateAuthUserType } from '@common';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
-import { environment } from '../../environments/environment';
 
 /**
  * Authentication service responsible for managing the user's authentication state.
@@ -65,25 +64,6 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.user;
   }
 
-  /**
-   * Resolves a relative or absolute avatar URL with the backend API URL and
-   * appends the current auth token for authentication.
-   */
-  public resolveAvatarUrl(url: string | null | undefined): string | null {
-    if (!url) return null;
-    let resolved = url;
-    if (url.startsWith('/') && !url.startsWith('//')) {
-      resolved = environment.apiUrl + url;
-    }
-    if (!resolved.includes('token=')) {
-      const token = this.tokenService.getAuthToken();
-      if (token) {
-        const separator = resolved.includes('?') ? '&' : '?';
-        resolved = `${resolved}${separator}token=${encodeURIComponent(token)}`;
-      }
-    }
-    return resolved;
-  }
 
   /**
    * Retrieve all users for the current tenant.

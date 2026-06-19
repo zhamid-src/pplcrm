@@ -5,10 +5,10 @@ import { Component, OnDestroy, effect, inject, untracked } from '@angular/core';
 import { UpdateListType } from '@common';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-lists-grid',

@@ -5,16 +5,16 @@ import { Component, inject, signal, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '@common';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
-import { DataGridUtilsService } from '@uxcommon/components/datagrid/services/utils.service';
-import { TagOptionsService } from '@uxcommon/components/datagrid/services/tag-options.service';
-import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 interface ParamsType {
   value: string[];

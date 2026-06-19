@@ -8,7 +8,7 @@ import { Loader } from '@googlemaps/js-api-loader';
 import { type IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { AuthService } from '../../../auth/auth-service';
 import { HouseholdsService } from '../services/households-service';

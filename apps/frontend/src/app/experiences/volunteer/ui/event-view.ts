@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@uxcommon/components/record-activities/record-activities';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';

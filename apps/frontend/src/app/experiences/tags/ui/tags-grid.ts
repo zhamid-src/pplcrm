@@ -4,9 +4,9 @@
 import { Component } from '@angular/core';
 import { AddTagType } from '@common';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 @Component({
   selector: 'pc-tags-grid',

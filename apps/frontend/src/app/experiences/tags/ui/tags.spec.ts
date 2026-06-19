@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Tags } from './tags';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { TagPaletteService } from './tag-palette.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 describe('Tags Component', () => {
@@ -9,6 +10,7 @@ describe('Tags Component', () => {
   let fixture: ComponentFixture<Tags>;
   let mockTagsService: any;
   let mockPaletteService: any;
+  let mockTagOptionsSvc: any;
 
   beforeEach(async () => {
     mockTagsService = {
@@ -20,11 +22,16 @@ describe('Tags Component', () => {
       colorFor: vi.fn().mockReturnValue(null),
     };
 
+    mockTagOptionsSvc = {
+      invalidate: vi.fn().mockResolvedValue(undefined),
+    };
+
     await TestBed.configureTestingModule({
       imports: [Tags],
       providers: [
         { provide: TagsService, useValue: mockTagsService },
         { provide: TagPaletteService, useValue: mockPaletteService },
+        { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ],
     }).compileComponents();
 

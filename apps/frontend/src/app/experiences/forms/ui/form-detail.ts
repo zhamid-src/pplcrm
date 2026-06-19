@@ -6,7 +6,7 @@ import { AddWebFormObj } from '@common';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { FormsService } from '../services/forms-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Tags } from '@experiences/tags/ui/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';

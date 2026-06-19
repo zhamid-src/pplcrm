@@ -6,7 +6,7 @@ import { TagsService } from '@experiences/tags/services/tags-service';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@uxcommon/components/tags/tags';
+import { Tags } from '@experiences/tags/ui/tags';
 import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
 import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
 import { NewslettersService } from '../services/newsletters-service';

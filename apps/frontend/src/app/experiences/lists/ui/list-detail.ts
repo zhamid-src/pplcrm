@@ -12,10 +12,10 @@ import { Icon } from '@icons/icon';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import type { ColumnDef as ColDef } from '@uxcommon/components/datagrid/grid-defaults';
+import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 import { QueryBuilderField, QueryBuilderComponent } from '@uxcommon/components/query-builder/query-builder';

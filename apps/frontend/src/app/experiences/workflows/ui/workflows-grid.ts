@@ -1,8 +1,8 @@
 import { Component } from '@angular/core';
 import { UpdateWorkflowType } from '@common';
-import { DataGrid } from '@uxcommon/components/datagrid/datagrid';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@uxcommon/components/datagrid/datagrid.tokens';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { WorkflowsService } from '../services/workflows-service';
 
 @Component({

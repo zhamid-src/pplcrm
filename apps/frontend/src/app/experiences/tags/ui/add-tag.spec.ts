@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AddTag } from './add-tag';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -12,6 +13,7 @@ describe('AddTag', () => {
   let mockTagsSvc: any;
   let mockAlertSvc: any;
   let mockRouter: any;
+  let mockTagOptionsSvc: any;
 
   beforeEach(async () => {
     mockTagsSvc = {
@@ -29,11 +31,16 @@ describe('AddTag', () => {
       navigate: vi.fn(),
     };
 
+    mockTagOptionsSvc = {
+      invalidate: vi.fn().mockResolvedValue(undefined),
+    };
+
     await TestBed.configureTestingModule({
       imports: [AddTag],
       providers: [
         { provide: TagsService, useValue: mockTagsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
+        { provide: TagOptionsService, useValue: mockTagOptionsSvc },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } },
         { provide: Router, useValue: mockRouter },
       ],
