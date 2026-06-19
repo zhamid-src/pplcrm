@@ -10,10 +10,12 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
 import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 @Component({
   selector: 'pc-list-view',
-  imports: [FormActions, Icon, RouterLink, RecordActivities, PersonsGrid, HouseholdsGrid],
+  imports: [FormActions, Icon, RouterLink, RecordActivities, PersonsGrid, HouseholdsGrid, StatCard, Tabs, TabPanel],
   templateUrl: './list-view.html',
 })
 export class ListView implements OnDestroy {
@@ -30,7 +32,14 @@ export class ListView implements OnDestroy {
   protected object = signal<'people' | 'households' | null>(null);
   protected listData = signal<ListsType | null>(null);
   protected stats = signal<any>(null);
-  protected activeTab = signal<'members' | 'newsletters'>('members');
+  // Active tab state
+  protected activeTab = signal<string>('members');
+
+  protected readonly listTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: `Members (${this.memberCount()})`, icon: 'user-group' },
+    { id: 'newsletters', label: `Newsletter Campaigns (${this.stats()?.newsletters?.length || 0})`, icon: 'megaphone' },
+  ]);
+
   protected isPeople = computed(() => this.object() === 'people');
 
   constructor() {

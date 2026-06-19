@@ -1,50 +1,33 @@
-    <section class="max-w-3xl mx-auto w-full p-6">
-      <pc-detail-header
-        title="Invite User"
-        subtitle="Send an invitation to add a new teammate to this tenant."
-        [form]="form"
-        [isLoading]="submitting()"
-        buttonsToShow="two"
-        btn1Text="Send Invite"
-        (save)="submit($event)"
-      ></pc-detail-header>
+<section class="max-w-3xl mx-auto w-full p-6">
+  <pc-detail-header
+    title="Invite User"
+    subtitle="Send an invitation to add a new teammate to this tenant."
+    [form]="form"
+    [isLoading]="submitting()"
+    buttonsToShow="two"
+    btn1Text="Send Invite"
+    (save)="submit($event)"
+  ></pc-detail-header>
 
-      <form class="space-y-4" (submit)="submit($event)" novalidate>
-        <pc-input
-          label="Email"
-          type="email"
-          [formField]="form.email"
-          autocomplete="email"
-        ></pc-input>
+  <form class="space-y-4" (submit)="submit($event)" novalidate>
+    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-input
-            label="First name"
-            [formField]="form.first_name"
-            autocomplete="given-name"
-          ></pc-input>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
 
-          <pc-input
-            label="Last name"
-            [formField]="form.last_name"
-            autocomplete="family-name"
-          ></pc-input>
-        </div>
+      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+    </div>
 
-        <pc-select
-          label="Role"
-          [formField]="form.role"
-        >
-          @if (currentUserRole() !== 'admin') {
-            <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-        </pc-select>
+    <pc-select label="Role" [formField]="form.role">
+      @if (currentUserRole() !== 'admin') {
+      <option value="owner">Owner</option>
+      }
+      <option value="admin">Admin</option>
+      <option value="user">User</option>
+    </pc-select>
 
-        @if (error()) {
-          <p class="text-sm text-danger">{{ error() }}</p>
-        }
-      </form>
-    </section>
-  
+    @if (error()) {
+    <p class="text-sm text-danger">{{ error() }}</p>
+    }
+  </form>
+</section>

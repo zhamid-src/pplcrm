@@ -17,10 +17,23 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-household-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions, PcCard],
+  imports: [
+    DatePipe,
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    FormActions,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+  ],
   templateUrl: './household-view.html',
 })
 export class HouseholdView {
@@ -79,7 +92,13 @@ export class HouseholdView {
   }
 
   // Active tab state
-  protected activeTab = signal<'members' | 'activity' | 'details'>('activity');
+  protected activeTab = signal<string>('activity');
+
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
 
   constructor() {
     effect(() => {

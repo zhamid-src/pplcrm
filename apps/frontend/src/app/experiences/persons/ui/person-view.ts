@@ -17,10 +17,25 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-person-view',
-  imports: [DatePipe, RouterModule, PeopleInHousehold, Icon, RecordActivities, FormActions, PcCard],
+  imports: [
+    DatePipe,
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    FormActions,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+  ],
   templateUrl: './person-view.html',
 })
 export class PersonView {
@@ -94,7 +109,40 @@ export class PersonView {
   });
 
   // Active tab state
-  protected activeTab = signal<'activity' | 'emails' | 'newsletters' | 'volunteer' | 'household'>('activity');
+  protected activeTab = signal<string>('activity');
+
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
+    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
+    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'household', label: 'Household', icon: 'home' },
+  ]);
+
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
+  }
+
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
+  }
+
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
 
   constructor() {
     effect(() => {

@@ -1,295 +1,216 @@
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-        <div class="flex items-center justify-between border-b border-base-300 pb-4">
-          <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
-            <pc-icon name="user-group" class="text-primary" [size]="6"></pc-icon>
-            Team Details
-          </h1>
-          <pc-form-actions
-            [isLoading]="isLoading()"
-            [btn1Text]="'Edit Team'"
-            [btn1Icon]="'pencil-square'"
-            [showDelete]="true"
-            [deleteText]="'Delete Team'"
-            (deleteClicked)="deleteTeam()"
-            (btn1Clicked)="editTeam()"
-          ></pc-form-actions>
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+    <div class="flex items-center justify-between border-b border-base-300 pb-4">
+      <h1 class="text-2xl font-bold text-base-content flex items-center gap-2">
+        <pc-icon name="user-group" class="text-primary" [size]="6"></pc-icon>
+        Team Details
+      </h1>
+      <pc-form-actions
+        [isLoading]="isLoading()"
+        [btn1Text]="'Edit Team'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete Team'"
+        (deleteClicked)="deleteTeam()"
+        (btn1Clicked)="editTeam()"
+      ></pc-form-actions>
+    </div>
+
+    @if (isLoading()) {
+    <div class="flex justify-center items-center py-20">
+      <progress class="progress w-56"></progress>
+    </div>
+    } @else if (team()) {
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left Column: Team Card -->
+      <div class="lg:col-span-1 flex flex-col gap-6">
+        <!-- Elegant Team Card -->
+        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
+          <!-- Decorative Card Header Gradient -->
+          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+
+          <div class="px-6 pb-6 relative flex flex-col items-center">
+            <!-- Team Icon Avatar -->
+            <div class="avatar placeholder -mt-12 mb-3">
+              <div
+                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
+              >
+                <pc-icon name="user-group" [size]="10"></pc-icon>
+              </div>
+            </div>
+
+            <!-- Name -->
+            <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
+
+            <!-- Details List -->
+            <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+              @if (team().description) {
+              <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
+              }
+
+              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="user-circle" [size]="4" class="text-teal-500"></pc-icon>
+                  <span>Team Captain:</span>
+                </div>
+                <span class="font-bold">{{ captainName() }}</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="user-circle" [size]="4" class="text-purple-500"></pc-icon>
+                  <span>Team Lead:</span>
+                </div>
+                <span class="font-bold">{{ leadName() }}</span>
+              </div>
+            </div>
+
+            <!-- System Metadata -->
+            <div
+              class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+            >
+              <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
+              <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Stats & Tabs -->
+      <div class="lg:col-span-2 flex flex-col gap-6">
+        <!-- Stats Panel -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <pc-stat-card
+            [title]="'Volunteers'"
+            [value]="volunteers().length"
+            [description]="'Teammate members'"
+            [icon]="'user-group'"
+            [valueColorClass]="'text-teal-500'"
+            [iconColorClass]="'text-teal-500'"
+          ></pc-stat-card>
+
+          <pc-stat-card
+            [title]="'Target Lists'"
+            [value]="team().lists?.length || 0"
+            [description]="'Assigned lists'"
+            [icon]="'queue-list'"
+            [valueColorClass]="'text-indigo-500'"
+            [iconColorClass]="'text-indigo-500'"
+          ></pc-stat-card>
+
+          <pc-stat-card
+            [title]="'Active Tasks'"
+            [value]="activeTasksCount()"
+            [description]="'Tasks assigned'"
+            [icon]="'document-check'"
+            [valueColorClass]="'text-amber-500'"
+            [iconColorClass]="'text-amber-500'"
+          ></pc-stat-card>
         </div>
 
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (team()) {
-          <!-- Main Content Grid -->
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Left Column: Team Card -->
-            <div class="lg:col-span-1 flex flex-col gap-6">
-              <!-- Elegant Team Card -->
-              <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
-                <!-- Decorative Card Header Gradient -->
-                <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+        <!-- Tabs Panel -->
+        <pc-tabs [tabs]="teamTabs()" [(activeTab)]="activeTab">
+          <pc-tab-panel id="activity" [activeTab]="activeTab()">
+            <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+              <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
+            </div>
+          </pc-tab-panel>
 
-                <div class="px-6 pb-6 relative flex flex-col items-center">
-                  <!-- Team Icon Avatar -->
-                  <div class="avatar placeholder -mt-12 mb-3">
-                    <div
-                      class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
-                    >
-                      <pc-icon name="user-group" [size]="10"></pc-icon>
-                    </div>
-                  </div>
-
-                  <!-- Name -->
-                  <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
-
-                  <!-- Details List -->
-                  <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-                    @if (team().description) {
-                      <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">
-                        {{ team().description }}
-                      </div>
+          <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
+            <div class="flex flex-col gap-3">
+              @if (volunteers().length === 0) {
+              <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
+              } @else {
+              <ul class="divide-y divide-base-200">
+                @for (volunteer of volunteers(); track volunteer.id) {
+                <li class="flex items-center justify-between py-2.5 text-sm">
+                  <div>
+                    <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                    @if (volunteer.email) {
+                    <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
                     }
-
-                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                      <div class="flex items-center gap-2">
-                        <pc-icon name="user-circle" [size]="4" class="text-teal-500"></pc-icon>
-                        <span>Team Captain:</span>
-                      </div>
-                      <span class="font-bold">{{ captainName() }}</span>
-                    </div>
-
-                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                      <div class="flex items-center gap-2">
-                        <pc-icon name="user-circle" [size]="4" class="text-purple-500"></pc-icon>
-                        <span>Team Lead:</span>
-                      </div>
-                      <span class="font-bold">{{ leadName() }}</span>
-                    </div>
                   </div>
-
-                  <!-- System Metadata -->
-                  <div
-                    class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-                  >
-                    <span
-                      >Created by {{ getUserName(team().createdby_id) }} on
-                      {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
-                    >
-                    <span
-                      >Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span
-                    >
-                  </div>
-                </div>
-              </div>
+                  <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary">View profile</a>
+                </li>
+                }
+              </ul>
+              }
             </div>
+          </pc-tab-panel>
 
-            <!-- Right Column: Stats & Tabs -->
-            <div class="lg:col-span-2 flex flex-col gap-6">
-              <!-- Stats Panel -->
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div class="card bg-base-100 border border-base-300 shadow-md">
-                  <div class="card-body p-5 flex flex-row items-center justify-between">
-                    <div>
-                      <span class="text-xs text-base-content/50 uppercase font-semibold">Volunteers</span>
-                      <h3 class="text-2xl font-bold text-teal-500 mt-1">{{ volunteers().length }}</h3>
-                      <p class="text-[10px] text-base-content/40 mt-0.5">Teammate members</p>
-                    </div>
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-teal-500">
-                      <pc-icon name="user-group" [size]="5"></pc-icon>
-                    </div>
+          <pc-tab-panel id="lists" [activeTab]="activeTab()">
+            <div class="flex flex-col gap-3">
+              @if (!team().lists?.length) {
+              <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
+              } @else {
+              <ul class="divide-y divide-base-200">
+                @for (list of team().lists; track list.id) {
+                <li class="flex items-center justify-between py-2.5 text-sm">
+                  <div>
+                    <p class="font-medium text-base-content">{{ list.name }}</p>
+                    <p class="text-xs text-base-content/50">
+                      {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                    </p>
                   </div>
-                </div>
-
-                <div class="card bg-base-100 border border-base-300 shadow-md">
-                  <div class="card-body p-5 flex flex-row items-center justify-between">
-                    <div>
-                      <span class="text-xs text-base-content/50 uppercase font-semibold">Target Lists</span>
-                      <h3 class="text-2xl font-bold text-indigo-500 mt-1">{{ team().lists?.length || 0 }}</h3>
-                      <p class="text-[10px] text-base-content/40 mt-0.5">Assigned lists</p>
-                    </div>
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-indigo-500">
-                      <pc-icon name="queue-list" [size]="5"></pc-icon>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card bg-base-100 border border-base-300 shadow-md">
-                  <div class="card-body p-5 flex flex-row items-center justify-between">
-                    <div>
-                      <span class="text-xs text-base-content/50 uppercase font-semibold">Active Tasks</span>
-                      <h3 class="text-2xl font-bold text-amber-500 mt-1">{{ activeTasksCount() }}</h3>
-                      <p class="text-[10px] text-base-content/40 mt-0.5">Tasks assigned</p>
-                    </div>
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-amber-500">
-                      <pc-icon name="document-check" [size]="5"></pc-icon>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Tabs Panel -->
-              <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-                <!-- Tabs Header -->
-                <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-                  <a
-                    role="tab"
-                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-                    [class.tab-active]="activeTab() === 'activity'"
-                    (click)="activeTab.set('activity')"
-                  >
-                    <pc-icon name="adjustments-horizontal" [size]="4" class="flex-shrink-0"></pc-icon>
-                    <span>Activity Feed</span>
-                  </a>
-                  <a
-                    role="tab"
-                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-                    [class.tab-active]="activeTab() === 'volunteers'"
-                    (click)="activeTab.set('volunteers')"
-                  >
-                    <pc-icon name="user-group" [size]="4" class="flex-shrink-0"></pc-icon>
-                    <span>Volunteers ({{ volunteers().length }})</span>
-                  </a>
-                  <a
-                    role="tab"
-                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-                    [class.tab-active]="activeTab() === 'lists'"
-                    (click)="activeTab.set('lists')"
-                  >
-                    <pc-icon name="queue-list" [size]="4" class="flex-shrink-0"></pc-icon>
-                    <span>Target Lists ({{ team().lists?.length || 0 }})</span>
-                  </a>
-                  <a
-                    role="tab"
-                    class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-                    [class.tab-active]="activeTab() === 'tasks'"
-                    (click)="activeTab.set('tasks')"
-                  >
-                    <pc-icon name="document-check" [size]="4" class="flex-shrink-0"></pc-icon>
-                    <span>Team Tasks ({{ teamTasks().length }})</span>
-                  </a>
-                </div>
-
-                <!-- Tab Panels -->
-                <div class="p-6">
-                  <!-- Panel: General Activity Feed -->
-                  @if (activeTab() === 'activity') {
-                    <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-                      <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
-                    </div>
-                  }
-
-                  <!-- Panel: Associated Volunteers -->
-                  @if (activeTab() === 'volunteers') {
-                    <div class="flex flex-col gap-3">
-                      @if (volunteers().length === 0) {
-                        <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
-                      } @else {
-                        <ul class="divide-y divide-base-200">
-                          @for (volunteer of volunteers(); track volunteer.id) {
-                            <li class="flex items-center justify-between py-2.5 text-sm">
-                              <div>
-                                <p class="font-medium text-base-content">
-                                  {{ volunteer.first_name }} {{ volunteer.last_name }}
-                                </p>
-                                @if (volunteer.email) {
-                                  <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
-                                }
-                              </div>
-                              <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary"
-                                >View profile</a
-                              >
-                            </li>
-                          }
-                        </ul>
-                      }
-                    </div>
-                  }
-
-                  <!-- Panel: Target Lists -->
-                  @if (activeTab() === 'lists') {
-                    <div class="flex flex-col gap-3">
-                      @if (!team().lists?.length) {
-                        <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
-                      } @else {
-                        <ul class="divide-y divide-base-200">
-                          @for (list of team().lists; track list.id) {
-                            <li class="flex items-center justify-between py-2.5 text-sm">
-                              <div>
-                                <p class="font-medium text-base-content">{{ list.name }}</p>
-                                <p class="text-xs text-base-content/50">
-                                  {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                                </p>
-                              </div>
-                              <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary"
-                                >Open list</a
-                              >
-                            </li>
-                          }
-                        </ul>
-                      }
-                    </div>
-                  }
-
-                  <!-- Panel: Team Tasks -->
-                  @if (activeTab() === 'tasks') {
-                    <div class="flex flex-col gap-4">
-                      @if (teamTasks().length === 0) {
-                        <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
-                      } @else {
-                        <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-                          <table class="table table-sm table-zebra w-full text-xs">
-                            <thead>
-                              <tr class="bg-base-200 text-base-content/70">
-                                <th>Task</th>
-                                <th>Priority</th>
-                                <th>Status</th>
-                                <th>Due Date</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              @for (task of teamTasks(); track task.id) {
-                                <tr class="hover:bg-base-200/50">
-                                  <td class="font-semibold">
-                                    <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
-                                      {{ task.name }}
-                                    </a>
-                                  </td>
-                                  <td>
-                                    <span
-                                      class="badge badge-sm font-semibold uppercase"
-                                      [class]="getPriorityClass(task.priority)"
-                                    >
-                                      {{ task.priority || 'medium' }}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    <span
-                                      class="badge badge-sm font-semibold uppercase"
-                                      [class]="getStatusClass(task.status)"
-                                    >
-                                      {{ task.status || 'todo' }}
-                                    </span>
-                                  </td>
-                                  <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
-                                </tr>
-                              }
-                            </tbody>
-                          </table>
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-              </div>
+                  <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary">Open list</a>
+                </li>
+                }
+              </ul>
+              }
             </div>
-          </div>
-        } @else {
-          <div class="alert alert-error">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>Team not found or failed to load.</span>
-          </div>
-        }
+          </pc-tab-panel>
+
+          <pc-tab-panel id="tasks" [activeTab]="activeTab()">
+            <div class="flex flex-col gap-4">
+              @if (teamTasks().length === 0) {
+              <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
+              } @else {
+              <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+                <table class="table table-sm table-zebra w-full text-xs">
+                  <thead>
+                    <tr class="bg-base-200 text-base-content/70">
+                      <th>Task</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (task of teamTasks(); track task.id) {
+                    <tr class="hover:bg-base-200/50">
+                      <td class="font-semibold">
+                        <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
+                          {{ task.name }}
+                        </a>
+                      </td>
+                      <td>
+                        <pc-status-badge [type]="getPriorityType(task.priority)">
+                          {{ task.priority || 'medium' }}
+                        </pc-status-badge>
+                      </td>
+                      <td>
+                        <pc-status-badge [type]="getStatusType(task.status)">
+                          {{ task.status || 'todo' }}
+                        </pc-status-badge>
+                      </td>
+                      <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              }
+            </div>
+          </pc-tab-panel>
+        </pc-tabs>
       </div>
     </div>
-  
+    } @else {
+    <div class="alert alert-error">
+      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+      <span>Team not found or failed to load.</span>
+    </div>
+    }
+  </div>
+</div>

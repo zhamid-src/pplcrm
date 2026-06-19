@@ -10,10 +10,13 @@ import { UserService } from '../../../services/user.service';
 import { type IAuthUser } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 @Component({
   selector: 'pc-team-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, Tabs, TabPanel, StatusBadge],
   templateUrl: './team-view.html',
 })
 export class TeamViewComponent {
@@ -35,7 +38,14 @@ export class TeamViewComponent {
   private usersById = new Map<string, IAuthUser>();
 
   // Active tab state
-  protected activeTab = signal<'activity' | 'volunteers' | 'lists' | 'tasks'>('activity');
+  protected activeTab = signal<string>('activity');
+
+  protected readonly teamTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
+    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
+    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+  ]);
 
   protected readonly captainName = computed(() => {
     const captainId = this.team()?.team_captain_id;
@@ -132,33 +142,33 @@ export class TeamViewComponent {
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
 
-  protected getPriorityClass(priority: string | null | undefined): string {
+  protected getPriorityType(priority: string | null | undefined): any {
     const p = String(priority || '').toLowerCase();
     switch (p) {
       case 'urgent':
-        return 'badge-error text-error-content';
+        return 'error';
       case 'high':
-        return 'badge-warning text-warning-content';
+        return 'warning';
       case 'medium':
-        return 'badge-info text-info-content';
+        return 'info';
       default:
-        return 'badge-ghost';
+        return 'ghost';
     }
   }
 
-  protected getStatusClass(status: string | null | undefined): string {
+  protected getStatusType(status: string | null | undefined): any {
     const s = String(status || '').toLowerCase();
     switch (s) {
       case 'done':
-        return 'badge-success text-success-content';
+        return 'success';
       case 'in_progress':
-        return 'badge-info text-info-content';
+        return 'info';
       case 'blocked':
-        return 'badge-error text-error-content';
+        return 'error';
       case 'canceled':
-        return 'badge-neutral text-neutral-content';
+        return 'neutral';
       default:
-        return 'badge-ghost';
+        return 'ghost';
     }
   }
 }

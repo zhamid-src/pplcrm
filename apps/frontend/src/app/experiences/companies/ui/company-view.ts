@@ -11,10 +11,12 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 @Component({
   selector: 'pc-company-view',
-  imports: [DatePipe, RouterModule, PeopleInCompany, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, PeopleInCompany, Icon, RecordActivities, FormActions, StatCard, Tabs, TabPanel],
   templateUrl: './company-view.html',
 })
 export class CompanyView {
@@ -40,7 +42,13 @@ export class CompanyView {
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Active tab state
-  protected activeTab = signal<'activity' | 'employees' | 'details'>('activity');
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
 
   protected readonly initials = computed(() => {
     const name = this.company()?.name || '';

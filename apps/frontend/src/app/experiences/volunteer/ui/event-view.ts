@@ -9,10 +9,13 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-event-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, Tabs, TabPanel, StatusBadge, StatCard],
   templateUrl: './event-view.html',
   providers: [VolunteerService],
 })
@@ -30,7 +33,12 @@ export class EventViewComponent {
   protected readonly roster = signal<any[]>([]);
 
   // Active tab state
-  protected activeTab = signal<'roster' | 'activity'>('roster');
+  protected activeTab = signal<string>('roster');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
 
   protected readonly eventPassed = computed(() => {
     const end = this.event()?.end_time;
@@ -113,19 +121,19 @@ export class EventViewComponent {
     );
   }
 
-  protected getStatusClass(status: string | null | undefined): string {
+  protected getStatusType(status: string | null | undefined): any {
     const s = String(status || '').toLowerCase();
     switch (s) {
       case 'attended':
-        return 'badge-success text-success-content';
+        return 'success';
       case 'signed_up':
-        return 'badge-warning text-warning-content';
+        return 'warning';
       case 'no_show':
-        return 'badge-error text-error-content';
+        return 'error';
       case 'cancelled':
-        return 'badge-neutral text-neutral-content';
+        return 'neutral';
       default:
-        return 'badge-ghost';
+        return 'ghost';
     }
   }
 }
