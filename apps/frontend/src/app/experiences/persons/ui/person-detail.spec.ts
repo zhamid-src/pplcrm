@@ -103,10 +103,11 @@ describe('PersonDetail', () => {
 
   it('should create and load data on init in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
+    fixture.componentRef.setInput('id', 'p1');
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(component['id']).toBe('p1');
+    expect(component['id']()).toBe('p1');
     expect(mockPersonsSvc.getById).toHaveBeenCalledWith('p1');
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'tag');
     expect(component['person']()?.first_name).toBe('John');
@@ -116,6 +117,7 @@ describe('PersonDetail', () => {
 
   it('should format name properly', async () => {
     fixture.componentRef.setInput('mode', 'edit');
+    fixture.componentRef.setInput('id', 'p1');
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
@@ -126,6 +128,7 @@ describe('PersonDetail', () => {
 
   it('should save updates when in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
+    fixture.componentRef.setInput('id', 'p1');
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
@@ -150,6 +153,7 @@ describe('PersonDetail', () => {
     const fixtureNew = TestBed.createComponent(PersonDetail);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
+    fixtureNew.componentRef.setInput('id', null);
 
     componentNew.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
@@ -169,6 +173,7 @@ describe('PersonDetail', () => {
 
   it('should remove household address with confirmation', async () => {
     fixture.componentRef.setInput('mode', 'edit');
+    fixture.componentRef.setInput('id', 'p1');
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
@@ -181,6 +186,7 @@ describe('PersonDetail', () => {
 
   it('should prompt before detaching volunteer tag if person is in teams', async () => {
     fixture.componentRef.setInput('mode', 'edit');
+    fixture.componentRef.setInput('id', 'p1');
     component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
@@ -196,6 +202,7 @@ describe('PersonDetail', () => {
     const fixtureNew = TestBed.createComponent(PersonDetail);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
+    fixtureNew.componentRef.setInput('id', null);
 
     componentNew.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));

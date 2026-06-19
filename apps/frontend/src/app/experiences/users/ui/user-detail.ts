@@ -1,19 +1,22 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, FormField, disabled } from '@angular/forms/signals';
+import { form, required, email, disabled } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-detail',
-  imports: [FormField, RouterModule, Icon, FormActions],
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, FormActions],
   templateUrl: './user-detail.html',
 })
 export class UserDetailComponent {

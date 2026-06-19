@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, FormField, disabled } from '@angular/forms/signals';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
 import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -9,10 +9,11 @@ import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {

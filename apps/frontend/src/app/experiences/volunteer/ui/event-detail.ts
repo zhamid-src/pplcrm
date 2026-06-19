@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, signal, effect, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { form, validateStandardSchema, FormField } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import {
   AddVolunteerEventType,
@@ -14,6 +14,8 @@ import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
@@ -21,7 +23,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
-  imports: [DatePipe, FormsModule, FormField, RouterModule, Icon, FormActions],
+  imports: [DatePipe, FormsModule, FormField, PcInput, PcTextarea, RouterModule, Icon, FormActions],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
 })

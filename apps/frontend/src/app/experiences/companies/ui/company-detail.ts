@@ -1,7 +1,9 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { CompanyInputObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -13,7 +15,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-company-detail',
-  imports: [DatePipe, FormField, Icon, PeopleInCompany, RouterModule, FormActions],
+  imports: [DatePipe, PcInput, PcTextarea, Icon, PeopleInCompany, RouterModule, FormActions],
   templateUrl: './company-detail.html',
 })
 export class CompanyDetail implements OnInit {

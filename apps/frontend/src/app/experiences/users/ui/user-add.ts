@@ -1,15 +1,17 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { form, required, email, FormField } from '@angular/forms/signals';
+import { form, required, email } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
   selector: 'pc-user-add',
-  imports: [FormField, FormActions],
+  imports: [PcInput, PcSelect, FormActions],
   templateUrl: './user-add.html',
 })
 export class UserAddComponent implements OnInit {
