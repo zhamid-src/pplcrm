@@ -30,8 +30,8 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<any> impleme
     return raw.persons || [];
   }
 
-  protected mergeInService(targetId: string, sourceId: string) {
-    return this.personsSvc.mergePersons(targetId, sourceId);
+  protected async mergeInService(targetId: string, sourceId: string): Promise<void> {
+    await this.personsSvc.mergePersons(targetId, sourceId);
   }
 
   protected getItemDisplayName(p: any): string {

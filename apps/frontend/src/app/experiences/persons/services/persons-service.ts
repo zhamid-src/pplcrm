@@ -13,55 +13,13 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-export interface DetachTagResult {
-  removed_team_ids?: string[];
-  removed_teams?: Array<{ id: string; name: string; was_captain: boolean }>;
-  [key: string]: unknown;
-}
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 /**
- * Service for comprehensive person record management in the CRM system.
- *
- * This service extends AbstractAPIService to provide specialized functionality for
- * managing person records, including their relationships with households, addresses,
- * and tags. It offers both individual and batch operations with full type safety.
- *
- * **Key Features:**
- * - **Person Management**: Full CRUD operations for person records
- * - **Household Integration**: Retrieve people by household relationships
- * - **Address Support**: Include address information in person queries
- * - **Tag Management**: Attach/detach tags for categorization
- * - **Batch Operations**: Support for multiple record operations
- * - **Advanced Queries**: Flexible filtering and column selection
- *
- * **Data Relationships:**
+ * Manages Person records and their relationships to Households, Addresses, and Tags.
+ * * Note: Relationships are structured as:
  * - Person ↔ Household (many-to-one)
- * - Person ↔ Address (through household)
  * - Person ↔ Tags (many-to-many)
- *
- * @example
- * ```typescript
- * constructor(private personsService: PersonsService) {}
- *
- * // Get all persons with addresses
- * const persons = await this.personsService.getAllWithAddress({
- *   limit: 10,
- *   orderBy: 'last_name'
- * });
- *
- * // Get people in a specific household
- * const householdMembers = await this.personsService.getPeopleInHousehold('household-123');
- *
- * // Add a new person
- * const newPerson = await this.personsService.add({
- *   first_name: 'John',
- *   last_name: 'Doe',
- *   email: 'john@example.com'
- * });
- * ```
- *
- * @extends AbstractAPIService<DATA_TYPE, UpdatePersonsType>
  */
 @Service()
 export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
@@ -149,8 +107,12 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * @param id - Person ID
    * @param tag_name - Tag to detach
    */
-  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type }) as Promise<DetachTagResult>;
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
   }
 
   /**
@@ -207,27 +169,8 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   /**
-   * Retrieves all people in a household with computed full names.
-   *
-   * This method fetches people associated with a specific household and enhances
-   * the data by computing a full name from the individual name components. It's
-   * optimized to only fetch the necessary columns for name computation.
-   *
-   * **Data Enhancement:**
-   * - Combines first_name, middle_names, and last_name into full_name
-   * - Handles null/undefined name components gracefully
-   * - Returns empty array for invalid household IDs
-   *
-   * @param id - The household ID to fetch people for (null/undefined returns empty array)
-   * @returns Promise resolving to array of people with computed full_name property
-   *
-   * @example
-   * ```typescript
-   * const householdMembers = await this.personsService.getPeopleInHousehold('household-123');
-   * householdMembers.forEach(person => {
-   *   console.log(`${person.full_name} (ID: ${person.id})`);
-   * });
-   * ```
+   * Fetches people in a household and appends a computed `full_name`.
+   * @note Optimized to only fetch columns necessary for name computation.
    */
   public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
     if (!id) {
@@ -273,9 +216,14 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
    * Import multiple people with optional common tags.
    * Accepts already-mapped/sanitized-like raw fields; backend runs final validation.
    */
-  public import(rows: any[], tags: string[] = [], skipped = 0, fileName?: string | null) {
+  public import(
+    rows: RouterInputs['persons']['import']['rows'],
+    tags: string[] = [],
+    skipped = 0,
+    fileName?: string | null,
+  ): Promise<RouterOutputs['persons']['import']> {
     // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return (this.api.persons.import.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+    return this.api.persons.import.mutate(
       { rows, tags, skipped, file_name: fileName },
       {
         meta: { skipErrorHandler: true },
@@ -308,21 +256,20 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.exportCsv.mutate(input);
   }
 
-  public getPotentialDuplicates(options?: {
-    page?: number;
-    pageSize?: number;
-  }): Promise<{ groups: any[]; total: number }> {
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
     return this.api.persons.getPotentialDuplicates.query(options);
   }
 
-  public getDuplicateCounts(): Promise<{ people: number; households: number; companies: number }> {
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
     return this.api.persons.getDuplicateCounts.query();
   }
 
   /**
    * Merge a source duplicate contact into a target primary contact.
    */
-  public mergePersons(target_id: string, source_id: string): Promise<any> {
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
     return this.api.persons.mergePersons.mutate({ target_id, source_id });
   }
 }
