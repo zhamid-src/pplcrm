@@ -19,6 +19,7 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-household-view',
@@ -33,6 +34,7 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
     Tabs,
     TabPanel,
     StatCard,
+    ProfileCard,
   ],
   templateUrl: './household-view.html',
 })

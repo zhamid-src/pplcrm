@@ -13,10 +13,22 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-team-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, Tabs, TabPanel, StatusBadge],
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    FormActions,
+    StatCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    ProfileCard,
+  ],
   templateUrl: './team-view.html',
 })
 export class TeamViewComponent {

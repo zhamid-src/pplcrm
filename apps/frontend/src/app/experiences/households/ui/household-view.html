@@ -45,111 +45,95 @@
       <!-- Left Column: Household Card, Map & Segmentation -->
       <div class="lg:col-span-1 flex flex-col gap-6">
         <!-- Elegant Household Card -->
-        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
-          <!-- Decorative Card Header Gradient -->
-          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+        <pc-profile-card iconName="home">
+          <!-- Address Title -->
+          <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
 
-          <div class="px-6 pb-6 relative flex flex-col items-center">
-            <!-- Icon Chip -->
-            <div class="avatar placeholder -mt-12 mb-3">
-              <div
-                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
-              >
-                <pc-icon name="home" [size]="10"></pc-icon>
-              </div>
-            </div>
-
-            <!-- Address Title -->
-            <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
-
-            <!-- Contact Details List -->
-            <div class="w-full flex flex-col gap-3 text-sm">
-              <!-- Home Phone -->
-              @if (h.home_phone) {
-              <div
-                class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="bell" [size]="4" class="text-teal-500"></pc-icon>
-                  <span class="font-medium text-base-content">{{ h.home_phone }}</span>
-                </div>
-                <button
-                  class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-teal-500 tooltip"
-                  data-tip="Copy Home Phone"
-                  (click)="copyToClipboard(h.home_phone, 'Home Phone')"
-                >
-                  <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-                </button>
-              </div>
-              }
-
-              <!-- Household Type -->
-              @if (h.type) {
-              <div class="flex items-center gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/80">
-                <pc-icon name="information-circle" [size]="4" class="text-indigo-500"></pc-icon>
-                <span class="font-light">Type: <strong class="font-medium">{{ h.type }}</strong></span>
-              </div>
-              }
-
-              <!-- Mapped Districts (GIS) -->
-              @if (h.district || h.precinct || h.ward || h.geocoding_status) {
-              <div
-                class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
-              >
-                <div
-                  class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50"
-                >
-                  <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
-                  <span>Electoral Boundaries</span>
-                </div>
-                <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
-                  @if (h.district) {
-                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                    <span class="text-[10px] text-base-content/40 block">District / Riding</span>
-                    <span class="font-bold text-base-content">{{ h.district }}</span>
-                  </div>
-                  } @if (h.ward) {
-                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                    <span class="text-[10px] text-base-content/40 block">Ward</span>
-                    <span class="font-bold text-base-content">{{ h.ward }}</span>
-                  </div>
-                  } @if (h.precinct) {
-                  <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-                    <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
-                    <span class="font-bold text-base-content">{{ h.precinct }}</span>
-                  </div>
-                  }
-                </div>
-
-                <!-- Geocoding Status Badge -->
-                <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-                  <span class="text-base-content/60">Geocoding Status:</span>
-                  @if (h.geocoding_status === 'success') {
-                  <span class="badge badge-success badge-sm font-medium">Success</span>
-                  } @else if (h.geocoding_status === 'pending') {
-                  <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
-                    <span class="loading loading-spinner loading-xs scale-75"></span>
-                    Pending
-                  </span>
-                  } @else if (h.geocoding_status === 'failed') {
-                  <span class="badge badge-error badge-sm text-xs">Unresolved</span>
-                  } @else {
-                  <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
-                  }
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- System Metadata -->
+          <!-- Contact Details List -->
+          <div class="w-full flex flex-col gap-3 text-sm">
+            <!-- Home Phone -->
+            @if (h.home_phone) {
             <div
-              class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+              class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors"
             >
-              <span>Created by {{ getUserName(h.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}</span>
-              <span>Updated {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(h.updatedby_id) }}</span>
+              <div class="flex items-center gap-2">
+                <pc-icon name="bell" [size]="4" class="text-teal-500"></pc-icon>
+                <span class="font-medium text-base-content">{{ h.home_phone }}</span>
+              </div>
+              <button
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-teal-500 tooltip"
+                data-tip="Copy Home Phone"
+                (click)="copyToClipboard(h.home_phone, 'Home Phone')"
+              >
+                <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+              </button>
             </div>
+            }
+
+            <!-- Household Type -->
+            @if (h.type) {
+            <div class="flex items-center gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/80">
+              <pc-icon name="information-circle" [size]="4" class="text-indigo-500"></pc-icon>
+              <span class="font-light">Type: <strong class="font-medium">{{ h.type }}</strong></span>
+            </div>
+            }
+
+            <!-- Mapped Districts (GIS) -->
+            @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+            <div
+              class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+            >
+              <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
+                <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+                <span>Electoral Boundaries</span>
+              </div>
+              <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+                @if (h.district) {
+                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                  <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+                  <span class="font-bold text-base-content">{{ h.district }}</span>
+                </div>
+                } @if (h.ward) {
+                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                  <span class="text-[10px] text-base-content/40 block">Ward</span>
+                  <span class="font-bold text-base-content">{{ h.ward }}</span>
+                </div>
+                } @if (h.precinct) {
+                <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+                  <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+                  <span class="font-bold text-base-content">{{ h.precinct }}</span>
+                </div>
+                }
+              </div>
+
+              <!-- Geocoding Status Badge -->
+              <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+                <span class="text-base-content/60">Geocoding Status:</span>
+                @if (h.geocoding_status === 'success') {
+                <span class="badge badge-success badge-sm font-medium">Success</span>
+                } @else if (h.geocoding_status === 'pending') {
+                <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+                  <span class="loading loading-spinner loading-xs scale-75"></span>
+                  Pending
+                </span>
+                } @else if (h.geocoding_status === 'failed') {
+                <span class="badge badge-error badge-sm text-xs">Unresolved</span>
+                } @else {
+                <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+                }
+              </div>
+            </div>
+            }
           </div>
-        </div>
+
+          <!-- System Metadata -->
+          <div
+            class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+          >
+            <span>Created by {{ getUserName(h.createdby_id) }} on {{ getCreatedAt() | date:'M/d/yyyy' }}</span>
+            <span>Updated {{ getUpdatedAt() | date:'M/d/yyyy' }} by {{ getUserName(h.updatedby_id) }}</span>
+          </div>
+        </pc-profile-card>
 
         <!-- Google Maps Card -->
         <pc-card title="Map Location" icon="map">

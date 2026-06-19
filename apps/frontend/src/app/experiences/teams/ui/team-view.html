@@ -26,55 +26,41 @@
       <!-- Left Column: Team Card -->
       <div class="lg:col-span-1 flex flex-col gap-6">
         <!-- Elegant Team Card -->
-        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
-          <!-- Decorative Card Header Gradient -->
-          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+        <pc-profile-card iconName="user-group">
+          <!-- Name -->
+          <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
 
-          <div class="px-6 pb-6 relative flex flex-col items-center">
-            <!-- Team Icon Avatar -->
-            <div class="avatar placeholder -mt-12 mb-3">
-              <div
-                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
-              >
-                <pc-icon name="user-group" [size]="10"></pc-icon>
+          <!-- Details List -->
+          <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+            @if (team().description) {
+            <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
+            }
+
+            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <div class="flex items-center gap-2">
+                <pc-icon name="user-circle" [size]="4" class="text-teal-500"></pc-icon>
+                <span>Team Captain:</span>
               </div>
+              <span class="font-bold">{{ captainName() }}</span>
             </div>
 
-            <!-- Name -->
-            <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
-
-            <!-- Details List -->
-            <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-              @if (team().description) {
-              <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
-              }
-
-              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="user-circle" [size]="4" class="text-teal-500"></pc-icon>
-                  <span>Team Captain:</span>
-                </div>
-                <span class="font-bold">{{ captainName() }}</span>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <div class="flex items-center gap-2">
+                <pc-icon name="user-circle" [size]="4" class="text-purple-500"></pc-icon>
+                <span>Team Lead:</span>
               </div>
-
-              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="user-circle" [size]="4" class="text-purple-500"></pc-icon>
-                  <span>Team Lead:</span>
-                </div>
-                <span class="font-bold">{{ leadName() }}</span>
-              </div>
-            </div>
-
-            <!-- System Metadata -->
-            <div
-              class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-            >
-              <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
-              <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
+              <span class="font-bold">{{ leadName() }}</span>
             </div>
           </div>
-        </div>
+
+          <!-- System Metadata -->
+          <div
+            class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+          >
+            <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
+            <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
+          </div>
+        </pc-profile-card>
       </div>
 
       <!-- Right Column: Stats & Tabs -->
