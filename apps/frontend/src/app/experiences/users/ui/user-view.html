@@ -29,54 +29,38 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left Column: User Card -->
       <div class="lg:col-span-1 flex flex-col gap-6">
-        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
-          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
+        <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
+          <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
+          <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
 
-          <div class="px-6 pb-6 relative flex flex-col items-center">
-            <div class="avatar placeholder -mt-12 mb-3">
-              <div
-                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
-              >
-                @if (avatarUrl()) {
-                <img [src]="avatarUrl()!" alt="Avatar" />
-                } @else {
-                <pc-icon name="user-circle" [size]="10"></pc-icon>
-                }
+          <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
+            <pc-icon name="identification" [size]="4"></pc-icon>
+            {{ detail()?.role }}
+          </pc-status-badge>
+
+          <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <div class="flex items-center gap-2">
+                <pc-icon
+                  name="check-circle"
+                  [size]="4"
+                  [class]="detail()?.verified ? 'text-success' : 'text-base-content/40'"
+                ></pc-icon>
+                <span>Verified:</span>
               </div>
-            </div>
-
-            <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-            <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-            <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-              <pc-icon name="identification" [size]="4"></pc-icon>
-              {{ detail()?.role }}
-            </pc-status-badge>
-
-            <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <div class="flex items-center gap-2">
-                  <pc-icon
-                    name="check-circle"
-                    [size]="4"
-                    [class]="detail()?.verified ? 'text-success' : 'text-base-content/40'"
-                  ></pc-icon>
-                  <span>Verified:</span>
-                </div>
-                <pc-status-badge [type]="detail()?.verified ? 'success' : 'neutral'">
-                  {{ detail()?.verified ? 'Yes' : 'No' }}
-                </pc-status-badge>
-              </div>
-            </div>
-
-            <div
-              class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex flex-col gap-1 leading-normal"
-            >
-              <span>Created: {{ detail()?.created_at | date: 'medium' }}</span>
-              <span>Last updated: {{ detail()?.updated_at | date: 'medium' }}</span>
+              <pc-status-badge [type]="detail()?.verified ? 'success' : 'neutral'">
+                {{ detail()?.verified ? 'Yes' : 'No' }}
+              </pc-status-badge>
             </div>
           </div>
-        </div>
+
+          <div
+            class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex flex-col gap-1 leading-normal"
+          >
+            <span>Created: {{ detail()?.created_at | date: 'medium' }}</span>
+            <span>Last updated: {{ detail()?.updated_at | date: 'medium' }}</span>
+          </div>
+        </pc-profile-card>
       </div>
 
       <!-- Right Column: Stats & Metadata & Activity -->

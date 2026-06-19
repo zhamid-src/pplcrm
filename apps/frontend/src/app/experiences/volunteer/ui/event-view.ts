@@ -12,10 +12,22 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-event-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, Tabs, TabPanel, StatusBadge, StatCard],
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    FormActions,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+  ],
   templateUrl: './event-view.html',
   providers: [VolunteerService],
 })

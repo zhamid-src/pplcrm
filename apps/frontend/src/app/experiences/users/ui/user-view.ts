@@ -13,10 +13,11 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserService } from '../../../services/user.service';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-user-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, StatusBadge],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, StatCard, StatusBadge, ProfileCard],
   templateUrl: './user-view.html',
 })
 export class UserViewComponent {

@@ -13,10 +13,11 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-form-view',
-  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard, Tabs, TabPanel, StatCard],
+  imports: [DatePipe, RouterModule, Icon, RecordActivities, FormActions, PcCard, Tabs, TabPanel, StatCard, ProfileCard],
   templateUrl: './form-view.html',
 })
 export class FormViewComponent {

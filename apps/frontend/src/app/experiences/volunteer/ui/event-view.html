@@ -26,80 +26,66 @@
       <!-- Left Column: Event Card -->
       <div class="lg:col-span-1 flex flex-col gap-6">
         <!-- Elegant Event Details Card -->
-        <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300">
-          <!-- Decorative Card Header Gradient -->
-          <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-
-          <div class="px-6 pb-6 relative flex flex-col items-center">
-            <!-- Event Icon Avatar -->
-            <div class="avatar placeholder -mt-12 mb-3">
-              <div
-                class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg"
-              >
-                <pc-icon name="clock" [size]="10"></pc-icon>
-              </div>
-            </div>
-
-            <!-- Name & Status -->
-            <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-            <div class="flex gap-2 mb-4">
-              @if (event().is_private) {
-              <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
-              } @else {
-              <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
-              } @if (eventPassed()) {
-              <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
-              } @else {
-              <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-              }
-            </div>
-
-            <!-- Details and Settings List -->
-            <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-              @if (event().description) {
-              <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-              }
-
-              <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <pc-icon name="map-pin" [size]="4" class="text-error shrink-0 mt-0.5"></pc-icon>
-                <span class="text-xs">
-                  <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-                </span>
-              </div>
-
-              <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <pc-icon name="calendar" [size]="4" class="text-info shrink-0 mt-0.5"></pc-icon>
-                <div class="text-xs flex flex-col">
-                  <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-                  <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-                </div>
-              </div>
-
-              @if (event().contact_email || event().contact_phone) {
-              <div class="divider my-1"></div>
-              <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
-                Coordinator Contact
-              </div>
-              @if (event().contact_email) {
-              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-teal-500"></pc-icon>
-                  <span>Email:</span>
-                </div>
-                <span class="font-semibold text-xs">{{ event().contact_email }}</span>
-              </div>
-              } @if (event().contact_phone) {
-              <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-purple-500"></pc-icon>
-                  <span>Phone:</span>
-                </div>
-                <span class="font-semibold text-xs">{{ event().contact_phone }}</span>
-              </div>
-              } }
-            </div>
+        <pc-profile-card iconName="clock">
+          <!-- Name & Status -->
+          <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+          <div class="flex gap-2 mb-4">
+            @if (event().is_private) {
+            <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
+            } @else {
+            <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
+            } @if (eventPassed()) {
+            <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
+            } @else {
+            <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+            }
           </div>
-        </div>
+
+          <!-- Details and Settings List -->
+          <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+            @if (event().description) {
+            <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+            }
+
+            <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <pc-icon name="map-pin" [size]="4" class="text-error shrink-0 mt-0.5"></pc-icon>
+              <span class="text-xs">
+                <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+              </span>
+            </div>
+
+            <div class="flex items-start gap-2 p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <pc-icon name="calendar" [size]="4" class="text-info shrink-0 mt-0.5"></pc-icon>
+              <div class="text-xs flex flex-col">
+                <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+                <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
+              </div>
+            </div>
+
+            @if (event().contact_email || event().contact_phone) {
+            <div class="divider my-1"></div>
+            <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
+              Coordinator Contact
+            </div>
+            @if (event().contact_email) {
+            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <div class="flex items-center gap-2">
+                <pc-icon name="envelope" [size]="4" class="text-teal-500"></pc-icon>
+                <span>Email:</span>
+              </div>
+              <span class="font-semibold text-xs">{{ event().contact_email }}</span>
+            </div>
+            } @if (event().contact_phone) {
+            <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 text-base-content/85">
+              <div class="flex items-center gap-2">
+                <pc-icon name="phone" [size]="4" class="text-purple-500"></pc-icon>
+                <span>Phone:</span>
+              </div>
+              <span class="font-semibold text-xs">{{ event().contact_phone }}</span>
+            </div>
+            } }
+          </div>
+        </pc-profile-card>
 
         <!-- Public Signup Link Card -->
         @if (event().public_url) {

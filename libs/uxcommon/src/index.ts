@@ -21,6 +21,7 @@ export * from './components/stat-card/stat-card';
 export * from './components/side-drawer/side-drawer';
 export * from './components/tabs/tabs';
 export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
 
 // Directives
 export * from './directives/animate-if.directive';

@@ -13,10 +13,22 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-company-view',
-  imports: [DatePipe, RouterModule, PeopleInCompany, Icon, RecordActivities, FormActions, StatCard, Tabs, TabPanel],
+  imports: [
+    DatePipe,
+    RouterModule,
+    PeopleInCompany,
+    Icon,
+    RecordActivities,
+    FormActions,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+  ],
   templateUrl: './company-view.html',
 })
 export class CompanyView {

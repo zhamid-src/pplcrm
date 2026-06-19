@@ -20,6 +20,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 
 @Component({
   selector: 'pc-person-view',
@@ -35,6 +36,7 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
     TabPanel,
     StatusBadge,
     StatCard,
+    ProfileCard,
   ],
   templateUrl: './person-view.html',
 })
