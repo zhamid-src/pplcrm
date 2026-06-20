@@ -4,7 +4,6 @@ import { BaseRepository } from '../../../lib/base.repo';
 import { verifyAuthToken } from '../../../lib/auth-util';
 import { env } from '../../../../env';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
 import { MsSyncService } from '../../ms-sync/ms-sync.service';
@@ -375,27 +374,11 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const hasMsConnected = !!msToken;
     const hasGoogleConnected = !!googleToken;
 
-    // Load SMTP settings from database for this tenant
-    const smtpRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenantId)
-      .where('key', 'like', 'communications.smtp_%')
-      .execute();
-
-    const smtpSettings: Record<string, any> = {};
-    for (const row of smtpRows) {
-      smtpSettings[row.key] = row.value;
-    }
-
-    const hasSmtpConfigured = !!smtpSettings['communications.smtp_host'];
-
     // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected && !hasSmtpConfigured) {
+    if (!hasMsConnected && !hasGoogleConnected) {
       return reply.status(400).send({
         status: 'error',
-        message:
-          'No email dispatch method configured. Please connect a Microsoft or Google account, or configure SMTP settings in Settings.',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
       });
     }
 
@@ -421,7 +404,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     );
 
     // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' | 'smtp' = 'smtp';
+    let sendMethod: 'ms' | 'google' = 'ms';
     if (hasMsConnected && hasGoogleConnected) {
       if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
         sendMethod = 'google';
@@ -432,8 +415,6 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       sendMethod = 'ms';
     } else if (hasGoogleConnected) {
       sendMethod = 'google';
-    } else if (hasSmtpConfigured) {
-      sendMethod = 'smtp';
     }
 
     // Dispatch the email synchronously
@@ -628,61 +609,6 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .execute();
 
           return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
-        }
-      } else {
-        // SMTP Flow
-        const port = Number(smtpSettings['communications.smtp_port'] || 587);
-        const transport = nodemailer.createTransport({
-          host: smtpSettings['communications.smtp_host'],
-          port: port,
-          secure: port === 465,
-          auth: {
-            user: smtpSettings['communications.smtp_user'] || '',
-            pass: smtpSettings['communications.smtp_pass'] || '',
-          },
-        });
-
-        try {
-          await transport.sendMail({
-            from: `"${fromName}" <${fromEmail}>`,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject: subject,
-            html: html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending SMTP email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
-          fastify.log.error(err, `Failed to dispatch SMTP email for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(err.message || 'Failed to dispatch SMTP email', 400);
         }
       }
     } catch (err: any) {

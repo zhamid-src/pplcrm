@@ -67,7 +67,7 @@ describe('SettingsController Integration', () => {
 
     await expect(
       controller.upsert(auth, [{ key: 'communications.verified_emails', value: ['spam@example.com'] }]),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Verified emails list cannot be modified directly.',
@@ -81,7 +81,7 @@ describe('SettingsController Integration', () => {
     // Reject unverified default_from_email
     await expect(
       controller.upsert(auth, [{ key: 'communications.default_from_email', value: 'unverified@example.com' }]),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Email address must be verified before it can be configured as a Default From Email.',
@@ -91,7 +91,7 @@ describe('SettingsController Integration', () => {
     // Reject unverified reply_to
     await expect(
       controller.upsert(auth, [{ key: 'communications.reply_to', value: 'unverified@example.com' }]),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Email address must be verified before it can be configured as a Reply-to Email.',

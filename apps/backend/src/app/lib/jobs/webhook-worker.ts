@@ -1,11 +1,15 @@
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
 import { BillingController } from '../../modules/billing/controller';
+import { Client } from 'pg';
+import { env } from '../../../env';
 
 export class WebhookEventWorker {
   private isRunning = false;
   private timer: NodeJS.Timeout | null = null;
   private activeJobsCount = 0;
   private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   private readonly webhookEventsRepo = new WebhookEventsRepo();
   private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
@@ -14,6 +18,7 @@ export class WebhookEventWorker {
     if (this.isRunning) return;
     this.isRunning = true;
     console.log('Webhook Event Worker started.');
+    this.setupListener();
     this.poll();
   }
 
@@ -23,14 +28,79 @@ export class WebhookEventWorker {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        console.error('Error closing Postgres listener client on shutdown:', err);
+      }
+      this.pgClient = null;
+    }
 
     if (this.activeJobsCount > 0) {
-      console.log(`Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`);
+      console.log(
+        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
+      );
       await new Promise<void>((resolve) => {
         this.shutdownResolver = resolve;
       });
     }
     console.log('Webhook Event Worker stopped.');
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'webhook_events_channel') {
+          console.log('Webhook Event Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN webhook_events_channel');
+      console.log('Listening for webhook_events notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {});
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
   }
 
   private poll() {
@@ -53,8 +123,8 @@ export class WebhookEventWorker {
         }
 
         // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // otherwise back off to 2 seconds.
-        const delay = processedAnEvent ? 10 : 2000;
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
         this.pollWithDelay(delay);
       }
     }, 0);
@@ -70,7 +140,7 @@ export class WebhookEventWorker {
 
     // Try to find and lock a webhook event using SKIP LOCKED
     const eventRecord = await this.db.transaction().execute(async (trx: any) => {
-      const pendingEvent = await trx
+      const pendingEvent = (await trx
         .selectFrom('webhook_events' as any)
         .selectAll()
         .where('status', '=', 'pending')
@@ -79,7 +149,7 @@ export class WebhookEventWorker {
         .limit(1)
         .forUpdate()
         .skipLocked()
-        .executeTakeFirst() as any;
+        .executeTakeFirst()) as any;
 
       if (!pendingEvent) return null;
 
@@ -101,7 +171,9 @@ export class WebhookEventWorker {
 
     if (!eventRecord) return false;
 
-    console.log(`Processing webhook event ${eventRecord.id} (Stripe Event: ${eventRecord.stripe_event_id}, Type: ${eventRecord.type})`);
+    console.log(
+      `Processing webhook event ${eventRecord.id} (Stripe Event: ${eventRecord.stripe_event_id}, Type: ${eventRecord.type})`,
+    );
 
     const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
 
@@ -134,7 +206,9 @@ export class WebhookEventWorker {
         // Retry with backoff (attempts * 30s delay)
         const delaySeconds = attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(`Rescheduling webhook event ${eventRecord.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
+        console.log(
+          `Rescheduling webhook event ${eventRecord.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`,
+        );
 
         await this.db
           .updateTable('webhook_events' as any)

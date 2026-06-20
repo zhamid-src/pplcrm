@@ -1,6 +1,8 @@
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { sql } from 'kysely';
 import { executeJob } from './job-handlers';
+import { Client } from 'pg';
+import { env } from '../../../env';
 
 export class BackgroundJobWorker {
   private isRunning = false;
@@ -8,6 +10,8 @@ export class BackgroundJobWorker {
   private recoveryInterval: NodeJS.Timeout | null = null;
   private activeJobsCount = 0;
   private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   private readonly importsRepo = new ImportsRepo();
   private readonly db = this.importsRepo.db; // Kysely DB instance
@@ -50,6 +54,7 @@ export class BackgroundJobWorker {
       5 * 60 * 1000,
     );
 
+    this.setupListener();
     this.poll();
   }
 
@@ -59,9 +64,21 @@ export class BackgroundJobWorker {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.recoveryInterval) {
       clearInterval(this.recoveryInterval);
       this.recoveryInterval = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        console.error('Error closing Postgres listener client on shutdown:', err);
+      }
+      this.pgClient = null;
     }
 
     if (this.activeJobsCount > 0) {
@@ -73,6 +90,57 @@ export class BackgroundJobWorker {
       });
     }
     console.log('Background Job Worker stopped.');
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'background_jobs_channel') {
+          console.log('Background Job Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN background_jobs_channel');
+      console.log('Listening for background_jobs notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {});
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
   }
 
   private poll() {
@@ -95,8 +163,8 @@ export class BackgroundJobWorker {
         }
 
         // Poll again immediately (10ms) if we processed a job (to drain the queue),
-        // or back off to 2 seconds if no jobs were found.
-        const delay = processedAJob ? 10 : 2000;
+        // or back off to 30 seconds if no jobs were found.
+        const delay = processedAJob ? 10 : 30000;
         this.pollWithDelay(delay);
       }
     }, 0);

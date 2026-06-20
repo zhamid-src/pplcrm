@@ -3,32 +3,23 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "apps/backend/src",
   "projectType": "application",
+  "tags": [],
   "targets": {
     "build": {
       "executor": "@nx/esbuild:esbuild",
-      "outputs": [
-        "{options.outputPath}"
-      ],
+      "outputs": ["{options.outputPath}"],
       "defaultConfiguration": "production",
       "options": {
         "platform": "node",
         "outputPath": "dist/apps/backend",
-        "format": [
-          "esm"
-        ],
+        "format": ["esm"],
         "main": "apps/backend/src/main.ts",
         "tsConfig": "apps/backend/tsconfig.app.json",
-        "assets": [
-          "apps/backend/src/assets"
-        ],
+        "assets": ["apps/backend/src/assets"],
         "generatePackageJson": false,
         "esbuildOptions": {
           "packages": "external",
-          "external": [
-            "aws-sdk",
-            "nock",
-            "mock-aws-s3"
-          ],
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
           "loader": {
             ".html": "text"
           },
@@ -46,11 +37,7 @@
           "bundle": true,
           "esbuildOptions": {
             "sourcemap": false,
-            "external": [
-              "aws-sdk",
-              "nock",
-              "mock-aws-s3"
-            ],
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
             "loader": {
               ".html": "text"
             },
@@ -70,42 +57,28 @@
       "configurations": {
         "development": {
           "buildTarget": "backend:build:development",
-          "runtimeArgs": [
-            "--inspect=9229",
-            "--enable-source-maps",
-            "--env-file=.env.development"
-          ]
+          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
         },
         "production": {
           "buildTarget": "backend:build:production",
-          "runtimeArgs": [
-            "--enable-source-maps",
-            "--env-file=.env.production"
-          ]
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
         }
       }
     },
     "lint": {
       "executor": "@nx/eslint:lint",
-      "outputs": [
-        "{options.outputFile}"
-      ],
+      "outputs": ["{options.outputFile}"],
       "options": {
-        "lintFilePatterns": [
-          "apps/backend/**/*.ts"
-        ]
+        "lintFilePatterns": ["apps/backend/**/*.ts"]
       }
     },
     "test": {
-      "executor": "@nx/vite:test",
-      "outputs": [
-        "{workspaceRoot}/coverage/{projectRoot}"
-      ],
+      "executor": "@nx/vitest:test",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
       "options": {
         "passWithNoTests": true,
         "reportsDirectory": "../../coverage/apps/backend"
       }
     }
-  },
-  "tags": []
+  }
 }

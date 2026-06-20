@@ -1,10 +1,12 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
 import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
 
 const db = new Kysely<Models>({
   dialect: new PostgresDialect({
     pool: new Pool(),
+    cursor: Cursor,
   }),
 });
 

@@ -35,8 +35,10 @@ import {
 } from '../../../../../libs/common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
+import Cursor from 'pg-cursor';
 const dialect = new PostgresDialect({
   pool: new Pool(env.db),
+  cursor: Cursor,
 });
 
 type ColName<TB extends keyof Models> = keyof Models[TB] & string;
