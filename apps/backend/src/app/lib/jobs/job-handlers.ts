@@ -951,6 +951,14 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       });
     }
 
+    // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await db
+      .deleteFrom('background_jobs' as any)
+      .where('status', '=', 'completed')
+      .where('updated_at', '<=', sevenDaysAgo)
+      .execute();
+
     await db
       .insertInto('background_jobs' as any)
       .values({
@@ -1045,10 +1053,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       }
 
       // Determine columns
-      const requestedCols: string[] =
-        Array.isArray(payload.columns) && payload.columns.length
-          ? payload.columns
-          : [];
+      const requestedCols: string[] = Array.isArray(payload.columns) && payload.columns.length ? payload.columns : [];
 
       const storageKey = `exports/${tenantId}/${exportId}.csv`;
 
