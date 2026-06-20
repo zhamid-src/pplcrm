@@ -23,7 +23,7 @@
           [class.btn-ghost]="activeTab() !== 'emails'"
           (click)="activeTab.set('emails')"
         >
-          Email Breaches ({{ breachedEmails().length }})
+          Email Breaches ({{ totalEmailBreaches() }})
         </button>
         <button
           type="button"
@@ -33,7 +33,7 @@
           [class.btn-ghost]="activeTab() !== 'tasks'"
           (click)="activeTab.set('tasks')"
         >
-          Task Breaches ({{ breachedTasks().length }})
+          Task Breaches ({{ totalTaskBreaches() }})
         </button>
       </div>
     </div>
@@ -99,6 +99,21 @@
         </tbody>
       </table>
     </div>
+    @if (hasMoreEmails()) {
+    <div class="flex justify-center mt-4">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline btn-neutral gap-2 cursor-pointer hover:btn-primary"
+        [disabled]="isLoadingEmails()"
+        (click)="loadMoreEmails.emit()"
+      >
+        @if (isLoadingEmails()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        }
+        Load More
+      </button>
+    </div>
+    }
     } }
 
     <!-- Tasks Breached Tab Content -->
@@ -157,6 +172,21 @@
         </tbody>
       </table>
     </div>
+    @if (hasMoreTasks()) {
+    <div class="flex justify-center mt-4">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline btn-neutral gap-2 cursor-pointer hover:btn-primary"
+        [disabled]="isLoadingTasks()"
+        (click)="loadMoreTasks.emit()"
+      >
+        @if (isLoadingTasks()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        }
+        Load More
+      </button>
+    </div>
+    }
     } }
   </div>
 </div>

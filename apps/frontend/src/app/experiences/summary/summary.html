@@ -115,6 +115,14 @@
       [breachedTasks]="breachedTasks()"
       [emailSlaHours]="emailSlaHours()"
       [taskSlaHours]="taskSlaHours()"
+      [totalEmailBreaches]="totalEmailSlaBreaches()"
+      [totalTaskBreaches]="totalTaskSlaBreaches()"
+      [hasMoreEmails]="hasMoreEmails()"
+      [hasMoreTasks]="hasMoreTasks()"
+      [isLoadingEmails]="isLoadingEmails()"
+      [isLoadingTasks]="isLoadingTasks()"
+      (loadMoreEmails)="loadMoreEmails()"
+      (loadMoreTasks)="loadMoreTasks()"
       [(activeTab)]="defaultSlaTab"
     />
     }

@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, computed } from '@angular/core';
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
 import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -15,6 +15,26 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 export class Summary implements OnInit {
   private readonly dashboardSvc = inject(DashboardService);
   private readonly alertSvc = inject(AlertService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -37,6 +57,13 @@ export class Summary implements OnInit {
 
   protected readonly breachedEmails = signal<any[]>([]);
   protected readonly breachedTasks = signal<any[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
   protected readonly emailSlaHours = signal(24);
   protected readonly taskSlaHours = signal(24);
   protected readonly emailSlaWarningThreshold = signal(1);
@@ -188,9 +215,25 @@ export class Summary implements OnInit {
       this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
       this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
 
-      // Set breached lists and settings configurations
-      this.breachedEmails.set(stats.breachedEmailsList || []);
-      this.breachedTasks.set(stats.breachedTasksList || []);
+      // Set settings configurations (breached lists loaded on demand)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
       this.emailSlaHours.set(stats.emailSlaHours ?? 24);
       this.taskSlaHours.set(stats.taskSlaHours ?? 24);
       this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
@@ -323,6 +366,44 @@ export class Summary implements OnInit {
     } else {
       this.defaultSlaTab.set(tab);
       this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
     }
   }
 }
