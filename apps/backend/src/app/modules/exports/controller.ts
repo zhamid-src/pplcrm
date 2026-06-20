@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { QueueExportInputType } from '../../../../../../libs/common/src';
 import { ExportsRepo } from './repositories/exports.repo';
+import { StorageService } from '../../lib/storage.service';
 
 const ENTITY_LABEL_MAP: Record<string, string> = {
   persons: 'persons',
@@ -111,6 +112,26 @@ export class ExportsController {
     const row = await this.repo.getById(id, auth.tenant_id);
     if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
     return row;
+  }
+
+  public async deleteExport(id: string, auth: IAuthKeyPayload) {
+    const row = await this.repo.getById(id, auth.tenant_id);
+    if (!row) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
+    }
+
+    await this.repo.delete(id, auth.tenant_id);
+
+    if ((row as any).storage_key) {
+      try {
+        const storageService = new StorageService();
+        await storageService.delete((row as any).storage_key);
+      } catch (err) {
+        console.error(`Failed to delete storage file ${(row as any).storage_key}:`, err);
+      }
+    }
+
+    return { success: true };
   }
 
   public getRepo() {

@@ -5,6 +5,7 @@ import { TokenService } from '../../../services/api/token-service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import type { DataExportRecordType } from '../../../../../../../libs/common/src';
 import { environment } from '../../../../environments/environment';
 
@@ -16,6 +17,7 @@ import { environment } from '../../../../environments/environment';
 export class ExportsPage extends TRPCService<any> {
   private readonly alertSvc = inject(AlertService);
   private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly jobs = signal<DataExportRecordType[]>([]);
   protected readonly _loading = createLoadingGate();
@@ -60,6 +62,27 @@ export class ExportsPage extends TRPCService<any> {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  }
+
+  protected async deleteJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Export',
+      message: `Are you sure you want to delete "${job.file_name}"? This will permanently delete the file from the server.`,
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await (this.api as any).exports.delete.mutate({ id: job.id });
+      this.alertSvc.showSuccess('Export deleted successfully.');
+      await this.load();
+    } catch {
+      this.alertSvc.showError('Failed to delete export. Please try again.');
+    } finally {
+      end();
+    }
   }
 
   private async load() {

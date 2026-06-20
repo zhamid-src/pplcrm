@@ -1,4 +1,5 @@
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { sql } from 'kysely';
 
 export class ExportsRepo {
   public readonly db = new ImportsRepo().db;
@@ -75,5 +76,25 @@ export class ExportsRepo {
       .where('id', '=', id as any)
       .where('tenant_id', '=', tenant_id as any)
       .executeTakeFirst();
+  }
+
+  public async delete(id: string, tenant_id: string) {
+    return this.db.transaction().execute(async (trx) => {
+      // 1. Delete matching pending/processing background job
+      await trx
+        .deleteFrom('background_jobs' as any)
+        .where('tenant_id', '=', tenant_id as any)
+        .where(sql`payload->>'type'`, '=', 'export_csv')
+        .where(sql`payload->>'export_id'`, '=', id)
+        .execute();
+
+      // 2. Delete export record
+      return await trx
+        .deleteFrom('data_exports' as any)
+        .where('id', '=', id as any)
+        .where('tenant_id', '=', tenant_id as any)
+        .returningAll()
+        .executeTakeFirst();
+    });
   }
 }

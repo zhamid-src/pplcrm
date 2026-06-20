@@ -294,6 +294,21 @@ export class BackgroundJobWorker {
           .where('id', '=', job.id)
           .execute();
 
+        if (payload.export_id) {
+          try {
+            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
+            const exportsRepo = new ExportsRepo();
+            await exportsRepo.updateStatus(
+              String(payload.export_id),
+              String(payload.tenant_id),
+              'failed',
+              { error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}` }
+            );
+          } catch (exportErr) {
+            console.error('Failed to update export status on job permanent failure:', exportErr);
+          }
+        }
+
         // If a recurrent cron-like job fails permanently, schedule the next iteration
         await this.rescheduleCronJobOnFailure(payload.type);
       }
@@ -626,6 +641,37 @@ export class BackgroundJobWorker {
         .where('status', '=', 'processing')
         .where('locked_at', '<', staleTime)
         .execute();
+
+      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
+      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+      const staleExports = await this.db
+        .selectFrom('data_exports' as any)
+        .select(['id', 'tenant_id'])
+        .where('status', 'in', ['pending', 'processing'])
+        .where('created_at', '<', staleExportTime)
+        .execute();
+
+      if (staleExports.length > 0) {
+        const ids = staleExports.map((e: any) => e.id as any);
+        await this.db
+          .updateTable('data_exports' as any)
+          .set({
+            status: 'failed',
+            error: 'Export processing timed out',
+            updated_at: new Date(),
+          })
+          .where('id', 'in', ids)
+          .execute();
+
+        for (const exp of staleExports) {
+          await this.db
+            .deleteFrom('background_jobs' as any)
+            .where('tenant_id', '=', exp.tenant_id as any)
+            .where(sql`payload->>'type'`, '=', 'export_csv')
+            .where(sql`payload->>'export_id'`, '=', String(exp.id))
+            .execute();
+        }
+      }
     } catch (err) {
       console.error('Failed to recover stale background jobs:', err);
     }
