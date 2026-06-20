@@ -311,17 +311,38 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'settings',
-    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
   },
   {
     path: 'configuration',
     canActivate: [roleGuard],
-    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'configuration' },
+      },
+    ],
   },
   {
     path: 'billing',
     canActivate: [roleGuard],
-    loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+    children: [
+      { path: '', redirectTo: 'billing', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'billing' },
+      },
+    ],
   },
   {
     path: 'profile',
