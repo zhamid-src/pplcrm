@@ -158,7 +158,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     if (auth) {
       const result = await this.getAllWithAddress(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input);
+      const response = this.buildCsvResponse(rows, input) as { csv: string; fileName: string; columns: string[]; rowCount: number };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,

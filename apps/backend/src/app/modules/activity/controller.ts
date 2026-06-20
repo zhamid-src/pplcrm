@@ -1,8 +1,8 @@
-import { env } from '../../../env';
+import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { ExportsRepo } from '../exports/repositories/exports.repo';
 
 export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {
   constructor() {
@@ -42,23 +42,18 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     input: ExportCsvInputType & { tenant_id: string },
     auth?: IAuthKeyPayload,
   ): Promise<ExportCsvResponseType> {
+    if (!auth) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+    }
+
     const options = (input?.options ?? {}) as any;
     // Remove pagination options to export all matching records
     const { startRow, endRow, ...restOptions } = options;
-    const { rows } = await this.getRepo().getAllWithUser(input.tenant_id, restOptions);
 
-    const records = rows.map((row) => ({
-      id: String(row.id),
-      created_at: new Date(row.created_at).toISOString(),
-      user: `${row.first_name} ${row.last_name || ''}`.trim(),
-      email: row.email,
-      activity: row.activity,
-      entity: row.entity,
-      entity_id: row.entity_id || '',
-      quantity: row.quantity,
-      metadata: row.metadata ? JSON.stringify(row.metadata) : '',
-    }));
-
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const fileName = input?.fileName?.trim() || `activity-feed-export-${ts}.csv`;
     const columns = input?.columns || [
       'id',
       'created_at',
@@ -70,42 +65,42 @@ export class ActivityController extends BaseController<'user_activity', UserActi
       'quantity',
       'metadata',
     ];
-    const response = this.buildCsvResponse(records, { ...input, columns });
 
-    if (auth) {
-      try {
-        await this.userActivity.log({
+    const exportsRepo = new ExportsRepo();
+    const exportRecord = await exportsRepo.create({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entity: 'user_activity',
+      file_name: fileName,
+      columns,
+    });
+
+    const exportId = String((exportRecord as any).id);
+
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'export_csv',
+          export_id: exportId,
           tenant_id: auth.tenant_id,
           user_id: auth.user_id,
-          activity: 'export',
           entity: 'user_activity',
-          quantity: response.rowCount,
-          metadata: {
-            requested_columns: response.columns,
-            returned_columns: response.columns,
-            file_name: response.fileName,
-          },
-        });
+          table: 'user_activity',
+          options: restOptions,
+          columns,
+          file_name: fileName,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
 
-        const user = await this.getRepo()
-          .db.selectFrom('authusers')
-          .select(['email'])
-          .where('id', '=', auth.user_id as any)
-          .executeTakeFirst();
-        if (user && user.email) {
-          const mailService = new TransactionalEmailService();
-          await mailService.sendMail({
-            to: user.email,
-            subject: `Your Export is Ready: ${response.fileName}`,
-            text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the Activity Feed is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
-            html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>Activity Feed</strong> is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
-          });
-        }
-      } catch (err) {
-        console.error('Failed to log export activity or send email alert', err);
-      }
-    }
-
-    return response;
+    return {
+      status: 'processing',
+    } as any;
   }
 }

@@ -262,7 +262,12 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     const options = (input?.options ?? {}) as QueryParams<T>;
     const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options });
     const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
-    const response = this.buildCsvResponse(records, input);
+    const response = this.buildCsvResponse(records, input) as {
+      csv: string;
+      fileName: string;
+      columns: string[];
+      rowCount: number;
+    };
 
     if (auth) {
       try {

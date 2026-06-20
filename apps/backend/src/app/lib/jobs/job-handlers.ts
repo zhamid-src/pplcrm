@@ -1007,6 +1007,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         'tags',
         'issues',
         'users',
+        'user_activity',
       ];
       if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
 
@@ -1014,30 +1015,70 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       await exportsRepo.updateStatus(exportId, tenantId, 'processing');
 
       // Fetch all rows for the entity
-
-      let query = db
-        .selectFrom(table as any)
-        .selectAll()
-        .where('tenant_id', '=', tenantId as any);
-
-      // Issues are tags with type='issue'
-      if (payload.entity === 'issues') {
-        query = query.where('type', '=', 'issue') as any;
-      }
-
-      // Apply search string if provided
       const opts = payload.options ?? {};
-      if (opts.searchStr) {
-        const like = `%${opts.searchStr}%`;
-        // Best-effort: try name, first_name/last_name depending on table
-        if (table === 'persons') {
+      let query: any;
+
+      if (table === 'user_activity') {
+        query = db
+          .selectFrom('user_activity')
+          .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+          .select([
+            'user_activity.id',
+            'user_activity.created_at',
+            sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
+            'authusers.email',
+            'user_activity.activity',
+            'user_activity.entity',
+            'user_activity.entity_id',
+            'user_activity.quantity',
+            'user_activity.metadata',
+          ])
+          .where('user_activity.tenant_id', '=', tenantId as any);
+
+        if (opts.userId) {
+          query = query.where('user_activity.user_id', '=', opts.userId);
+        }
+        if (opts.entity) {
+          query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
+        }
+        if (opts.activity) {
+          query = query.where('user_activity.activity', '=', opts.activity);
+        }
+        if (opts.searchStr) {
+          const search = `%${opts.searchStr.trim().toLowerCase()}%`;
           query = query.where((eb: any) =>
-            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
-          ) as any;
-        } else if (table === 'households') {
-          query = query.where((eb: any) => eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])) as any;
-        } else {
-          query = query.where('name' as any, 'ilike', like) as any;
+            eb.or([
+              eb('authusers.first_name', 'ilike', search),
+              eb('authusers.last_name', 'ilike', search),
+              eb('user_activity.entity', 'ilike', search),
+              eb('user_activity.activity', 'ilike', search),
+            ]),
+          );
+        }
+      } else {
+        query = db
+          .selectFrom(table as any)
+          .selectAll()
+          .where('tenant_id', '=', tenantId as any);
+
+        // Issues are tags with type='issue'
+        if (payload.entity === 'issues') {
+          query = query.where('type', '=', 'issue') as any;
+        }
+
+        // Apply search string if provided
+        if (opts.searchStr) {
+          const like = `%${opts.searchStr}%`;
+          // Best-effort: try name, first_name/last_name depending on table
+          if (table === 'persons') {
+            query = query.where((eb: any) =>
+              eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
+            ) as any;
+          } else if (table === 'households') {
+            query = query.where((eb: any) => eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])) as any;
+          } else {
+            query = query.where('name' as any, 'ilike', like) as any;
+          }
         }
       }
 
@@ -1049,7 +1090,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
           }
         }
       } else {
-        query = query.orderBy('created_at' as any, 'desc') as any;
+        const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
+        query = query.orderBy(sortCol as any, 'desc') as any;
       }
 
       // Determine columns
@@ -1086,6 +1128,38 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
   } else {
     throw new Error(`Unsupported background job type: ${payload.type}`);
   }
+}
+
+function getEntityFilterValues(entityFilter: string): string[] {
+  const ent = entityFilter.toLowerCase();
+  if (ent === 'persons' || ent === 'person' || ent === 'people') {
+    return ['person', 'persons'];
+  }
+  if (ent === 'households' || ent === 'household') {
+    return ['household', 'households'];
+  }
+  if (ent === 'companies' || ent === 'company') {
+    return ['company', 'companies'];
+  }
+  if (ent === 'tasks' || ent === 'task') {
+    return ['task', 'tasks', 'tasks_archived'];
+  }
+  if (ent === 'emails' || ent === 'email') {
+    return ['email', 'emails'];
+  }
+  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
+    return ['volunteer_event', 'volunteer_events'];
+  }
+  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
+    return ['volunteer_shift', 'volunteer_shifts'];
+  }
+  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
+    return ['web_form', 'web_forms', 'form', 'forms'];
+  }
+  if (ent === 'tags' || ent === 'tag') {
+    return ['tag', 'tags'];
+  }
+  return [ent];
 }
 
 async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Promise<void> {
