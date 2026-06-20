@@ -18,7 +18,8 @@ import { NewsletterEmailService } from '../mail/newsletter-mail.service';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { geocodeAndMapHousehold } from '../gis/geocoding';
 import { ExportsRepo } from '../../modules/exports/repositories/exports.repo';
-import { rowsToCsv } from '../csv';
+import { Readable } from 'stream';
+import { CsvTransformStream } from '../csv-stream';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
@@ -1043,30 +1044,33 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         query = query.orderBy('created_at' as any, 'desc') as any;
       }
 
-      const rows = await query.execute();
-      const records = rows.map((r: any) => ({ ...(r as Record<string, unknown>) }));
-
       // Determine columns
       const requestedCols: string[] =
         Array.isArray(payload.columns) && payload.columns.length
           ? payload.columns
-          : records.length > 0
-            ? Object.keys(records[0])
-            : [];
+          : [];
 
-      const csv = requestedCols.length ? rowsToCsv(records, requestedCols) : '';
       const storageKey = `exports/${tenantId}/${exportId}.csv`;
 
-      if (csv) {
-        await storageService.upload(storageKey, Buffer.from(csv, 'utf8'), 'text/csv');
+      // Stream the query results using query.stream()
+      const dbStream = Readable.from(query.stream());
+      const csvStream = new CsvTransformStream(requestedCols);
+
+      await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
+
+      const count = csvStream.rowCount;
+
+      // If no rows were processed, clean up by deleting the empty file if created
+      if (count === 0) {
+        await storageService.delete(storageKey);
       }
 
       await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
-        rowCount: records.length,
-        storageKey: csv ? storageKey : undefined,
+        rowCount: count,
+        storageKey: count > 0 ? storageKey : undefined,
       });
 
-      console.log(`Export job ${exportId} completed: ${records.length} rows exported.`);
+      console.log(`Export job ${exportId} completed: ${count} rows exported.`);
     } catch (err: any) {
       console.error(`Export job ${exportId} failed:`, err);
       await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
