@@ -19,3 +19,7 @@ test-results/*
 repomix-output.xml
 apps/.DS_Store
 libs/.DS_Store
+
+.claude/worktrees
+migrations.json
+package-lock.json

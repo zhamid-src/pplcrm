@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import Cursor from 'pg-cursor';
+
 const { Pool } = pg;
 
 // 1. Manually load environment variables from root files if not set in process.env
@@ -108,6 +110,7 @@ const dialect = new PostgresDialect({
     host: process.env.DB_HOST || 'localhost',
     ssl: process.env.DB_SSL === 'true',
   }),
+  cursor: Cursor,
 });
 
 const db = new Kysely<any>({ dialect });

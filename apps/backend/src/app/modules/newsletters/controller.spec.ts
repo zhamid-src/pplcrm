@@ -91,6 +91,7 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('newsletters').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
 }
 
