@@ -69,8 +69,17 @@ export class EmailRepo extends BaseRepository<'emails'> {
           .on('ers.user_id', '=', user_id)
           .on('ers.tenant_id', '=', tenant_id),
       )
+      .leftJoin('persons as p_sender', (join) =>
+        join
+          .onRef('p_sender.tenant_id', '=', 'emails.tenant_id')
+          .on(
+            sql`lower(p_sender.email) = lower(emails.from_email) or lower(p_sender.email2) = lower(emails.from_email)`,
+          ),
+      )
       .selectAll('emails')
       .select('eh.date_sent as date_sent')
+      .select('p_sender.first_name as sender_first_name')
+      .select('p_sender.last_name as sender_last_name')
       // numeric count (coalesced to 0)
       .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
       // boolean has_attachment via EXISTS (fast)
@@ -298,21 +307,33 @@ export class EmailRepo extends BaseRepository<'emails'> {
   private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
     switch (folder_id) {
       case SPECIAL_FOLDERS.ALL_OPEN:
-        return (eb) => eb.and([eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+        return (eb) => eb.and([eb('emails.status', '=', 'open'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.CLOSED:
-        return (eb) => eb.and([eb('status', '=', 'closed'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+        return (eb) => eb.and([eb('emails.status', '=', 'closed'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
       case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
         return (eb) =>
-          eb.and([eb('assigned_to', '=', user_id), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+          eb.and([
+            eb('emails.assigned_to', '=', user_id),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
       case SPECIAL_FOLDERS.UNASSIGNED:
         return (eb) =>
-          eb.and([eb('assigned_to', 'is', null), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+          eb.and([
+            eb('emails.assigned_to', 'is', null),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
       case SPECIAL_FOLDERS.FAVOURITES:
         return (eb) =>
-          eb.and([eb('is_favourite', '=', true), eb('status', '=', 'open'), eb('folder_id', '=', ALL_FOLDERS.INBOX)]);
+          eb.and([
+            eb('emails.is_favourite', '=', true),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
       default:
         // Real folder
-        return (eb) => eb('folder_id', '=', folder_id);
+        return (eb) => eb('emails.folder_id', '=', folder_id);
     }
   }
 }

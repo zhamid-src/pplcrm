@@ -130,6 +130,8 @@ export class EmailStateStore {
           assigned_to: s.assigned_to ?? undefined,
           has_attachment: has, // keep in the normalized email too
           is_read: !!(s as any).is_read,
+          sender_first_name: s.sender_first_name ?? undefined,
+          sender_last_name: s.sender_last_name ?? undefined,
         };
 
         next[id] = e;

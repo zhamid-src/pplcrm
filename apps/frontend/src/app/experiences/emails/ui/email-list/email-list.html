@@ -42,9 +42,10 @@
         @if (!email.is_read) {
         <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
         } @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read"
-          >{{ email.from_email || email.to_email }}</span
-        >
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
+          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
+          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
+        </span>
         } @else {
         <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
         }
