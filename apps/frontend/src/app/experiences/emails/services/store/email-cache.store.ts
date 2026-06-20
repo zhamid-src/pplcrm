@@ -1,6 +1,3 @@
-/**
- * @file Caching + de-duped loading for email bodies & headers using TanStack Query.
- */
 import { computed, inject, Service } from '@angular/core';
 import { injectQuery, QueryClient } from '@tanstack/angular-query-experimental';
 
@@ -13,10 +10,6 @@ export class EmailCacheStore {
   private readonly state = inject(EmailStateStore);
   private readonly queryClient = inject(QueryClient);
 
-  /**
-   * Reactive query for the currently selected email's body and header.
-   * Leverages TanStack Query for background updates, de-duplication, and caching.
-   */
   private readonly emailQuery = injectQuery(() => ({
     queryKey: ['email', this.state.currentSelectedEmailId()],
     queryFn: async () => {
@@ -35,9 +28,6 @@ export class EmailCacheStore {
     staleTime: 1000 * 60 * 5, // 5 minutes cache TTL
   }));
 
-  /**
-   * Reactive query for the currently selected email's activities feed.
-   */
   private readonly activitiesQuery = injectQuery(() => ({
     queryKey: ['email-activities', this.state.currentSelectedEmailId()],
     queryFn: async () => {
@@ -50,7 +40,6 @@ export class EmailCacheStore {
     staleTime: 1000 * 60 * 5,
   }));
 
-  /** Factory: computed body by id */
   public getEmailBodyById = (emailId: EmailId | null) =>
     computed(() => {
       const key = emailId ? String(emailId) : null;
@@ -64,7 +53,6 @@ export class EmailCacheStore {
       return cached?.body;
     });
 
-  /** Factory: computed header by id */
   public getEmailHeaderById = (emailId: EmailId | null) =>
     computed(() => {
       const key = emailId ? String(emailId) : null;
@@ -78,7 +66,6 @@ export class EmailCacheStore {
       return cached?.header;
     });
 
-  /** Factory: computed activity log by email id (undefined = not yet loaded, null = loaded empty) */
   public getEmailActivitiesById = (emailId: EmailId | null) =>
     computed(() => {
       const key = emailId ? String(emailId) : null;
@@ -91,7 +78,6 @@ export class EmailCacheStore {
       return this.queryClient.getQueryData<any[]>(['email-activities', key]);
     });
 
-  /** Update header cache after adding a comment */
   public appendCommentToHeader(emailId: EmailId, createdComment: any): void {
     const key = String(emailId);
     this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
@@ -104,7 +90,6 @@ export class EmailCacheStore {
     });
   }
 
-  /** Load only the body (cached via TanStack Query) */
   public async loadEmailBody(emailId: EmailId): Promise<string> {
     const key = String(emailId);
     const data = await this.queryClient.fetchQuery({
@@ -124,7 +109,6 @@ export class EmailCacheStore {
     return data.body;
   }
 
-  /** Load combined body + headers (cached via TanStack Query) */
   public async loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
     const key = String(emailId);
     return this.queryClient.fetchQuery({
@@ -143,7 +127,6 @@ export class EmailCacheStore {
     });
   }
 
-  /** Load activity log for an email (always fetches fresh or respects staleTime) */
   public async loadEmailActivities(emailId: EmailId): Promise<any[]> {
     const key = String(emailId);
     return this.queryClient.fetchQuery({
@@ -156,7 +139,6 @@ export class EmailCacheStore {
     });
   }
 
-  /** Remove a comment from the cached header (optimistic) */
   public removeCommentFromHeader(emailId: EmailId, commentId: string | number): void {
     const key = String(emailId);
     this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
@@ -165,15 +147,12 @@ export class EmailCacheStore {
       if (!existingHeader) return old;
       const nextHeader = {
         ...existingHeader,
-        comments: ((existingHeader as any).comments ?? []).filter(
-          (c: any) => String(c.id) !== String(commentId),
-        ),
+        comments: ((existingHeader as any).comments ?? []).filter((c: any) => String(c.id) !== String(commentId)),
       };
       return { ...old, header: nextHeader };
     });
   }
 
-  /** Replace the cached header entirely (rollback) */
   public replaceHeader(emailId: EmailId, header: any): void {
     const key = String(emailId);
     this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {

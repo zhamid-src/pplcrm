@@ -31,7 +31,6 @@ export interface DataGridConfig {
     exportReady: string;
     exportNavigateWarning: string;
     exportFileName: string;
-    /** Entity key sent to the background export job (e.g. 'persons', 'households'). */
     exportEntity: QueueExportInputType['entity'] | '';
   };
   pageSize: number;
@@ -53,7 +52,6 @@ export function provideDataGridConfig(
 
 export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
 
-/** Default config used when no provider is registered */
 export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
   pageSize: 25,
   filterToolPanelId: 'filters-new',

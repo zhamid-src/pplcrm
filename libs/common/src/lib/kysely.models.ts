@@ -24,7 +24,6 @@ type JsonArray = JsonValue[];
 type JsonObject = { [K in string]?: JsonValue };
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-/** After migration 2026-06-31 all timestamp columns are timestamptz. */
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 type Generated<T> =
   T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
@@ -184,9 +183,7 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   admin_id: string;
   createdby_id: string;
   description: string | null;
-  /** Stored as `date` in the DB (was `time` prior to migration 2026-06-31). */
   startdate: string | null;
-  /** Stored as `date` in the DB (was `time` prior to migration 2026-06-31). */
   enddate: string | null;
   name: string;
   json: Json | null;
@@ -350,7 +347,6 @@ interface Tenants extends RecordType, AddressType {
   phone: string | null;
   json: Json | null;
   notes: string | null;
-  /** ID of the tenant's permanent placeholder household (people with no address go here). */
   placeholder_household_id: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
@@ -378,9 +374,7 @@ interface Newsletters extends RecordType {
   subject: string | null;
   preview_text: string | null;
   audience_description: string | null;
-  /** jsonb after migration 2026-06-31. Shape: { include: string[], exclude: string[] } */
   target_lists: Json | null;
-  /** jsonb after migration 2026-06-31. Shape: { include: string[], exclude: string[] } */
   segments: Json | null;
   total_recipients: number;
   delivered_count: number;
@@ -723,16 +717,13 @@ export interface WorkflowEnrollments {
   updated_at: Generated<Timestamp>;
 }
 
-/** Take the “S” (select-time) part if it’s a ColumnType, otherwise leave as-is */
 type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
 
-/** Recursively apply UnwrapSelect to every property */
 type SelectShape<T> = { [K in keyof T]: UnwrapSelect<T[K]> };
 
 export type HouseholdCol = keyof Models['households'];
 export type PersonsdCol = keyof Models['persons'];
 
-/** The row you actually return to the grid */
 export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;

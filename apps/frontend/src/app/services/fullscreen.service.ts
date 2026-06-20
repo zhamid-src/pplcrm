@@ -2,7 +2,6 @@ import { signal, Service } from '@angular/core';
 
 @Service()
 export class FullScreenService {
-  /** True iff the document is actually in fullscreen (kept in sync by events) */
   private readonly _isFullScreen = signal<boolean>(false);
 
   constructor() {
@@ -20,12 +19,10 @@ export class FullScreenService {
     });
   }
 
-  /** Public read */
   public isFullScreenMode(): boolean {
     return this._isFullScreen();
   }
 
-  /** Toggle based on current actual state */
   public async toggleFullScreen(): Promise<void> {
     if (this.hasFsElement()) {
       await this.exitFullScreen();
@@ -34,7 +31,6 @@ export class FullScreenService {
     }
   }
 
-  /** Request browser fullscreen on the whole app */
   private async enterFullScreen(): Promise<void> {
     const elem = document.documentElement as unknown as HTMLElement & {
       webkitRequestFullscreen?: () => Promise<void>;
@@ -54,7 +50,6 @@ export class FullScreenService {
     }
   }
 
-  /** Exit browser fullscreen if currently in it */
   private async exitFullScreen(): Promise<void> {
     try {
       if (!this.hasFsElement()) return; // avoid "Not in fullscreen" errors
@@ -76,7 +71,6 @@ export class FullScreenService {
     }
   }
 
-  /** Cross-browser check for current fullscreen element */
   private hasFsElement(): boolean {
     const doc = document as unknown as Document & {
       webkitFullscreenElement?: Element | null;

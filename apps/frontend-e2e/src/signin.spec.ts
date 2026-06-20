@@ -1,7 +1,3 @@
-/**
- * @fileoverview E2E tests for authentication flow.
- * Tests sign-in, sign-up, and authentication guard functionality.
- */
 import { expect, test } from '@playwright/test';
 
 test.describe('Authentication', () => {
@@ -90,8 +86,8 @@ test.describe('Authentication', () => {
     });
 
     test('should redirect authenticated users away from sign-in', async ({ page }) => {
-      page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-      page.on('pageerror', err => console.log('BROWSER ERROR:', err.message));
+      page.on('console', (msg) => console.log('BROWSER LOG:', msg.text()));
+      page.on('pageerror', (err) => console.log('BROWSER ERROR:', err.message));
 
       // Mock currentUser query response for tRPC using RegExp
       await page.route(/\/auth\.currentUser/, async (route) => {

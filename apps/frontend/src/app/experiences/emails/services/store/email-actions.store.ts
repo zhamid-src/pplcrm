@@ -1,7 +1,3 @@
-/**
- * @file Mutating actions (assign, favourite, status, comments) with optimistic flows.
- * Centralizes rollback + optional refresh (folder contents & counts).
- */
 import { inject, signal, Service } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
@@ -22,14 +18,12 @@ export class EmailActionsStore {
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
 
-  /** Add a comment and update header cache so future reads include it */
   public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
     const created = await this.svc.addComment(String(emailId), authorId, commentText);
     this.cache.appendCommentToHeader(emailId, created);
     return created;
   }
 
-  /** Assign/unassign with optimistic update and refreshes */
   public async assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null): Promise<void> {
     const key = String(emailId);
     await this.updateProperty(
@@ -43,7 +37,6 @@ export class EmailActionsStore {
     );
   }
 
-  /** Delete a comment (optimistic remove + rollback on failure) */
   public async deleteComment(emailId: EmailId, commentId: string | number): Promise<void> {
     const key = String(emailId);
     const prevHeader = this.cache.getEmailHeaderById(key)(); // snapshot before change
@@ -81,7 +74,6 @@ export class EmailActionsStore {
     }
   }
 
-  /** Delete an email and refresh folders/counts */
   public async deleteEmail(emailId: EmailId): Promise<void> {
     const key = String(emailId);
     try {
@@ -131,7 +123,6 @@ export class EmailActionsStore {
     return saved as { id: string };
   }
 
-  /** Send a brand new email (with optional attachments). Refresh counts/folder after. */
   public async sendEmail(input: ComposePayload): Promise<EmailType> {
     this.sendingCount.update((c) => c + 1);
     try {
@@ -172,7 +163,6 @@ export class EmailActionsStore {
     }
   }
 
-  /** Toggle favourite with optimistic update */
   public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
     const key = String(emailId);
     const currentFolderId = this.folders.currentSelectedFolderId();
@@ -182,7 +172,6 @@ export class EmailActionsStore {
     });
   }
 
-  /** Update status and refresh counts (affects virtual folders) */
   public async updateEmailStatus(emailId: EmailId, status: EmailStatus): Promise<void> {
     const key = String(emailId);
     await this.updateProperty(key, { status }, () => this.svc.setStatus(key, status), {
@@ -191,7 +180,6 @@ export class EmailActionsStore {
     });
   }
 
-  /** Toggle read/unread status with optimistic update */
   public async toggleEmailReadStatus(emailId: EmailId, isRead: boolean): Promise<void> {
     const key = String(emailId);
     await this.updateProperty(key, { is_read: isRead }, () => this.svc.setEmailReadStatus(key, isRead), {
@@ -200,7 +188,6 @@ export class EmailActionsStore {
     });
   }
 
-  /** Move an email to a specific folder */
   public async moveToFolder(emailId: EmailId, folderId: string): Promise<void> {
     const key = String(emailId);
     try {
@@ -218,10 +205,6 @@ export class EmailActionsStore {
     }
   }
 
-  /**
-   * Shared optimistic update with rollback and optional refresh of
-   * current folder contents and counts.
-   */
   private async updateProperty(
     emailKey: string,
     patch: Partial<EmailType>,

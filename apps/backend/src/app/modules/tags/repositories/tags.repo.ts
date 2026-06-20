@@ -9,20 +9,11 @@ import {
 } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
-/**
- * Repository for interacting with the `tags` table and related mapping tables.
- */
 export class TagsRepo extends BaseRepository<'tags'> {
-  /**
-   * Creates a repository instance for the `tags` table.
-   */
   constructor() {
     super('tags');
   }
 
-  /**
-   * Insert a tag or return an existing one based on name + type.
-   */
   public override async addOrGet<K extends keyof Models['tags'] & string>(
     input: {
       row: OperationDataType<'tags', 'insert'>;
@@ -63,14 +54,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
     return query.execute();
   }
 
-  /**
-   * Deletes tags by ID, along with their associated mapping records.
-   * Only tags marked as deletable are removed.
-   *
-   * @param input.tenant_id - Tenant scope
-   * @param input.ids - Tag IDs to delete
-   * @returns `true` if deletion query ran successfully
-   */
   public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'>[] }) {
     return await this.transaction().execute(async (trx) => {
       if (!input.ids.length) return false;
@@ -163,13 +146,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
     }
   }
 
-  /**
-   * Retrieves all tags for a tenant, including usage counts from both people and households.
-   *
-   * @param input.tenant_id - Tenant scope
-   * @param trx - Optional Kysely transaction
-   * @returns A list of tags with usage statistics
-   */
   public override async getAllWithCounts(
     input: {
       tenant_id: string;
@@ -255,15 +231,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
     };
   }
 
-  /**
-   * Returns the ID of a tag by its name and tenant.
-   *
-   * @param input.name - Tag name to match
-   * @param input.tenant_id - Tenant scope
-   * @param input.type - Optional tag type
-   * @param trx - Optional Kysely transaction
-   * @returns Tag row containing only the `id`, or undefined if not found
-   */
   public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
     let q = this.getSelect(trx).select('id').where('name', '=', input.name).where('tenant_id', '=', input.tenant_id);
     if (input.type) {

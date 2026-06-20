@@ -1,6 +1,3 @@
-/**
- * Repository for team entities and volunteer membership counts.
- */
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';

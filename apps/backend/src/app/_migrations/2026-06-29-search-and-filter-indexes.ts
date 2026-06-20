@@ -1,26 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Kysely, sql } from 'kysely';
 
-/**
- * Migration: Search & Filter Index Optimization
- *
- * Layer 1 – Context-Aware Global Search (FTS tsvector)
- *   Adds a stored GENERATED tsvector column to persons, households, companies,
- *   and volunteer_events. Weights reflect relevance priority (A > B > C > D).
- *   The GIN index covers only the tsvector/text column — bigint columns like
- *   tenant_id have no GIN operator class. The query planner performs a bitmap
- *   AND between the GIN index scan and the B-Tree tenant_id index scan.
- *
- * Layer 2 – Advanced Grid Filter / Dynamic List Operators
- *   • Trigram GIN indexes (pg_trgm) on individual text columns.
- *   • Composite B-Tree indexes leading with tenant_id for exact matches, NULL
- *     checks, FK filters, and range scans.
- *
- * Naming convention
- *   idx_<table>_<purpose>   – composite B-Tree (tenant_id, col)
- *   idx_<table>_trgm_<col>  – trigram GIN on single text column
- *   idx_<table>_fts         – full-text GIN on tsvector column
- */
 export async function up(db: Kysely<any>): Promise<void> {
   console.log('======= Migrating up: search-and-filter-indexes ========');
 
@@ -54,10 +34,18 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_persons_fts ON persons USING GIN (search_vector);`.execute(db);
 
   // 1b. Trigram GIN – single text column, no tenant_id
-  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_first_name ON persons USING GIN (first_name gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_last_name  ON persons USING GIN (last_name  gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_email      ON persons USING GIN (email      gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_mobile     ON persons USING GIN (mobile     gin_trgm_ops);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_first_name ON persons USING GIN (first_name gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_last_name  ON persons USING GIN (last_name  gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_email      ON persons USING GIN (email      gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_persons_trgm_mobile     ON persons USING GIN (mobile     gin_trgm_ops);`.execute(
+    db,
+  );
 
   // 1c. B-Tree – composite with tenant_id for FK / NULL / categorical filters
   await sql`CREATE INDEX IF NOT EXISTS idx_persons_tenant_assigned    ON persons (tenant_id, assigned_to);`.execute(db);
@@ -92,16 +80,32 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_households_fts ON households USING GIN (search_vector);`.execute(db);
 
   // 2b. Trigram GIN – single text columns
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_street1 ON households USING GIN (street1 gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_city    ON households USING GIN (city    gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_zip     ON households USING GIN (zip     gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_state   ON households USING GIN (state   gin_trgm_ops);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_street1 ON households USING GIN (street1 gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_city    ON households USING GIN (city    gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_zip     ON households USING GIN (zip     gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_trgm_state   ON households USING GIN (state   gin_trgm_ops);`.execute(
+    db,
+  );
 
   // 2c. B-Tree – composite tenant_id indexes
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_type           ON households (tenant_id, type);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_geocoding       ON households (tenant_id, geocoding_status);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_is_placeholder ON households (tenant_id, is_placeholder);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_campaign        ON households (tenant_id, campaign_id);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_type           ON households (tenant_id, type);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_geocoding       ON households (tenant_id, geocoding_status);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_is_placeholder ON households (tenant_id, is_placeholder);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_households_tenant_campaign        ON households (tenant_id, campaign_id);`.execute(
+    db,
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // 3. COMPANIES
@@ -126,9 +130,15 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_companies_fts ON companies USING GIN (search_vector);`.execute(db);
 
   // 3b. Trigram GIN
-  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_name     ON companies USING GIN (name     gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_email    ON companies USING GIN (email    gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_industry ON companies USING GIN (industry gin_trgm_ops);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_name     ON companies USING GIN (name     gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_email    ON companies USING GIN (email    gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_companies_trgm_industry ON companies USING GIN (industry gin_trgm_ops);`.execute(
+    db,
+  );
 
   // 3c. B-Tree
   await sql`CREATE INDEX IF NOT EXISTS idx_companies_tenant_email    ON companies (tenant_id, email);`.execute(db);
@@ -153,23 +163,37 @@ export async function up(db: Kysely<any>): Promise<void> {
       ) STORED;
   `.execute(db);
 
-  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_fts ON volunteer_events USING GIN (search_vector);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_fts ON volunteer_events USING GIN (search_vector);`.execute(
+    db,
+  );
 
   // 4b. Trigram GIN
-  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_name     ON volunteer_events USING GIN (name             gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_location ON volunteer_events USING GIN (location_address gin_trgm_ops);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_name     ON volunteer_events USING GIN (name             gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_location ON volunteer_events USING GIN (location_address gin_trgm_ops);`.execute(
+    db,
+  );
 
   // 4c. B-Tree – date range filters common on the scheduling grid
-  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_tenant_start ON volunteer_events (tenant_id, start_time);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_tenant_end   ON volunteer_events (tenant_id, end_time);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_tenant_start ON volunteer_events (tenant_id, start_time);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_volunteer_events_tenant_end   ON volunteer_events (tenant_id, end_time);`.execute(
+    db,
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // 5. LISTS
   // ──────────────────────────────────────────────────────────────────────────
 
   // 5a. Trigram GIN
-  await sql`CREATE INDEX IF NOT EXISTS idx_lists_trgm_name        ON lists USING GIN (name        gin_trgm_ops);`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_lists_trgm_description ON lists USING GIN (description gin_trgm_ops);`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_lists_trgm_name        ON lists USING GIN (name        gin_trgm_ops);`.execute(
+    db,
+  );
+  await sql`CREATE INDEX IF NOT EXISTS idx_lists_trgm_description ON lists USING GIN (description gin_trgm_ops);`.execute(
+    db,
+  );
 
   // 5b. B-Tree
   await sql`CREATE INDEX IF NOT EXISTS idx_lists_tenant_object     ON lists (tenant_id, object);`.execute(db);

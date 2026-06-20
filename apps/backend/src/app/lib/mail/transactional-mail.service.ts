@@ -151,10 +151,6 @@ export class TransactionalEmailService {
 </html>`;
   }
 
-  /**
-   * Sends a transactional email using Postmark's HTTP REST API.
-   * If POSTMARK_SERVER_TOKEN is missing, logs email details to the console (development fallback).
-   */
   public async sendMail(options: SendMailOptions): Promise<void> {
     const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
 
@@ -173,7 +169,7 @@ export class TransactionalEmailService {
       const response = await fetch('https://api.postmarkapp.com/email', {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'Content-Type': 'application/json',
           'X-Postmark-Server-Token': this.serverToken,
         },
@@ -195,9 +191,6 @@ export class TransactionalEmailService {
     }
   }
 
-  /**
-   * Enqueues a transactional email to be processed in the background.
-   */
   public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
     const dbClient = (trx || BaseRepository.dbInstance) as any;
     await dbClient

@@ -1,25 +1,9 @@
 import { AddressType } from '../../../../common/src/lib/kysely.models';
 
-/**
- * Maps the internal `AddressType` keys to the corresponding Google Places component types.
- * This helps prioritize which parts of the Google response to use for each address field.
- */
 type AddressTypeMapInterface = {
   [key in keyof AddressType]: string[];
 };
 
-/**
- * Parses a Google Maps PlaceResult object into a custom AddressType.
- *
- * @param place - The result object returned from the Google Places API.
- * @returns An AddressType object with mapped fields like `city`, `state`, `country`, etc.
- *
- * The function:
- * - Loops through Google's address components
- * - Matches each component to the desired AddressType key using a prioritized map
- * - Uses `short_name` for `country`, `long_name` for all others
- * - Extracts lat/lng and formatted address if available
- */
 export function parseAddress(place: google.maps.places.PlaceResult): AddressType {
   const address: AddressType = {};
 
@@ -46,12 +30,6 @@ export function parseAddress(place: google.maps.places.PlaceResult): AddressType
   return address;
 }
 
-/**
- * Parses a modern Google Maps Place object into a custom AddressType.
- *
- * @param place - The modern Place object returned from the Google Places API.
- * @returns An AddressType object with mapped fields.
- */
 export function parsePlace(place: google.maps.places.Place): AddressType {
   const address: AddressType = {};
 
@@ -77,10 +55,6 @@ export function parsePlace(place: google.maps.places.Place): AddressType {
   return address;
 }
 
-/**
- * Google Places returns multiple types of address components.
- * This map defines the priority of those types for each internal address field.
- */
 const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
   apt: ['subpremise'],
   street_num: ['street_number'],

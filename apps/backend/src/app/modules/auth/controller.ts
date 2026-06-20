@@ -54,10 +54,6 @@ import {
   TablesOperationMap,
 } from '../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Controller responsible for user authentication, sign-up, token management,
- * and password reset workflows.
- */
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private profiles: UserProfiles = new UserProfiles();
   private sessions: SessionsRepo = new SessionsRepo();
@@ -236,11 +232,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sanitizeUser({ ...created, last_name: input.last_name });
   }
 
-  /**
-   * Renews authentication tokens using the current auth token.
-   * @param input Contains `auth_token` and `refresh_token`.
-   * @returns Newly generated auth and refresh tokens.
-   */
   public async renewAuthToken(input: IToken) {
     if (!input?.auth_token || !input?.refresh_token) {
       throw new UnauthorizedError();
@@ -286,12 +277,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
-  /**
-   * Resets a user's password using the reset code.
-   * @param plaintextPassword New password in plain text.
-   * @param code Password reset verification code.
-   * @throws If the reset code is expired or invalid.
-   */
   public async resetPassword(plaintextPassword: string, code: string) {
     const password = await this.hashPassword(plaintextPassword);
 
@@ -343,9 +328,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
   }
 
-  /**
-   * Verifies email address based on a verification code.
-   */
   public async verifyEmail(code: string) {
     const msec = await this.getCodeAge(code);
     // 24 hours in milliseconds for verification links
@@ -383,9 +365,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { success: true };
   }
 
-  /**
-   * Resends a verification email.
-   */
   public async resendVerificationEmail(email: string) {
     const user = await this.getUserByEmail(email);
     if (user.verified) {
@@ -416,12 +395,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
   }
 
-  /**
-   * Sends a password reset email with a reset link.
-   * @param email User's email address.
-   * @returns Boolean indicating success.
-   * @throws If email sending fails or user is not found.
-   */
   public async sendPasswordResetEmail(email: string) {
     const user = await this.getUserByEmail(email);
     await this.getRepo()
@@ -451,12 +424,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return true;
   }
 
-  /**
-   * Authenticates a user with email and password.
-   * @param input Object containing `email` and `password`.
-   * @returns Newly generated auth and refresh tokens.
-   * @throws If credentials are invalid.
-   */
   public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
@@ -800,11 +767,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return !existing;
   }
 
-  /**
-   * Signs the user out by deleting their session.
-   * @param auth Auth payload containing session ID.
-   * @returns Number of sessions deleted.
-   */
   public async signOut(auth: IAuthKeyPayload | null) {
     if (!auth?.session_id) {
       return null;
@@ -812,12 +774,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sessions.deleteBySessionId(auth.session_id);
   }
 
-  /**
-   * Registers a new user, creates tenant, and issues tokens.
-   * @param input User sign-up information.
-   * @returns Newly generated auth and refresh tokens.
-   * @throws If email is already registered or internal error occurs.
-   */
   public async signUp(input: signUpInputType): Promise<IToken> {
     const email = input.email.toLowerCase();
     let token = { auth_token: '', refresh_token: '' };
@@ -1100,15 +1056,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  /**
-   * Creates a new user profile.
-   * @private
-   * @param trx Kysely transaction instance.
-   * @param id Profile ID.
-   * @param tenant_id Tenant ID.
-   * @param auth_id Auth user ID.
-   * @returns Newly created profile.
-   */
   private async createProfile(trx: Transaction<Models>, id: string, tenant_id: string, auth_id: string) {
     const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
     const profile = await this.profiles.add({ row }, trx);
@@ -1118,13 +1065,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return profile;
   }
 
-  /**
-   * Creates a new tenant.
-   * @private
-   * @param trx Kysely transaction instance.
-   * @param name Tenant (organization) name.
-   * @returns Tenant ID of the newly created tenant.
-   */
   private async createTenant(trx: Transaction<Models>, name: string) {
     const row = { name } as OperationDataType<'tenants', 'insert'>;
     const tenantAddResult = await this.tenants.add({ row }, trx);
@@ -1134,13 +1074,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return tenantAddResult.id;
   }
 
-  /**
-   * Creates auth and refresh tokens and saves session.
-   * @private
-   * @param input Token input payload including user and tenant info.
-   * @param trx Optional Kysely transaction.
-   * @returns Auth token and refresh token pair.
-   */
   private async createTokens(
     input: {
       user_id: string;
@@ -1198,16 +1131,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
-  /**
-   * Creates a new user account record.
-   * @private
-   * @param trx Kysely transaction instance.
-   * @param tenant_id Tenant ID to associate user with.
-   * @param password Hashed password.
-   * @param email User email.
-   * @param input Original sign-up input object.
-   * @returns Newly created user.
-   */
   private async createUser(
     trx: Transaction<Models>,
     tenant_id: string,
@@ -1243,12 +1166,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .slice(0, length);
   }
 
-  /**
-   * Calculates the age (in milliseconds) of the password reset code.
-   * @private
-   * @param code Password reset code.
-   * @returns Number of milliseconds since the code was created.
-   */
   private async getCodeAge(code: string): Promise<number> {
     const nowData: QueryResult<INow> = await this.getRepo().nowTime();
     if (!nowData || !nowData?.rows[0]?.now) {
@@ -1267,12 +1184,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return now.getTime() - then.getTime();
   }
 
-  /**
-   * Retrieves a user by email and throws if not found.
-   * @private
-   * @param email Email address to query.
-   * @returns User record.
-   */
   private async getUserByEmail(email: string) {
     const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
 
@@ -1282,12 +1193,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return user;
   }
 
-  /**
-   * Hashes a plain text password using bcrypt.
-   * @private
-   * @param password Plain text password.
-   * @returns Hashed password.
-   */
   private async hashPassword(password: string) {
     const hashedPassword = await bcrypt.hash(password, 12);
     if (!hashedPassword) {
@@ -1346,10 +1251,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       notification_preferences: notificationPreferences,
     };
   }
-  /**
-   * Upload a new avatar for the authenticated user.
-   * Accepts base64-encoded image data via tRPC.
-   */
   public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
     const { dataBase64, mimeType, filename } = input;
 
@@ -1439,9 +1340,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
   }
 
-  /**
-   * Remove the authenticated user's avatar.
-   */
   public async deleteAvatar(auth: IAuthKeyPayload) {
     const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
     if (!existingProfile?.avatar_file_id) return { success: true };
@@ -1566,14 +1464,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.profiles.add({ row: insertRow });
   }
 
-  /**
-   * Updates a tenant record with admin and creator information.
-   * @private
-   * @param trx Kysely transaction instance.
-   * @param tenant_id Tenant ID to update.
-   * @param admin_id Admin user ID.
-   * @param createdby_id Creator user ID.
-   */
   private async updateTenantWithAdmin(
     trx: Transaction<Models>,
     tenant_id: string,
@@ -1585,12 +1475,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.tenants.update({ id, tenant_id, row }, trx);
   }
 
-  /**
-   * Checks if a user already exists with the given email.
-   * @private
-   * @param email Email to check for existence.
-   * @throws If email is already in use.
-   */
   private async verifyUserDoesNotExist(email: string) {
     const exists = await this.getRepo().existsByEmail(email);
     if (exists) {

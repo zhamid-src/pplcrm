@@ -2,11 +2,8 @@
 export abstract class AppError extends Error {
   constructor(
     message: string,
-    /** HTTP-ish status to enable consistent mapping */
     public readonly status: number,
-    /** A stable string code you can map to tRPC codes or include in JSend */
     public readonly code: string,
-    /** Optional structured details for UI/logging */
     public readonly data?: unknown,
     opts?: { cause?: unknown },
   ) {

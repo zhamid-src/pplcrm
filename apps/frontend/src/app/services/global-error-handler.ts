@@ -6,10 +6,6 @@ import { ApiError } from './api/api-error';
 
 import { ErrorService } from './error.service';
 
-/**
- * Global Angular error handler.  Only handles errors that haven't already been
- * processed by the HTTP interceptor or tRPC links.
- */
 @Service()
 export class GlobalErrorHandler implements ErrorHandler {
   private readonly errors = inject(ErrorService);

@@ -22,38 +22,17 @@ import { debounce } from '../../../../common/src';
     }`,
 })
 export class AutoComplete {
-  /**
-   * A reactive list of autocomplete matches.
-   */
   protected readonly matches = signal<string[]>([]);
 
-  /**
-   * Whether to hide the autocomplete list.
-   */
   protected hideAutoComplete = signal(true);
 
-  /**
-   * Emits the selected value when a user selects or types something meaningful.
-   */
   public readonly valueChange = output<string>();
 
-  /**
-   * A filtering service that provides suggestions based on user input.
-   * Must implement a `filter()` method that returns a list of matches.
-   */
   public filterSvc = input<TFILTER | null>(null);
   public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
 
-  /**
-   * The placeholder text for the input element.
-   */
   public placeholder = input('');
 
-  /**
-   * Shows the autocomplete list with matches based on the provided key.
-   *
-   * @param key - The string to filter matches by
-   */
   private readonly debouncedFilter = debounce(async (key: string) => {
     const filterSvc = this.filterSvc();
     if (!filterSvc || !key?.length) {
@@ -69,23 +48,10 @@ export class AutoComplete {
     this.debouncedFilter(target.value || '');
   }
 
-  /**
-   * Hides the autocomplete list after a short delay.
-   *
-   * This delay is important to allow click events on the suggestions
-   * to be registered before the list disappears (avoiding lost focus issues).
-   */
   protected hideAutoCompleteList() {
     setTimeout(() => this.hideAutoComplete.set(true), 200);
   }
 
-  /**
-   * Handles keyboard input in the input field.
-   * Emits the value when Enter or comma is pressed.
-   * Otherwise, updates the autocomplete list.
-   *
-   * @param event - The keyboard event triggered on input
-   */
   protected onKey(event: KeyboardEvent) {
     const target = event.target as HTMLInputElement;
     if (event.key === 'Enter' || event.key === ',') {
@@ -93,9 +59,6 @@ export class AutoComplete {
     }
   }
 
-  /**
-   * Clears the list of autocomplete matches.
-   */
   protected reset(key: string) {
     this.valueChange.emit(key);
     this.matches.set([]);
@@ -104,23 +67,11 @@ export class AutoComplete {
     }
   }
 
-  /**
-   * Displays the autocomplete list.
-   */
   protected showAutoCompleteList() {
     this.hideAutoComplete.set(false);
   }
 }
 
-/**
- * Type definition for a service that provides filtered results
- * based on a user-provided string key.
- */
 type TFILTER = {
-  /**
-   * Function that filters a string and returns a Promise of matching results.
-   *
-   * @param arg0 - the string to filter by
-   */
   filter: (arg0: string) => Promise<string[]>;
 };

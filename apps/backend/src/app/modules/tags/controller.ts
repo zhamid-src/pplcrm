@@ -5,21 +5,11 @@ import { BaseController } from '../../lib/base.controller';
 import { TagsRepo } from './repositories/tags.repo';
 import { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Controller for managing tags: creation, updating, searching, and reporting.
- */
 export class TagsController extends BaseController<'tags', TagsRepo> {
   constructor() {
     super(new TagsRepo());
   }
 
-  /**
-   * Add a new tag to the database for the authenticated tenant.
-   *
-   * @param payload - Tag data (name, description)
-   * @param auth - Authenticated user's context
-   * @returns The inserted tag
-   */
   public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
@@ -40,13 +30,6 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     }
   }
 
-  /**
-   * Search for tags by name prefix. Returns up to 3 matches.
-   *
-   * @param input - Contains name prefix and tag type
-   * @param auth - Authenticated user's context
-   * @returns Array of matching tags (up to 3)
-   */
   public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
     const type = input.type ?? 'tag';
     return this.getRepo().findByNameAndType({
@@ -56,14 +39,6 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     });
   }
 
-  /**
-   * Update an existing tag by ID.
-   *
-   * @param id - Tag ID to update
-   * @param row - Updated tag data (name, description, etc.)
-   * @param auth - Authenticated user's context
-   * @returns The updated tag
-   */
   public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = {
       ...row,

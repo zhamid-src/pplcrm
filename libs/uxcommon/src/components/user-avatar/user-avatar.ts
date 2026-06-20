@@ -1,15 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import { NgClass } from '@angular/common';
 
-/**
- * Reusable user avatar component.
- *
- * Displays a profile photo when `avatarUrl` is provided, otherwise
- * falls back to a gradient circle showing the user's initials.
- *
- * Usage:
- *   <pc-user-avatar [name]="user.first_name" [avatarUrl]="user.avatar_url" [size]="8" />
- */
 @Component({
   selector: 'pc-user-avatar',
   template: `
@@ -44,16 +35,10 @@ import { NgClass } from '@angular/common';
   host: { class: 'contents' },
 })
 export class UserAvatarComponent {
-  /** Resolved download URL for the user's avatar, or null/undefined. */
   readonly avatarUrl = input<string | null | undefined>(null);
 
-  /** Full name (or first name) used to derive initials and pick a colour. */
   readonly name = input.required<string>();
 
-  /**
-   * Size in Tailwind units (1 unit = 0.25rem).
-   * Defaults to 8 (= 2rem / 32px).
-   */
   readonly size = input<number>(8);
 
   protected readonly sizeRem = computed(() => this.size() * 0.25);

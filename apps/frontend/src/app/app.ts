@@ -4,24 +4,6 @@ import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
 
 import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 
-/**
- * The root component of the application.
- *
- * This component serves as the application shell and provides the foundation for the entire
- * application. It handles theme management by applying the current theme via the `data-theme`
- * attribute and acts as the host container for all routed views.
- *
- * Key responsibilities:
- * - Theme application and management
- * - Router outlet hosting for navigation
- * - Application-wide styling context
- *
- * @example
- * ```html
- * <!-- Rendered in index.html -->
- * <pc-root></pc-root>
- * ```
- */
 @Component({
   selector: 'pc-root',
   imports: [RouterModule, ConfirmDialogHost],
@@ -33,8 +15,5 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
   `,
 })
 export class AppComponent {
-  /**
-   * Theme service used to apply and switch application themes.
-   */
   protected themeSvc = inject(ThemeService);
 }

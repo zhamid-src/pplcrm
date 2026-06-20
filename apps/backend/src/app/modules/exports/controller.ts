@@ -22,9 +22,6 @@ const ENTITY_LABEL_MAP: Record<string, string> = {
 export class ExportsController {
   private readonly repo = new ExportsRepo();
 
-  /**
-   * Queue a background export job and return the export record immediately.
-   */
   public async queueExport(input: QueueExportInputType, auth: IAuthKeyPayload) {
     const entityKey = input.entity?.trim();
     if (!entityKey) {
@@ -86,9 +83,6 @@ export class ExportsController {
     };
   }
 
-  /**
-   * List recent exports for the authenticated tenant.
-   */
   public async list(auth: IAuthKeyPayload) {
     const rows = await this.repo.list(auth.tenant_id);
     return rows.map((r: any) => {
@@ -113,9 +107,6 @@ export class ExportsController {
     });
   }
 
-  /**
-   * Get a single export by id for the tenant.
-   */
   public async getById(id: string, auth: IAuthKeyPayload) {
     const row = await this.repo.getById(id, auth.tenant_id);
     if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });

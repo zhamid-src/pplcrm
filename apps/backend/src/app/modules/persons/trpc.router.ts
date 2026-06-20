@@ -1,7 +1,3 @@
-/**
- * tRPC router offering CRUD operations, tag management, and queries
- * for person records associated with a tenant.
- */
 import {
   UpdatePersonsObj,
   exportCsvInput,

@@ -15,7 +15,6 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
 
-/** Controller handling email operations */
 export class EmailsController extends BaseController<'emails', EmailRepo> {
   private attachmentsRepo = new EmailAttachmentsRepo();
   private bodiesRepo = new EmailBodiesRepo();
@@ -27,7 +26,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     super(new EmailRepo());
   }
 
-  /** Add a comment to an email */
   public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
     if (!comment?.trim()) {
       throw new BadRequestError('Comment cannot be empty');
@@ -57,7 +55,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Assign an email to a user */
   public async assignEmail(
     tenant_id: string,
     id: string,
@@ -116,7 +113,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Get all activity log entries for a specific email */
   public async getActivitiesForEmail(tenant_id: string, email_id: string) {
     try {
       const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
@@ -126,18 +122,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /**
-   * Deletes a single row by ID for a given tenant.
-   *
-   * @param tenant_id - The tenant's ID
-   * @param idToDelete - The row's ID
-   * @returns A Promise resolving to the deleted row (if any)
-   */
   public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
     return this.deleteMany(tenant_id, [idToDelete]);
   }
 
-  /** Delete a comment from an email */
   public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
     try {
       const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
@@ -149,7 +137,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Delete a draft by ID for a given tenant and user */
   public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
     try {
       const deleted = await this.draftsRepo.delete({ tenant_id, id });
@@ -161,13 +148,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /**
-   * Deletes multiple rows by ID for a given tenant.
-   *
-   * @param tenant_id - The tenant's ID
-   * @param idsToDelete - Array of row IDs to delete
-   * @returns A Promise resolving to the deleted rows (if any)
-   */
   public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
     // Go through idsToDelete and check which ones are in the trash folder (hard delete)
     // and which ones are not (soft delete - move to trash)
@@ -181,7 +161,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return numTrashed !== 0 || numDeleted;
   }
 
-  /** Get all attachments for a given email */
   public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
     try {
       return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
@@ -190,7 +169,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Get attachments by email ID */
   public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
     try {
       return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
@@ -199,7 +177,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Get a draft by ID for a given tenant and user */
   public async getDraft(tenant_id: string, _user_id: string, value: string) {
     try {
       const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
@@ -211,7 +188,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Return a single email and its comments */
   public async getEmailBody(tenant_id: string, value: string) {
     try {
       const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
@@ -238,7 +214,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Return a single email with headers, recipients, and comments */
   public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
     try {
       const [emailWithHeaders, comments, attachments] = await Promise.all([
@@ -297,13 +272,11 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Return all folders, sorted by sort_order */
   public getFolders(_tenant_id: string) {
     // Return hardcoded folders configuration (same for all tenants)
     return Promise.resolve(getAllEmailFolders());
   }
 
-  /** Return all folders for a tenant with email counts */
   public async getFoldersWithCounts(user_id: string, tenant_id: string) {
     try {
       const [folders, emailCounts, draftCount] = await Promise.all([
@@ -321,7 +294,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Check if a given email has attachments */
   public async hasAttachment(tenant_id: string, email_id: string) {
     try {
       return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
@@ -330,7 +302,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Check which emails (by IDs) have attachments */
   public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
     if (!email_ids?.length) return Promise.resolve([]);
 
@@ -345,7 +316,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
   }
 
-  /** Move an email to a specific folder */
   public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
     try {
       const isTrash = folder_id === ALL_FOLDERS.TRASH;
@@ -416,7 +386,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Update email status (open/closed/resolved) */
   public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
     try {
       const updated = await this.getRepo().setStatus(tenant_id, id, status);
@@ -444,7 +413,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  /** Update email read status for a user */
   public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
     try {
       const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });

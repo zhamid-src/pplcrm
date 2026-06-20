@@ -3,13 +3,6 @@ import { z } from 'zod';
 import { authProcedure } from '../../trpc';
 import { BaseController } from './base.controller';
 
-/**
- * Creates generic tRPC router CRUD definitions mapped to controller methods.
- *
- * @param controller - The BaseController instance to delegate logic to
- * @param insertSchema - Zod validation schema for creating records
- * @param updateSchema - Zod validation schema for updating records
- */
 export function createCrudRouter<
   TController extends BaseController<any, any>,
   TInsertSchema extends z.ZodTypeAny,

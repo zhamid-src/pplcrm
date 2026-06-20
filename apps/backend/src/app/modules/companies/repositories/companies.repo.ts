@@ -25,9 +25,6 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     return Number((countResult as any)?.total || 0);
   }
 
-  /**
-   * Find potential duplicates within the tenant (sharing identical trimmed, case-insensitive company name).
-   */
   public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
@@ -135,9 +132,6 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     return { groups: sortedGroups, total };
   }
 
-  /**
-   * Merges a source company record into a target company record in a transaction.
-   */
   public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;

@@ -17,9 +17,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     super(new VolunteerEventsRepo());
   }
 
-  /**
-   * Get all volunteer events with volunteer signup counts.
-   */
   public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
     return this.getRepo().getAllEventsWithCount({
       tenant_id: auth.tenant_id,
@@ -27,9 +24,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
-  /**
-   * Create a new volunteer event.
-   */
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
     const existing = await this.getRepo()
       .db.selectFrom('volunteer_events')
@@ -65,9 +59,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return this.add(row);
   }
 
-  /**
-   * Check if a URL slug is unique.
-   */
   public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
     if (!slug) return { unique: true };
     let query = this.getRepo()
@@ -82,9 +73,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return { unique: !existing };
   }
 
-  /**
-   * Update an existing volunteer event.
-   */
   public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
     if (payload.slug) {
       const existing = await this.getRepo()
@@ -185,9 +173,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return result;
   }
 
-  /**
-   * Get roster shifts for an event.
-   */
   public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getShiftsForEvent({
       tenant_id: auth.tenant_id,
@@ -195,9 +180,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
-  /**
-   * Sign up a person for a volunteer event.
-   */
   public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
     const result = await this.getRepo().signupVolunteer({
       tenant_id: auth.tenant_id,
@@ -298,9 +280,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return result;
   }
 
-  /**
-   * Update shift status/details.
-   */
   public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
     const result = await this.getRepo().updateShift({
       tenant_id: auth.tenant_id,
@@ -403,9 +382,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return result;
   }
 
-  /**
-   * Delete/cancel a shift.
-   */
   public async deleteShift(id: string, auth: IAuthKeyPayload) {
     const result = await this.getRepo().deleteShift({
       tenant_id: auth.tenant_id,
@@ -443,9 +419,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return result;
   }
 
-  /**
-   * Get shift history for a person.
-   */
   public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getHistoryForPerson({
       tenant_id: auth.tenant_id,
@@ -453,9 +426,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
-  /**
-   * Get total volunteer statistics for a person.
-   */
   public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getVolunteerStats({
       tenant_id: auth.tenant_id,
@@ -463,9 +433,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
-  /**
-   * Public: Get tenant details.
-   */
   public async getTenantPublic(tenantId: string) {
     return this.getRepo()
       .db.selectFrom('tenants')
@@ -474,9 +441,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       .executeTakeFirst();
   }
 
-  /**
-   * Public: Get all upcoming events for a tenant.
-   */
   public async getUpcomingEventsPublic(tenantId: string) {
     return this.getRepo()
       .db.selectFrom('volunteer_events')
@@ -509,9 +473,6 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       .execute();
   }
 
-  /**
-   * Public: Get event details and current signup count.
-   */
   public async getEventPublic(eventId: string) {
     const isNumeric = /^\d+$/.test(eventId);
     let query = this.getRepo()
@@ -567,17 +528,11 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return event;
   }
 
-  /**
-   * Public: Retrieve a tenant from its secure cryptographic slug.
-   */
   public async getTenantFromSlug(slug: string) {
     const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
     return tenants.find((t) => this.getTenantSlug(String(t.id)) === slug);
   }
 
-  /**
-   * Public: Sign up a volunteer for an event.
-   */
   public async signupVolunteerPublic(eventId: string, payload: Record<string, string>, clientIp: string) {
     // 1. Rate limiting check
     const now = Date.now();

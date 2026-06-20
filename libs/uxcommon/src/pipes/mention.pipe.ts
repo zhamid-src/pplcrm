@@ -2,16 +2,6 @@ import { Pipe, PipeTransform } from '@angular/core';
 
 import type { IAuthUser } from '../../../common/src/lib/auth';
 
-/**
- * Transforms plain text containing @mentions into HTML with highlighted mentions.
- *
- * Matching rules (case-insensitive):
- * - @first_name
- * - @email or @emailLocalPart
- *
- * It leaves unknown @tokens as-is.
- * Newlines are converted to <br> for display.
- */
 @Pipe({ name: 'mentionify', standalone: true })
 export class MentionifyPipe implements PipeTransform {
   public transform(text: string | null | undefined, users: IAuthUser[] | null | undefined): string {

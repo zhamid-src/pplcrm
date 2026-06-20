@@ -1,6 +1,3 @@
-/**
- * @file Component displaying list of email folders and handling selection.
- */
 import { Component, OnInit, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
@@ -15,21 +12,16 @@ import type { EmailFolderType } from '../../../../../../../../libs/common/src/li
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
-  /** App store */
   protected readonly store = inject(EmailsStore);
 
   protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
 
-  /** Emits selected folder to parent component */
   public readonly folderSelected = output<EmailFolderType>();
 
-  /** List of folders from the store (reactive signal) */
   public readonly folders = this.store.allFolders;
 
-  /** Sidebar collapsed flag */
   public readonly foldersCollapsed = signal(false);
 
-  /** Real Folders section collapsed flag (collapsed by default) */
   public readonly realFoldersCollapsed = signal(true);
 
   public readonly newEmail = output<void>();
@@ -39,7 +31,6 @@ export class EmailFolderList implements OnInit {
     this.newEmail.emit();
   }
 
-  /** Count helper (keeps typing flexible if counts aren’t always present) */
   public getEmailCount(folder: EmailFolderType): number {
     return (folder as any).email_count ?? 0;
   }
@@ -52,27 +43,22 @@ export class EmailFolderList implements OnInit {
     }
   }
 
-  /** Select a folder: emit only; parent writes to store to avoid loops */
   public selectFolder(folder: EmailFolderType): void {
     this.folderSelected.emit(folder);
   }
 
-  /** Toggle collapse/expand */
   public toggleFolders(): void {
     this.foldersCollapsed.update((v) => !v);
   }
 
-  /** Toggle real folders section collapse/expand */
   public toggleRealFolders(): void {
     this.realFoldersCollapsed.update((v) => !v);
   }
 
-  /** Icon helper */
   protected getIcon(folder: EmailFolderType): PcIconNameType {
     return folder.icon as PcIconNameType;
   }
 
-  /** Selection helper (compare as strings for safety) */
   protected isSelected(folder: EmailFolderType): boolean {
     return String(folder.id) === String(this.store.currentSelectedFolderId());
   }

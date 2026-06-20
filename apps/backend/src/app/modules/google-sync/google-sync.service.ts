@@ -1,8 +1,3 @@
-/**
- * @file Google Gmail email sync service.
- * Fetches emails from Gmail API and ingests them into the database using
- * the shared EmailIngesterService.
- */
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { GoogleOAuthService } from './google-oauth.service';
@@ -11,9 +6,6 @@ import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
-/**
- * Helper to fetch a URL and automatically retry if rate limited (429).
- */
 async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
   let attempt = 0;
   while (true) {
@@ -45,10 +37,6 @@ async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): 
   }
 }
 
-/**
- * Service that pulls emails from Gmail API and stores them in the database
- * using the shared EmailIngesterService.
- */
 export class GoogleSyncService {
   private readonly ingester: EmailIngesterService;
 
@@ -59,11 +47,6 @@ export class GoogleSyncService {
     this.ingester = new EmailIngesterService(db, 'google');
   }
 
-  /**
-   * Performs an incremental sync for a user using Google Gmail API.
-   *
-   * @returns Number of new emails inserted
-   */
   public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
     const accessToken = await this.oauthSvc.getValidToken(userId);
 
@@ -180,16 +163,10 @@ export class GoogleSyncService {
     return { inserted };
   }
 
-  /**
-   * Deletes all local emails synced from Google for this tenant.
-   */
   public async removeAllLocalEmails(tenantId: string): Promise<void> {
     await this.ingester.removeAllLocalEmails(tenantId);
   }
 
-  /**
-   * Fetches full message details and parses it.
-   */
   private async syncMessageDetails(
     accessToken: string,
     msgId: string,
@@ -302,9 +279,6 @@ export class GoogleSyncService {
     return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
   }
 
-  /**
-   * Traverses Gmail MIME parts recursively to extract body text/html and attachments.
-   */
   private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
     let html = '';
     let text = '';

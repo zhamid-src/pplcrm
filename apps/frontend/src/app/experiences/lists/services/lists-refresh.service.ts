@@ -2,7 +2,6 @@ import { signal, Service } from '@angular/core';
 
 @Service()
 export class ListsRefreshService {
-  /** Increments each time a refresh is requested. Consumers can effect() on this. */
   public readonly refreshCount = signal(0);
 
   public trigger() {

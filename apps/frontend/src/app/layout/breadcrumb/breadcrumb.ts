@@ -5,10 +5,6 @@ import { Icon } from '@icons/icon';
 import { ISidebarItem } from '../sidebar/sidebar-items';
 import { SidebarService } from '../sidebar/sidebar-service';
 
-/**
- * Breadcrumb component for displaying and navigating
- * the current URL path as clickable segments.
- */
 @Component({
   selector: 'pc-breadcrumb',
   imports: [Icon],
@@ -38,14 +34,8 @@ import { SidebarService } from '../sidebar/sidebar-service';
   `,
 })
 export class Breadcrumb {
-  /**
-   * Injected Angular Router instance for listening to route changes and navigation.
-   */
   private readonly router = inject(Router);
 
-  /**
-   * SidebarService is used to resolve internal routes for breadcrumb navigation.
-   */
   private readonly sidebarSvc = inject(SidebarService);
 
   private readonly navigationUrl = computed(() => {
@@ -62,22 +52,12 @@ export class Breadcrumb {
   protected favourite = signal(false);
   protected hovered = signal(false);
 
-  /**
-   * Array of current breadcrumb segments based on URL.
-   */
   protected crumbs: string[] = [];
 
   constructor() {
     effect(() => this.handleNavigationChange(this.navigationUrl()));
   }
 
-  /**
-   * Navigate to the route associated with the clicked breadcrumb segment.
-   *
-   * Uses SidebarService to map breadcrumb names to routes.
-   *
-   * @param destination - The breadcrumb label (e.g., "dashboard", "tags")
-   */
   public navigate(destination: string) {
     const route = this.sidebarSvc.getRoute(destination);
     if (route) {

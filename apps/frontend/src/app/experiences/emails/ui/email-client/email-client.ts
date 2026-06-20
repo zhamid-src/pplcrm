@@ -27,7 +27,6 @@ export class EmailClient {
 
   private authService = inject(AuthService);
 
-  /** App-level email store */
   protected readonly store = inject(EmailsStore);
   private readonly stateStore = inject(EmailStateStore);
   private readonly emailSvc = inject(EmailsService);
@@ -47,10 +46,6 @@ export class EmailClient {
 
   readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
 
-  /**
-   * Dedicated async method to handle the fetching and state updates.
-   * Prevents race conditions when navigated rapidly.
-   */
   private async loadEmailData(emailId: string): Promise<void> {
     try {
       // 1. Fetch the email header/details from backend to know its folder_id
@@ -97,16 +92,12 @@ export class EmailClient {
     }
   }
 
-  /** Emails in the currently selected folder */
   public readonly emails = this.store.emailsInSelectedFolder;
 
-  /** Whether the email body overlay is expanded (signal from store) */
   public readonly isBodyExpanded = this.store.isBodyExpanded;
 
-  /** Currently selected email (signal from store) */
   public readonly selectedEmail = this.store.currentSelectedEmail;
 
-  /** Currently selected folder id (signal from store) */
   public readonly selectedFolderId = this.store.currentSelectedFolderId;
 
   public closeCompose() {
@@ -128,7 +119,6 @@ export class EmailClient {
     // Optionally refresh current folder, show toast, etc.
   }
 
-  /** Handle email selection from child component */
   public async onEmail(email: EmailType | null): Promise<void> {
     const folderId = this.store.currentSelectedFolderId();
     if (this.isComposing()) {
@@ -157,7 +147,6 @@ export class EmailClient {
     }
   }
 
-  /** Handle folder selection from child component */
   public onFolder(folder: EmailFolderType): void {
     this.store.selectFolder(folder);
   }
@@ -203,12 +192,10 @@ export class EmailClient {
     this.isComposing.set(true);
   }
 
-  /** Toggle the full-screen overlay for email body */
   public toggleExpanded(): void {
     this.store.toggleBodyExpanded();
   }
 
-  /** Collapse the full-screen overlay when Escape is pressed */
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
       this.store.toggleBodyExpanded();

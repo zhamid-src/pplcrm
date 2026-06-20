@@ -1,16 +1,9 @@
-/**
- * @file Component for displaying people associated with a household.
- */
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
 
 import { PersonsService } from '../services/persons-service';
 
-/**
- * Component used to render a list of people belonging to a given household.
- * Each person is shown as a link to their detail page.
- */
 @Component({
   selector: 'pc-people-in-household',
   imports: [RouterModule],
@@ -35,7 +28,6 @@ import { PersonsService } from '../services/persons-service';
 export class PeopleInHousehold {
   private personsSvc = inject(PersonsService);
 
-  /** List of people retrieved for the specified household. */
   protected peopleInHousehold = signal<PERSONINHOUSEHOLDTYPE[]>([]);
   protected isLoading = signal(false);
   protected hasMore = signal(false);
@@ -45,10 +37,8 @@ export class PeopleInHousehold {
   private requestSequence = 0;
   private lastParams: { id: string; excludeId: string | null } | null = null;
 
-  /** Optional person ID to exclude from the list (e.g., current person). */
   public excludePersonId = input<string | null>(null);
 
-  /** The ID of the household whose members should be listed. */
   public householdId = input.required<string>();
 
   constructor() {

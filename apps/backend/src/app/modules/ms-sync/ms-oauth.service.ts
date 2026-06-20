@@ -1,12 +1,7 @@
-/**
- * @file Service for Microsoft OAuth2 token management.
- * Handles the MSAL authorization code flow, token storage, and refresh.
- */
 import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/msal-node';
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
-/** Scopes required for reading, writing, and sending mail via Microsoft Graph */
 const MS_SCOPES = [
   'https://graph.microsoft.com/Mail.Read',
   'https://graph.microsoft.com/Mail.ReadWrite',
@@ -14,10 +9,6 @@ const MS_SCOPES = [
   'offline_access',
 ];
 
-/**
- * Microsoft OAuth service for acquiring and refreshing tokens.
- * Uses MSAL confidential client (backend-only — client secret never reaches the browser).
- */
 export class MsOAuthService {
   private readonly msalApp: ConfidentialClientApplication;
   private readonly db: Kysely<Models>;
@@ -38,10 +29,6 @@ export class MsOAuthService {
     });
   }
 
-  /**
-   * Generates the Microsoft OAuth authorization URL.
-   * The user is redirected here to consent and sign in.
-   */
   public async getAuthUrl(state: string): Promise<string> {
     return this.msalApp.getAuthCodeUrl({
       scopes: MS_SCOPES,
@@ -51,14 +38,6 @@ export class MsOAuthService {
     });
   }
 
-  /**
-   * Exchanges an authorization code for access + refresh tokens
-   * and persists them to the database.
-   *
-   * @param code - The authorization code from Microsoft's callback
-   * @param userId - The pplcrm user ID
-   * @param tenantId - The pplcrm tenant ID
-   */
   public async handleCallback(code: string, userId: string, tenantId: string): Promise<void> {
     const request: AuthorizationCodeRequest = {
       code,
@@ -103,12 +82,6 @@ export class MsOAuthService {
       .execute();
   }
 
-  /**
-   * Returns a valid access token for the user, refreshing it if expired.
-   *
-   * @param userId - The pplcrm user ID
-   * @returns A valid access token
-   */
   public async getValidToken(userId: string): Promise<string> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')
@@ -157,9 +130,6 @@ export class MsOAuthService {
     return response.accessToken;
   }
 
-  /**
-   * Returns connection status for a user.
-   */
   public async getConnectionStatus(
     userId: string,
   ): Promise<{ connected: boolean; msEmail: string | null; syncedAt: Date | null }> {
@@ -176,16 +146,10 @@ export class MsOAuthService {
     };
   }
 
-  /**
-   * Deletes the stored tokens for a user (disconnect).
-   */
   public async disconnect(userId: string): Promise<void> {
     await this.db.deleteFrom('ms_oauth_tokens').where('user_id', '=', userId).execute();
   }
 
-  /**
-   * Saves the delta link for the next incremental sync.
-   */
   public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('ms_oauth_tokens')
@@ -194,9 +158,6 @@ export class MsOAuthService {
       .execute();
   }
 
-  /**
-   * Returns the stored delta link for incremental sync (or null for full sync).
-   */
   public async getDeltaLink(userId: string): Promise<string | null> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')

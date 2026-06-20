@@ -1,6 +1,3 @@
-/**
- * Grid component for viewing and editing lists of people or households.
- */
 import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
 import { UpdateListType } from '../../../../../../../libs/common/src';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
@@ -141,10 +138,8 @@ export class ListsGridComponent implements OnDestroy {
     { field: 'created_by', headerName: 'Created By' },
   ];
 
-  /** IDs of lists that the user clicked refresh on but haven't finished yet. */
   private readonly refreshingIds = new Set<string>();
 
-  /** Poll intervals keyed by list ID. */
   private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   private async refreshList(id: string, cellParams: any) {

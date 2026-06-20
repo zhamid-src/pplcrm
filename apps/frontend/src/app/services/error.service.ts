@@ -5,27 +5,16 @@ import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ApiError } from './api/api-error';
 
-
 import { TokenService } from './api/token-service';
 
-/**
- * Centralised error handling service.
- *
- * This service is used by the HTTP interceptor, TRPC links and the global
- * error handler to surface unexpected errors to the user and perform
- * navigation based on HTTP status codes.  Business logic failures should be
- * handled by the calling component and should not reach this service.
- */
 @Service()
 export class ErrorService {
   private readonly alerts = inject(AlertService);
   private readonly router = inject(Router);
   private readonly tokenSvc = inject(TokenService);
 
-  /** Timestamp of last redirect to prevent navigation loops */
   private lastRedirect = 0;
 
-  /** Handle an error and surface a toast to the user. */
   public handle(error: unknown): void {
     console.error('ErrorService.handle:', error);
     // Handle JSend server errors produced by the HTTP interceptor
@@ -61,7 +50,6 @@ export class ErrorService {
     this.alerts.showError(msg);
   }
 
-  /** Perform auth redirects with throttling and returnUrl preservation. */
   private redirect(): boolean {
     const now = Date.now();
     if (now - this.lastRedirect < 3000) return false;
@@ -73,7 +61,6 @@ export class ErrorService {
     return true;
   }
 
-  /** Map tRPC error codes to auth redirects. */
   private redirectFromCode(code?: string): boolean {
     if (code === 'UNAUTHORIZED') {
       this.redirect();
@@ -82,7 +69,6 @@ export class ErrorService {
     return false;
   }
 
-  /** Map HTTP status codes to auth redirects. */
   private redirectFromStatus(status?: number): boolean {
     if (status === 401) return this.redirect();
     return false;

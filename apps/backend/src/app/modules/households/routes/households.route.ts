@@ -1,6 +1,3 @@
-/**
- * Registers REST routes for household operations.
- */
 import { FastifyPluginCallback, FastifyRequest } from 'fastify';
 
 import { HouseholdsController } from '../controller';
@@ -9,13 +6,6 @@ import { IdParam } from '../../../lib/fastify.types';
 
 const households = new HouseholdsController();
 
-/**
- * Supported HTTP routes for the households endpoint.
- *
- * @param fastify - The Fastify instance used to register routes.
- * @param _ - Unused options object.
- * @param done - Callback to signal completion of route registration.
- */
 const routes: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('', schema.getAll, (req: FastifyRequest) => households.getAll(req.headers['tenant-id'] as string));
   fastify.get('/:id', schema.findFromId, (req: IdParam) =>

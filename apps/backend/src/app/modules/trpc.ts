@@ -1,7 +1,3 @@
-/**
- * Entry point that aggregates all application tRPC routers and
- * re-exports individual routers for convenience.
- */
 import { router } from '../../trpc';
 import { AuthRouter } from './auth/trpc.router';
 import { EmailsRouter } from './emails/trpc.router';
@@ -29,21 +25,8 @@ import { WorkflowsRouter } from './workflows/trpc.router';
 import { ExportsRouter } from './exports/trpc.router';
 import { UsersRouter } from './users/trpc.router';
 
-/**
- * Inferred type representing the full structure of the tRPC API.
- */
 export type TRPCRouter = typeof trpcRouter;
 
-/**
- * Registers and groups all tRPC routers for the application.
- *
- * This includes:
- * - `auth`: Authentication-related procedures (sign in, sign up, tokens, etc.)
- * - `userProfiles`: Endpoints for managing user profile data
- * - `households`: CRUD operations and tag mapping for households
- * - `persons`: CRUD operations, tagging, and associations for people
- * - `tags`: Create, update, delete, and search tag records
- */
 export const trpcRouter = router({
   auth: AuthRouter,
   authusers: AuthRouter,

@@ -7,9 +7,6 @@ import path from 'path';
 
 let boundariesCache: any = null;
 
-/**
- * Loads the GeoJSON boundary features from boundaries.geojson.
- */
 export async function loadBoundaries(): Promise<any> {
   if (boundariesCache) return boundariesCache;
   const filePath = path.resolve(process.cwd(), 'apps/backend/src/app/lib/gis/boundaries.geojson');
@@ -23,9 +20,6 @@ export async function loadBoundaries(): Promise<any> {
   }
 }
 
-/**
- * Checks if a point is inside a GeoJSON linear ring (polygon path).
- */
 function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -39,9 +33,6 @@ function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
   return inside;
 }
 
-/**
- * Checks if a point is inside a GeoJSON Polygon geometry (with potential holes).
- */
 export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]): boolean {
   const outerRing = polygon[0];
   if (!outerRing || !isPointInRing(lng, lat, outerRing)) {
@@ -56,9 +47,6 @@ export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]
   return true;
 }
 
-/**
- * Checks if a point is inside a GeoJSON MultiPolygon geometry.
- */
 export function isPointInMultiPolygon(lng: number, lat: number, multipolygon: number[][][][]): boolean {
   for (const polygon of multipolygon) {
     if (isPointInPolygon(lng, lat, polygon)) {
@@ -68,9 +56,6 @@ export function isPointInMultiPolygon(lng: number, lat: number, multipolygon: nu
   return false;
 }
 
-/**
- * Matches coordinates to a district, precinct, and ward using point-in-polygon math.
- */
 export async function matchCoordinatesToDistrict(
   lat: number,
   lng: number,
@@ -106,9 +91,6 @@ export async function matchCoordinatesToDistrict(
   return { district: null, precinct: null, ward: null };
 }
 
-/**
- * Geocodes a household using Google Maps API (or mock fallback) and matches it to a GIS district.
- */
 export async function geocodeAndMapHousehold(householdId: string, tenantId: string, db: Kysely<Models>): Promise<void> {
   const hh = await db
     .selectFrom('households')

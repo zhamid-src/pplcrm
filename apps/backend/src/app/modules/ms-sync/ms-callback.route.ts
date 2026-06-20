@@ -1,8 +1,3 @@
-/**
- * @file REST route for the Microsoft OAuth2 callback.
- * Microsoft redirects the user's browser here after they consent.
- * This MUST be a REST route (not tRPC) because Microsoft calls it directly.
- */
 import { FastifyPluginCallback } from 'fastify';
 import { MsOAuthService } from '../ms-sync/ms-oauth.service';
 import { env } from '../../../env';
@@ -23,10 +18,6 @@ function getOAuthService() {
   return _oauthSvc;
 }
 
-/**
- * Handles the OAuth authorization code redirect from Microsoft.
- * Exchanges the code for tokens, stores them, then redirects to the settings page.
- */
 const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.get('/callback', async (req: any, reply) => {
     const { code, state, error, error_description } = req.query as Record<string, string>;

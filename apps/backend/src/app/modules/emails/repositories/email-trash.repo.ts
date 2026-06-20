@@ -1,29 +1,13 @@
-/**
- * Repository for reading and writing email recipient records.
- */
 import { Transaction, sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Data access for the `email_recipients` table.
- */
 export class EmailTrashRepo extends BaseRepository<'email_trash'> {
-  /**
-   * Creates a repository instance for the `email_recipients` table.
-   */
   constructor() {
     super('email_trash');
   }
 
-  /**
-   * Insert email_trash rows for a set of emails by selecting from `emails`.
-   * - Remembers the previous folder (from_folder_id)
-   * - Skips emails already in Trash
-   * - Idempotent via ON CONFLICT (tenant_id, email_id) DO NOTHING
-   * - Returns all inserted rows
-   */
   public async addFromEmails(
     input: {
       tenant_id: string; // match your DB type (uuid/bigint as string is fine)
@@ -70,9 +54,6 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
     return rows as unknown as Models['email_trash'][];
   }
 
-  /**
-   * Delete email_trash records associated with the given email_ids.
-   */
   public async deleteByEmailIds(
     input: { tenant_id: TypeTenantId<'email_trash'>; emailIds: string[] },
     trx?: Transaction<Models>,

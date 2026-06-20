@@ -1,19 +1,3 @@
-/**
- * Migration: security-and-ops-improvements
- *
- * 1. Session token hashing
- *    - Change sessions.session_id and sessions.refresh_token from uuid to text
- *      so they can store SHA-256 hex digests instead of raw UUIDs.
- *    - Existing sessions are invalidated (all rows deleted) — users will be
- *      prompted to re-authenticate once, which is the expected behaviour after
- *      a security upgrade.
- *
- * 2. data_exports: add partial index for pending-status queue polling.
- *
- * 3. GDPR / tenant hard-delete: expand the tenant cascade in the
- *    perform_scheduled_deletions job to cover all entity tables.
- *    (No schema change — this is handled in job-handlers.ts.)
- */
 import { Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {

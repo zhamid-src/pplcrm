@@ -1,6 +1,3 @@
-/**
- * @fileoverview Role guard for protecting routes that require admin or owner permissions.
- */
 import { inject } from '@angular/core';
 import { type CanActivateFn, Router } from '@angular/router';
 

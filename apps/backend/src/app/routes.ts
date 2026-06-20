@@ -14,16 +14,6 @@ import billingWebhookRoute from './modules/billing/routes/billing-webhook.route'
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import { verifyAuthToken } from './lib/auth-util';
 
-/**
- * Registers all REST API routes for the application.
- *
- * Each route module is namespaced using a versioned or functional prefix.
- * Also registers a default root health check endpoint at `/`.
- *
- * @param fastify - The Fastify instance to attach routes to
- * @param _opts - Options passed to this plugin (currently unused)
- * @param done - Callback to indicate completion of plugin registration
- */
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
 

@@ -19,7 +19,6 @@ import { PcIconNameType, loadIconSvg } from './icons.index';
 export class Icon {
   private _hoverSvgHtml = signal<string>('');
 
-  /** Holds the final SVG markup (with class injected). */
   private _svgHtml = signal<string>('');
 
   public class = input<string>('');
@@ -27,10 +26,8 @@ export class Icon {
   public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
   public hovering = signal(false);
 
-  /** The name of the icon to render (must exist in icons map). */
   public name = input.required<PcIconNameType>();
 
-  /** Tailwind size (used for both height and width), default 6 -> w-6 h-6 */
   public size = input<number>(6);
   public svgHtml = this._svgHtml.asReadonly();
 
@@ -51,7 +48,6 @@ export class Icon {
     });
   }
 
-  /** Add/merge a class on the <svg ...> of the provided SVG string. */
   private injectClassOnSvg(svg: string, cls: string): string {
     // Normalize whitespace on the opening tag
     const openTagMatch = svg.match(/<svg\b[^>]*>/i);

@@ -94,7 +94,6 @@ export const jsend = {
     );
   },
 
-  /** Unwraps success; throws typed errors for fail/error. */
   unwrap<T>(res: JSend<T>): T {
     if (res.status === 'success') return res.data;
     if (res.status === 'fail') throw new JSendFail(res.data, 400);

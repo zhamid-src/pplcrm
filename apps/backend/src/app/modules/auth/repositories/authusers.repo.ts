@@ -1,20 +1,10 @@
-/**
- * Data access layer for authentication user records.
- */
 import { SelectQueryBuilder, Transaction, UpdateResult, sql } from 'kysely';
 
 import { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { generateToken, hashToken } from '../../../lib/token-hash';
 
-/**
- * Repository for managing operations on the `authusers` table.
- * Handles authentication user logic like email lookup, password reset, etc.
- */
 export class AuthUsersRepo extends BaseRepository<'authusers'> {
-  /**
-   * Creates a repository instance for the `authusers` table.
-   */
   constructor() {
     super('authusers');
   }
@@ -137,17 +127,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     return false;
   }
 
-  /**
-   * Generates a new password reset code for a user.
-   *
-   * A random 32-byte token is generated; its SHA-256 hash is stored in the DB
-   * while the plaintext is returned to the caller for inclusion in the email
-   * link. This way a DB dump cannot be used to hijack reset flows.
-   *
-   * @param id - The user's ID.
-   * @param trx - Optional transaction context.
-   * @returns The **plaintext** reset code (send this to the user, never store it).
-   */
   public async addPasswordResetCode(
     id: string,
     trx?: Transaction<Models>,
@@ -165,34 +144,14 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     return { password_reset_code: plaintext };
   }
 
-  /**
-   * Checks whether a user with the given email exists.
-   *
-   * @param email - Email address to check.
-   * @returns True if the user exists, otherwise false.
-   */
   public existsByEmail(email: string): Promise<boolean> {
     return this.exists({ key: email, column: 'email' });
   }
 
-  /**
-   * Retrieves a user by their email.
-   *
-   * @param email - The user's email.
-   * @param options - Optional query parameters (column selection, etc).
-   * @param trx - Optional transaction context.
-   * @returns The matching user record, or undefined.
-   */
   public getByEmail(email: SelectEmailType, options?: QueryParams<'authusers'>, trx?: Transaction<Models>) {
     return this.getSelectWithColumns(options, trx).where('email', '=', email).executeTakeFirst();
   }
 
-  /**
-   * Returns the number of users that match the given email.
-   *
-   * @param email - Email address to count by.
-   * @returns Number of users with the email.
-   */
   public async getCountByEmail(email: SelectEmailType): Promise<number> {
     const { count } = (await this.getSelect()
       .select(sql<string>`count(*)`.as('count'))
@@ -202,14 +161,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     return parseInt(count);
   }
 
-  /**
-   * Gets the timestamp when a given password reset code was generated.
-   * Hashes the incoming plaintext code before querying.
-   *
-   * @param code - The **plaintext** password reset code from the URL.
-   * @param trx - Optional transaction context.
-   * @returns Object with `password_reset_code_created_at` field.
-   */
   public getPasswordResetCodeTime(code: string, trx?: Transaction<Models>) {
     const options = {
       columns: ['password_reset_code_created_at'] as (keyof Models['authusers'])[],
@@ -219,15 +170,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       .executeTakeFirstOrThrow();
   }
 
-  /**
-   * Updates the password for a user using a valid password reset code.
-   * Clears the reset code and timestamp upon success.
-   *
-   * @param password - New hashed password.
-   * @param code - Password reset code.
-   * @param trx - Optional transaction context.
-   * @returns Result of the update operation.
-   */
   public updatePassword(password: string, code: string, trx?: Transaction<Models>) {
     return this.getUpdate(trx)
       .set({
@@ -240,9 +182,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       .executeTakeFirst() as unknown as UpdateResult;
   }
 
-  /**
-   * Verifies a user's email address by code and clears the code.
-   */
   public verifyEmailByCode(code: string, trx?: Transaction<Models>) {
     return this.getUpdate(trx)
       .set({

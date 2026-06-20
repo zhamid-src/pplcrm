@@ -1,6 +1,3 @@
-/**
- * @file Component handling comments for an email.
- */
 import { DatePipe, SlicePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -31,20 +28,16 @@ export class EmailComments {
 
   private readonly emailComposer = viewChild<any>('emailComposer');
 
-  /** Track in-flight deletions: comment ids */
   protected readonly deleting = signal<Set<string>>(new Set());
 
-  /** Prevent double-submit for add */
   protected readonly saving = signal(false);
 
-  /** Fast lookup for user names */
   protected readonly usersById = computed(() => {
     const map = new Map<string, IAuthUser>();
     for (const u of this.users()) map.set(u.id, u);
     return map;
   });
 
-  /** Comments come directly from the store’s header cache (reactive) */
   public readonly comments = computed<Partial<EmailCommentType>[]>(() => {
     const em = this.email();
     if (!em) return [];
@@ -52,17 +45,14 @@ export class EmailComments {
     return (header as unknown as { comments?: Partial<EmailCommentType>[] })?.comments ?? [];
   });
 
-  /** Tenant users for display names */
   public readonly users = signal<IAuthUser[]>([]);
 
-  /** Email to comment on (nullable to avoid early reads) */
   public email = input<EmailType | null>(null);
   public mc = new MentionController(() => this.users());
 
   // in your component class
   public myUserId = input<string>(); // set this from parent; used for chat-start/chat-end and bubble color
 
-  /** New comment input */
   public newComment = signal('');
   public trackByComment = (_: number, c: Partial<EmailCommentType>) => (c as any).id ?? _;
 
@@ -88,12 +78,10 @@ export class EmailComments {
     });
   }
 
-  /** Current user id (non-reactive is fine here) */
   private get meId(): string | null {
     return this.auth.getUser()?.id ?? null;
   }
 
-  /** Add a comment (optimistic handled by store) */
   public async addComment(): Promise<void> {
     const em = this.email();
     const text = this.newComment().trim();
@@ -111,7 +99,6 @@ export class EmailComments {
     }
   }
 
-  /** Can the current user delete this comment? */
   public canDelete(comment: Partial<EmailCommentType>): boolean {
     const me = this.meId;
     const authorId = (comment as Partial<EmailCommentType> as any)?.author_id ?? null;
@@ -137,7 +124,6 @@ export class EmailComments {
     }
   }
 
-  /** Get the display name for a user id */
   public getUserName(id: string | null = null): string {
     if (!id) return 'Not Assigned';
     return this.usersById().get(id)?.first_name ?? 'Not Assigned';
@@ -147,7 +133,6 @@ export class EmailComments {
     return this.deleting().has(String(id));
   }
 
-  /** Attempt to delete a comment (optimistic + rollback in store) */
   protected async deleteComment(comment: Partial<EmailCommentType>): Promise<void> {
     const em = this.email();
     const cid = String((comment as Partial<EmailCommentType> as any).id ?? '');

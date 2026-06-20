@@ -11,11 +11,6 @@ import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
 
-/**
- * Component responsible for user sign-up.
- * Provides a form with validation, password visibility toggling,
- * and integration with a password breach checker.
- */
 @Component({
   selector: 'pc-signup',
   imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
@@ -26,10 +21,8 @@ export class SignUpPage {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
 
-  /** Signal indicating whether form submission is in progress */
   private _loading = createLoadingGate();
 
-  /** Model capturing registration details */
   protected readonly signUpData = signal({
     organization: '',
     email: '',
@@ -40,7 +33,6 @@ export class SignUpPage {
     terms: '',
   });
 
-  /** Signal-based form with validation schema */
   public readonly form = form(this.signUpData, (p) => {
     required(p.organization);
     required(p.email);
@@ -52,42 +44,25 @@ export class SignUpPage {
 
   protected isLoading = this._loading.visible;
 
-  /** Utilities for password breach checking */
   protected passwordBreachNumber = passwordBreachNumber;
   protected passwordInBreach = passwordInBreach;
 
-  /**
-   * Getter for the email form control.
-   */
   public get email() {
     return this.form.email();
   }
 
-  /**
-   * Getter for the first name form control.
-   */
   public get firstName() {
     return this.form.first_name();
   }
 
-  /**
-   * Getter for the organization form control.
-   */
   public get organization() {
     return this.form.organization();
   }
 
-  /**
-   * Getter for the password form control.
-   */
   public get password() {
     return this.form.password();
   }
 
-  /**
-   * Handles form submission for user registration.
-   * Displays alerts for error or success states.
-   */
   public async join(event?: Event) {
     event?.preventDefault();
     this.form().markAsTouched();

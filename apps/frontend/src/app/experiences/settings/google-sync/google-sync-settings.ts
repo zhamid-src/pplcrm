@@ -1,8 +1,3 @@
-/**
- * @file Component for connecting and syncing a Google Suite (Gmail) mailbox.
- * Allows users to connect their Google account, trigger a manual sync,
- * and disconnect their account.
- */
 import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';

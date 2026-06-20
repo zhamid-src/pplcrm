@@ -5,9 +5,6 @@ import { env } from '../../../../env';
 export class CompaniesEnrichmentService {
   constructor(private readonly db: Kysely<Models>) {}
 
-  /**
-   * Enriches a company record with details from Google Places API or dev mock.
-   */
   public async enrichCompany(companyId: string, tenantId: string): Promise<void> {
     const company = await this.db
       .selectFrom('companies')
@@ -126,9 +123,6 @@ export class CompaniesEnrichmentService {
       .execute();
   }
 
-  /**
-   * Finds unenriched companies and queues enrichment jobs.
-   */
   public async queueUnenrichedCompanies(tenantId?: string): Promise<number> {
     let query = this.db
       .selectFrom('companies')

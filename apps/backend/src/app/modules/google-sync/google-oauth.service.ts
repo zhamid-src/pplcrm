@@ -1,11 +1,6 @@
-/**
- * @file Service for Google OAuth2 token management.
- * Handles the Google authorization code flow, token storage, and refresh.
- */
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
-/** Scopes required for reading, writing, and sending mail via Gmail API */
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
@@ -25,10 +20,6 @@ export class GoogleOAuthService {
     this.redirectUri = config.redirectUri;
   }
 
-  /**
-   * Generates the Google OAuth authorization URL.
-   * The user is redirected here to consent and sign in.
-   */
   public getAuthUrl(state: string): string {
     const params = new URLSearchParams({
       client_id: this.clientId,
@@ -42,14 +33,6 @@ export class GoogleOAuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  /**
-   * Exchanges an authorization code for access + refresh tokens
-   * and persists them to the database.
-   *
-   * @param code - The authorization code from Google's callback
-   * @param userId - The pplcrm user ID
-   * @param tenantId - The pplcrm tenant ID
-   */
   public async handleCallback(code: string, userId: string, tenantId: string): Promise<void> {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -131,12 +114,6 @@ export class GoogleOAuthService {
       .execute();
   }
 
-  /**
-   * Returns a valid access token for the user, refreshing it if expired.
-   *
-   * @param userId - The pplcrm user ID
-   * @returns A valid access token
-   */
   public async getValidToken(userId: string): Promise<string> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
@@ -190,9 +167,6 @@ export class GoogleOAuthService {
     return newAccessToken;
   }
 
-  /**
-   * Returns connection status for a user.
-   */
   public async getConnectionStatus(
     userId: string,
   ): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null }> {
@@ -209,16 +183,10 @@ export class GoogleOAuthService {
     };
   }
 
-  /**
-   * Deletes the stored tokens for a user (disconnect).
-   */
   public async disconnect(userId: string): Promise<void> {
     await this.db.deleteFrom('google_oauth_tokens').where('user_id', '=', userId).execute();
   }
 
-  /**
-   * Saves the delta link (as stringified JSON sync parameters) for the next incremental sync.
-   */
   public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
@@ -227,9 +195,6 @@ export class GoogleOAuthService {
       .execute();
   }
 
-  /**
-   * Returns the stored delta link for incremental sync (or null for full sync).
-   */
   public async getDeltaLink(userId: string): Promise<string | null> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')

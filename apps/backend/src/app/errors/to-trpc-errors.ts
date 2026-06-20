@@ -2,7 +2,6 @@ import { TRPCError } from '@trpc/server';
 
 import { AppError } from './app-errors';
 
-/** Convert our transport-agnostic AppError (or anything) into a TRPCError */
 export function toTRPCError(err: unknown): TRPCError {
   if (err instanceof TRPCError) return err;
 

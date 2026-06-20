@@ -1,9 +1,5 @@
 import { computed, signal } from '@angular/core';
 
-/**
- * An undo/redo manager for the datagrid.
- * Records snapshot states of the grid's signal values.
- */
 export class UndoManager {
   private readonly redoSize = signal(0);
   private readonly undoSize = signal(0);
@@ -16,28 +12,20 @@ export class UndoManager {
   public readonly canRedo = computed(() => this.redoSize() > 0 && !this.isOperating());
   public readonly canUndo = computed(() => this.undoSize() > 0 && !this.isOperating());
 
-  /**
-   * Returns the number of redo actions in the stack.
-   */
   public getRedoSize(): number {
     return this.redoStack.length;
   }
 
-  /**
-   * Returns the number of undo actions in the stack.
-   */
   public getUndoSize(): number {
     return this.undoStack.length;
   }
 
-  /** Initialize tracking hooks (no external API required). */
   public initialize(_api: any): void {
     this.grid = _api;
     this.isOperating.set(false);
     this.updateSizes();
   }
 
-  /** Push a snapshot state onto the undo stack. */
   public pushUndo(snapshot: any): void {
     this.undoStack.push(snapshot);
     if (this.undoStack.length > 50) {
@@ -47,7 +35,6 @@ export class UndoManager {
     this.updateSizes();
   }
 
-  /** Redo the last undone change. */
   public async redo() {
     if (this.isOperating()) return;
     if (this.redoStack.length === 0 || !this.grid) return;
@@ -72,7 +59,6 @@ export class UndoManager {
     }
   }
 
-  /** Undo the last committed change. */
   public async undo() {
     if (this.isOperating()) return;
     if (this.undoStack.length === 0 || !this.grid) return;

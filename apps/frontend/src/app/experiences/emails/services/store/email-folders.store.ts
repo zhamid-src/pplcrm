@@ -1,7 +1,3 @@
-/**
- * @file Folder list + counts + selection, plus loading emails for a folder.
- * Injects EmailStateStore to write normalized emails when a folder is selected.
- */
 import { computed, inject, signal, Service } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -12,17 +8,14 @@ import type { EmailFolderType } from '../../../../../../../../libs/common/src/li
 
 @Service()
 export class EmailFoldersStore {
-  /** Available email folders */
   private readonly emailFolders = signal<EmailFolderType[]>([]);
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
 
   private _loading = createLoadingGate();
 
-  /** Folders list for UI */
   public readonly allFolders = computed(() => this.emailFolders());
 
-  /** Currently selected folder ID */
   public readonly currentSelectedFolderId = signal<string | null>(null);
 
   public isLoading = this._loading.visible;
@@ -95,15 +88,10 @@ export class EmailFoldersStore {
     }
   }
 
-  /** Refresh counts (after a mutation) */
   public async refreshFolderCounts(): Promise<void> {
     await this.loadAllFoldersWithCounts();
   }
 
-  /**
-   * Select a folder and load its emails into EmailStateStore.
-   * Clears selected email automatically via linkedSignal to keep UI consistent.
-   */
   public selectFolder(folder: EmailFolderType | null): void {
     const id = folder ? String(folder.id) : null;
     this.currentSelectedFolderId.set(id);

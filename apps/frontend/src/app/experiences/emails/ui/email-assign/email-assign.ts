@@ -1,6 +1,3 @@
-/**
- * @file Component for assigning an email to a user.
- */
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { IAuthUser } from '../../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -41,10 +38,8 @@ export class EmailAssign {
 
   protected assignedTo = signal<string | null>(null);
 
-  /** Email to assign */
   public email = input.required<EmailType | null>();
 
-  /** Available users for assignment */
   public users = signal<IAuthUser[]>([]);
 
   constructor() {
@@ -55,9 +50,6 @@ export class EmailAssign {
     });
   }
 
-  /**
-   * Assign the selected email to a user or unassign if `null`.
-   */
   public async assign(userId: string | number | null) {
     const email = this.email();
     if (!email) return;
@@ -81,9 +73,6 @@ export class EmailAssign {
     el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
   }
 
-  /**
-   * Get the display name for an assigned user.
-   */
   public getUserName(id: string | null = null) {
     if (!id) return 'Not Assigned';
     return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Not Assigned';

@@ -1,8 +1,3 @@
-/**
- * @file Shared service for email ingestion.
- * Handles database transaction insertion and uploading email attachments to Azure Storage.
- * Shared by both MsSyncService and GoogleSyncService to avoid code duplication.
- */
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { StorageService } from '../../../lib/storage.service';
@@ -41,9 +36,6 @@ export class EmailIngesterService {
     private readonly prefix: string, // 'ms' or 'google'
   ) {}
 
-  /**
-   * Deletes all local emails synced from this provider for this tenant.
-   */
   public async removeAllLocalEmails(tenantId: string): Promise<void> {
     const matchedEmails = await this.db
       .selectFrom('emails')
@@ -93,10 +85,6 @@ export class EmailIngesterService {
     });
   }
 
-  /**
-   * Safely deletes a synced email and all its dependent child tables
-   * by its provider-prefixed deduplication key.
-   */
   public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
     const dedupeKey = `${this.prefix}:${remoteId}`;
     const existing = await this.db
@@ -139,11 +127,6 @@ export class EmailIngesterService {
     });
   }
 
-  /**
-   * Persists an email into the emails tables.
-   * Skips duplicates detected by the remote message ID stored in `preview`.
-   * Returns true if a new email was inserted.
-   */
   public async ingestEmail(
     email: IngestableEmail,
     tenantId: string,

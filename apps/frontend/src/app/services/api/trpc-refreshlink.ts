@@ -26,7 +26,6 @@ type ObservableLike<T = unknown, E = unknown> = {
 /* Core helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-/** Pipes the request through and forwards all emissions. */
 function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
   next(op).subscribe({
     next: (value) => observer.next(value),
@@ -37,7 +36,6 @@ function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, un
 
 let activeRefreshPromise: Promise<string | null> | null = null;
 
-/** Returns a valid auth token, refreshing if required. */
 async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
   const authToken = tokenSvc.getAuthToken();
   if (!authToken) return null;
@@ -72,7 +70,6 @@ async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null>
   return authToken;
 }
 
-/** Clears tokens, redirects, and surfaces the error. */
 function handleRefreshFailure(
   err: unknown,
   tokenSvc: TokenService,
@@ -84,7 +81,6 @@ function handleRefreshFailure(
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
 
-/** Simple expiry check with optional safety leeway. */
 function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
   if (!token) return true;
 
@@ -95,7 +91,6 @@ function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): b
   return payload.exp < now + leewaySeconds;
 }
 
-/** Lightweight JWT decode (no signature validation). */
 function parseJwt(token: string): JwtPayload | null {
   try {
     const [, payload] = token.split('.');
@@ -109,13 +104,6 @@ function parseJwt(token: string): JwtPayload | null {
 /* Public TRPC link                                                   */
 /* ------------------------------------------------------------------ */
 
-/**
- * A TRPC link that silently refreshes auth tokens.
- *
- * ```ts
- * createTRPCClient({ links: [refreshLink(tokenSvc, router), …] })
- * ```
- */
 export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
   return () => {
     return ({ op, next }: { op: Operation; next: NextLink }) =>

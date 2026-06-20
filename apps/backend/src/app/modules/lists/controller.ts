@@ -15,9 +15,6 @@ import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 
-/**
- * Controller handling CRUD and reporting for lists of people or households.
- */
 export class ListsController extends BaseController<'lists', ListsRepo> {
   private householdsController = new HouseholdsController();
   private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
@@ -28,9 +25,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     super(new ListsRepo());
   }
 
-  /**
-   * Create a new list for the authenticated tenant.
-   */
   public async addList(payload: AddListType, auth: IAuthKeyPayload) {
     // Enforce unique list names per tenant
     const existing = await this.getRepo().getOneBy('name', {
@@ -149,9 +143,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return list;
   }
 
-  /**
-   * Refreshes membership mapping for a dynamic list by queuing a background job.
-   */
   public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
     const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
     if (!list) {
@@ -192,10 +183,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return { ...list, status: 'refreshing' };
   }
 
-  /**
-   * Performs the actual list membership resolution and writes to database.
-   * This is called by the background worker.
-   */
   public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
     const auth: IAuthKeyPayload = {
       tenant_id,
@@ -302,9 +289,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     }
   }
 
-  /**
-   * Fetch statistical aggregates and campaign newsletter history for a list.
-   */
   public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
     const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
     if (!list) {
@@ -382,23 +366,14 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     };
   }
 
-  /**
-   * Get all household members of a list.
-   */
   public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
     return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
   }
 
-  /**
-   * Get all person members of a list with basic address fields.
-   */
   public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
     return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
   }
 
-  /**
-   * Get the count of members (persons or households) in a list efficiently.
-   */
   public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
     const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
     if (!list) return 0;
@@ -432,9 +407,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     }
   }
 
-  /**
-   * Update an existing list.
-   */
   public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = {
       ...row,
@@ -480,9 +452,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return result;
   }
 
-  /**
-   * Override delete to clear list membership mapping records first to satisfy FK constraints.
-   */
   public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
     await this.mapListsPersonsRepo.db
       .deleteFrom('map_lists_persons')
@@ -499,9 +468,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return super.delete(tenant_id as any, idToDelete, userId);
   }
 
-  /**
-   * Override deleteMany to clear list membership mapping records first for all target lists.
-   */
   public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
     if (idsToDelete.length === 0) return false;
 
@@ -520,10 +486,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return super.deleteMany(tenant_id as any, idsToDelete);
   }
 
-  /**
-   * Override getOneById to lazily queue a background refresh job if the list is dynamic
-   * and has not been refreshed in the last 24 hours.
-   */
   public override async getOneById(input: { tenant_id: string; id: string }) {
     const list = (await super.getOneById(input)) as any;
     if (list && list.is_dynamic) {

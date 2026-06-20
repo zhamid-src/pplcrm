@@ -1,13 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Kysely } from 'kysely';
 
-/**
- * Add `entity_id` column to `user_activity` so that every activity row
- * can reference the specific record it relates to (email id, person id, etc.).
- * This enables:
- *  - Filtering the activity feed for a specific entity (e.g., all events on email X)
- *  - Linking directly from the feed to the affected record
- */
 export async function up(db: Kysely<any>): Promise<void> {
   console.log('======= Migrating up: user_activity entity_id ========');
 

@@ -1,6 +1,3 @@
-/**
- * Service responsible for managing sidebar items and drawer open state.
- */
 import { signal, Service } from '@angular/core';
 import { ISidebarItem, SidebarItems } from './sidebar-items';
 

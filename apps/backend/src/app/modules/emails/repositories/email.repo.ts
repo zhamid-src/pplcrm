@@ -1,6 +1,3 @@
-/**
- * Data access layer for email message records.
- */
 import { EmailStatus, SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
 
 import { UpdateResult, sql } from 'kysely';
@@ -12,23 +9,16 @@ import { EmailRecipientsRepo } from './email-recipients.repo';
 import { EmailTrashRepo } from './email-trash.repo';
 import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
 
-/**
- * Repository for the `emails` table.
- */
 export class EmailRepo extends BaseRepository<'emails'> {
   private emailAttachmentsRepo = new EmailAttachmentsRepo();
   private emailHeadersRepo = new EmailHeadersRepo();
   private emailRecipientsRepo = new EmailRecipientsRepo();
   private emailTrashRepo = new EmailTrashRepo();
 
-  /**
-   * Creates a repository instance for the `emails` table.
-   */
   constructor() {
     super('emails');
   }
 
-  /** Permanently remove everything in the tenant's Trash folder. */
   public async emptyTrash(tenantId: string) {
     return this.transaction().execute(async (trx) => {
       const trashId = ALL_FOLDERS.TRASH;
@@ -47,10 +37,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return this.emailAttachmentsRepo.getByEmailId(tenant_id, email_id);
   }
 
-  /**
-   * Get all emails within a folder for a given tenant.
-   * Handles special folders via central predicate builder.
-   */
   public async getByFolder(user_id: string, tenant_id: string, folder_id: string) {
     const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
 
@@ -62,10 +48,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return query.execute();
   }
 
-  /**
-   * Get emails by folder with attachment count and has_attachment flag.
-   * LEFT JOIN subquery for counts + EXISTS for boolean.
-   */
   public async getByFolderWithAttachmentFlag(
     user_id: string,
     tenant_id: string,
@@ -124,10 +106,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .execute();
   }
 
-  /**
-   * Get email counts for all folders (real + virtual) for a tenant in ONE query.
-   * Uses Postgres filtered aggregates for virtual folders.
-   */
   public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
     // 1) Regular per-folder counts
     const regular = await this.getSelect()
@@ -184,9 +162,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return counts;
   }
 
-  /**
-   * Get email with headers and recipients for detailed view.
-   */
   public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string, user_id?: string) {
     let query = this.getSelect()
       .selectAll('emails')
@@ -226,16 +201,10 @@ export class EmailRepo extends BaseRepository<'emails'> {
     };
   }
 
-  /**
-   * Check if an email has any attachments.
-   */
   public async hasAttachments(tenant_id: string, email_id: string): Promise<boolean> {
     return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
   }
 
-  /**
-   * Assign an email to a user directly via Kysely
-   */
   public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
     return this.getUpdate()
       .set({ assigned_to: user_id })
@@ -263,9 +232,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
     };
   }
 
-  /**
-   * Move emails to Trash folder and remember their original folder.
-   */
   public async moveToTrash(tenant_id: string, emailIds: string[]) {
     if (!emailIds?.length) return 0;
 
@@ -285,7 +251,6 @@ export class EmailRepo extends BaseRepository<'emails'> {
     });
   }
 
-  /** Restore emails from Trash back to their previous folders (joined UPDATE … FROM). */
   public async restoreFromTrash(tenantId: string, emailIds: string[]): Promise<number> {
     if (!emailIds?.length) return 0;
 
@@ -325,18 +290,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
     return is_favourite;
   }
 
-  /**
-   * Update the status of an email.
-   */
   public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
     await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
     return status;
   }
 
-  /**
-   * Central builder for folder predicates. Returns a function that applies the where clauses.
-   * Kept non-async (pure) and dedupes "not in trash".
-   */
   private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
     switch (folder_id) {
       case SPECIAL_FOLDERS.ALL_OPEN:

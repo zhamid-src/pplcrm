@@ -28,10 +28,6 @@ export class GridAdvancedFilterService {
     }
   }
 
-  /**
-   * Returns the current filter model for use in API requests, or `undefined`
-   * if there are no active rules.
-   */
   buildModel(): QueryBuilderGroupNode | undefined {
     if (!this.hasActiveAdvancedFilters()) return undefined;
     const cleaned = this.cleanFilterTree(this.advFilterRoot());
@@ -72,10 +68,6 @@ export class GridAdvancedFilterService {
     }
   }
 
-  /**
-   * Called when switching from the panel filter to the advanced filter builder.
-   * Closes the panel filter first, then opens the builder.
-   */
   switchToAdvancedFilter(closeFilterPanel: () => void, getColDefs: () => ColDef[]): void {
     closeFilterPanel();
     this.openAdvancedFilterBuilder(getColDefs);

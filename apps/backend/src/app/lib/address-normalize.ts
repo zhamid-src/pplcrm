@@ -1,7 +1,3 @@
-/**
- * Address normalization and fingerprint helpers for matching households.
- */
-
 function norm(text?: string | null): string {
   const v = (text ?? '').toString().trim().toLowerCase();
   if (!v) return '';
@@ -37,21 +33,16 @@ function norm(text?: string | null): string {
   return t;
 }
 
-/**
- * Fingerprint using street-only components (no apt, city, state, zip, country).
- * Used for partial matches when higher-level geography is missing.
- */
-export function fingerprintStreet(
-  input: { street_num?: string | null; street1?: string | null; street2?: string | null },
-): string | null {
+export function fingerprintStreet(input: {
+  street_num?: string | null;
+  street1?: string | null;
+  street2?: string | null;
+}): string | null {
   const parts = [norm(input.street_num), norm(input.street1), norm(input.street2)].filter(Boolean);
   if (!parts.length) return null;
   return parts.join(' ');
 }
 
-/**
- * Full address fingerprint. Includes apt and geo fields.
- */
 export function fingerprintFull(input: {
   apt?: string | null;
   street_num?: string | null;
@@ -76,7 +67,6 @@ export function fingerprintFull(input: {
   return parts.join(' ');
 }
 
-/** True if all address fields are blank/undefined */
 export function isBlankAddress(input: {
   home_phone?: string | null;
   street_num?: string | null;
@@ -102,7 +92,6 @@ export function isBlankAddress(input: {
   return fields.every((v) => !v || (v + '').trim().length === 0);
 }
 
-/** True if the address lacks essential information to be geocoded (e.g. missing street1, or missing both city and zip) */
 export function isIncompleteAddress(input: {
   street1?: string | null;
   city?: string | null;
@@ -115,4 +104,3 @@ export function isIncompleteAddress(input: {
 
   return !street1 || (!city && !zip);
 }
-

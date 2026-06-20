@@ -1,6 +1,3 @@
-/**
- * Repository logic for person entities.
- */
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -8,15 +5,7 @@ import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Repository for the `persons` table.
- *
- * Provides additional functionality for joining with `households`, `tags`, and `map_peoples_tags`.
- */
 export class PersonsRepo extends BaseRepository<'persons'> {
-  /**
-   * Creates a repository instance for the `persons` table.
-   */
   constructor() {
     super('persons');
   }
@@ -95,10 +84,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     };
   }
 
-  /**
-   * Create a new blank household and reassign the person to it.
-   * Returns the new household_id.
-   */
   public async moveToNewHousehold(input: {
     tenant_id: string;
     person_id: string;
@@ -142,15 +127,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     });
   }
 
-  /**
-   * Get all people with joined household address and associated tags.
-   *
-   * @param input.tenant_id - The tenant ID to scope the query
-   * @param input.options - Optional select/filter/pagination options
-   * @param input.tags - If provided, filters people by tag name(s)
-   * @param trx - Optional Kysely transaction
-   * @returns A list of people with household address and tags
-   */
   public async getAllWithAddress(
     input: {
       tenant_id: string;
@@ -364,15 +340,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return { count, rows };
   }
 
-  /**
-   * Get all people belonging to a specific household.
-   *
-   * @param input.id - Household ID to filter by
-   * @param input.tenant_id - Tenant ID to scope the query
-   * @param input.options - Optional select/pagination/sort settings
-   * @param trx - Optional transaction
-   * @returns A list of people in the specified household
-   */
   public getByHouseholdId(
     input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
     trx?: Transaction<Models>,
@@ -383,9 +350,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .execute();
   }
 
-  /**
-   * Get all people belonging to a specific company.
-   */
   public getByCompanyId(
     input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
     trx?: Transaction<Models>,
@@ -396,10 +360,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .execute();
   }
 
-  /**
-   * Return a scalar count of persons belonging to a specific company.
-   * More efficient than fetching all rows when only the count is needed.
-   */
   public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
     const result = await this.getSelect()
       .select(({ fn }) => [fn.count<number>('id').as('total')])
@@ -409,12 +369,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return Number(result?.total ?? 0);
   }
 
-  /**
-   * Get all unique tag names assigned to people in the tenant.
-   *
-   * @param tenant_id - The tenant ID
-   * @returns A list of unique tag names
-   */
   public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
     return this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
@@ -426,14 +380,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .execute();
   }
 
-  /**
-   * Get all tags associated with a specific person.
-   *
-   * @param input.id - Person ID
-   * @param input.tenant_id - Tenant ID
-   * @param input.type - Optional tag/issue type
-   * @returns List of tag names assigned to the person
-   */
   public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
     let q = this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
@@ -445,10 +391,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     }
     return q.select('tags.name').execute();
   }
-  /**
-   * Find a person by email address (case-insensitive) within a tenant.
-   * Returns minimal id/email fields; used for uniqueness checks.
-   */
   public async findByEmail(input: { tenant_id: string; email: string }) {
     return this.getSelect()
       .select(['id', 'email'])
@@ -475,9 +417,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return Number((countResult as any)?.total || 0);
   }
 
-  /**
-   * Find potential duplicates within the tenant (querying pre-computed potential_duplicates table).
-   */
   public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
@@ -564,9 +503,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return { groups: sortedGroups, total };
   }
 
-  /**
-   * Merges a source person record into a target person record in a transaction.
-   */
   public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;

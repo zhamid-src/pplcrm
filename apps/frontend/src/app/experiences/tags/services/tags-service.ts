@@ -10,43 +10,18 @@ import {
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { Tags } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * `TagsService` handles all CRUD operations and utility methods for managing tags
- * in the application. It communicates with the backend via TRPC.
- *
- * Extends `AbstractAPIService` to inherit standard CRUD operations.
- */
 @Service()
 export class TagsService extends AbstractAPIService<'tags', AddTagType> {
   protected override readonly endpointName = 'tags';
 
-  /**
-   * Adds a new tag to the backend.
-   *
-   * @param tag - The tag object to add.
-   * @returns A Promise resolving with the result of the mutation.
-   */
   public add(tag: AddTagType) {
     return this.api.tags.add.mutate(tag);
   }
 
-  /**
-   * (No-op implementation)
-   * Required override for abstract method.
-   *
-   * @param rows - Rows to add (unused).
-   * @returns A resolved Promise with the input rows.
-   */
   public override addMany(rows: never[]): Promise<unknown> {
     return Promise.resolve(rows);
   }
 
-  /**
-   * Attaches a tag to a given ID by adding it if it doesn't exist.
-   *
-   * @param id - The ID of the item (unused in this context).
-   * @param tag_name - The name of the tag to attach.
-   */
   public async attachTag(_id: string, tag_name: string) {
     await this.add({ name: tag_name });
   }
@@ -61,55 +36,25 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return res;
   }
 
-  /**
-   * Deletes multiple tags by their IDs.
-   *
-   * @param ids - The array of tag IDs to delete.
-   * @returns `true` if deletion was successful, otherwise `false`.
-   */
   public override async deleteMany(ids: string[]): Promise<boolean> {
     const res = await super.deleteMany(ids);
     this.triggerRefresh();
     return res;
   }
 
-  /**
-   * Detaches a tag by deleting it.
-   *
-   * @param id - The ID of the tag to detach.
-   * @returns A Promise that resolves once the tag is deleted.
-   */
   public detachTag(id: string) {
     return this.delete(id);
   }
 
-  /**
-   * Filters tags by partial match on name.
-   *
-   * @param key - The search key.
-   * @returns A Promise resolving to a list of matching tag names.
-   */
   public async filter(key: string, type: 'tag' | 'issue' = 'tag') {
     const names = (await this.findByName(key, type)) as AddTagType[];
     return (names && names.filter((m) => m.name).map((m) => m.name)) || [];
   }
 
-  /**
-   * Searches for tags that match a given name.
-   *
-   * @param name - Partial or full name to match.
-   * @param type - Optional tag/issue type.
-   * @returns A Promise resolving with the matching tags.
-   */
   public findByName(name: string, type: 'tag' | 'issue' = 'tag') {
     return this.api.tags.findByName.query({ name, type });
   }
 
-  /**
-   * Returns all tags along with how many times each tag is used.
-   *
-   * @returns A Promise resolving to the list of tags with usage counts.
-   */
   public getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     return this.getAllWithCounts(options);
   }
@@ -119,45 +64,21 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
-  /**
-   * Gets all tags along with metadata like usage count.
-   *
-   * @returns A Promise resolving with enriched tag data.
-   */
   public getAllWithCounts(options?: getAllOptionsType) {
     return this.api.tags.getAllWithCounts.query(options, {
       signal: this.ac.signal,
     });
   }
 
-  /**
-   * Gets a single tag by its ID.
-   *
-   * @param id - The ID of the tag.
-   * @returns A Promise resolving with the tag object.
-   */
   public getById(id: string) {
     return this.api.tags.getById.query(id);
   }
 
-  /**
-   * Returns an array of tag names for a given tag ID.
-   *
-   * @param id - The tag ID.
-   * @returns A Promise resolving with an array containing the tag name.
-   */
   public async getTags(id: string) {
     const tag = (await this.getById(id)) as Tags;
     return [tag.name];
   }
 
-  /**
-   * Updates an existing tag.
-   *
-   * @param id - The ID of the tag to update.
-   * @param data - The updated tag data.
-   * @returns A Promise resolving with the result of the mutation.
-   */
   public async update(id: string, data: UpdateTagType) {
     const res = await this.api.tags.update.mutate({ id: id, data });
     this.triggerRefresh();

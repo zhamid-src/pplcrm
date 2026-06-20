@@ -1,9 +1,5 @@
 import { Kysely } from 'kysely';
 
-/**
- * Migration to create the google_oauth_tokens table.
- * Stores per-user Google OAuth2 tokens for Google Suite email sync.
- */
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable('google_oauth_tokens')
