@@ -460,7 +460,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
-    if (!bcrypt.compareSync(input.password, user.password)) {
+    if (!(await bcrypt.compare(input.password, user.password))) {
       throw new UnauthorizedError();
     }
 
