@@ -88,3 +88,81 @@ describe('perform_scheduled_deletions Job Handler', () => {
     }
   });
 });
+
+describe('process_drip_workflows Job Handler', () => {
+  it('should limit initial fetch to 500 and reschedule instantly if exactly 500 records are found', async () => {
+    let limitValue: number | null = null;
+    let insertedRunAt: Date | null = null;
+
+    const mockDb: any = {
+      selectFrom: () => ({
+        selectAll: () => ({
+          where: () => ({
+            where: () => ({
+              limit: (lim: number) => {
+                limitValue = lim;
+                return {
+                  execute: async () => Array.from({ length: 500 }, (_, i) => ({ id: i })),
+                };
+              },
+            }),
+          }),
+        }),
+      }),
+      transaction: () => ({
+        execute: async () => {},
+      }),
+      insertInto: () => ({
+        values: (vals: any) => {
+          insertedRunAt = vals.run_at;
+          return {
+            execute: async () => {},
+          };
+        },
+      }),
+    };
+
+    await executeJob({ type: 'process_drip_workflows' }, mockDb);
+
+    expect(limitValue).toBe(500);
+    expect(insertedRunAt).toBeInstanceOf(Date);
+    const diff = Math.abs(insertedRunAt!.getTime() - Date.now());
+    expect(diff).toBeLessThan(5000); // within 5 seconds
+  });
+
+  it('should schedule next run in 10 minutes if fewer than 500 records are found', async () => {
+    let insertedRunAt: Date | null = null;
+
+    const mockDb: any = {
+      selectFrom: () => ({
+        selectAll: () => ({
+          where: () => ({
+            where: () => ({
+              limit: () => ({
+                execute: async () => Array.from({ length: 10 }, (_, i) => ({ id: i })),
+              }),
+            }),
+          }),
+        }),
+      }),
+      transaction: () => ({
+        execute: async () => {},
+      }),
+      insertInto: () => ({
+        values: (vals: any) => {
+          insertedRunAt = vals.run_at;
+          return {
+            execute: async () => {},
+          };
+        },
+      }),
+    };
+
+    await executeJob({ type: 'process_drip_workflows' }, mockDb);
+
+    expect(insertedRunAt).toBeInstanceOf(Date);
+    const targetTime = Date.now() + 10 * 60 * 1000;
+    const diff = Math.abs(insertedRunAt!.getTime() - targetTime);
+    expect(diff).toBeLessThan(5000); // within 5 seconds
+  });
+});

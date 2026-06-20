@@ -700,6 +700,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       .selectAll()
       .where('status', '=', 'active')
       .where('next_run_at', '<=', now)
+      .limit(500)
       .execute();
 
     for (const enrollment of pendingEnrollments) {
@@ -838,6 +839,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       }
     }
 
+    const runAt = pendingEnrollments.length === 500 ? new Date() : new Date(Date.now() + 10 * 60 * 1000);
     await db
       .insertInto('background_jobs' as any)
       .values({
@@ -845,7 +847,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         queue: 'default',
         status: 'pending',
         payload: JSON.stringify({ type: 'process_drip_workflows' }),
-        run_at: new Date(Date.now() + 10 * 60 * 1000),
+        run_at: runAt,
         max_attempts: 3,
       })
       .execute();
