@@ -1,5 +1,6 @@
 import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
 import { env } from '../../env';
+import { Readable } from 'stream';
 
 export class StorageService {
   private serviceClient: BlobServiceClient;
@@ -16,6 +17,18 @@ export class StorageService {
     await this.containerClient.createIfNotExists();
     const blockBlobClient = this.containerClient.getBlockBlobClient(key);
     await blockBlobClient.upload(data, data.length, {
+      blobHTTPHeaders: { blobContentType: contentType },
+    });
+  }
+
+  public async uploadStream(
+    key: string,
+    stream: Readable,
+    contentType: string,
+  ): Promise<void> {
+    await this.containerClient.createIfNotExists();
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    await blockBlobClient.uploadStream(stream, undefined, undefined, {
       blobHTTPHeaders: { blobContentType: contentType },
     });
   }
