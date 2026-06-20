@@ -100,7 +100,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
                 // Server formatter should already do this; this is just a client fallback
                 msg = GENERIC_LOGIN_MSG;
               } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as any)?.isZodError;
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
                 if (isValidationError) {
                   msg = GENERIC_INPUT_MSG;
                 }

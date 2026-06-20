@@ -29,23 +29,21 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public count(): Promise<number> {
     return this.api.persons.count.query();
   }
-
   public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
-      return (await (this.api.persons.delete.mutate as any)({ id, force }, opts)) !== null;
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
     }
-    return (await (this.api.persons.delete.mutate as any)(id, opts)) !== null;
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
   }
 
   public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
-      return await (this.api.persons.deleteMany.mutate as any)({ ids, force }, opts);
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
     }
-    return await (this.api.persons.deleteMany.mutate as any)(ids, opts);
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
   }
-
   public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
     return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
   }

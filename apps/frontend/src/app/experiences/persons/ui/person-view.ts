@@ -1,7 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { type AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
@@ -98,13 +98,14 @@ export class PersonView {
       }
     },
   });
+
   protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as any;
+    const hh = this.householdResource.value() as Households | null | undefined;
     if (!hh || hh.is_placeholder) return 'No Address Assigned';
     return this.getFormattedAddress(hh);
   });
   protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as any)?.is_placeholder ?? false;
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
 
   // Contact initials and full name computation

@@ -1,6 +1,7 @@
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { PersonsService } from '../../persons/services/persons-service';
+import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 @Component({
   selector: 'pc-people-in-company',
@@ -33,7 +34,9 @@ import { PersonsService } from '../../persons/services/persons-service';
 export class PeopleInCompany {
   private personsSvc = inject(PersonsService);
 
-  protected peopleInCompany = signal<any[]>([]);
+  protected peopleInCompany = signal<
+    Array<Persons & { full_name: string }>
+  >([]);
   protected isLoading = signal(false);
   protected hasMore = signal(false);
 
@@ -95,7 +98,7 @@ export class PeopleInCompany {
       const people = (await this.personsSvc.getByCompanyId(id, {
         limit: this.pageSize,
         offset,
-      })) as any[];
+      })) as Persons[];
 
       if (requestId !== this.requestSequence) {
         return;

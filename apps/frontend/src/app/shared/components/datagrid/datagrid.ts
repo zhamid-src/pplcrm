@@ -43,6 +43,13 @@ import { DataGridFiltersService, type SelectEditorOptions } from './services/fil
 import { DataGridSelectionService } from './services/selection.service';
 import { DataGridTableService } from './services/table.service';
 import { DataGridActionsService } from './services/actions.service';
+
+interface MergeableService {
+  merge?(target: string, source: string): Promise<unknown>;
+  mergePersons?(target: string, source: string): Promise<unknown>;
+  mergeCompanies?(target: string, source: string): Promise<unknown>;
+  mergeHouseholds?(target: string, source: string): Promise<unknown>;
+}
 import { DataGridNavService } from './services/nav.service';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { DataGridUtilsService } from './services/utils.service';
@@ -988,11 +995,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected async confirmMerge() {
+    const svc = this.gridSvc as unknown as MergeableService;
     const mergeFn =
-      (this.gridSvc as any).merge ||
-      (this.gridSvc as any).mergePersons ||
-      (this.gridSvc as any).mergeCompanies ||
-      (this.gridSvc as any).mergeHouseholds;
+      svc.merge ||
+      svc.mergePersons ||
+      svc.mergeCompanies ||
+      svc.mergeHouseholds;
 
     if (!mergeFn) {
       this.alertSvc.showError('Merging is not supported for this data grid.');
@@ -1043,14 +1051,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const end = this._loading.begin();
     try {
-      if (typeof (this.gridSvc as any).merge === 'function') {
-        await (this.gridSvc as any).merge(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof (this.gridSvc as any).mergePersons === 'function') {
-        await (this.gridSvc as any).mergePersons(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof (this.gridSvc as any).mergeCompanies === 'function') {
-        await (this.gridSvc as any).mergeCompanies(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof (this.gridSvc as any).mergeHouseholds === 'function') {
-        await (this.gridSvc as any).mergeHouseholds(primaryChoice.target.id, primaryChoice.source.id);
+      if (typeof svc.merge === 'function') {
+        await svc.merge(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergePersons === 'function') {
+        await svc.mergePersons(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergeCompanies === 'function') {
+        await svc.mergeCompanies(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergeHouseholds === 'function') {
+        await svc.mergeHouseholds(primaryChoice.target.id, primaryChoice.source.id);
       } else {
         throw new Error('No merge service method available');
       }

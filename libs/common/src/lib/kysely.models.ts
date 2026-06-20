@@ -255,7 +255,7 @@ interface MapListsHouseholds extends JunctionRecordType {
 
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: string;
-  household_id: string;
+  household_id: string | null;
   createdby_id: string;
   first_name: string | null;
   middle_names: string | null;
